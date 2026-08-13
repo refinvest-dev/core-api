@@ -38,3 +38,9 @@ out/
 
 ### Kotlin ###
 .kotlin
+
+### Env ###
+.env
+
+### Local context checkout ###
+/context/
