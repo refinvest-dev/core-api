@@ -1,0 +1,16 @@
+plugins { id("spring-boot-application-conventions") }
+dependencies {
+    implementation(project(":strategy:application"))
+    implementation(project(":strategy:port"))
+    implementation(project(":strategy:adapter:snowflake"))
+    implementation(project(":strategy:adapter:web"))
+    implementation(project(":strategy:adapter:persistence"))
+    implementation(project(":shared:infrastructure"))
+    implementation(libs.spring.boot.starter.actuator)
+    implementation(libs.spring.boot.starter.jdbc)
+    implementation(libs.spring.boot.starter.web)
+    implementation(libs.kotlin.reflect)
+    runtimeOnly(libs.postgresql)
+    testImplementation(libs.spring.boot.starter.test)
+    testRuntimeOnly(libs.h2)
+}

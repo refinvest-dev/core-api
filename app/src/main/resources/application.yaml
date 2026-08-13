@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: refinvest
+  datasource:
+    url: jdbc:postgresql://${DATABASE_HOST:localhost}:${DATABASE_PORT:5432}/${DATABASE_NAME}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always
+
+refinvest:
+  id:
+    node-id: ${SNOWFLAKE_NODE_ID:0}
+  execution:
+    test-member-id: ${TEST_MEMBER_ID:1}
