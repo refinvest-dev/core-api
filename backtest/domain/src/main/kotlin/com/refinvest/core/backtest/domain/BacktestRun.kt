@@ -1,0 +1,152 @@
+package com.refinvest.core.backtest.domain
+
+import com.refinvest.core.common.domain.AggregateRoot
+import java.math.BigDecimal
+import java.time.Instant
+import java.time.LocalDate
+
+enum class BacktestRunStatus {
+    PENDING,
+    RUNNING,
+    COMPLETED,
+    FAILED,
+}
+
+data class Period(
+    val start: LocalDate,
+    val end: LocalDate,
+) {
+    init {
+        require(!end.isBefore(start)) { "period end must not be before start" }
+    }
+}
+
+@JvmInline
+value class Percent(val value: BigDecimal) {
+    init {
+        require(value >= BigDecimal.ZERO) { "percent must not be negative" }
+    }
+}
+
+data class FeeModel(
+    val commission: Percent,
+    val slippage: Percent,
+)
+
+class BacktestRun private constructor(
+    override val id: BacktestRunId,
+    val strategyVersionId: StrategyVersionId,
+    val requestedPeriod: Period,
+    val feeModel: FeeModel,
+    val createdAt: Instant,
+    status: BacktestRunStatus,
+    actualPeriod: Period?,
+    datasetSnapshotId: DatasetSnapshotId?,
+    engineVersion: EngineVersion?,
+    result: BacktestResult?,
+    failureReason: String?,
+) : AggregateRoot<BacktestRunId>(id) {
+    var status: BacktestRunStatus = status
+        private set
+    var actualPeriod: Period? = actualPeriod
+        private set
+    var datasetSnapshotId: DatasetSnapshotId? = datasetSnapshotId
+        private set
+    var engineVersion: EngineVersion? = engineVersion
+        private set
+    var result: BacktestResult? = result
+        private set
+    var failureReason: String? = failureReason
+        private set
+
+    init {
+        validateState()
+    }
+
+    fun start(
+        actualPeriod: Period,
+        datasetSnapshotId: DatasetSnapshotId,
+        engineVersion: EngineVersion,
+    ) {
+        require(status == BacktestRunStatus.PENDING) { "BacktestRun can start only from PENDING" }
+        status = BacktestRunStatus.RUNNING
+        this.actualPeriod = actualPeriod
+        this.datasetSnapshotId = datasetSnapshotId
+        this.engineVersion = engineVersion
+        validateState()
+    }
+
+    fun complete(result: BacktestResult) {
+        require(status == BacktestRunStatus.RUNNING) { "BacktestRun can complete only from RUNNING" }
+        require(result.backtestRunId == id) { "BacktestResult belongs to another BacktestRun" }
+        require(result.dataIntegrityStatus.datasetSnapshotId == datasetSnapshotId) {
+            "BacktestResult datasetSnapshotId must match BacktestRun"
+        }
+        status = BacktestRunStatus.COMPLETED
+        this.result = result
+        validateState()
+    }
+
+    fun fail(failureReason: String) {
+        require(status == BacktestRunStatus.RUNNING) { "BacktestRun can fail only from RUNNING" }
+        require(failureReason.isNotBlank()) { "failureReason must not be blank" }
+        status = BacktestRunStatus.FAILED
+        this.failureReason = failureReason
+        validateState()
+    }
+
+    private fun validateState() {
+        when (status) {
+            BacktestRunStatus.PENDING -> {
+                require(actualPeriod == null) { "PENDING BacktestRun must not have actualPeriod" }
+                require(datasetSnapshotId == null) { "PENDING BacktestRun must not have datasetSnapshotId" }
+                require(engineVersion == null) { "PENDING BacktestRun must not have engineVersion" }
+                require(result == null) { "PENDING BacktestRun must not have a result" }
+                require(failureReason == null) { "PENDING BacktestRun must not have a failureReason" }
+            }
+            BacktestRunStatus.RUNNING -> {
+                require(actualPeriod != null) { "RUNNING BacktestRun requires actualPeriod" }
+                require(datasetSnapshotId != null) { "RUNNING BacktestRun requires datasetSnapshotId" }
+                require(engineVersion != null) { "RUNNING BacktestRun requires engineVersion" }
+                require(result == null) { "RUNNING BacktestRun must not have a result" }
+                require(failureReason == null) { "RUNNING BacktestRun must not have a failureReason" }
+            }
+            BacktestRunStatus.COMPLETED -> {
+                require(actualPeriod != null && datasetSnapshotId != null && engineVersion != null) {
+                    "COMPLETED BacktestRun requires Compute execution metadata"
+                }
+                require(result != null) { "COMPLETED BacktestRun requires a BacktestResult" }
+                require(failureReason == null) { "COMPLETED BacktestRun must not have a failureReason" }
+            }
+            BacktestRunStatus.FAILED -> {
+                require(actualPeriod != null && datasetSnapshotId != null && engineVersion != null) {
+                    "FAILED BacktestRun requires Compute execution metadata"
+                }
+                require(result == null) { "FAILED BacktestRun must not have a result" }
+                require(!failureReason.isNullOrBlank()) { "FAILED BacktestRun requires a failureReason" }
+            }
+        }
+    }
+
+    companion object {
+        fun createPending(
+            id: BacktestRunId,
+            strategyVersionId: StrategyVersionId,
+            requestedPeriod: Period,
+            feeModel: FeeModel,
+            createdAt: Instant,
+        ): BacktestRun = BacktestRun(
+            id = id,
+            strategyVersionId = strategyVersionId,
+            requestedPeriod = requestedPeriod,
+            feeModel = feeModel,
+            createdAt = createdAt,
+            status = BacktestRunStatus.PENDING,
+            actualPeriod = null,
+            datasetSnapshotId = null,
+            engineVersion = null,
+            result = null,
+            failureReason = null,
+        )
+    }
+}

@@ -1,0 +1,643 @@
+openapi: 3.0.3
+info:
+  title: core-api Public API
+  version: "0.1.0"
+  description: |
+    Web(`web`) → Core(`core-api`) 계약. Web은 이 스펙만 보고 구현하며,
+    Compute(`compute-api`)를 직접 호출하지 않는다(`AGENTS.md` §3, `AI_AGENT.md` §4).
+
+    - 이 스펙은 `context` 레포가 소유한다. `compute-api.yaml`과 공유 도메인 타입
+      (Asset/Condition/BacktestResult 등)을 파일 간 `$ref`로 재사용한다 — 같은 개념을 두 번
+      정의하지 않는다.
+    - 필드명은 `docs/GLOSSARY.md`의 코드 네이밍을 그대로 따른다(`docs/USECASES.md`).
+    - `RunBacktest`는 **항상 비동기**다(`AGENTS.md` §4, `AI_AGENT.md` §2). DSL 의미론적 오류
+      (`compute-api.yaml`의 `DSL_INVALID` 등 `FatalErrorCode`)는 이 API에서 동기 400으로 나타나지
+      않고, 202 Accepted 이후 폴링 중 `status: FAILED`로 드러난다. 반면 StrategyVersion 자체의
+      구조적 불변식 위반(`docs/DOMAIN.md` §1.2)은 `DefineStrategyVersion` 시점에 동기 400으로
+      즉시 반환된다 — 이 둘은 서로 다른 계층의 검증이며 에러 스키마도 분리되어 있다(아래
+      `StrategyVersionValidationError` vs `compute-api.yaml`의 `ValidationErrorResponse`).
+
+    ## 미확정 사항 (TODO — 구현 전 팀 확인 필요)
+    - 인증 방식: 아래 `BearerAuth`는 자리표시자다. 이메일/비밀번호, OAuth, 매직링크 중 무엇으로
+      회원가입/로그인을 구현할지, JWT 갱신(refresh) 흐름은 어떻게 할지 확정되지 않았다
+      (`docs/ARCHITECTURE.md` §2 `common/` "인증(Spring Security + JWT)"는 토큰 방식만 정했을 뿐
+      가입/로그인 플로우는 정의하지 않음).
+    - Free/Pro 정확한 제한 수치(월 백테스트 횟수, 허용 Asset, 백테스트 최대 기간)는 미정
+      — `docs/DOMAIN.md` §1.5, Phase 0/2에서 결정.
+    - `ListStrategies`/`ListBacktestRuns`의 페이지네이션 방식(offset vs cursor)은 아래 스펙에
+      offset 기반으로 잠정 정의했으나 팀 확인 필요.
+
+servers:
+  - url: https://api.refinvest.example.com
+    description: Web이 호출하는 Core public API. Compute는 이 서버 뒤에서 내부적으로만 호출됨.
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: strategies
+    description: Strategy/StrategyVersion 생성·조회 (`docs/USECASES.md` Strategy 모듈)
+  - name: backtests
+    description: 백테스트 실행·조회 (`docs/USECASES.md` Backtest 모듈, 항상 비동기)
+  - name: assets
+    description: Data Explorer용 Asset/시계열 프록시 (`docs/USECASES.md` Asset / Data Explorer — Core는 Compute를 그대로 읽기 전용 프록시)
+  - name: account
+    description: 회원가입·사용량·구독 (`docs/USECASES.md` User / Subscription 모듈)
+
+paths:
+  # ============ Strategy ============
+  /strategies:
+    post:
+      operationId: createStrategy
+      tags: [strategies]
+      summary: 빈 Strategy 생성 (`CreateStrategy`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        '201':
+          description: 생성됨.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategySummary'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+    get:
+      operationId: listStrategies
+      tags: [strategies]
+      summary: 사용자의 전략 목록 (`ListStrategies`)
+      description: Free/Pro 개수 제한은 `docs/DOMAIN.md` §1.5 — 정확한 수치는 미정(TODO 참고).
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page, size, total]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StrategySummary'
+                  page: { type: integer }
+                  size: { type: integer }
+                  total: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /strategies/{strategyId}:
+    get:
+      operationId: getStrategy
+      tags: [strategies]
+      summary: Strategy와 그 StrategyVersion 목록 조회 (`GetStrategy`)
+      parameters:
+        - $ref: '#/components/parameters/StrategyIdParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategyDetail'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /strategies/{strategyId}/versions:
+    post:
+      operationId: defineStrategyVersion
+      tags: [strategies]
+      summary: 새 StrategyVersion 생성 (`DefineStrategyVersion`)
+      description: |
+        `docs/DOMAIN.md` §1.2 불변식을 동기적으로 검증한다(Primary Signal Asset 정확히 1개,
+        Execution Asset이 `ExecutionAssetSymbol`(VIX 제외)에 속함, conditions 최소 1개, window/lag
+        양수 등). `positionPolicy`는 요청 바디에 없다 — ADR-009에 따라 서버가 고정값
+        (`longOnly: true, singlePosition: true, duplicateEntry: IGNORE`)으로 채운다.
+        생성된 StrategyVersion은 불변이다(ADR-013) — 수정 API는 없고, 조건을 바꾸려면 이 엔드포인트를
+        다시 호출해 새 버전을 만든다.
+      parameters:
+        - $ref: '#/components/parameters/StrategyIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DefineStrategyVersionRequest'
+      responses:
+        '201':
+          description: 생성됨.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategyVersion'
+        '400':
+          description: StrategyVersion 구조적 불변식 위반(`docs/DOMAIN.md` §1.2). Compute의 DSL 의미론적 검증(Calendar 호환성 등)과는 다른 계층 — 위 info.description 참고.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategyVersionValidationError'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Free 플랜 Asset 제한 등으로 이 StrategyVersion을 만들 수 없음(`docs/DOMAIN.md` §1.5, 정확한 조건 TODO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /strategies/{strategyId}/versions/preview:
+    post:
+      operationId: previewStrategy
+      tags: [strategies]
+      summary: 저장하지 않고 자연어 미리보기 생성 (`PreviewStrategy`)
+      description: |
+        `DefineStrategyVersionRequest`와 동일한 바디를 받아, StrategyVersion을 생성하지 않고
+        자연어 문장만 반환한다. 사용자가 조건을 편집하는 동안(Level 1~3, `docs/ROADMAP.md` Phase 1
+        UX) 실시간으로 호출된다. DSL과 문장이 항상 1:1 대응해야 한다(`docs/DOMAIN.md` §1.2 예시).
+      parameters:
+        - $ref: '#/components/parameters/StrategyIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DefineStrategyVersionRequest'
+      responses:
+        '200':
+          description: |
+            OK. 구조적으로 불완전한 입력(예: conditions 빈 배열)이어도 가능한 범위까지 문장으로
+            표현하고 400을 던지지 않는다 — 미리보기는 저장 전 자유 편집 상태를 위한 것이기 때문.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [previewText]
+                properties:
+                  previewText: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============ Backtest ============
+  /strategy-versions/{versionId}/backtests:
+    post:
+      operationId: runBacktest
+      tags: [backtests]
+      summary: 백테스트 실행 요청, 항상 비동기 (`RunBacktest`)
+      description: |
+        요청 즉시 `BacktestRun(status=PENDING)`을 반환한다. 절대 동기로 결과를 기다리지 않는다
+        (`AGENTS.md` §4, `AI_AGENT.md` §2). 실제 계산은 Core가 내부적으로 Compute의
+        `POST /backtests`(`compute-api.yaml`)에 위임한다 — 이 위임은 Web에 노출되지 않는다.
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [period, feeModel]
+              properties:
+                period:
+                  $ref: 'compute-api.yaml#/components/schemas/Period'
+                feeModel:
+                  $ref: 'compute-api.yaml#/components/schemas/FeeModel'
+      responses:
+        '202':
+          description: 접수됨.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BacktestRunSummary'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 월 백테스트 횟수 한도 초과 등(Free/Pro 제한, `docs/DOMAIN.md` §1.5).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /backtest-runs/{runId}:
+    get:
+      operationId: getBacktestRun
+      tags: [backtests]
+      summary: 상태 폴링 및 결과 조회 (`PollBacktestStatus`, `GetBacktestResult` 통합)
+      description: |
+        Web은 이 엔드포인트를 2~3초 간격으로 폴링한다(`docs/ARCHITECTURE.md` §5). `status`가
+        `COMPLETED`일 때만 `result`가 존재하고, `FAILED`일 때만 `failureReason`/`errorCode`가
+        존재한다(`docs/DOMAIN.md` §1.3 불변식).
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BacktestRunDetail'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /strategies/{strategyId}/backtest-runs:
+    get:
+      operationId: listBacktestRuns
+      tags: [backtests]
+      summary: 특정 Strategy의 백테스트 실행 이력 (`ListBacktestRuns`)
+      description: Second Backtest Rate 계측의 데이터 소스(`docs/ROADMAP.md` Phase 2).
+      parameters:
+        - $ref: '#/components/parameters/StrategyIdParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page, size, total]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BacktestRunSummary'
+                  page: { type: integer }
+                  size: { type: integer }
+                  total: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============ Asset / Data Explorer (읽기 전용 프록시) ============
+  /assets:
+    get:
+      operationId: listAssets
+      tags: [assets]
+      summary: MVP Asset Universe 목록 (`ListAssets`)
+      description: Core는 Compute의 `GET /assets`(`compute-api.yaml`) 응답을 그대로 프록시한다. Web은 Compute의 존재를 몰라도 된다(`AI_AGENT.md` §4).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [assets]
+                properties:
+                  assets:
+                    type: array
+                    items:
+                      $ref: 'compute-api.yaml#/components/schemas/Asset'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /assets/{symbol}/availability:
+    get:
+      operationId: getAssetAvailability
+      tags: [assets]
+      summary: 특정 Asset의 상장일/데이터 가용 구간 (`GetAssetAvailability`)
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            $ref: 'compute-api.yaml#/components/schemas/AssetSymbol'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: 'compute-api.yaml#/components/schemas/AssetAvailability'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /assets/series:
+    get:
+      operationId: getSeries
+      tags: [assets]
+      summary: Data Explorer용 다중 자산 시계열 (`GetSeries`)
+      description: Compute의 `GET /series`(`compute-api.yaml`)를 그대로 프록시한다.
+      parameters:
+        - name: symbols
+          in: query
+          required: true
+          description: "쉼표로 구분된 Asset Symbol 목록 (예: `QQQ,BTCUSDT`)"
+          schema: { type: string }
+          example: "QQQ,BTCUSDT"
+        - name: metric
+          in: query
+          required: true
+          schema:
+            $ref: 'compute-api.yaml#/components/schemas/SeriesMetric'
+        - name: start
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: end
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [series]
+                properties:
+                  series:
+                    type: array
+                    items:
+                      $ref: 'compute-api.yaml#/components/schemas/AssetSeries'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ============ Account ============
+  /auth/register:
+    post:
+      operationId: registerUser
+      tags: [account]
+      summary: 회원가입 (`RegisterUser`)
+      description: 인증 흐름 상세는 미확정 — 위 info.description "미확정 사항" 참고. 아래 바디는 최소 형태 잠정안.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                name: { type: string, nullable: true }
+      responses:
+        '201':
+          description: 생성됨.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /me/usage:
+    get:
+      operationId: getUsage
+      tags: [account]
+      summary: 이번 달 사용량 조회 (`GetUsage`)
+      description: 정확한 한도 수치는 미정(`docs/DOMAIN.md` §1.5) — `null`은 "아직 정해지지 않음/무제한"을 뜻하며 실제 구현 시 명확히 구분해야 한다.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usage'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/subscription/upgrade:
+    post:
+      operationId: upgradeSubscription
+      tags: [account]
+      summary: Free → Pro 전환 (`UpgradeSubscription`)
+      description: MVP는 상태값만 변경한다 — 실제 결제 연동은 Phase 5(`docs/ROADMAP.md`).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 자리표시자. 가입/로그인 플로우 자체는 미확정 — 위 info.description 참고.
+
+  parameters:
+    StrategyIdParam:
+      name: strategyId
+      in: path
+      required: true
+      schema: { type: string }
+    PageParam:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 0, default: 0 }
+    SizeParam:
+      name: size
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  responses:
+    Unauthorized:
+      description: 인증 실패.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: 존재하지 않거나 본인 소유가 아님.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    BadRequest:
+      description: 잘못된 요청.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+
+    # ---- Strategy ----
+    StrategySummary:
+      type: object
+      required: [id, name, createdAt, latestVersionId]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        latestVersionId:
+          type: string
+          nullable: true
+          description: 아직 StrategyVersion이 하나도 없으면 null.
+
+    StrategyDetail:
+      allOf:
+        - $ref: '#/components/schemas/StrategySummary'
+        - type: object
+          required: [versions]
+          properties:
+            versions:
+              type: array
+              items:
+                $ref: '#/components/schemas/StrategyVersion'
+
+    DefineStrategyVersionRequest:
+      type: object
+      required: [primarySignalAsset, conditions, executionAsset, lag, exit]
+      description: |
+        `docs/DOMAIN.md` §1.2 StrategyVersion 중 사용자가 지정하는 필드만 포함한다.
+        `positionPolicy`는 서버가 ADR-009 고정값으로 채우므로 요청 바디에 없다 — `compute-api.yaml`의
+        `StrategyVersionPayload`(Compute 전달용, positionPolicy 포함)와는 다른 스키마다.
+      properties:
+        primarySignalAsset:
+          $ref: 'compute-api.yaml#/components/schemas/AssetSymbol'
+        conditions:
+          type: array
+          minItems: 1
+          items:
+            $ref: 'compute-api.yaml#/components/schemas/Condition'
+        executionAsset:
+          $ref: 'compute-api.yaml#/components/schemas/ExecutionAssetSymbol'
+        lag:
+          type: integer
+          minimum: 0
+        exit:
+          type: object
+          required: [holdingSignalSessions]
+          properties:
+            holdingSignalSessions: { type: integer, minimum: 1 }
+
+    StrategyVersion:
+      allOf:
+        - $ref: '#/components/schemas/DefineStrategyVersionRequest'
+        - type: object
+          required: [id, strategyId, createdAt]
+          properties:
+            id: { type: string }
+            strategyId: { type: string }
+            createdAt: { type: string, format: date-time }
+
+    StrategyVersionValidationError:
+      type: object
+      required: [message, violations]
+      description: Compute의 `ValidationErrorResponse`(DSL 의미론적 오류)와는 다른, Core 도메인 불변식 위반 전용 스키마(`docs/DOMAIN.md` §1.2).
+      properties:
+        message: { type: string }
+        violations:
+          type: array
+          items: { type: string }
+          example:
+            - "primarySignalAsset은 정확히 1개여야 합니다"
+            - "executionAsset으로 VIX를 지정할 수 없습니다"
+
+    # ---- Backtest ----
+    BacktestRunStatus:
+      type: string
+      enum: [PENDING, RUNNING, COMPLETED, FAILED]
+      description: "`compute-api.yaml`의 `BacktestStatus`와 동일한 값 집합(`docs/DOMAIN.md` §1.3)."
+
+    BacktestRunSummary:
+      type: object
+      required: [id, strategyId, strategyVersionId, status, requestedPeriod, feeModel, createdAt]
+      properties:
+        id: { type: string }
+        strategyId: { type: string }
+        strategyVersionId: { type: string }
+        status:
+          $ref: '#/components/schemas/BacktestRunStatus'
+        requestedPeriod:
+          $ref: 'compute-api.yaml#/components/schemas/Period'
+        feeModel:
+          $ref: 'compute-api.yaml#/components/schemas/FeeModel'
+        createdAt: { type: string, format: date-time }
+
+    BacktestRunDetail:
+      allOf:
+        - $ref: '#/components/schemas/BacktestRunSummary'
+        - type: object
+          properties:
+            actualPeriod:
+              allOf:
+                - $ref: 'compute-api.yaml#/components/schemas/Period'
+              nullable: true
+              description: Asset Availability 교집합 반영 후 실제 기간. PENDING이면 null(`docs/DOMAIN.md` §1.3).
+            datasetSnapshotId:
+              type: string
+              nullable: true
+              description: PENDING이면 null — Compute가 실행 시작 후 채움(`docs/DOMAIN.md` §1.3 불변식).
+            engineVersion:
+              type: string
+              nullable: true
+            result:
+              allOf:
+                - $ref: 'compute-api.yaml#/components/schemas/BacktestResult'
+              nullable: true
+              description: status가 COMPLETED일 때만 존재.
+            failureReason:
+              type: string
+              nullable: true
+              description: status가 FAILED일 때만 존재.
+            errorCode:
+              allOf:
+                - $ref: 'compute-api.yaml#/components/schemas/FatalErrorCode'
+              nullable: true
+
+    # ---- Account ----
+    User:
+      type: object
+      required: [id, email, createdAt]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    SubscriptionTier:
+      type: string
+      enum: [FREE, PRO]
+
+    Subscription:
+      type: object
+      required: [tier]
+      properties:
+        tier:
+          $ref: '#/components/schemas/SubscriptionTier'
+
+    Usage:
+      type: object
+      required: [tier, backtestsUsedThisMonth]
+      description: "`docs/DOMAIN.md` §1.5 Free/Pro 표를 조회 시점 값으로 반영. 한도 필드는 수치 미정이라 nullable(TODO)."
+      properties:
+        tier:
+          $ref: '#/components/schemas/SubscriptionTier'
+        backtestsUsedThisMonth: { type: integer }
+        backtestMonthlyLimit:
+          type: integer
+          nullable: true
+          description: null = 무제한 또는 미정(TODO).
+        allowedAssets:
+          type: array
+          nullable: true
+          items:
+            $ref: 'compute-api.yaml#/components/schemas/AssetSymbol'
+          description: null = 전체 Asset 허용.
+        maxBacktestPeriodDays:
+          type: integer
+          nullable: true
+          description: null = 제한 없음 또는 미정(TODO).
+        strategySaveEnabled: { type: boolean }
