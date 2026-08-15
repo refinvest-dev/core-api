@@ -23,3 +23,4 @@ postgresql = { module = "org.postgresql:postgresql" }
 h2 = { module = "com.h2database:h2" }
 jackson-module-kotlin = { module = "tools.jackson.module:jackson-module-kotlin" }
 spring-context = { module = "org.springframework:spring-context", version.ref = "spring-framework" }
+spring-tx = { module = "org.springframework:spring-tx", version.ref = "spring-framework" }

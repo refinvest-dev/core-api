@@ -15,7 +15,7 @@ class GetStrategyServiceTest {
         val id = StrategyId(1L)
         val service = GetStrategyService(
             StrategyReader {
-                StrategyReadModel(id, "volatility hypothesis", Instant.parse("2026-08-11T00:00:00Z"), null)
+                StrategyReadModel(id, "volatility hypothesis", Instant.parse("2026-08-11T00:00:00Z"), null, emptyList())
             },
         )
 
