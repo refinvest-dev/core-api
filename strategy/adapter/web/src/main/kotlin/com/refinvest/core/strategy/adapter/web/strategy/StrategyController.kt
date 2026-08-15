@@ -2,12 +2,16 @@ package com.refinvest.core.strategy.adapter.web.strategy
 
 import com.refinvest.core.strategy.adapter.web.strategy.create.CreateStrategyRequest
 import com.refinvest.core.strategy.adapter.web.strategy.create.CreateStrategyResponse
+import com.refinvest.core.strategy.adapter.web.strategy.define.DefineStrategyVersionRequest
+import com.refinvest.core.strategy.adapter.web.strategy.define.DefineStrategyVersionResponse
 import com.refinvest.core.strategy.adapter.web.strategy.get.GetStrategyResponse
+import com.refinvest.core.strategy.adapter.web.strategy.get.GetStrategyVersionResponse
 import com.refinvest.core.strategy.domain.StrategyId
 import com.refinvest.core.strategy.port.inbound.strategy.create.CreateStrategyCommand
 import com.refinvest.core.strategy.port.inbound.strategy.create.CreateStrategyUseCase
 import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyQuery
 import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyUseCase
+import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionUseCase
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
@@ -24,6 +28,7 @@ import org.springframework.web.server.ResponseStatusException
 class StrategyController(
     private val createStrategyUseCase: CreateStrategyUseCase,
     private val getStrategyUseCase: GetStrategyUseCase,
+    private val defineStrategyVersionUseCase: DefineStrategyVersionUseCase,
 ) {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -46,6 +51,20 @@ class StrategyController(
             name = result.name,
             createdAt = result.createdAt,
             latestVersionId = result.latestVersionId?.value?.toString(),
+            versions = result.versions.map { GetStrategyVersionResponse.from(result.id.value.toString(), it) },
         )
+    }
+
+    @PostMapping("/{strategyId}/versions")
+    @ResponseStatus(HttpStatus.CREATED)
+    fun defineVersion(
+        @PathVariable strategyId: Long,
+        @Valid @RequestBody request: DefineStrategyVersionRequest,
+    ): DefineStrategyVersionResponse = try {
+        defineStrategyVersionUseCase.execute(request.toCommand(StrategyId(strategyId)))
+            ?.let(DefineStrategyVersionResponse::from)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Strategy not found")
+    } catch (exception: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message, exception)
     }
 }

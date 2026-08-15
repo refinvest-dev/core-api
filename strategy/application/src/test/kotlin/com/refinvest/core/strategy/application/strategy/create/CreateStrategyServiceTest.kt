@@ -21,7 +21,13 @@ class CreateStrategyServiceTest {
         val memberId = MemberId(2L)
         var saved: Strategy? = null
         val service = CreateStrategyService(
-            strategyStore = StrategyStore { saved = it },
+            strategyStore = object : StrategyStore {
+                override fun findById(id: StrategyId): Strategy? = null
+
+                override fun save(strategy: Strategy) {
+                    saved = strategy
+                }
+            },
             strategyIdGenerator = StrategyIdGenerator { id },
             memberIdProvider = MemberIdProvider { memberId },
             clock = Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"), ZoneOffset.UTC),

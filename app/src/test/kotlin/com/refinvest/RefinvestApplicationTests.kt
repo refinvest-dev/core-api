@@ -106,6 +106,98 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `defines a strategy version through HTTP and returns it from strategy retrieval`() {
+        val created = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"name\":\"volatility hypothesis\"}"))
+                .build(),
+            HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+        )
+        val strategyId = "\"id\":\"(\\d+)\"".toRegex().find(created.body())?.groupValues?.get(1)
+        assertTrue(created.statusCode() == 201 && strategyId != null, created.body())
+
+        val defined = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies/$strategyId/versions"))
+                .header("Content-Type", "application/json")
+                .POST(
+                    HttpRequest.BodyPublishers.ofString(
+                        """{
+                        |  "primarySignalAsset":"QQQ",
+                        |  "conditions":[{
+                        |    "operator":"LT",
+                        |    "operandA":{"asset":"QQQ","metric":"RETURN","window":5},
+                        |    "operandB":-0.07
+                        |  }],
+                        |  "executionAsset":"TQQQ",
+                        |  "lag":3,
+                        |  "exit":{"holdingSignalSessions":5}
+                        |}""".trimMargin(),
+                    ),
+                )
+                .build(),
+            HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+        )
+
+        assertTrue(defined.statusCode() == 201, defined.body())
+        assertTrue(defined.body().contains("\"strategyId\":\"$strategyId\""), defined.body())
+        assertTrue(jdbcTemplate.queryForObject("select count(*) from strategy_versions", Long::class.java) == 1L)
+
+        val retrieved = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies/$strategyId")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(retrieved.statusCode() == 200, retrieved.body())
+        assertTrue(retrieved.body().contains("\"primarySignalAsset\":\"QQQ\""), retrieved.body())
+        assertTrue(retrieved.body().contains("\"latestVersionId\":"), retrieved.body())
+    }
+
+    @Test
+    fun `rejects VIX as an execution asset when defining a strategy version`() {
+        val created = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"name\":\"volatility hypothesis\"}"))
+                .build(),
+            HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+        )
+        val strategyId = "\"id\":\"(\\d+)\"".toRegex().find(created.body())?.groupValues?.get(1)
+        assertTrue(created.statusCode() == 201 && strategyId != null, created.body())
+
+        val response = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies/$strategyId/versions"))
+                .header("Content-Type", "application/json")
+                .POST(
+                    HttpRequest.BodyPublishers.ofString(
+                        """{
+                        |  "primarySignalAsset":"QQQ",
+                        |  "conditions":[{
+                        |    "operator":"GT",
+                        |    "operandA":{"asset":"QQQ","metric":"SIMPLE"},
+                        |    "operandB":1
+                        |  }],
+                        |  "executionAsset":"VIX",
+                        |  "lag":0,
+                        |  "exit":{"holdingSignalSessions":1}
+                        |}""".trimMargin(),
+                    ),
+                )
+                .build(),
+            HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+        )
+
+        assertTrue(response.statusCode() == 400, response.body())
+        assertTrue(
+            jdbcTemplate.queryForObject(
+                "select count(*) from strategy_versions where strategy_id = ?",
+                Long::class.java,
+                strategyId.toLong(),
+            ) == 0L,
+        )
+    }
+
+    @Test
     fun `returns not found for an unknown strategy`() {
         val response = HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI("http://localhost:$port/strategies/999999999999999999")).GET().build(),
