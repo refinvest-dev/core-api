@@ -20,6 +20,8 @@ include(
     ":backtest:application",
     ":backtest:adapter:compute",
     ":backtest:adapter:snowflake",
+    ":backtest:adapter:persistence",
+    ":backtest:adapter:web",
     ":shared:kernel",
     ":shared:infrastructure",
     ":app",

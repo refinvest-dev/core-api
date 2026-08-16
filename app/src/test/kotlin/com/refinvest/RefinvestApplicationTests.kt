@@ -1,6 +1,7 @@
 package com.refinvest
 
 import com.refinvest.core.strategy.port.outbound.StrategyIdGenerator
+import com.refinvest.core.backtest.port.outbound.BacktestRunIdGenerator
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -26,6 +27,7 @@ import kotlin.test.assertTrue
 )
 class RefinvestApplicationTests(
     @Autowired private val strategyIdGenerator: StrategyIdGenerator,
+    @Autowired private val backtestRunIdGenerator: BacktestRunIdGenerator,
     @Autowired private val jdbcTemplate: JdbcTemplate,
     @LocalServerPort private val port: Int,
 ) {
@@ -42,6 +44,15 @@ class RefinvestApplicationTests(
 		assertTrue(first.value > 0)
 		assertNotEquals(first, second)
 	}
+
+    @Test
+    fun `snowflake backtest run id generator is wired`() {
+        val first = backtestRunIdGenerator.next()
+        val second = backtestRunIdGenerator.next()
+
+        assertTrue(first.value > 0)
+        assertNotEquals(first, second)
+    }
 
     @Test
     fun `health includes datasource status`() {
@@ -205,6 +216,64 @@ class RefinvestApplicationTests(
         )
 
         assertTrue(response.statusCode() == 404, response.body())
+    }
+
+    @Test
+    fun `creates a pending backtest run through HTTP and persists it`() {
+        val response = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategy-versions/42/backtests"))
+                .header("Content-Type", "application/json")
+                .POST(
+                    HttpRequest.BodyPublishers.ofString(
+                        """{
+                        |  "period":{"start":"2025-01-01","end":"2025-12-31"},
+                        |  "feeModel":{"commission":0.001,"slippage":0.002}
+                        |}""".trimMargin(),
+                    ),
+                )
+                .build(),
+            HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+        )
+
+        assertTrue(response.statusCode() == 202, response.body())
+        val id = "\\\"id\\\":\\\"(\\d+)\\\"".toRegex().find(response.body())?.groupValues?.get(1)?.toLong()
+        assertTrue(id != null, response.body())
+        assertTrue(response.body().contains("\"strategyVersionId\":\"42\""), response.body())
+        assertTrue(response.body().contains("\"status\":\"PENDING\""), response.body())
+        assertTrue(
+            jdbcTemplate.queryForObject(
+                "select status from backtest_runs where id = ?",
+                String::class.java,
+                id,
+            ) == "PENDING",
+        )
+        assertTrue(
+            jdbcTemplate.queryForObject(
+                "select strategy_version_id from backtest_runs where id = ?",
+                Long::class.java,
+                id,
+            ) == 42L,
+        )
+    }
+
+    @Test
+    fun `rejects an invalid backtest period`() {
+        val response = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategy-versions/42/backtests"))
+                .header("Content-Type", "application/json")
+                .POST(
+                    HttpRequest.BodyPublishers.ofString(
+                        """{
+                        |  "period":{"start":"2025-12-31","end":"2025-01-01"},
+                        |  "feeModel":{"commission":0.001,"slippage":0.002}
+                        |}""".trimMargin(),
+                    ),
+                )
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(response.statusCode() == 400, response.body())
     }
 
 }
