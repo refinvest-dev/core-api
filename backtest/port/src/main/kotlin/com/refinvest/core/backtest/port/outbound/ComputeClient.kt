@@ -1,9 +1,9 @@
 package com.refinvest.core.backtest.port.outbound
 
-import com.refinvest.core.backtest.domain.DatasetSnapshotId
-import com.refinvest.core.backtest.domain.FeeModel
-import com.refinvest.core.backtest.domain.Period
-import com.refinvest.core.backtest.domain.StrategyVersionId
+import com.refinvest.core.backtest.domain.valueobject.DatasetSnapshotId
+import com.refinvest.core.backtest.domain.valueobject.FeeModel
+import com.refinvest.core.backtest.domain.valueobject.Period
+import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 
 /**
  * Port for Compute's asynchronous backtest API.

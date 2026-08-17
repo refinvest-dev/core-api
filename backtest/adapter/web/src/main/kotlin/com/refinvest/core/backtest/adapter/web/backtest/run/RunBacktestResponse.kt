@@ -1,9 +1,7 @@
 package com.refinvest.core.backtest.adapter.web.backtest.run
 
 import com.refinvest.core.backtest.port.inbound.backtest.run.RunBacktestResult
-import java.math.BigDecimal
 import java.time.Instant
-import java.time.LocalDate
 
 data class RunBacktestResponse(
     val id: String,
@@ -24,13 +22,3 @@ data class RunBacktestResponse(
         )
     }
 }
-
-data class PeriodResponse(
-    val start: LocalDate,
-    val end: LocalDate,
-)
-
-data class FeeModelResponse(
-    val commission: BigDecimal,
-    val slippage: BigDecimal,
-)

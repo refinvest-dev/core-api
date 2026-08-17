@@ -1,37 +1,15 @@
 package com.refinvest.core.backtest.domain
 
 import com.refinvest.core.common.domain.AggregateRoot
-import java.math.BigDecimal
+import com.refinvest.core.backtest.domain.backtest.BacktestResult
+import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
+import com.refinvest.core.backtest.domain.valueobject.BacktestRunStatus
+import com.refinvest.core.backtest.domain.valueobject.DatasetSnapshotId
+import com.refinvest.core.backtest.domain.valueobject.EngineVersion
+import com.refinvest.core.backtest.domain.valueobject.FeeModel
+import com.refinvest.core.backtest.domain.valueobject.Period
+import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import java.time.Instant
-import java.time.LocalDate
-
-enum class BacktestRunStatus {
-    PENDING,
-    RUNNING,
-    COMPLETED,
-    FAILED,
-}
-
-data class Period(
-    val start: LocalDate,
-    val end: LocalDate,
-) {
-    init {
-        require(!end.isBefore(start)) { "period end must not be before start" }
-    }
-}
-
-@JvmInline
-value class Percent(val value: BigDecimal) {
-    init {
-        require(value >= BigDecimal.ZERO) { "percent must not be negative" }
-    }
-}
-
-data class FeeModel(
-    val commission: Percent,
-    val slippage: Percent,
-)
 
 class BacktestRun private constructor(
     override val id: BacktestRunId,

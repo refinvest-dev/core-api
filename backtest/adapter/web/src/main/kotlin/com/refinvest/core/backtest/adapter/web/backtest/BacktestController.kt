@@ -2,7 +2,7 @@ package com.refinvest.core.backtest.adapter.web.backtest
 
 import com.refinvest.core.backtest.adapter.web.backtest.run.RunBacktestRequest
 import com.refinvest.core.backtest.adapter.web.backtest.run.RunBacktestResponse
-import com.refinvest.core.backtest.domain.StrategyVersionId
+import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import com.refinvest.core.backtest.port.inbound.backtest.run.RunBacktestUseCase
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus

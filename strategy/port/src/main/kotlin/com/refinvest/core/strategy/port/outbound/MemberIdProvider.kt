@@ -1,6 +1,6 @@
 package com.refinvest.core.strategy.port.outbound
 
-import com.refinvest.core.strategy.domain.MemberId
+import com.refinvest.core.strategy.domain.valueobject.MemberId
 
 /** Supplies the member executing a Strategy use case; authentication will provide this in production. */
 fun interface MemberIdProvider {

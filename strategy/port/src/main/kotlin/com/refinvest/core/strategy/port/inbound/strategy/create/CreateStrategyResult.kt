@@ -1,6 +1,6 @@
 package com.refinvest.core.strategy.port.inbound.strategy.create
 
-import com.refinvest.core.strategy.domain.StrategyId
+import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import java.time.Instant
 
 data class CreateStrategyResult(

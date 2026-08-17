@@ -1,8 +1,5 @@
 package com.refinvest.core.strategy.adapter.web.strategy.define
 
-import com.refinvest.core.strategy.domain.Condition
-import com.refinvest.core.strategy.domain.LiteralValue
-import com.refinvest.core.strategy.domain.MetricOperand
 import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionResult
 import java.time.Instant
 
@@ -29,37 +26,3 @@ data class DefineStrategyVersionResponse(
         )
     }
 }
-
-data class ConditionResponse(
-    val operator: String,
-    val logicalCombinator: String?,
-    val operandA: MetricReferenceResponse,
-    val operandB: Any,
-) {
-    companion object {
-        fun from(condition: Condition): ConditionResponse = ConditionResponse(
-            operator = condition.operator.name,
-            logicalCombinator = condition.logicalCombinator?.name,
-            operandA = MetricReferenceResponse.from(condition.operandA),
-            operandB = when (val operandB = condition.operandB) {
-                is LiteralValue -> operandB.value
-                is MetricOperand -> MetricReferenceResponse.from(operandB.reference)
-            },
-        )
-    }
-}
-
-data class MetricReferenceResponse(
-    val asset: String,
-    val metric: String,
-    val window: Int?,
-) {
-    companion object {
-        fun from(reference: com.refinvest.core.strategy.domain.MetricReference): MetricReferenceResponse =
-            MetricReferenceResponse(reference.asset.name, reference.metric.name, reference.window)
-    }
-}
-
-data class TimeBasedExitResponse(
-    val holdingSignalSessions: Int,
-)

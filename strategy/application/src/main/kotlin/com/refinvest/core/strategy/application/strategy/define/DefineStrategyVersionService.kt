@@ -1,6 +1,6 @@
 package com.refinvest.core.strategy.application.strategy.define
 
-import com.refinvest.core.strategy.domain.StrategyVersion
+import com.refinvest.core.strategy.domain.strategy.StrategyVersion
 import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionCommand
 import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionResult
 import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionUseCase

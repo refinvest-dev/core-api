@@ -1,6 +1,6 @@
 package com.refinvest.core.config
 
-import com.refinvest.core.strategy.domain.MemberId
+import com.refinvest.core.strategy.domain.valueobject.MemberId
 import com.refinvest.core.strategy.port.outbound.MemberIdProvider
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
