@@ -1,7 +1,7 @@
 package com.refinvest.core.backtest.adapter.out.persistence
 
 import com.refinvest.core.backtest.domain.BacktestRun
-import com.refinvest.core.backtest.domain.BacktestRunStatus
+import com.refinvest.core.backtest.domain.valueobject.BacktestRunStatus
 import com.refinvest.core.backtest.port.outbound.BacktestRunStore
 import org.springframework.stereotype.Repository
 

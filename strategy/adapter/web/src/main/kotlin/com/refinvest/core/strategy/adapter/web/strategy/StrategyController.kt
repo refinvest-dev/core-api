@@ -6,7 +6,7 @@ import com.refinvest.core.strategy.adapter.web.strategy.define.DefineStrategyVer
 import com.refinvest.core.strategy.adapter.web.strategy.define.DefineStrategyVersionResponse
 import com.refinvest.core.strategy.adapter.web.strategy.get.GetStrategyResponse
 import com.refinvest.core.strategy.adapter.web.strategy.get.GetStrategyVersionResponse
-import com.refinvest.core.strategy.domain.StrategyId
+import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import com.refinvest.core.strategy.port.inbound.strategy.create.CreateStrategyCommand
 import com.refinvest.core.strategy.port.inbound.strategy.create.CreateStrategyUseCase
 import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyQuery

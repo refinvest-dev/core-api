@@ -1,11 +1,11 @@
 package com.refinvest.core.strategy.port.inbound.strategy.define
 
-import com.refinvest.core.strategy.domain.AssetSymbol
-import com.refinvest.core.strategy.domain.Condition
-import com.refinvest.core.strategy.domain.SignalSessions
-import com.refinvest.core.strategy.domain.StrategyId
-import com.refinvest.core.strategy.domain.StrategyVersionId
-import com.refinvest.core.strategy.domain.TimeBasedExit
+import com.refinvest.core.strategy.domain.valueobject.AssetSymbol
+import com.refinvest.core.strategy.domain.valueobject.Condition
+import com.refinvest.core.strategy.domain.valueobject.SignalSessions
+import com.refinvest.core.strategy.domain.valueobject.StrategyId
+import com.refinvest.core.strategy.domain.valueobject.StrategyVersionId
+import com.refinvest.core.strategy.domain.valueobject.TimeBasedExit
 import java.time.Instant
 
 data class DefineStrategyVersionResult(

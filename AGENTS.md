@@ -50,7 +50,17 @@
   generator port는 feature port에, Snowflake 구현은 `:shared:infrastructure`, feature ID
   변환 adapter는 `<feature>:adapter:snowflake`에 둔다.
 
-## 5. Gradle conventions
+## 5. Domain organization
+
+- Domain은 Aggregate 중심으로 구성한다. Aggregate Root는 feature `domain` package 최상위에 둔다.
+- Value Object, Policy, Domain Service, Event, Exception은 성격별 하위 package로 분리한다.
+  독립적인 domain concept는 기본적으로 별도 파일에 두되, 구현에 강하게 결합된 private/helper type은
+  같은 파일에 둘 수 있다.
+- Aggregate Root가 아닌 Entity는 전역 `entity` directory에 모으지 않는다. 특정 Aggregate에
+  강하게 결합된 Entity와 그 구성 타입은 해당 Aggregate 경계를 기준으로 하위 package에 둔다.
+- 불필요하게 깊은 package hierarchy나 단순한 타입만을 위한 Aggregate 하위 package는 만들지 않는다.
+
+## 6. Gradle conventions
 
 - 모든 Kotlin/JVM 모듈의 공통 설정과 테스트 의존성은 included build `build-logic`의
   `kotlin-common-conventions`를 사용한다.

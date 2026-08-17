@@ -1,12 +1,12 @@
 package com.refinvest.core.backtest.application.backtest.run
 
 import com.refinvest.core.backtest.domain.BacktestRun
-import com.refinvest.core.backtest.domain.BacktestRunId
-import com.refinvest.core.backtest.domain.BacktestRunStatus
-import com.refinvest.core.backtest.domain.FeeModel
-import com.refinvest.core.backtest.domain.Percent
-import com.refinvest.core.backtest.domain.Period
-import com.refinvest.core.backtest.domain.StrategyVersionId
+import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
+import com.refinvest.core.backtest.domain.valueobject.BacktestRunStatus
+import com.refinvest.core.backtest.domain.valueobject.FeeModel
+import com.refinvest.core.backtest.domain.valueobject.Percent
+import com.refinvest.core.backtest.domain.valueobject.Period
+import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import com.refinvest.core.backtest.port.inbound.backtest.run.RunBacktestCommand
 import com.refinvest.core.backtest.port.outbound.BacktestRunIdGenerator
 import com.refinvest.core.backtest.port.outbound.BacktestRunStore

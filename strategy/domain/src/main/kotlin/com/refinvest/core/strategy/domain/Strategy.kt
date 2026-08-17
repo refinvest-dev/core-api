@@ -1,6 +1,9 @@
 package com.refinvest.core.strategy.domain
 
 import com.refinvest.core.common.domain.AggregateRoot
+import com.refinvest.core.strategy.domain.strategy.StrategyVersion
+import com.refinvest.core.strategy.domain.valueobject.MemberId
+import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import java.time.Instant
 
 class Strategy private constructor(
