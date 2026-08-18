@@ -257,6 +257,46 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `polls a pending backtest run through HTTP after it is created`() {
+        val created = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategy-versions/42/backtests"))
+                .header("Content-Type", "application/json")
+                .POST(
+                    HttpRequest.BodyPublishers.ofString(
+                        """{
+                        |  "period":{"start":"2025-01-01","end":"2025-12-31"},
+                        |  "feeModel":{"commission":0.001,"slippage":0.002}
+                        |}""".trimMargin(),
+                    ),
+                )
+                .build(),
+            HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+        )
+        val runId = "\\\"id\\\":\\\"(\\d+)\\\"".toRegex().find(created.body())?.groupValues?.get(1)
+        assertTrue(created.statusCode() == 202 && runId != null, created.body())
+
+        val polled = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/backtest-runs/$runId")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(polled.statusCode() == 200, polled.body())
+        assertTrue(polled.body().contains("\"id\":\"$runId\""), polled.body())
+        assertTrue(polled.body().contains("\"strategyVersionId\":\"42\""), polled.body())
+        assertTrue(polled.body().contains("\"status\":\"PENDING\""), polled.body())
+    }
+
+    @Test
+    fun `returns not found when polling an unknown backtest run`() {
+        val response = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/backtest-runs/999999999999999999")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(response.statusCode() == 404, response.body())
+    }
+
+    @Test
     fun `rejects an invalid backtest period`() {
         val response = HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI("http://localhost:$port/strategy-versions/42/backtests"))
