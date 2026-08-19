@@ -1,5 +1,14 @@
 package com.refinvest
 
+import com.refinvest.core.backtest.domain.backtest.BacktestResult
+import com.refinvest.core.backtest.domain.backtest.BacktestResultMetrics
+import com.refinvest.core.backtest.domain.backtest.Benchmark
+import com.refinvest.core.backtest.domain.backtest.BuyAndHoldResult
+import com.refinvest.core.backtest.domain.backtest.DataIntegrityStatus
+import com.refinvest.core.backtest.domain.backtest.SampleSizeWarning
+import com.refinvest.core.backtest.domain.backtest.SignalExecutionDelay
+import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
+import com.refinvest.core.backtest.domain.valueobject.DatasetSnapshotId
 import com.refinvest.core.strategy.port.outbound.StrategyIdGenerator
 import com.refinvest.core.backtest.port.outbound.BacktestRunIdGenerator
 import org.junit.jupiter.api.Test
@@ -8,6 +17,10 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.test.context.TestPropertySource
 import org.springframework.jdbc.core.JdbcTemplate
+import tools.jackson.databind.ObjectMapper
+import java.math.BigDecimal
+import java.time.Instant
+import java.time.LocalDate
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -29,6 +42,7 @@ class RefinvestApplicationTests(
     @Autowired private val strategyIdGenerator: StrategyIdGenerator,
     @Autowired private val backtestRunIdGenerator: BacktestRunIdGenerator,
     @Autowired private val jdbcTemplate: JdbcTemplate,
+    @Autowired private val objectMapper: ObjectMapper,
     @LocalServerPort private val port: Int,
 ) {
 
@@ -308,6 +322,22 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `returns a persisted completed backtest result through HTTP`() {
+        seedCompletedBacktestRun(99L)
+
+        val response = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/backtest-runs/99")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(response.statusCode() == 200, response.body())
+        assertTrue(response.body().contains("\"status\":\"COMPLETED\""), response.body())
+        assertTrue(response.body().contains("\"datasetSnapshotId\":\"snapshot-99\""), response.body())
+        assertTrue(response.body().contains("\"totalReturn\":0.10"), response.body())
+        assertTrue(response.body().contains("\"backtestRunId\":\"99\""), response.body())
+    }
+
+    @Test
     fun `rejects an invalid backtest period`() {
         val response = HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI("http://localhost:$port/strategy-versions/42/backtests"))
@@ -359,5 +389,39 @@ class RefinvestApplicationTests(
             """.trimIndent(),
         )
     }
+
+    private fun seedCompletedBacktestRun(runId: Long) {
+        jdbcTemplate.update(
+            """
+            insert into backtest_runs (
+                id, strategy_id, strategy_version_id, requested_period_start, requested_period_end,
+                commission, slippage, status, actual_period_start, actual_period_end,
+                dataset_snapshot_id, engine_version, created_at
+            ) values (?, 7, 42, '2025-01-01', '2025-12-31', 0.001, 0.002, 'COMPLETED',
+                '2025-01-01', '2025-12-31', 'snapshot-99', 'engine-1', CURRENT_TIMESTAMP)
+            """.trimIndent(),
+            runId,
+        )
+        jdbcTemplate.update(
+            "insert into backtest_results (backtest_run_id, result_payload) values (?, ?)",
+            runId,
+            objectMapper.writeValueAsString(completedResult(runId)),
+        )
+    }
+
+    private fun completedResult(runId: Long): BacktestResult = BacktestResult(
+        backtestRunId = BacktestRunId(runId),
+        metrics = BacktestResultMetrics(
+            totalReturn = BigDecimal("0.10"), cagr = BigDecimal("0.08"), mdd = BigDecimal("0.03"),
+            sharpe = BigDecimal("1.20"), winRate = BigDecimal("0.60"), tradeCount = 3,
+            avgTradeReturn = BigDecimal("0.04"), avgHoldingPeriod = BigDecimal("5"), profitFactor = BigDecimal("1.50"),
+        ),
+        equityCurve = emptyList(),
+        trades = emptyList(),
+        benchmark = Benchmark(BuyAndHoldResult(BigDecimal("0.05"), BigDecimal("0.04"), BigDecimal("0.02")), null),
+        signalExecutionDelay = SignalExecutionDelay(BigDecimal.ONE, BigDecimal.ONE, emptyList()),
+        sampleSizeWarning = SampleSizeWarning.LOW,
+        dataIntegrityStatus = DataIntegrityStatus(DatasetSnapshotId("snapshot-99"), true, true),
+    )
 
 }

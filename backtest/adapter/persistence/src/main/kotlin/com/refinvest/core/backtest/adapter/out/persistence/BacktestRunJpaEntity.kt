@@ -30,10 +30,23 @@ class BacktestRunJpaEntity(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     var status: BacktestRunStatusJpa,
+    @Column(name = "actual_period_start")
+    var actualPeriodStart: LocalDate? = null,
+    @Column(name = "actual_period_end")
+    var actualPeriodEnd: LocalDate? = null,
+    @Column(name = "dataset_snapshot_id")
+    var datasetSnapshotId: String? = null,
+    @Column(name = "engine_version")
+    var engineVersion: String? = null,
+    @Column(name = "failure_reason")
+    var failureReason: String? = null,
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant,
 )
 
 enum class BacktestRunStatusJpa {
     PENDING,
+    RUNNING,
+    COMPLETED,
+    FAILED,
 }

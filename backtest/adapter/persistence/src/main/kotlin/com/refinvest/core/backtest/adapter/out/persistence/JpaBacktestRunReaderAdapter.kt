@@ -2,6 +2,8 @@ package com.refinvest.core.backtest.adapter.out.persistence
 
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunStatus
+import com.refinvest.core.backtest.domain.valueobject.DatasetSnapshotId
+import com.refinvest.core.backtest.domain.valueobject.EngineVersion
 import com.refinvest.core.backtest.domain.valueobject.FeeModel
 import com.refinvest.core.backtest.domain.valueobject.Percent
 import com.refinvest.core.backtest.domain.valueobject.Period
@@ -24,6 +26,12 @@ class JpaBacktestRunReaderAdapter(
                 requestedPeriod = Period(run.requestedPeriodStart, run.requestedPeriodEnd),
                 feeModel = FeeModel(Percent(run.commission), Percent(run.slippage)),
                 status = BacktestRunStatus.valueOf(run.status.name),
+                actualPeriod = run.actualPeriodStart?.let { start ->
+                    Period(start, requireNotNull(run.actualPeriodEnd))
+                },
+                datasetSnapshotId = run.datasetSnapshotId?.let(::DatasetSnapshotId),
+                engineVersion = run.engineVersion?.let(::EngineVersion),
+                failureReason = run.failureReason,
                 createdAt = run.createdAt,
             )
         }
