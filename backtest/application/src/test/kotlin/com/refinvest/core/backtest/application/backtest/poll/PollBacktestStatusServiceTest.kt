@@ -6,6 +6,7 @@ import com.refinvest.core.backtest.domain.valueobject.FeeModel
 import com.refinvest.core.backtest.domain.valueobject.Percent
 import com.refinvest.core.backtest.domain.valueobject.Period
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
+import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.port.inbound.backtest.poll.PollBacktestStatusQuery
 import com.refinvest.core.backtest.port.outbound.BacktestRunReadModel
 import com.refinvest.core.backtest.port.outbound.BacktestRunReader
@@ -24,6 +25,7 @@ class PollBacktestStatusServiceTest {
             BacktestRunReader { id ->
                 BacktestRunReadModel(
                     id = id,
+                    strategyId = StrategyId(30L),
                     strategyVersionId = StrategyVersionId(20L),
                     requestedPeriod = Period(LocalDate.of(2024, 1, 1), LocalDate.of(2024, 12, 31)),
                     feeModel = FeeModel(Percent(BigDecimal("0.001")), Percent(BigDecimal("0.002"))),
@@ -36,6 +38,7 @@ class PollBacktestStatusServiceTest {
         val result = service.execute(PollBacktestStatusQuery(runId))
 
         assertEquals(runId, result?.id)
+        assertEquals(StrategyId(30L), result?.strategyId)
         assertEquals(BacktestRunStatus.PENDING, result?.status)
     }
 

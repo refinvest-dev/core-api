@@ -220,6 +220,7 @@ class RefinvestApplicationTests(
 
     @Test
     fun `creates a pending backtest run through HTTP and persists it`() {
+        seedStrategyVersion()
         val response = HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI("http://localhost:$port/strategy-versions/42/backtests"))
                 .header("Content-Type", "application/json")
@@ -239,6 +240,7 @@ class RefinvestApplicationTests(
         val id = "\\\"id\\\":\\\"(\\d+)\\\"".toRegex().find(response.body())?.groupValues?.get(1)?.toLong()
         assertTrue(id != null, response.body())
         assertTrue(response.body().contains("\"strategyVersionId\":\"42\""), response.body())
+        assertTrue(response.body().contains("\"strategyId\":\"7\""), response.body())
         assertTrue(response.body().contains("\"status\":\"PENDING\""), response.body())
         assertTrue(
             jdbcTemplate.queryForObject(
@@ -254,10 +256,18 @@ class RefinvestApplicationTests(
                 id,
             ) == 42L,
         )
+        assertTrue(
+            jdbcTemplate.queryForObject(
+                "select strategy_id from backtest_runs where id = ?",
+                Long::class.java,
+                id,
+            ) == 7L,
+        )
     }
 
     @Test
     fun `polls a pending backtest run through HTTP after it is created`() {
+        seedStrategyVersion()
         val created = HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI("http://localhost:$port/strategy-versions/42/backtests"))
                 .header("Content-Type", "application/json")
@@ -283,6 +293,7 @@ class RefinvestApplicationTests(
         assertTrue(polled.statusCode() == 200, polled.body())
         assertTrue(polled.body().contains("\"id\":\"$runId\""), polled.body())
         assertTrue(polled.body().contains("\"strategyVersionId\":\"42\""), polled.body())
+        assertTrue(polled.body().contains("\"strategyId\":\"7\""), polled.body())
         assertTrue(polled.body().contains("\"status\":\"PENDING\""), polled.body())
     }
 
@@ -314,6 +325,39 @@ class RefinvestApplicationTests(
         )
 
         assertTrue(response.statusCode() == 400, response.body())
+    }
+
+    @Test
+    fun `returns not found when a strategy version does not exist`() {
+        val response = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategy-versions/999/backtests"))
+                .header("Content-Type", "application/json")
+                .POST(
+                    HttpRequest.BodyPublishers.ofString(
+                        """{
+                        |  "period":{"start":"2025-01-01","end":"2025-12-31"},
+                        |  "feeModel":{"commission":0.001,"slippage":0.002}
+                        |}""".trimMargin(),
+                    ),
+                )
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(response.statusCode() == 404, response.body())
+    }
+
+    private fun seedStrategyVersion() {
+        jdbcTemplate.update(
+            "merge into strategies (id, member_id, name, created_at) key(id) values (7, 1, 'backtest fixture', CURRENT_TIMESTAMP)",
+        )
+        jdbcTemplate.update(
+            """
+            merge into strategy_versions (
+                id, strategy_id, created_at, primary_signal_asset, execution_asset, lag, holding_signal_sessions
+            ) key(id) values (42, 7, CURRENT_TIMESTAMP, 'QQQ', 'QQQ', 0, 1)
+            """.trimIndent(),
+        )
     }
 
 }

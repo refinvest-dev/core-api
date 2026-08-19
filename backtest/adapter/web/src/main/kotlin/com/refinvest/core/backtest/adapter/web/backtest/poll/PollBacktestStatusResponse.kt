@@ -7,6 +7,7 @@ import java.time.Instant
 
 data class PollBacktestStatusResponse(
     val id: String,
+    val strategyId: String,
     val strategyVersionId: String,
     val status: String,
     val requestedPeriod: PeriodResponse,
@@ -16,6 +17,7 @@ data class PollBacktestStatusResponse(
     companion object {
         fun from(result: PollBacktestStatusResult): PollBacktestStatusResponse = PollBacktestStatusResponse(
             id = result.id.value.toString(),
+            strategyId = result.strategyId.value.toString(),
             strategyVersionId = result.strategyVersionId.value.toString(),
             status = result.status.name,
             requestedPeriod = PeriodResponse(result.requestedPeriod.start, result.requestedPeriod.end),

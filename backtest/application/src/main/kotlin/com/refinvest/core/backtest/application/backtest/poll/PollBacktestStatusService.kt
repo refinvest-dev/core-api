@@ -14,6 +14,7 @@ class PollBacktestStatusService(
         backtestRunReader.findById(query.backtestRunId)?.let { run ->
             PollBacktestStatusResult(
                 id = run.id,
+                strategyId = run.strategyId,
                 strategyVersionId = run.strategyVersionId,
                 requestedPeriod = run.requestedPeriod,
                 feeModel = run.feeModel,
