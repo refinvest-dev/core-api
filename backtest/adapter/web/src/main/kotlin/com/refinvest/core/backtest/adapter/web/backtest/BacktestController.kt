@@ -34,6 +34,8 @@ class BacktestController(
         )
     } catch (exception: IllegalArgumentException) {
         throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message, exception)
+    } catch (exception: NoSuchElementException) {
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, exception.message, exception)
     }
 
     @GetMapping("/backtest-runs/{runId}")

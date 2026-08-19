@@ -7,9 +7,13 @@ import com.refinvest.core.backtest.domain.valueobject.FeeModel
 import com.refinvest.core.backtest.domain.valueobject.Percent
 import com.refinvest.core.backtest.domain.valueobject.Period
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
+import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.port.inbound.backtest.run.RunBacktestCommand
 import com.refinvest.core.backtest.port.outbound.BacktestRunIdGenerator
 import com.refinvest.core.backtest.port.outbound.BacktestRunStore
+import com.refinvest.core.strategy.domain.valueobject.StrategyId as StrategyIdInStrategy
+import com.refinvest.core.strategy.port.inbound.strategy.version.lookup.LookupStrategyVersionOwnerResult
+import com.refinvest.core.strategy.port.inbound.strategy.version.lookup.LookupStrategyVersionOwnerUseCase
 import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
@@ -27,6 +31,9 @@ class RunBacktestServiceTest {
         val service = RunBacktestService(
             backtestRunStore = BacktestRunStore { saved = it },
             backtestRunIdGenerator = BacktestRunIdGenerator { id },
+            lookupStrategyVersionOwnerUseCase = LookupStrategyVersionOwnerUseCase {
+                LookupStrategyVersionOwnerResult(it.strategyVersionId, StrategyIdInStrategy(30L))
+            },
             clock = Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"), ZoneOffset.UTC),
         )
 
@@ -40,6 +47,7 @@ class RunBacktestServiceTest {
 
         assertEquals(id, result.id)
         assertEquals(BacktestRunStatus.PENDING, saved?.status)
+        assertEquals(StrategyId(30L), saved?.strategyId)
         assertEquals(StrategyVersionId(20L), saved?.strategyVersionId)
         assertNull(saved?.datasetSnapshotId)
         assertNull(saved?.engineVersion)

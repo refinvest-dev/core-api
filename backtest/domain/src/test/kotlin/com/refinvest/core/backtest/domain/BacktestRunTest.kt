@@ -15,6 +15,7 @@ import com.refinvest.core.backtest.domain.valueobject.FeeModel
 import com.refinvest.core.backtest.domain.valueobject.Percent
 import com.refinvest.core.backtest.domain.valueobject.Period
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
+import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -63,6 +64,7 @@ class BacktestRunTest {
 
     private fun pendingRun(): BacktestRun = BacktestRun.createPending(
         id = BacktestRunId(1L),
+        strategyId = StrategyId(3L),
         strategyVersionId = StrategyVersionId(2L),
         requestedPeriod = period(),
         feeModel = FeeModel(Percent(BigDecimal.ZERO), Percent(BigDecimal.ZERO)),

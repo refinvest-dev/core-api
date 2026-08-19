@@ -5,6 +5,7 @@ import java.time.Instant
 
 data class RunBacktestResponse(
     val id: String,
+    val strategyId: String,
     val strategyVersionId: String,
     val status: String,
     val requestedPeriod: PeriodResponse,
@@ -14,6 +15,7 @@ data class RunBacktestResponse(
     companion object {
         fun from(result: RunBacktestResult): RunBacktestResponse = RunBacktestResponse(
             id = result.id.value.toString(),
+            strategyId = result.strategyId.value.toString(),
             strategyVersionId = result.strategyVersionId.value.toString(),
             status = result.status.name,
             requestedPeriod = PeriodResponse(result.requestedPeriod.start, result.requestedPeriod.end),

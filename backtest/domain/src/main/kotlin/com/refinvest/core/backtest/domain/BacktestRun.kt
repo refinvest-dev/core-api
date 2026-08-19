@@ -9,10 +9,12 @@ import com.refinvest.core.backtest.domain.valueobject.EngineVersion
 import com.refinvest.core.backtest.domain.valueobject.FeeModel
 import com.refinvest.core.backtest.domain.valueobject.Period
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
+import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import java.time.Instant
 
 class BacktestRun private constructor(
     override val id: BacktestRunId,
+    val strategyId: StrategyId,
     val strategyVersionId: StrategyVersionId,
     val requestedPeriod: Period,
     val feeModel: FeeModel,
@@ -109,12 +111,14 @@ class BacktestRun private constructor(
     companion object {
         fun createPending(
             id: BacktestRunId,
+            strategyId: StrategyId,
             strategyVersionId: StrategyVersionId,
             requestedPeriod: Period,
             feeModel: FeeModel,
             createdAt: Instant,
         ): BacktestRun = BacktestRun(
             id = id,
+            strategyId = strategyId,
             strategyVersionId = strategyVersionId,
             requestedPeriod = requestedPeriod,
             feeModel = feeModel,

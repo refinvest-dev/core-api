@@ -15,6 +15,8 @@ import java.time.LocalDate
 class BacktestRunJpaEntity(
     @Id
     var id: Long,
+    @Column(name = "strategy_id", nullable = false)
+    var strategyId: Long,
     @Column(name = "strategy_version_id", nullable = false)
     var strategyVersionId: Long,
     @Column(name = "requested_period_start", nullable = false)

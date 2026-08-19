@@ -6,6 +6,7 @@ import com.refinvest.core.backtest.domain.valueobject.FeeModel
 import com.refinvest.core.backtest.domain.valueobject.Percent
 import com.refinvest.core.backtest.domain.valueobject.Period
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
+import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.port.outbound.BacktestRunReadModel
 import com.refinvest.core.backtest.port.outbound.BacktestRunReader
 import org.springframework.stereotype.Repository
@@ -18,6 +19,7 @@ class JpaBacktestRunReaderAdapter(
         backtestRunJpaReader.findById(id.value)?.let { run ->
             BacktestRunReadModel(
                 id = BacktestRunId(run.id),
+                strategyId = StrategyId(run.strategyId),
                 strategyVersionId = StrategyVersionId(run.strategyVersionId),
                 requestedPeriod = Period(run.requestedPeriodStart, run.requestedPeriodEnd),
                 feeModel = FeeModel(Percent(run.commission), Percent(run.slippage)),

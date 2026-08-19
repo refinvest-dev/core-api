@@ -17,6 +17,7 @@ class JpaBacktestRunStoreAdapter(
         check(status == BacktestRunStatus.PENDING) { "Only pending backtest runs can be persisted in this slice" }
         return BacktestRunJpaEntity(
             id = id.value,
+            strategyId = strategyId.value,
             strategyVersionId = strategyVersionId.value,
             requestedPeriodStart = requestedPeriod.start,
             requestedPeriodEnd = requestedPeriod.end,
