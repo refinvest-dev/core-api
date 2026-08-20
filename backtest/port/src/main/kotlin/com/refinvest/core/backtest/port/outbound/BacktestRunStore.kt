@@ -5,6 +5,8 @@ import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
 
 fun interface BacktestRunStore {
     fun save(backtestRun: BacktestRun)
+
+    fun findById(id: BacktestRunId): BacktestRun? = null
 }
 
 fun interface BacktestRunIdGenerator {
