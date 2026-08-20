@@ -137,6 +137,36 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `lists the current member's strategies through HTTP with pagination`() {
+        seedStrategy(8001L, 1L, "older strategy", "2099-01-01 00:00:00")
+        seedStrategy(8002L, 1L, "newer strategy", "2099-02-01 00:00:00")
+        seedStrategy(8003L, 2L, "another member strategy", "2099-03-01 00:00:00")
+
+        val firstPage = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies?page=0&size=1"))
+                .GET()
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(firstPage.statusCode() == 200, firstPage.body())
+        assertTrue(firstPage.body().contains("\"id\":\"8002\""), firstPage.body())
+        assertTrue(!firstPage.body().contains("another member strategy"), firstPage.body())
+        assertTrue(firstPage.body().contains("\"page\":0"), firstPage.body())
+        assertTrue(firstPage.body().contains("\"size\":1"), firstPage.body())
+
+        val secondPage = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies?page=1&size=1"))
+                .GET()
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(secondPage.statusCode() == 200, secondPage.body())
+        assertTrue(secondPage.body().contains("\"id\":\"8001\""), secondPage.body())
+    }
+
+    @Test
     fun `defines a strategy version through HTTP and returns it from strategy retrieval`() {
         val created = HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI("http://localhost:$port/strategies"))
@@ -477,6 +507,16 @@ class RefinvestApplicationTests(
                 id, strategy_id, created_at, primary_signal_asset, execution_asset, lag, holding_signal_sessions
             ) key(id) values (42, 7, CURRENT_TIMESTAMP, 'QQQ', 'QQQ', 0, 1)
             """.trimIndent(),
+        )
+    }
+
+    private fun seedStrategy(id: Long, memberId: Long, name: String, createdAt: String) {
+        jdbcTemplate.update(
+            "insert into strategies (id, member_id, name, created_at) values (?, ?, ?, ?)",
+            id,
+            memberId,
+            name,
+            java.sql.Timestamp.valueOf(createdAt),
         )
     }
 
