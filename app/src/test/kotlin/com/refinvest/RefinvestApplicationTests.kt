@@ -387,6 +387,47 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `lists a strategy's backtest runs through HTTP with pagination`() {
+        seedStrategy(777L)
+        seedStrategy(778L)
+        seedBacktestRun(7001L, 777L, "2025-01-01 00:00:00")
+        seedBacktestRun(7002L, 777L, "2025-02-01 00:00:00")
+        seedBacktestRun(7003L, 778L, "2025-03-01 00:00:00")
+
+        val firstPage = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies/777/backtest-runs?page=0&size=1"))
+                .GET()
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(firstPage.statusCode() == 200, firstPage.body())
+        assertTrue(firstPage.body().contains("\"id\":\"7002\""), firstPage.body())
+        assertTrue(firstPage.body().contains("\"total\":2"), firstPage.body())
+        assertTrue(firstPage.body().contains("\"page\":0"), firstPage.body())
+        assertTrue(firstPage.body().contains("\"size\":1"), firstPage.body())
+
+        val secondPage = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies/777/backtest-runs?page=1&size=1"))
+                .GET()
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(secondPage.statusCode() == 200, secondPage.body())
+        assertTrue(secondPage.body().contains("\"id\":\"7001\""), secondPage.body())
+
+        val missingStrategy = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies/999999/backtest-runs"))
+                .GET()
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(missingStrategy.statusCode() == 404, missingStrategy.body())
+    }
+
+    @Test
     fun `rejects an invalid backtest period`() {
         val response = HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI("http://localhost:$port/strategy-versions/42/backtests"))
@@ -455,6 +496,27 @@ class RefinvestApplicationTests(
             "insert into backtest_results (backtest_run_id, result_payload) values (?, ?)",
             runId,
             objectMapper.writeValueAsString(completedResult(runId)),
+        )
+    }
+
+    private fun seedStrategy(strategyId: Long) {
+        jdbcTemplate.update(
+            "merge into strategies (id, member_id, name, created_at) key(id) values (?, 1, 'backtest list fixture', CURRENT_TIMESTAMP)",
+            strategyId,
+        )
+    }
+
+    private fun seedBacktestRun(runId: Long, strategyId: Long, createdAt: String) {
+        jdbcTemplate.update(
+            """
+            insert into backtest_runs (
+                id, strategy_id, strategy_version_id, requested_period_start, requested_period_end,
+                commission, slippage, status, created_at
+            ) values (?, ?, 42, '2025-01-01', '2025-12-31', 0.001, 0.002, 'PENDING', ?)
+            """.trimIndent(),
+            runId,
+            strategyId,
+            java.sql.Timestamp.valueOf(createdAt),
         )
     }
 
