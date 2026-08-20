@@ -8,30 +8,43 @@ import com.refinvest.core.strategy.domain.valueobject.LogicalCombinator
 import com.refinvest.core.strategy.domain.valueobject.MetricOperand
 import com.refinvest.core.strategy.domain.valueobject.MetricReference
 import com.refinvest.core.strategy.domain.valueobject.MetricType
+import com.refinvest.core.strategy.domain.valueobject.MemberId
 import com.refinvest.core.strategy.domain.valueobject.SignalSessions
 import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import com.refinvest.core.strategy.domain.valueobject.StrategyVersionId
 import com.refinvest.core.strategy.domain.valueobject.TimeBasedExit
 import com.refinvest.core.strategy.port.outbound.StrategyReadModel
 import com.refinvest.core.strategy.port.outbound.StrategyReader
+import com.refinvest.core.strategy.port.outbound.StrategyPageReadModel
 import com.refinvest.core.strategy.port.outbound.StrategyVersionReadModel
 import org.springframework.stereotype.Repository
+import org.springframework.data.domain.PageRequest
 
 @Repository
 class JpaStrategyReaderAdapter(
     private val strategyJpaReader: StrategyJpaReader,
 ) : StrategyReader {
     override fun findById(id: StrategyId): StrategyReadModel? =
-        strategyJpaReader.findById(id.value)?.let { strategy ->
-            val versions = strategy.versions.map { it.toReadModel() }
-            StrategyReadModel(
-                id = StrategyId(strategy.id),
-                name = strategy.name,
-                createdAt = strategy.createdAt,
-                latestVersionId = versions.lastOrNull()?.id,
-                versions = versions,
-            )
-        }
+        strategyJpaReader.findById(id.value)?.toReadModel()
+
+    override fun findByMemberId(
+        memberId: MemberId,
+        page: Int,
+        size: Int,
+    ): StrategyPageReadModel = strategyJpaReader
+        .findAllByMemberIdOrderByCreatedAtDesc(memberId.value, PageRequest.of(page, size))
+        .let { strategies -> StrategyPageReadModel(strategies.content.map { it.toReadModel() }, strategies.totalElements) }
+
+    private fun StrategyJpaEntity.toReadModel(): StrategyReadModel {
+        val versions = versions.map { it.toReadModel() }
+        return StrategyReadModel(
+            id = StrategyId(id),
+            name = name,
+            createdAt = createdAt,
+            latestVersionId = versions.lastOrNull()?.id,
+            versions = versions,
+        )
+    }
 
     private fun StrategyVersionJpaEntity.toReadModel(): StrategyVersionReadModel = StrategyVersionReadModel(
         id = StrategyVersionId(id),

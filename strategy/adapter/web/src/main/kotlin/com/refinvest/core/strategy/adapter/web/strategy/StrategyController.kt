@@ -6,11 +6,14 @@ import com.refinvest.core.strategy.adapter.web.strategy.define.DefineStrategyVer
 import com.refinvest.core.strategy.adapter.web.strategy.define.DefineStrategyVersionResponse
 import com.refinvest.core.strategy.adapter.web.strategy.get.GetStrategyResponse
 import com.refinvest.core.strategy.adapter.web.strategy.get.GetStrategyVersionResponse
+import com.refinvest.core.strategy.adapter.web.strategy.list.ListStrategiesResponse
 import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import com.refinvest.core.strategy.port.inbound.strategy.create.CreateStrategyCommand
 import com.refinvest.core.strategy.port.inbound.strategy.create.CreateStrategyUseCase
 import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyQuery
 import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyUseCase
+import com.refinvest.core.strategy.port.inbound.strategy.list.ListStrategiesQuery
+import com.refinvest.core.strategy.port.inbound.strategy.list.ListStrategiesUseCase
 import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionUseCase
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
@@ -29,6 +33,7 @@ class StrategyController(
     private val createStrategyUseCase: CreateStrategyUseCase,
     private val getStrategyUseCase: GetStrategyUseCase,
     private val defineStrategyVersionUseCase: DefineStrategyVersionUseCase,
+    private val listStrategiesUseCase: ListStrategiesUseCase,
 ) {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -40,6 +45,16 @@ class StrategyController(
             createdAt = result.createdAt,
             latestVersionId = null,
         )
+    }
+
+    @GetMapping
+    fun list(
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "20") size: Int,
+    ): ListStrategiesResponse = try {
+        ListStrategiesResponse.from(listStrategiesUseCase.execute(ListStrategiesQuery(page, size)))
+    } catch (exception: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message, exception)
     }
 
     @GetMapping("/{strategyId}")
