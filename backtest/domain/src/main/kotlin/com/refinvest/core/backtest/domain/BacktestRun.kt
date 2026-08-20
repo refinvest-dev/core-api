@@ -130,5 +130,33 @@ class BacktestRun private constructor(
             result = null,
             failureReason = null,
         )
+
+        fun restore(
+            id: BacktestRunId,
+            strategyId: StrategyId,
+            strategyVersionId: StrategyVersionId,
+            requestedPeriod: Period,
+            feeModel: FeeModel,
+            createdAt: Instant,
+            status: BacktestRunStatus,
+            actualPeriod: Period?,
+            datasetSnapshotId: DatasetSnapshotId?,
+            engineVersion: EngineVersion?,
+            result: BacktestResult?,
+            failureReason: String?,
+        ): BacktestRun = BacktestRun(
+            id = id,
+            strategyId = strategyId,
+            strategyVersionId = strategyVersionId,
+            requestedPeriod = requestedPeriod,
+            feeModel = feeModel,
+            createdAt = createdAt,
+            status = status,
+            actualPeriod = actualPeriod,
+            datasetSnapshotId = datasetSnapshotId,
+            engineVersion = engineVersion,
+            result = result,
+            failureReason = failureReason,
+        )
     }
 }

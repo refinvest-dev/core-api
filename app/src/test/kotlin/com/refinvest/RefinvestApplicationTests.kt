@@ -9,6 +9,11 @@ import com.refinvest.core.backtest.domain.backtest.SampleSizeWarning
 import com.refinvest.core.backtest.domain.backtest.SignalExecutionDelay
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
 import com.refinvest.core.backtest.domain.valueobject.DatasetSnapshotId
+import com.refinvest.core.backtest.domain.valueobject.EngineVersion
+import com.refinvest.core.backtest.domain.valueobject.Period
+import com.refinvest.core.backtest.port.inbound.backtest.execution.CompleteBacktestRunCommand
+import com.refinvest.core.backtest.port.inbound.backtest.execution.RecordBacktestRunExecutionUseCase
+import com.refinvest.core.backtest.port.inbound.backtest.execution.StartBacktestRunCommand
 import com.refinvest.core.strategy.port.outbound.StrategyIdGenerator
 import com.refinvest.core.backtest.port.outbound.BacktestRunIdGenerator
 import org.junit.jupiter.api.Test
@@ -41,6 +46,7 @@ import kotlin.test.assertTrue
 class RefinvestApplicationTests(
     @Autowired private val strategyIdGenerator: StrategyIdGenerator,
     @Autowired private val backtestRunIdGenerator: BacktestRunIdGenerator,
+    @Autowired private val recordBacktestRunExecutionUseCase: RecordBacktestRunExecutionUseCase,
     @Autowired private val jdbcTemplate: JdbcTemplate,
     @Autowired private val objectMapper: ObjectMapper,
     @LocalServerPort private val port: Int,
@@ -338,6 +344,49 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `records a completed execution and exposes its persisted result through HTTP`() {
+        seedStrategyVersion()
+        val created = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategy-versions/42/backtests"))
+                .header("Content-Type", "application/json")
+                .POST(
+                    HttpRequest.BodyPublishers.ofString(
+                        """{
+                        |  "period":{"start":"2025-01-01","end":"2025-12-31"},
+                        |  "feeModel":{"commission":0.001,"slippage":0.002}
+                        |}""".trimMargin(),
+                    ),
+                )
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+        val runId = "\\\"id\\\":\\\"(\\d+)\\\"".toRegex().find(created.body())?.groupValues?.get(1)?.toLong()
+        assertTrue(created.statusCode() == 202 && runId != null, created.body())
+
+        recordBacktestRunExecutionUseCase.execute(
+            StartBacktestRunCommand(
+                backtestRunId = BacktestRunId(runId),
+                actualPeriod = Period(LocalDate.of(2025, 1, 1), LocalDate.of(2025, 12, 31)),
+                datasetSnapshotId = DatasetSnapshotId("snapshot-$runId"),
+                engineVersion = EngineVersion("engine-1"),
+            ),
+        )
+        recordBacktestRunExecutionUseCase.execute(
+            CompleteBacktestRunCommand(BacktestRunId(runId), completedResult(runId, "snapshot-$runId")),
+        )
+
+        val response = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/backtest-runs/$runId")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(response.statusCode() == 200, response.body())
+        assertTrue(response.body().contains("\"status\":\"COMPLETED\""), response.body())
+        assertTrue(response.body().contains("\"datasetSnapshotId\":\"snapshot-$runId\""), response.body())
+        assertTrue(response.body().contains("\"backtestRunId\":\"$runId\""), response.body())
+    }
+
+    @Test
     fun `rejects an invalid backtest period`() {
         val response = HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI("http://localhost:$port/strategy-versions/42/backtests"))
@@ -409,7 +458,7 @@ class RefinvestApplicationTests(
         )
     }
 
-    private fun completedResult(runId: Long): BacktestResult = BacktestResult(
+    private fun completedResult(runId: Long, datasetSnapshotId: String = "snapshot-99"): BacktestResult = BacktestResult(
         backtestRunId = BacktestRunId(runId),
         metrics = BacktestResultMetrics(
             totalReturn = BigDecimal("0.10"), cagr = BigDecimal("0.08"), mdd = BigDecimal("0.03"),
@@ -421,7 +470,7 @@ class RefinvestApplicationTests(
         benchmark = Benchmark(BuyAndHoldResult(BigDecimal("0.05"), BigDecimal("0.04"), BigDecimal("0.02")), null),
         signalExecutionDelay = SignalExecutionDelay(BigDecimal.ONE, BigDecimal.ONE, emptyList()),
         sampleSizeWarning = SampleSizeWarning.LOW,
-        dataIntegrityStatus = DataIntegrityStatus(DatasetSnapshotId("snapshot-99"), true, true),
+        dataIntegrityStatus = DataIntegrityStatus(DatasetSnapshotId(datasetSnapshotId), true, true),
     )
 
 }
