@@ -1,12 +1,16 @@
 package com.refinvest.core.backtest.adapter.web.backtest
 
 import com.refinvest.core.backtest.adapter.web.backtest.get.GetBacktestResultResponse
+import com.refinvest.core.backtest.adapter.web.backtest.list.ListBacktestRunsResponse
 import com.refinvest.core.backtest.adapter.web.backtest.run.RunBacktestRequest
 import com.refinvest.core.backtest.adapter.web.backtest.run.RunBacktestResponse
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
+import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import com.refinvest.core.backtest.port.inbound.backtest.get.GetBacktestResultQuery
 import com.refinvest.core.backtest.port.inbound.backtest.get.GetBacktestResultUseCase
+import com.refinvest.core.backtest.port.inbound.backtest.list.ListBacktestRunsQuery
+import com.refinvest.core.backtest.port.inbound.backtest.list.ListBacktestRunsUseCase
 import com.refinvest.core.backtest.port.inbound.backtest.run.RunBacktestUseCase
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -14,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
@@ -22,6 +27,7 @@ import org.springframework.web.server.ResponseStatusException
 class BacktestController(
     private val runBacktestUseCase: RunBacktestUseCase,
     private val getBacktestResultUseCase: GetBacktestResultUseCase,
+    private val listBacktestRunsUseCase: ListBacktestRunsUseCase,
 ) {
     @PostMapping("/strategy-versions/{versionId}/backtests")
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -43,4 +49,19 @@ class BacktestController(
         getBacktestResultUseCase.execute(GetBacktestResultQuery(BacktestRunId(runId)))
             ?.let(GetBacktestResultResponse::from)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Backtest run not found")
+
+    @GetMapping("/strategies/{strategyId}/backtest-runs")
+    fun list(
+        @PathVariable strategyId: Long,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "20") size: Int,
+    ): ListBacktestRunsResponse = try {
+        ListBacktestRunsResponse.from(
+            listBacktestRunsUseCase.execute(ListBacktestRunsQuery(StrategyId(strategyId), page, size)),
+        )
+    } catch (exception: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message, exception)
+    } catch (exception: NoSuchElementException) {
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, exception.message, exception)
+    }
 }
