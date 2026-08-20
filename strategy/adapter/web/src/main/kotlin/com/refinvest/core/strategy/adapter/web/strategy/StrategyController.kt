@@ -7,6 +7,8 @@ import com.refinvest.core.strategy.adapter.web.strategy.define.DefineStrategyVer
 import com.refinvest.core.strategy.adapter.web.strategy.get.GetStrategyResponse
 import com.refinvest.core.strategy.adapter.web.strategy.get.GetStrategyVersionResponse
 import com.refinvest.core.strategy.adapter.web.strategy.list.ListStrategiesResponse
+import com.refinvest.core.strategy.adapter.web.strategy.preview.PreviewStrategyRequest
+import com.refinvest.core.strategy.adapter.web.strategy.preview.PreviewStrategyResponse
 import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import com.refinvest.core.strategy.port.inbound.strategy.create.CreateStrategyCommand
 import com.refinvest.core.strategy.port.inbound.strategy.create.CreateStrategyUseCase
@@ -14,6 +16,7 @@ import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyQuery
 import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyUseCase
 import com.refinvest.core.strategy.port.inbound.strategy.list.ListStrategiesQuery
 import com.refinvest.core.strategy.port.inbound.strategy.list.ListStrategiesUseCase
+import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewStrategyUseCase
 import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionUseCase
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -34,6 +37,7 @@ class StrategyController(
     private val getStrategyUseCase: GetStrategyUseCase,
     private val defineStrategyVersionUseCase: DefineStrategyVersionUseCase,
     private val listStrategiesUseCase: ListStrategiesUseCase,
+    private val previewStrategyUseCase: PreviewStrategyUseCase,
 ) {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -82,4 +86,13 @@ class StrategyController(
     } catch (exception: IllegalArgumentException) {
         throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message, exception)
     }
+
+    @PostMapping("/{strategyId}/versions/preview")
+    fun preview(
+        @PathVariable strategyId: Long,
+        @RequestBody request: PreviewStrategyRequest,
+    ): PreviewStrategyResponse = previewStrategyUseCase
+        .execute(request.toCommand(StrategyId(strategyId)))
+        ?.let(PreviewStrategyResponse::from)
+        ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Strategy not found")
 }

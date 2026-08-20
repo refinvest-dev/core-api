@@ -215,6 +215,90 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `previews a strategy draft through HTTP without persisting a version`() {
+        val created = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"name\":\"preview hypothesis\"}"))
+                .build(),
+            HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+        )
+        val strategyId = "\"id\":\"(\\d+)\"".toRegex().find(created.body())?.groupValues?.get(1)
+        assertTrue(created.statusCode() == 201 && strategyId != null, created.body())
+
+        val preview = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies/$strategyId/versions/preview"))
+                .header("Content-Type", "application/json")
+                .POST(
+                    HttpRequest.BodyPublishers.ofString(
+                        """{
+                        |  "primarySignalAsset":"QQQ",
+                        |  "conditions":[{
+                        |    "operator":"LT",
+                        |    "operandA":{"asset":"QQQ","metric":"RETURN","window":5},
+                        |    "operandB":-0.07
+                        |  }],
+                        |  "executionAsset":"TQQQ",
+                        |  "lag":3,
+                        |  "exit":{"holdingSignalSessions":5}
+                        |}""".trimMargin(),
+                    ),
+                )
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(preview.statusCode() == 200, preview.body())
+        assertTrue(preview.body().contains("QQQ의 5일 수익률 -7% 미만"), preview.body())
+        assertTrue(preview.body().contains("3 Signal Session 후 TQQQ를 매수"), preview.body())
+
+        val strategy = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies/$strategyId")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+        assertTrue(strategy.body().contains("\"versions\":[]"), strategy.body())
+    }
+
+    @Test
+    fun `previews an incomplete strategy draft without rejecting empty conditions`() {
+        seedStrategy(9001L, 2L, "preview fixture", "2099-01-01 00:00:00")
+
+        val response = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies/9001/versions/preview"))
+                .header("Content-Type", "application/json")
+                .POST(
+                    HttpRequest.BodyPublishers.ofString(
+                        """{
+                        |  "primarySignalAsset":"QQQ",
+                        |  "conditions":[],
+                        |  "executionAsset":"TQQQ",
+                        |  "lag":0,
+                        |  "exit":{"holdingSignalSessions":1}
+                        |}""".trimMargin(),
+                    ),
+                )
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(response.statusCode() == 200, response.body())
+        assertTrue(response.body().contains("조건을 입력해 주세요"), response.body())
+    }
+
+    @Test
+    fun `returns not found when previewing an unknown strategy`() {
+        val response = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI("http://localhost:$port/strategies/999999/versions/preview"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(response.statusCode() == 404, response.body())
+    }
+
+    @Test
     fun `rejects VIX as an execution asset when defining a strategy version`() {
         val created = HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI("http://localhost:$port/strategies"))
