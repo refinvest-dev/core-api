@@ -1,6 +1,6 @@
 package com.refinvest.core.strategy.application.strategy.create
 
-import com.refinvest.core.strategy.domain.valueobject.MemberId
+import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.strategy.domain.Strategy
 import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import com.refinvest.core.strategy.port.inbound.strategy.create.CreateStrategyCommand

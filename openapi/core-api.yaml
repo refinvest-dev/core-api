@@ -17,11 +17,13 @@ info:
       즉시 반환된다 — 이 둘은 서로 다른 계층의 검증이며 에러 스키마도 분리되어 있다(아래
       `StrategyVersionValidationError` vs `compute-api.yaml`의 `ValidationErrorResponse`).
 
-    ## 미확정 사항 (TODO — 구현 전 팀 확인 필요)
-    - 인증 방식: 아래 `BearerAuth`는 자리표시자다. 이메일/비밀번호, OAuth, 매직링크 중 무엇으로
-      회원가입/로그인을 구현할지, JWT 갱신(refresh) 흐름은 어떻게 할지 확정되지 않았다
-      (`docs/ARCHITECTURE.md` §2 `common/` "인증(Spring Security + JWT)"는 토큰 방식만 정했을 뿐
-      가입/로그인 플로우는 정의하지 않음).
+    ## 인증
+    - 인증은 Kakao, Naver, Google 소셜 로그인과 RefInvest 발급 JWT Cookie를 사용한다. Provider access
+      token은 RefInvest 인증 토큰으로 사용하거나 영속화하지 않는다.
+    - Access/Refresh JWT는 HttpOnly Cookie로만 전달한다. Web은 `POST /auth/refresh`와
+      `POST /auth/logout`에 Cookie를 포함하며, JWT 문자열을 response body에서 받지 않는다.
+    - OAuth 로그인 시작 시 `returnTo`에는 Web origin 내부의 상대 경로만 전달할 수 있다. Core는 이를
+      OAuth state와 함께 보존·검증하며 임의 외부 URL로 redirect하지 않는다.
     - Free/Pro 정확한 제한 수치(월 백테스트 횟수, 허용 Asset, 백테스트 최대 기간)는 미정
       — `docs/DOMAIN.md` §1.5, Phase 0/2에서 결정.
     - `ListStrategies`/`ListBacktestRuns`의 페이지네이션 방식(offset vs cursor)은 아래 스펙에
@@ -32,7 +34,7 @@ servers:
     description: Web이 호출하는 Core public API. Compute는 이 서버 뒤에서 내부적으로만 호출됨.
 
 security:
-  - BearerAuth: []
+  - AccessCookieAuth: []
 
 tags:
   - name: strategies
@@ -42,7 +44,7 @@ tags:
   - name: assets
     description: Data Explorer용 Asset/시계열 프록시 (`docs/USECASES.md` Asset / Data Explorer — Core는 Compute를 그대로 읽기 전용 프록시)
   - name: account
-    description: 회원가입·사용량·구독 (`docs/USECASES.md` User / Subscription 모듈)
+    description: 소셜 로그인·세션·사용량·구독 (`docs/USECASES.md` Member / Auth / Subscription 모듈)
 
 paths:
   # ============ Strategy ============
@@ -367,31 +369,72 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  # ============ Account ============
-  /auth/register:
-    post:
-      operationId: registerUser
+  # ============ Auth / Account ============
+  /oauth2/authorization/{provider}:
+    get:
+      operationId: startSocialLogin
       tags: [account]
-      summary: 회원가입 (`RegisterUser`)
-      description: 인증 흐름 상세는 미확정 — 위 info.description "미확정 사항" 참고. 아래 바디는 최소 형태 잠정안.
+      summary: 소셜 로그인 시작 (`SocialLogin`)
+      description: |
+        Spring Security OAuth2 Authorization Code 흐름을 시작하고 선택한 provider로 302 redirect한다.
+        로그인 성공 시 Access/Refresh Cookie를 설정한 뒤 `returnTo`의 검증된 상대 경로로 Web에
+        redirect한다. provider callback(`/login/oauth2/code/{provider}`)은 provider 전용 내부 경로다.
       security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [email]
-              properties:
-                email: { type: string, format: email }
-                name: { type: string, nullable: true }
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string, enum: [kakao, naver, google] }
+        - name: returnTo
+          in: query
+          required: false
+          schema: { type: string, default: / }
+          description: Web origin 내부의 `/`로 시작하는 상대 경로. 외부 URL은 거부한다.
       responses:
-        '201':
-          description: 생성됨.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
+        '302':
+          description: OAuth provider authorization endpoint로 redirect.
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /auth/csrf:
+    get:
+      operationId: issueCsrfToken
+      tags: [account]
+      summary: CSRF Cookie 발급
+      description: |
+        Cookie 인증을 사용하는 변경 요청 전에 호출한다. 응답의 `XSRF-TOKEN` Cookie는 HttpOnly가 아니며,
+        Web은 값을 `X-XSRF-TOKEN` header로 echo한다. 인증 Cookie와 CSRF token은 별개다.
+      security: []
+      responses:
+        '204':
+          description: CSRF Cookie가 설정됨.
+
+  /auth/refresh:
+    post:
+      operationId: refreshSession
+      tags: [account]
+      summary: Access/Refresh JWT 교체 (`RefreshSession`)
+      description: |
+        Refresh Cookie로 Refresh Token Rotation을 수행한다. 성공하면 기존 Refresh Token은 즉시
+        무효화되고 새 Access/Refresh Cookie가 설정된다. JWT 문자열은 response body에 포함하지 않는다.
+      security:
+        - RefreshCookieAuth: []
+      responses:
+        '204':
+          description: 새 Access/Refresh Cookie가 설정됨.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [account]
+      summary: 현재 세션 로그아웃 (`Logout`)
+      description: Refresh Token 또는 그 가족을 무효화하고 Access/Refresh Cookie를 제거한다.
+      security:
+        - RefreshCookieAuth: []
+      responses:
+        '204':
+          description: Refresh 상태가 무효화되고 인증 Cookie가 제거됨.
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /me/usage:
     get:
@@ -425,11 +468,16 @@ paths:
 
 components:
   securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: 자리표시자. 가입/로그인 플로우 자체는 미확정 — 위 info.description 참고.
+    AccessCookieAuth:
+      type: apiKey
+      in: cookie
+      name: REFINVEST_ACCESS_TOKEN
+      description: RefInvest 발급 Access JWT(HttpOnly Cookie). Web은 이 값을 직접 읽지 않는다.
+    RefreshCookieAuth:
+      type: apiKey
+      in: cookie
+      name: REFINVEST_REFRESH_TOKEN
+      description: RefInvest 발급 Refresh JWT(HttpOnly Cookie). refresh/logout 경계에서만 사용한다.
 
   parameters:
     StrategyIdParam:
@@ -598,13 +646,14 @@ components:
               nullable: true
 
     # ---- Account ----
-    User:
+    Member:
       type: object
-      required: [id, email, createdAt]
+      required: [id, role, createdAt]
       properties:
         id: { type: string }
-        email: { type: string, format: email }
-        name: { type: string, nullable: true }
+        role:
+          type: string
+          enum: [MEMBER, ADMIN]
         createdAt: { type: string, format: date-time }
 
     SubscriptionTier:

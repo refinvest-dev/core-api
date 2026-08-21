@@ -8,7 +8,7 @@ import com.refinvest.core.strategy.domain.valueobject.Condition
 import com.refinvest.core.strategy.domain.valueobject.ConditionOperand
 import com.refinvest.core.strategy.domain.valueobject.LiteralValue
 import com.refinvest.core.strategy.domain.valueobject.LogicalCombinator
-import com.refinvest.core.strategy.domain.valueobject.MemberId
+import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.strategy.domain.valueobject.MetricOperand
 import com.refinvest.core.strategy.domain.valueobject.MetricReference
 import com.refinvest.core.strategy.domain.valueobject.MetricType

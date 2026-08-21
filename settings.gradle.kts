@@ -9,6 +9,17 @@ pluginManagement {
 rootProject.name = "refinvest"
 
 include(
+    ":member:domain",
+    ":member:port",
+    ":member:application",
+    ":member:adapter:persistence",
+    ":member:adapter:snowflake",
+    ":auth:domain",
+    ":auth:port",
+    ":auth:application",
+    ":auth:adapter:persistence",
+    ":auth:adapter:security",
+    ":auth:adapter:web",
     ":strategy:domain",
     ":strategy:port",
     ":strategy:application",
