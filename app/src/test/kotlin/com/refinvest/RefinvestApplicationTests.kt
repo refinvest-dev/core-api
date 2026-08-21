@@ -114,6 +114,35 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `returns the current member from persisted role rather than access token claims`() {
+        jdbcTemplate.update(
+            "merge into members (id, role, created_at) key(id) values (1, 'ADMIN', CURRENT_TIMESTAMP)",
+        )
+
+        val response = authenticatedHttpClient().send(
+            authenticatedRequest(URI("http://localhost:$port/auth/me")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertEquals(200, response.statusCode(), response.body())
+        assertTrue(response.body().contains("\"memberId\":\"1\""), response.body())
+        assertTrue(response.body().contains("\"role\":\"ADMIN\""), response.body())
+    }
+
+    @Test
+    fun `rejects an access token whose member no longer exists`() {
+        val response = authenticatedHttpClient().send(
+            authenticatedRequest(
+                URI("http://localhost:$port/auth/me"),
+                accessToken(memberId = 999_999_999),
+            ).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertEquals(401, response.statusCode(), response.body())
+    }
+
+    @Test
     fun `rejects a state changing request without CSRF header`() {
         val response = HttpClient.newHttpClient().send(
             authenticatedRequest(URI("http://localhost:$port/strategies"))
@@ -782,6 +811,7 @@ class RefinvestApplicationTests(
         .header("Cookie", "REFINVEST_ACCESS_TOKEN=$accessToken; XSRF-TOKEN=test-csrf")
 
     private fun accessToken(
+        memberId: Long = 1,
         audience: String = "refinvest-core-api-test",
         issuedAt: Instant = Instant.now(),
         expiresAt: Instant = Instant.now().plusSeconds(300),
@@ -792,7 +822,7 @@ class RefinvestApplicationTests(
                 JwtClaimsSet.builder()
                     .issuer("https://test.refinvest.local")
                     .audience(listOf(audience))
-                    .subject("1")
+                    .subject(memberId.toString())
                     .issuedAt(issuedAt)
                     .expiresAt(expiresAt)
                     .id("test-access-token")

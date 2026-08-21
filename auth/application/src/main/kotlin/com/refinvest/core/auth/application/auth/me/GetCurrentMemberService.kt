@@ -1,0 +1,20 @@
+package com.refinvest.core.auth.application.auth.me
+
+import com.refinvest.core.auth.port.inbound.auth.me.GetCurrentMemberResult
+import com.refinvest.core.auth.port.inbound.auth.me.GetCurrentMemberUseCase
+import com.refinvest.core.auth.port.outbound.CurrentMemberIdProvider
+import com.refinvest.core.member.port.inbound.member.get.GetMemberQuery
+import com.refinvest.core.member.port.inbound.member.get.GetMemberUseCase
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+
+@Service
+open class GetCurrentMemberService(
+    private val currentMemberIdProvider: CurrentMemberIdProvider,
+    private val getMemberUseCase: GetMemberUseCase,
+) : GetCurrentMemberUseCase {
+    @Transactional(readOnly = true)
+    override fun execute(): GetCurrentMemberResult? = getMemberUseCase
+        .execute(GetMemberQuery(currentMemberIdProvider.currentMemberId()))
+        ?.let { member -> GetCurrentMemberResult(member.memberId, member.role.name) }
+}
