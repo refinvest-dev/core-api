@@ -24,6 +24,7 @@ import com.refinvest.core.member.port.inbound.member.create.CreateMemberCommand
 import com.refinvest.core.member.port.inbound.member.create.CreateMemberUseCase
 import com.refinvest.core.shared.kernel.member.MemberId
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.BeforeEach
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
@@ -71,6 +72,11 @@ class RefinvestApplicationTests(
     @Autowired private val createMemberUseCase: CreateMemberUseCase,
     @LocalServerPort private val port: Int,
 ) {
+
+    @BeforeEach
+    fun clearBacktestQuotaReservations() {
+        jdbcTemplate.update("delete from backtest_quotas")
+    }
 
 	@Test
 	fun contextLoads() {

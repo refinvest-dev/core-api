@@ -33,7 +33,9 @@ class GetUsageServiceTest {
         assertEquals(Instant.parse("2026-08-01T00:00:00Z"), backtestUsage.query?.startInclusive)
         assertEquals(Instant.parse("2026-09-01T00:00:00Z"), backtestUsage.query?.endExclusive)
         assertEquals(true, result.strategySaveEnabled)
-        assertEquals(null, result.backtestMonthlyLimit)
+        assertEquals(500, result.backtestMonthlyLimit)
+        assertEquals(listOf("BTCUSDT", "QQQ", "SOXL", "SPY", "TQQQ", "VIX"), result.allowedAssets)
+        assertEquals(3_650, result.maxBacktestPeriodDays)
     }
 
     @Test
@@ -48,6 +50,7 @@ class GetUsageServiceTest {
 
         assertEquals(SubscriptionTier.FREE, result.tier)
         assertFalse(result.strategySaveEnabled)
+        assertEquals(30, result.backtestMonthlyLimit)
     }
 
     private class RecordingBacktestUsage(

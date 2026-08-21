@@ -2,6 +2,7 @@ package com.refinvest.core.subscription.application.subscription.usage
 
 import com.refinvest.core.backtest.port.inbound.backtest.usage.GetMonthlyBacktestUsageQuery
 import com.refinvest.core.backtest.port.inbound.backtest.usage.GetMonthlyBacktestUsageUseCase
+import com.refinvest.core.subscription.domain.policy.BacktestPolicy
 import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
 import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageQuery
 import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageResult
@@ -25,6 +26,7 @@ open class GetUsageService(
         val startInclusive = month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant()
         val endExclusive = month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant()
         val tier = subscriptionReader.findByMemberId(query.memberId)?.tier ?: SubscriptionTier.FREE
+        val policy = BacktestPolicy.forTier(tier)
         val backtestsUsed = getMonthlyBacktestUsageUseCase.execute(
             GetMonthlyBacktestUsageQuery(query.memberId, startInclusive, endExclusive),
         ).backtestsUsed
@@ -32,9 +34,9 @@ open class GetUsageService(
         return GetUsageResult(
             tier = tier,
             backtestsUsedThisMonth = backtestsUsed,
-            backtestMonthlyLimit = null,
-            allowedAssets = null,
-            maxBacktestPeriodDays = null,
+            backtestMonthlyLimit = policy.monthlyExecutionLimit,
+            allowedAssets = policy.allowedAssets.sorted(),
+            maxBacktestPeriodDays = policy.maxRequestedPeriodDays,
             strategySaveEnabled = tier == SubscriptionTier.PRO,
         )
     }
