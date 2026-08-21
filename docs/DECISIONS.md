@@ -249,3 +249,26 @@ feature별 outbound port로 정의)은 **`core-api/AGENTS.md` §4가 정본**이
 
 **Revisit 조건**: 이 구조가 실제로 빌드 시간이나 개발 속도에 부담을 줄 정도로 무거워지면(feature 수가
 많아지며 Gradle 설정 관리 자체가 병목이 되는 경우), 덜 자주 바뀌는 feature들을 다시 묶는 것을 검토한다.
+
+---
+
+## ADR-019 — 소셜 로그인 + RefInvest JWT Cookie 세션
+
+**결정**: MVP 인증은 Kakao, Naver, Google OAuth2/OIDC 소셜 로그인만 지원한다. Provider의 access token,
+refresh token, subject는 RefInvest의 인증 credential이 아니며, 내부 `MemberId`는 Snowflake 기반으로 별도
+발급한다. `SocialIdentity(provider, providerSubject)`는 유일하고, provider가 다른 identity를 email만으로
+자동 병합하지 않는다.
+
+로그인 성공 시 Core는 짧은 수명의 Access JWT와 긴 수명의 Refresh JWT를 각각 HttpOnly Cookie로 발급한다.
+Access JWT는 내부 MemberId(`sub`), role, issuer, audience, issued-at, expiry, jti만 포함한다. Refresh는
+Rotation 상태를 서버에 저장하고, 한 번 사용된 Refresh credential을 재사용하면 replay로 처리해 해당 token
+family의 활성 credential을 폐기한다. 로그아웃은 Cookie 제거와 Refresh 상태 폐기를 함께 수행한다.
+
+Cookie 인증은 CSRF 보호 대상이다. Web과 Core의 허용 origin은 환경별 명시 설정으로 관리하며, 개발 기본값은
+`http://localhost:3001`과 `http://localhost:8080`이다. 운영 Cookie는 `Secure`와 명시적 `SameSite`를
+필수로 한다. 로그인 후 복귀 위치는 검증된 Web 내부 상대 경로만 OAuth state에 보존한다.
+
+**이유**: provider token을 애플리케이션 세션으로 재사용하면 provider별 만료·권한·탈퇴 정책이 RefInvest의
+인가 경계에 스며든다. 별도 JWT와 server-side rotation 상태는 내부 role의 정본을 RefInvest DB에 유지하면서
+탈취된 refresh credential의 재사용을 탐지·폐기할 수 있게 한다. Cookie 기반 세션을 쓰면서 CSRF를 비활성화하면
+cross-site 요청에 취약하므로, JWT라는 표현 방식과 무관하게 browser cookie 보안 모델을 따른다.

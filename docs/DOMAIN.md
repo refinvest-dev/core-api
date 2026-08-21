@@ -122,7 +122,37 @@ Trade
 └── holdingPeriod
 ```
 
-### 1.5 User / Subscription
+### 1.5 Member / Auth / Subscription
+
+```text
+Member
+├── id (MemberId, RefInvest Snowflake ID)
+├── role: MEMBER | ADMIN
+└── createdAt
+
+SocialIdentity
+├── provider: KAKAO | NAVER | GOOGLE
+├── providerSubject
+└── memberId
+
+RefreshSession
+├── jti
+├── memberId
+├── familyId
+├── tokenFingerprint
+├── issuedAt, expiresAt
+├── revokedAt
+└── replacedByJti
+```
+
+- `MemberId`는 RefInvest 내부 식별자이며 provider subject/email과 분리한다. Strategy의 `ownerId`는
+  `MemberId`를 사용한다.
+- `(provider, providerSubject)`는 유일하다. email만으로 Member를 식별하거나 provider가 다른 identity를
+  자동 병합하지 않는다. 하나의 Member는 장래에 여러 SocialIdentity를 가질 수 있다.
+- provider access/refresh token은 RefInvest 인증 수단이 아니며 현재 제품 요구상 영속화하지 않는다.
+- RefreshSession은 raw refresh credential을 저장하지 않는다. 회전되었거나 폐기된 credential의 재사용은
+  replay로 간주해 해당 family의 활성 credential을 폐기한다.
+- role의 정본은 RefInvest DB다. provider payload, email/domain, frontend 입력으로 ADMIN을 부여하지 않는다.
 
 `Subscription.tier: FREE | PRO`. Free/Pro 차이는 사용량·범위 제한이며 별도 도메인 로직(가격, 결제)은 없다 — 결제 연동은 Phase 5.
 

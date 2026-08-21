@@ -42,11 +42,13 @@ Data Explorer는 가설을 세우기 **이전** 단계(Product Loop의 "Observe"
 | `ExecuteBacktest` | Command (내부) | Strategy DSL을 받아 `docs/ARCHITECTURE.md` §3 파이프라인을 실행하고 `BacktestResult` payload 반환. DSL Validation(Asset 존재, Calendar 호환성, Window/Lag Validity 등)은 **이 파이프라인의 첫 단계**로 내장되어 있으며, 별도로 독립 호출 가능한 엔드포인트는 아니다 — 실패 시 Job을 큐에 넣지 않고 즉시 `400`으로 반환한다(`openapi/compute-api.yaml`의 `POST /backtests` 400 응답) |
 | `IngestDailyData` | Command (스케줄) | 벤더 API → 정규화 → Corporate Action 처리 → 새 `DatasetSnapshot` 생성. 사용자 요청과 무관하게 매일 1회 실행 |
 
-## User / Subscription (Core)
+## Member / Auth / Subscription (Core)
 
 | Use Case | 타입 | 설명 |
 |---|---|---|
-| `RegisterUser` | Command | 회원가입 |
+| `SocialLogin` | Command | Kakao/Naver/Google provider identity를 정규화해 기존 `SocialIdentity`의 Member를 찾거나, 최초 로그인이라면 Member와 SocialIdentity를 원자적으로 생성한 뒤 RefInvest Access/Refresh JWT Cookie를 발급 |
+| `RefreshSession` | Command | Refresh JWT Rotation. 사용된 Refresh Token을 무효화하고 새 Access/Refresh JWT를 발급하며, 재사용은 해당 token family를 폐기 |
+| `Logout` | Command | 현재 Refresh Token 또는 token family를 무효화하고 인증 Cookie 제거 |
 | `GetUsage` | Query | 이번 달 백테스트 실행 횟수 등 사용량 (Free/Pro 제한 확인용) |
 | `UpgradeSubscription` | Command | Free → Pro 전환 (Phase 5에서 실제 결제 연동, MVP는 상태값만) |
 
