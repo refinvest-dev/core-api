@@ -20,6 +20,8 @@ import com.refinvest.core.auth.domain.RefreshSession
 import com.refinvest.core.auth.port.outbound.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.IssuedAuthenticationTokens
 import com.refinvest.core.auth.port.outbound.RefreshSessionStore
+import com.refinvest.core.member.port.inbound.member.create.CreateMemberCommand
+import com.refinvest.core.member.port.inbound.member.create.CreateMemberUseCase
 import com.refinvest.core.shared.kernel.member.MemberId
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -66,12 +68,27 @@ class RefinvestApplicationTests(
     @Autowired private val jwtDecoder: JwtDecoder,
     @Autowired private val authenticationTokenIssuer: AuthenticationTokenIssuer,
     @Autowired private val refreshSessionStore: RefreshSessionStore,
+    @Autowired private val createMemberUseCase: CreateMemberUseCase,
     @LocalServerPort private val port: Int,
 ) {
 
 	@Test
 	fun contextLoads() {
 	}
+
+    @Test
+    fun `creates and persists a default free subscription for a new member`() {
+        val member = createMemberUseCase.execute(CreateMemberCommand)
+
+        assertEquals(
+            "FREE",
+            jdbcTemplate.queryForObject(
+                "select tier from subscriptions where member_id = ?",
+                String::class.java,
+                member.memberId.value,
+            ),
+        )
+    }
 
 	@Test
 	fun snowflakeStrategyIdGeneratorIsWired() {

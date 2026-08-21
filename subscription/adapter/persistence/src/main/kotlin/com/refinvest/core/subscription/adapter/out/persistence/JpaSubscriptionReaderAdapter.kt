@@ -1,0 +1,16 @@
+package com.refinvest.core.subscription.adapter.out.persistence
+
+import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.subscription.domain.Subscription
+import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
+import com.refinvest.core.subscription.port.outbound.SubscriptionReader
+import org.springframework.stereotype.Repository
+
+@Repository
+class JpaSubscriptionReaderAdapter(
+    private val subscriptionJpaStore: SubscriptionJpaStore,
+) : SubscriptionReader {
+    override fun findByMemberId(memberId: MemberId): Subscription? = subscriptionJpaStore.findById(memberId.value)
+        .orElse(null)
+        ?.let { entity -> Subscription.restore(MemberId(entity.memberId), SubscriptionTier.valueOf(entity.tier)) }
+}
