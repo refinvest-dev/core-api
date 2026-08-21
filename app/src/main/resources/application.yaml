@@ -1,4 +1,6 @@
 spring:
+  config:
+    import: optional:file:.env[.properties]
   application:
     name: refinvest
   datasource:
@@ -8,6 +10,13 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+    show-sql: true
+
+server:
+  servlet:
+    session:
+      cookie:
+        same-site: Lax
 
 management:
   endpoints:
@@ -21,5 +30,10 @@ management:
 refinvest:
   id:
     node-id: ${SNOWFLAKE_NODE_ID:0}
-  execution:
-    test-member-id: ${TEST_MEMBER_ID:1}
+  security:
+    issuer: ${REFINVEST_JWT_ISSUER}
+    audience: ${REFINVEST_JWT_AUDIENCE}
+    jwt-secret: ${REFINVEST_JWT_SECRET}
+    web-origin: ${REFINVEST_WEB_ORIGIN:http://localhost:3001}
+    cookie-secure: ${REFINVEST_COOKIE_SECURE:true}
+    cookie-same-site: ${REFINVEST_COOKIE_SAME_SITE:Lax}
