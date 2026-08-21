@@ -1,6 +1,8 @@
 package com.refinvest.core.auth.adapter.web
 
 import com.refinvest.core.auth.adapter.security.cookie.AuthCookieWriter
+import com.refinvest.core.auth.adapter.web.auth.me.GetCurrentMemberResponse
+import com.refinvest.core.auth.port.inbound.auth.me.GetCurrentMemberUseCase
 import com.refinvest.core.auth.port.inbound.auth.logout.LogoutCommand
 import com.refinvest.core.auth.port.inbound.auth.logout.LogoutUseCase
 import com.refinvest.core.auth.port.inbound.auth.session.RefreshSessionCommand
@@ -18,10 +20,16 @@ import org.springframework.web.server.ResponseStatusException
 @RestController
 class AuthController(
     private val refreshTokenParser: RefreshTokenParser,
+    private val getCurrentMemberUseCase: GetCurrentMemberUseCase,
     private val refreshSessionUseCase: RefreshSessionUseCase,
     private val logoutUseCase: LogoutUseCase,
     private val authCookieWriter: AuthCookieWriter,
 ) {
+    @GetMapping("/auth/me")
+    fun me(): GetCurrentMemberResponse = getCurrentMemberUseCase.execute()
+        ?.let(GetCurrentMemberResponse::from)
+        ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated member is unavailable")
+
     @GetMapping("/auth/csrf")
     @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.NO_CONTENT)
     fun csrf(csrfToken: CsrfToken) {
