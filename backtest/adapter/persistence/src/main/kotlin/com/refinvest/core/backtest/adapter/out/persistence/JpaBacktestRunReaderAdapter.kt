@@ -12,8 +12,10 @@ import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.port.outbound.BacktestRunReadModel
 import com.refinvest.core.backtest.port.outbound.BacktestRunPageReadModel
 import com.refinvest.core.backtest.port.outbound.BacktestRunReader
+import com.refinvest.core.shared.kernel.member.MemberId
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Repository
+import java.time.Instant
 
 @Repository
 class JpaBacktestRunReaderAdapter(
@@ -29,6 +31,16 @@ class JpaBacktestRunReaderAdapter(
     ): BacktestRunPageReadModel = backtestRunJpaReader
         .findAllByStrategyIdOrderByCreatedAtDesc(strategyId.value, PageRequest.of(page, size))
         .let { runs -> BacktestRunPageReadModel(runs.content.map { it.toReadModel() }, runs.totalElements) }
+
+    override fun countByMemberIdAndCreatedAtBetween(
+        memberId: MemberId,
+        startInclusive: Instant,
+        endExclusive: Instant,
+    ): Long = backtestRunJpaReader.countByMemberIdAndCreatedAtBetween(
+        memberId = memberId.value,
+        startInclusive = startInclusive,
+        endExclusive = endExclusive,
+    )
 
     private fun BacktestRunJpaEntity.toReadModel(): BacktestRunReadModel =
         BacktestRunReadModel(

@@ -147,6 +147,40 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `returns the current member monthly backtest usage`() {
+        jdbcTemplate.update(
+            "merge into members (id, role, created_at) key(id) values (501, 'MEMBER', CURRENT_TIMESTAMP)",
+        )
+        jdbcTemplate.update(
+            "merge into subscriptions (member_id, tier) key(member_id) values (501, 'PRO')",
+        )
+        jdbcTemplate.update(
+            "insert into strategies (id, member_id, name, created_at) values (901, 501, 'usage fixture', CURRENT_TIMESTAMP)",
+        )
+        repeat(2) { offset ->
+            jdbcTemplate.update(
+                """
+                insert into backtest_runs (
+                    id, strategy_id, strategy_version_id, requested_period_start, requested_period_end,
+                    commission, slippage, status, created_at
+                ) values (?, 901, 42, '2025-01-01', '2025-12-31', 0.001, 0.002, 'PENDING', CURRENT_TIMESTAMP)
+                """.trimIndent(),
+                9001L + offset,
+            )
+        }
+
+        val response = authenticatedHttpClient().send(
+            authenticatedRequest(URI("http://localhost:$port/me/usage"), accessToken(memberId = 501)).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertEquals(200, response.statusCode(), response.body())
+        assertTrue(response.body().contains("\"tier\":\"PRO\""), response.body())
+        assertTrue(response.body().contains("\"backtestsUsedThisMonth\":2"), response.body())
+        assertTrue(response.body().contains("\"strategySaveEnabled\":true"), response.body())
+    }
+
+    @Test
     fun `rejects an access token whose member no longer exists`() {
         val response = authenticatedHttpClient().send(
             authenticatedRequest(

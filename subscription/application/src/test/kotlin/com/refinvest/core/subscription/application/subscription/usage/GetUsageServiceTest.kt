@@ -1,0 +1,63 @@
+package com.refinvest.core.subscription.application.subscription.usage
+
+import com.refinvest.core.backtest.port.inbound.backtest.usage.GetMonthlyBacktestUsageQuery
+import com.refinvest.core.backtest.port.inbound.backtest.usage.GetMonthlyBacktestUsageResult
+import com.refinvest.core.backtest.port.inbound.backtest.usage.GetMonthlyBacktestUsageUseCase
+import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.subscription.domain.Subscription
+import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
+import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageQuery
+import com.refinvest.core.subscription.port.outbound.SubscriptionReader
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+
+class GetUsageServiceTest {
+    @Test
+    fun `returns current UTC month usage for subscription tier`() {
+        val memberId = MemberId(1)
+        val backtestUsage = RecordingBacktestUsage(7)
+        val service = GetUsageService(
+            subscriptionReader = SubscriptionReader { Subscription.restore(memberId, SubscriptionTier.PRO) },
+            getMonthlyBacktestUsageUseCase = backtestUsage,
+            clock = Clock.fixed(Instant.parse("2026-08-21T12:00:00Z"), ZoneOffset.UTC),
+        )
+
+        val result = service.execute(GetUsageQuery(memberId))
+
+        assertEquals(SubscriptionTier.PRO, result.tier)
+        assertEquals(7, result.backtestsUsedThisMonth)
+        assertEquals(Instant.parse("2026-08-01T00:00:00Z"), backtestUsage.query?.startInclusive)
+        assertEquals(Instant.parse("2026-09-01T00:00:00Z"), backtestUsage.query?.endExclusive)
+        assertEquals(true, result.strategySaveEnabled)
+        assertEquals(null, result.backtestMonthlyLimit)
+    }
+
+    @Test
+    fun `treats a missing persisted subscription as free`() {
+        val service = GetUsageService(
+            subscriptionReader = SubscriptionReader { null },
+            getMonthlyBacktestUsageUseCase = RecordingBacktestUsage(0),
+            clock = Clock.systemUTC(),
+        )
+
+        val result = service.execute(GetUsageQuery(MemberId(1)))
+
+        assertEquals(SubscriptionTier.FREE, result.tier)
+        assertFalse(result.strategySaveEnabled)
+    }
+
+    private class RecordingBacktestUsage(
+        private val count: Long,
+    ) : GetMonthlyBacktestUsageUseCase {
+        var query: GetMonthlyBacktestUsageQuery? = null
+
+        override fun execute(query: GetMonthlyBacktestUsageQuery): GetMonthlyBacktestUsageResult {
+            this.query = query
+            return GetMonthlyBacktestUsageResult(count)
+        }
+    }
+}
