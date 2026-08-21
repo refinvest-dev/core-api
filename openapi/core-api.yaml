@@ -148,12 +148,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/StrategyVersionValidationError'
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403':
-          description: Free 플랜 Asset 제한 등으로 이 StrategyVersion을 만들 수 없음(`docs/DOMAIN.md` §1.5, 정확한 조건 TODO).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '404': { $ref: '#/components/responses/NotFound' }
 
   /strategies/{strategyId}/versions/preview:
@@ -198,6 +192,8 @@ paths:
         요청 즉시 `BacktestRun(status=PENDING)`을 반환한다. 절대 동기로 결과를 기다리지 않는다
         (`AGENTS.md` §4, `AI_AGENT.md` §2). 실제 계산은 Core가 내부적으로 Compute의
         `POST /backtests`(`compute-api.yaml`)에 위임한다 — 이 위임은 Web에 노출되지 않는다.
+        실행 전에 현재 Subscription tier의 Asset entitlement와 요청 기간을 검사하고, 월간 quota와
+        동시 실행 capacity를 원자적으로 예약한다(ADR-020).
       parameters:
         - name: versionId
           in: path
@@ -224,11 +220,27 @@ paths:
                 $ref: '#/components/schemas/BacktestRunSummary'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403':
-          description: 월 백테스트 횟수 한도 초과 등(Free/Pro 제한, `docs/DOMAIN.md` §1.5).
+          description: 현재 plan에서 요청 기간 또는 StrategyVersion의 Asset이 허용되지 않음.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                periodNotAllowed:
+                  value: { code: BACKTEST_PERIOD_NOT_ALLOWED, message: Requested backtest period is not available for the current plan. }
+                assetNotAllowed:
+                  value: { code: ASSET_NOT_ALLOWED_FOR_PLAN, message: Requested asset is not available for the current plan. }
+        '429':
+          description: 현재 tier의 월간 quota 또는 동시 실행 capacity가 소진됨.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                monthlyLimitExceeded:
+                  value: { code: BACKTEST_MONTHLY_LIMIT_EXCEEDED, message: Monthly backtest execution limit exceeded. }
+                concurrencyLimitExceeded:
+                  value: { code: BACKTEST_CONCURRENCY_LIMIT_EXCEEDED, message: Concurrent backtest execution limit exceeded. }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /backtest-runs/{runId}:
@@ -441,7 +453,7 @@ paths:
       operationId: getUsage
       tags: [account]
       summary: 이번 달 사용량 조회 (`GetUsage`)
-      description: 정확한 한도 수치는 미정(`docs/DOMAIN.md` §1.5) — `null`은 "아직 정해지지 않음/무제한"을 뜻하며 실제 구현 시 명확히 구분해야 한다.
+      description: UTC calendar month 기준 사용량과 현재 Subscription tier의 Backtest 정책(ADR-020)을 반환한다.
       responses:
         '200':
           description: OK
@@ -516,8 +528,9 @@ components:
   schemas:
     ErrorResponse:
       type: object
-      required: [message]
+      required: [code, message]
       properties:
+        code: { type: string }
         message: { type: string }
 
     # ---- Strategy ----
@@ -669,24 +682,21 @@ components:
 
     Usage:
       type: object
-      required: [tier, backtestsUsedThisMonth]
-      description: "`docs/DOMAIN.md` §1.5 Free/Pro 표를 조회 시점 값으로 반영. 한도 필드는 수치 미정이라 nullable(TODO)."
+      required: [tier, backtestsUsedThisMonth, backtestMonthlyLimit, allowedAssets, maxBacktestPeriodDays, strategySaveEnabled]
+      description: "UTC calendar month 기준 현재 tier의 Backtest 정책과 사용량. 한도 필드는 null이 아니다."
       properties:
         tier:
           $ref: '#/components/schemas/SubscriptionTier'
         backtestsUsedThisMonth: { type: integer }
         backtestMonthlyLimit:
           type: integer
-          nullable: true
-          description: null = 무제한 또는 미정(TODO).
+          description: FREE는 30, PRO는 500.
         allowedAssets:
           type: array
-          nullable: true
           items:
             $ref: 'compute-api.yaml#/components/schemas/AssetSymbol'
-          description: null = 전체 Asset 허용.
+          description: FREE는 QQQ/SPY/BTCUSDT, PRO는 MVP Asset Universe 전체.
         maxBacktestPeriodDays:
           type: integer
-          nullable: true
-          description: null = 제한 없음 또는 미정(TODO).
+          description: FREE는 365, PRO는 3650.
         strategySaveEnabled: { type: boolean }

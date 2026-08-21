@@ -154,16 +154,23 @@ RefreshSession
   replay로 간주해 해당 family의 활성 credential을 폐기한다.
 - role의 정본은 RefInvest DB다. provider payload, email/domain, frontend 입력으로 ADMIN을 부여하지 않는다.
 
-`Subscription.tier: FREE | PRO`. Free/Pro 차이는 사용량·범위 제한이며 별도 도메인 로직(가격, 결제)은 없다 — 결제 연동은 Phase 5.
+`Subscription.tier: FREE | PRO`. Free/Pro 차이는 사용량·실행 범위 제한이며 별도 가격·결제 도메인 로직은 없다 — 결제 연동은 Phase 5다.
 
-| | Free | Pro |
-|---|---|---|
-| Asset | 제한된 Asset | 전체 Asset |
-| 백테스트 기간 | 제한된 기간 | 확장된 기간 |
-| 월 백테스트 횟수 | 제한 | 높은 한도 |
+| 정책 | FREE | PRO |
+|---|---:|---:|
+| 월간 Backtest 정상 접수 횟수 | 30회 | 500회 |
+| 최대 동시 실행 수 | 1회 | 3회 |
+| 최대 요청 기간 | 365일 | 3,650일 |
+| Backtest 허용 Asset | `QQQ`, `SPY`, `BTCUSDT` | MVP Asset Universe 전체 |
 | 전략 저장/비교, Export | 미제공 | 제공 |
 
-정확한 제한 수치는 데이터/컴퓨트 비용 검증 후 결정(Phase 0/2). `GetUsage` Use Case(`docs/USECASES.md`)로 남은 한도를 조회한다.
+- MVP Asset Universe는 ADR-001의 `QQQ`, `SPY`, `TQQQ`, `SOXL`, `BTCUSDT`, `VIX`를 유지한다. 이 정책을 위해 Asset을 추가하지 않는다.
+- Asset entitlement는 **Backtest 실행**에만 적용한다. `StrategyVersion` 정의·저장 시점에는 Plan entitlement를 검사하지 않는다. 실행 시 primarySignalAsset, 모든 Condition이 참조하는 Asset, executionAsset이 현재 tier에 모두 허용되어야 한다.
+- 요청 기간은 `Period.start`와 `Period.end`를 모두 포함한 UTC calendar day 수(`end - start + 1`)로 판정한다.
+- quota month는 client timezone과 무관한 UTC calendar month다. `BacktestRun(PENDING)`이 정상 접수될 때 월간 1회를 소비하며, 이후 Compute 실패에도 자동 환불하지 않는다. 거절된 요청은 quota를 소비하지 않는다.
+- 월간 quota와 동시 실행 capacity는 concurrent request에서도 한도를 넘지 않도록 원자적으로 예약한다. `PENDING`과 `RUNNING`이 동시 실행 수를 점유하며, terminal 상태로 전이할 때만 동시 실행 reservation을 해제한다.
+
+`GetUsage` Use Case(`docs/USECASES.md`)는 UTC 기준 이번 달 사용량과 현재 tier의 한도를 조회한다.
 
 ---
 
