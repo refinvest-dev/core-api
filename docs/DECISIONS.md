@@ -272,3 +272,19 @@ Cookie 인증은 CSRF 보호 대상이다. Web과 Core의 허용 origin은 환�
 인가 경계에 스며든다. 별도 JWT와 server-side rotation 상태는 내부 role의 정본을 RefInvest DB에 유지하면서
 탈취된 refresh credential의 재사용을 탐지·폐기할 수 있게 한다. Cookie 기반 세션을 쓰면서 CSRF를 비활성화하면
 cross-site 요청에 취약하므로, JWT라는 표현 방식과 무관하게 browser cookie 보안 모델을 따른다.
+
+---
+
+## ADR-020 — Backtest Quota & Entitlement Policy (MVP)
+
+**결정**: Backtest 실행 정책은 Subscription tier별 `BacktestPolicy` 경계에서 관리한다. FREE는 월간 30회·동시 1회·최대 365일·`QQQ`/`SPY`/`BTCUSDT`만, PRO는 월간 500회·동시 3회·최대 3,650일·ADR-001의 MVP Asset Universe 전체를 허용한다. PRO도 MVP에서는 유한 한도를 둔다.
+
+실행 시 primarySignalAsset, 모든 Condition이 참조하는 Asset, executionAsset이 현재 tier에 모두 허용되어야 한다. 이 entitlement는 `StrategyVersion` 정의·저장에는 적용하지 않고 `RunBacktest`에만 적용한다. 기간은 API `Period.start`와 `end`를 포함한 UTC calendar day 수로 계산한다.
+
+quota month는 UTC calendar month다. entitlement와 기간 검사를 통과하여 `BacktestRun(PENDING)`이 정상 접수될 때 월간 1회를 소비하며, 이후 Compute 실패에도 자동 환불하지 않는다. 월간 quota와 `PENDING`/`RUNNING` 동시 실행 capacity는 PostgreSQL transaction/locking 또는 동등한 atomic conditional update로 예약한다. 비원자적 check-then-write나 quota만을 위한 Redis는 사용하지 않는다. terminal 상태 전이는 동시 실행 reservation만 해제한다.
+
+월간 한도와 동시 실행 한도 초과는 각각 HTTP 429 (`BACKTEST_MONTHLY_LIMIT_EXCEEDED`, `BACKTEST_CONCURRENCY_LIMIT_EXCEEDED`)로, 기간과 Asset entitlement 위반은 각각 HTTP 403 (`BACKTEST_PERIOD_NOT_ALLOWED`, `ASSET_NOT_ALLOWED_FOR_PLAN`)으로 반환한다. 공통 `ErrorResponse`는 항상 machine-readable `code`와 `message`를 포함한다.
+
+**이유**: quota(얼마나 실행할 수 있는가)와 entitlement(무엇을 실행할 수 있는가)를 분리하면, Controller나 Application 곳곳에 tier 조건을 하드코딩하지 않고 향후 실제 비용·사용량에 따라 정책만 조정할 수 있다. 원자적 reservation은 동시 요청이 한도를 우회하는 것을 막고, PENDING 접수 시점 차감은 Compute 실패·재시도 정책과 billing 정책을 MVP 범위에서 분리한다.
+
+**관련**: ADR-001(MVP Asset Universe), ADR-018(feature-centric Core architecture).

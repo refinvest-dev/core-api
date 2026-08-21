@@ -5,9 +5,9 @@ import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageR
 data class GetUsageResponse(
     val tier: String,
     val backtestsUsedThisMonth: Long,
-    val backtestMonthlyLimit: Int?,
-    val allowedAssets: List<String>?,
-    val maxBacktestPeriodDays: Int?,
+    val backtestMonthlyLimit: Int,
+    val allowedAssets: List<String>,
+    val maxBacktestPeriodDays: Long,
     val strategySaveEnabled: Boolean,
 ) {
     companion object {

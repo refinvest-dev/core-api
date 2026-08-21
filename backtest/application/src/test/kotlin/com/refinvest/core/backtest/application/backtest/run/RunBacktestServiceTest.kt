@@ -10,10 +10,16 @@ import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.port.inbound.backtest.run.RunBacktestCommand
 import com.refinvest.core.backtest.port.outbound.BacktestRunIdGenerator
+import com.refinvest.core.backtest.port.outbound.BacktestMemberIdProvider
+import com.refinvest.core.backtest.port.outbound.BacktestQuotaReservation
+import com.refinvest.core.backtest.port.outbound.BacktestQuotaStore
 import com.refinvest.core.backtest.port.outbound.BacktestRunStore
-import com.refinvest.core.strategy.domain.valueobject.StrategyId as StrategyIdInStrategy
-import com.refinvest.core.strategy.port.inbound.strategy.version.lookup.LookupStrategyVersionOwnerResult
-import com.refinvest.core.strategy.port.inbound.strategy.version.lookup.LookupStrategyVersionOwnerUseCase
+import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestResult
+import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestUseCase
+import com.refinvest.core.subscription.domain.Subscription
+import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
+import com.refinvest.core.subscription.port.inbound.subscription.get.GetSubscriptionUseCase
 import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
@@ -31,9 +37,14 @@ class RunBacktestServiceTest {
         val service = RunBacktestService(
             backtestRunStore = BacktestRunStore { saved = it },
             backtestRunIdGenerator = BacktestRunIdGenerator { id },
-            lookupStrategyVersionOwnerUseCase = LookupStrategyVersionOwnerUseCase {
-                LookupStrategyVersionOwnerResult(it.strategyVersionId, StrategyIdInStrategy(30L))
+            lookupStrategyVersionForBacktestUseCase = LookupStrategyVersionForBacktestUseCase {
+                LookupStrategyVersionForBacktestResult(30L, MemberId(1L), setOf("QQQ"))
             },
+            getSubscriptionUseCase = GetSubscriptionUseCase { Subscription.restore(it.memberId, SubscriptionTier.FREE).let { subscription ->
+                com.refinvest.core.subscription.port.inbound.subscription.get.GetSubscriptionResult(subscription.id, subscription.tier)
+            } },
+            backtestMemberIdProvider = BacktestMemberIdProvider { MemberId(1L) },
+            backtestQuotaStore = BacktestQuotaStore { _, _, _, _ -> BacktestQuotaReservation.RESERVED },
             clock = Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"), ZoneOffset.UTC),
         )
 

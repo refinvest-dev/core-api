@@ -21,6 +21,11 @@ import com.refinvest.core.backtest.port.inbound.backtest.execution.CompleteBackt
 import com.refinvest.core.backtest.port.inbound.backtest.execution.FailBacktestRunCommand
 import com.refinvest.core.backtest.port.inbound.backtest.execution.StartBacktestRunCommand
 import com.refinvest.core.backtest.port.outbound.BacktestRunStore
+import com.refinvest.core.backtest.port.outbound.BacktestQuotaReservation
+import com.refinvest.core.backtest.port.outbound.BacktestQuotaStore
+import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestResult
+import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestUseCase
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -32,7 +37,7 @@ class RecordBacktestRunExecutionServiceTest {
     @Test
     fun `records a completed execution and persists its result`() {
         val store = FakeBacktestRunStore(pendingRun())
-        val service = RecordBacktestRunExecutionService(store)
+        val service = service(store)
 
         service.execute(startCommand())
         val result = resultFor(BacktestRunId(10L))
@@ -47,7 +52,7 @@ class RecordBacktestRunExecutionServiceTest {
     @Test
     fun `records a failed execution after it starts`() {
         val store = FakeBacktestRunStore(pendingRun())
-        val service = RecordBacktestRunExecutionService(store)
+        val service = service(store)
 
         service.execute(startCommand())
         service.execute(FailBacktestRunCommand(BacktestRunId(10L), "PRICE_DATA_MISSING"))
@@ -58,7 +63,7 @@ class RecordBacktestRunExecutionServiceTest {
 
     @Test
     fun `rejects completion before an execution starts`() {
-        val service = RecordBacktestRunExecutionService(FakeBacktestRunStore(pendingRun()))
+        val service = service(FakeBacktestRunStore(pendingRun()))
 
         assertFailsWith<IllegalArgumentException> {
             service.execute(CompleteBacktestRunCommand(BacktestRunId(10L), resultFor(BacktestRunId(10L))))
@@ -67,7 +72,7 @@ class RecordBacktestRunExecutionServiceTest {
 
     @Test
     fun `rejects an unknown run`() {
-        val service = RecordBacktestRunExecutionService(BacktestRunStore { error("must not save") })
+        val service = service(BacktestRunStore { error("must not save") })
 
         assertFailsWith<IllegalArgumentException> { service.execute(startCommand()) }
     }
@@ -100,6 +105,14 @@ class RecordBacktestRunExecutionServiceTest {
         signalExecutionDelay = SignalExecutionDelay(BigDecimal.ONE, BigDecimal.ONE, emptyList()),
         sampleSizeWarning = SampleSizeWarning.LOW,
         dataIntegrityStatus = DataIntegrityStatus(DatasetSnapshotId("snapshot-1"), true, true),
+    )
+
+    private fun service(store: BacktestRunStore): RecordBacktestRunExecutionService = RecordBacktestRunExecutionService(
+        backtestRunStore = store,
+        backtestQuotaStore = BacktestQuotaStore { _, _, _, _ -> BacktestQuotaReservation.RESERVED },
+        lookupStrategyVersionForBacktestUseCase = LookupStrategyVersionForBacktestUseCase {
+            LookupStrategyVersionForBacktestResult(7L, MemberId(1L), setOf("QQQ"))
+        },
     )
 
     private class FakeBacktestRunStore(

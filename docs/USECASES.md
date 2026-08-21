@@ -18,7 +18,7 @@ Phase 1(Core MVP) 범위의 Use Case만 다룬다. 신규 Use Case를 추가할 
 
 | Use Case | 타입 | 설명 |
 |---|---|---|
-| `RunBacktest` | Command | `StrategyVersion` + 기간 + Fee/Slippage로 `BacktestRun(PENDING)` 생성, Compute에 비동기 요청 |
+| `RunBacktest` | Command | 현재 Subscription tier의 모든 Asset entitlement·기간 제한을 검사하고, 월간 quota/동시 실행 capacity를 원자적으로 예약한 뒤 `BacktestRun(PENDING)` 생성, Compute에 비동기 요청 |
 | `PollBacktestStatus` | Query | `BacktestRun.status` 조회 (Web이 폴링) |
 | `GetBacktestResult` | Query | `COMPLETED` 상태의 `BacktestRun`에 대한 `BacktestResult` 전체(지표, Equity Curve, Trade Table 등) 조회 |
 | `ListBacktestRuns` | Query | 특정 Strategy의 백테스트 실행 이력 (Second Backtest Rate 계측의 데이터 소스) |
@@ -49,7 +49,7 @@ Data Explorer는 가설을 세우기 **이전** 단계(Product Loop의 "Observe"
 | `SocialLogin` | Command | Kakao/Naver/Google provider identity를 정규화해 기존 `SocialIdentity`의 Member를 찾거나, 최초 로그인이라면 Member와 SocialIdentity를 원자적으로 생성한 뒤 RefInvest Access/Refresh JWT Cookie를 발급 |
 | `RefreshSession` | Command | Refresh JWT Rotation. 사용된 Refresh Token을 무효화하고 새 Access/Refresh JWT를 발급하며, 재사용은 해당 token family를 폐기 |
 | `Logout` | Command | 현재 Refresh Token 또는 token family를 무효화하고 인증 Cookie 제거 |
-| `GetUsage` | Query | 이번 달 백테스트 실행 횟수 등 사용량 (Free/Pro 제한 확인용) |
+| `GetUsage` | Query | UTC 기준 이번 달 Backtest 정상 접수 횟수와 현재 Free/Pro tier의 월간 횟수·기간·Asset 한도 조회 |
 | `UpgradeSubscription` | Command | Free → Pro 전환 (Phase 5에서 실제 결제 연동, MVP는 상태값만) |
 
 ---
