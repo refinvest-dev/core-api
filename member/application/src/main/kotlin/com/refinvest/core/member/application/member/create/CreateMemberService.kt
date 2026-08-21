@@ -6,6 +6,8 @@ import com.refinvest.core.member.port.inbound.member.create.CreateMemberResult
 import com.refinvest.core.member.port.inbound.member.create.CreateMemberUseCase
 import com.refinvest.core.member.port.outbound.MemberIdGenerator
 import com.refinvest.core.member.port.outbound.MemberStore
+import com.refinvest.core.subscription.port.inbound.subscription.create.CreateSubscriptionCommand
+import com.refinvest.core.subscription.port.inbound.subscription.create.CreateSubscriptionUseCase
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -14,12 +16,14 @@ import java.time.Clock
 open class CreateMemberService(
     private val memberStore: MemberStore,
     private val memberIdGenerator: MemberIdGenerator,
+    private val createSubscriptionUseCase: CreateSubscriptionUseCase,
     private val clock: Clock,
 ) : CreateMemberUseCase {
     @Transactional
     override fun execute(command: CreateMemberCommand): CreateMemberResult {
         val member = Member.create(memberIdGenerator.next(), clock.instant())
         memberStore.save(member)
+        createSubscriptionUseCase.execute(CreateSubscriptionCommand(member.id))
         return CreateMemberResult(member.id, member.role)
     }
 }

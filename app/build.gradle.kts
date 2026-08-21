@@ -3,6 +3,8 @@ dependencies {
     implementation(project(":member:application"))
     implementation(project(":member:adapter:persistence"))
     implementation(project(":member:adapter:snowflake"))
+    implementation(project(":subscription:application"))
+    implementation(project(":subscription:adapter:persistence"))
     implementation(project(":auth:application"))
     implementation(project(":auth:adapter:persistence"))
     implementation(project(":auth:adapter:security"))
@@ -27,5 +29,6 @@ dependencies {
     testImplementation(libs.spring.boot.starter.oauth2.resource.server)
     testImplementation(project(":auth:domain"))
     testImplementation(project(":auth:port"))
+    testImplementation(project(":member:port"))
     testRuntimeOnly(libs.h2)
 }
