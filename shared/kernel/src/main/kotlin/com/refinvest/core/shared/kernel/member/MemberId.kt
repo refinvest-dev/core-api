@@ -1,4 +1,4 @@
-package com.refinvest.core.strategy.domain.valueobject
+package com.refinvest.core.shared.kernel.member
 
 import com.refinvest.core.common.domain.Identifier
 

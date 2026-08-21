@@ -8,7 +8,7 @@ import com.refinvest.core.strategy.domain.valueobject.LogicalCombinator
 import com.refinvest.core.strategy.domain.valueobject.MetricOperand
 import com.refinvest.core.strategy.domain.valueobject.MetricReference
 import com.refinvest.core.strategy.domain.valueobject.MetricType
-import com.refinvest.core.strategy.domain.valueobject.MemberId
+import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.strategy.domain.valueobject.SignalSessions
 import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import com.refinvest.core.strategy.domain.valueobject.StrategyVersionId
