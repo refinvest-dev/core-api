@@ -13,7 +13,6 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 
 class GetUsageServiceTest {
     @Test
@@ -32,7 +31,6 @@ class GetUsageServiceTest {
         assertEquals(7, result.backtestsUsedThisMonth)
         assertEquals(Instant.parse("2026-08-01T00:00:00Z"), backtestUsage.query?.startInclusive)
         assertEquals(Instant.parse("2026-09-01T00:00:00Z"), backtestUsage.query?.endExclusive)
-        assertEquals(true, result.strategySaveEnabled)
         assertEquals(500, result.backtestMonthlyLimit)
         assertEquals(listOf("BTCUSDT", "QQQ", "SOXL", "SPY", "TQQQ", "VIX"), result.allowedAssets)
         assertEquals(3_650, result.maxBacktestPeriodDays)
@@ -49,7 +47,6 @@ class GetUsageServiceTest {
         val result = service.execute(GetUsageQuery(MemberId(1)))
 
         assertEquals(SubscriptionTier.FREE, result.tier)
-        assertFalse(result.strategySaveEnabled)
         assertEquals(30, result.backtestMonthlyLimit)
     }
 

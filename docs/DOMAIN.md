@@ -162,9 +162,12 @@ RefreshSession
 | 최대 동시 실행 수 | 1회 | 3회 |
 | 최대 요청 기간 | 365일 | 3,650일 |
 | Backtest 허용 Asset | `QQQ`, `SPY`, `BTCUSDT` | MVP Asset Universe 전체 |
-| 전략 저장/비교, Export | 미제공 | 제공 |
+| Strategy/StrategyVersion 저장 | 제공 | 제공 |
+| Strategy 비교, 결과 Export | MVP 미제공 (향후 PRO 전용) | MVP 미제공 (향후 제공) |
 
 - MVP Asset Universe는 ADR-001의 `QQQ`, `SPY`, `TQQQ`, `SOXL`, `BTCUSDT`, `VIX`를 유지한다. 이 정책을 위해 Asset을 추가하지 않는다.
+- Strategy/StrategyVersion 저장은 FREE와 PRO 모두 허용한다. Backtest 실행은 저장된 StrategyVersion을 참조하므로, 저장 자체를 FREE entitlement로 제한하지 않는다.
+- Strategy 비교와 결과 Export는 Phase 1 범위 밖이다. 해당 Use Case를 도입할 때 FREE에는 허용하지 않고 PRO entitlement로 별도 적용한다. 현재 `GetUsage`는 이 미구현 기능의 enablement를 반환하지 않는다.
 - Asset entitlement는 **Backtest 실행**에만 적용한다. `StrategyVersion` 정의·저장 시점에는 Plan entitlement를 검사하지 않는다. 실행 시 primarySignalAsset, 모든 Condition이 참조하는 Asset, executionAsset이 현재 tier에 모두 허용되어야 한다.
 - 요청 기간은 `Period.start`와 `Period.end`를 모두 포함한 UTC calendar day 수(`end - start + 1`)로 판정한다.
 - quota month는 client timezone과 무관한 UTC calendar month다. `BacktestRun(PENDING)`이 정상 접수될 때 월간 1회를 소비하며, 이후 Compute 실패에도 자동 환불하지 않는다. 거절된 요청은 quota를 소비하지 않는다.
