@@ -2,6 +2,7 @@ package com.refinvest.core.auth.adapter.web
 
 import com.refinvest.core.auth.adapter.security.cookie.AuthCookieWriter
 import com.refinvest.core.auth.adapter.web.auth.me.GetCurrentMemberResponse
+import com.refinvest.core.auth.adapter.web.auth.subscription.UpgradeSubscriptionResponse
 import com.refinvest.core.auth.adapter.web.auth.usage.GetUsageResponse
 import com.refinvest.core.auth.port.inbound.auth.me.GetCurrentMemberUseCase
 import com.refinvest.core.auth.port.inbound.auth.logout.LogoutCommand
@@ -11,6 +12,8 @@ import com.refinvest.core.auth.port.inbound.auth.session.RefreshSessionUseCase
 import com.refinvest.core.auth.port.outbound.RefreshTokenParser
 import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageQuery
 import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageUseCase
+import com.refinvest.core.subscription.port.inbound.subscription.upgrade.UpgradeSubscriptionCommand
+import com.refinvest.core.subscription.port.inbound.subscription.upgrade.UpgradeSubscriptionUseCase
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.http.HttpStatus
 import org.springframework.security.web.csrf.CsrfToken
@@ -25,6 +28,7 @@ class AuthController(
     private val refreshTokenParser: RefreshTokenParser,
     private val getCurrentMemberUseCase: GetCurrentMemberUseCase,
     private val getUsageUseCase: GetUsageUseCase,
+    private val upgradeSubscriptionUseCase: UpgradeSubscriptionUseCase,
     private val refreshSessionUseCase: RefreshSessionUseCase,
     private val logoutUseCase: LogoutUseCase,
     private val authCookieWriter: AuthCookieWriter,
@@ -38,6 +42,12 @@ class AuthController(
     fun usage(): GetUsageResponse = getCurrentMemberUseCase.execute()
         ?.let { member -> getUsageUseCase.execute(GetUsageQuery(member.memberId)) }
         ?.let(GetUsageResponse::from)
+        ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated member is unavailable")
+
+    @PostMapping("/me/subscription/upgrade")
+    fun upgradeSubscription(): UpgradeSubscriptionResponse = getCurrentMemberUseCase.execute()
+        ?.let { member -> upgradeSubscriptionUseCase.execute(UpgradeSubscriptionCommand(member.memberId)) }
+        ?.let(UpgradeSubscriptionResponse::from)
         ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated member is unavailable")
 
     @GetMapping("/auth/csrf")

@@ -1,7 +1,10 @@
 package com.refinvest.core.subscription.port.outbound
 
 import com.refinvest.core.subscription.domain.Subscription
+import com.refinvest.core.shared.kernel.member.MemberId
 
-fun interface SubscriptionStore {
+interface SubscriptionStore {
     fun save(subscription: Subscription)
+
+    fun findByMemberId(memberId: MemberId): Subscription?
 }

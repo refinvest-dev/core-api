@@ -187,6 +187,38 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `upgrades the current member subscription through HTTP`() {
+        jdbcTemplate.update(
+            "merge into members (id, role, created_at) key(id) values (502, 'MEMBER', CURRENT_TIMESTAMP)",
+        )
+        jdbcTemplate.update(
+            "merge into subscriptions (member_id, tier) key(member_id) values (502, 'FREE')",
+        )
+
+        val response = authenticatedHttpClient().send(
+            authenticatedRequest(
+                URI("http://localhost:$port/me/subscription/upgrade"),
+                accessToken(memberId = 502),
+            )
+                .header("X-XSRF-TOKEN", "test-csrf")
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertEquals(200, response.statusCode(), response.body())
+        assertTrue(response.body().contains("\"tier\":\"PRO\""), response.body())
+        assertEquals(
+            "PRO",
+            jdbcTemplate.queryForObject(
+                "select tier from subscriptions where member_id = ?",
+                String::class.java,
+                502L,
+            ),
+        )
+    }
+
+    @Test
     fun `rejects an access token whose member no longer exists`() {
         val response = authenticatedHttpClient().send(
             authenticatedRequest(
@@ -244,7 +276,8 @@ class RefinvestApplicationTests(
 
     @Test
     fun `rejects an access token with an invalid signature`() {
-        val token = accessToken(validate = false).dropLast(1) + "x"
+        val issuedToken = accessToken(validate = false)
+        val token = issuedToken.dropLast(1) + if (issuedToken.last() == 'x') 'y' else 'x'
         val response = HttpClient.newHttpClient().send(
             authenticatedRequest(URI("http://localhost:$port/strategies"), token).GET().build(),
             HttpResponse.BodyHandlers.ofString(),
