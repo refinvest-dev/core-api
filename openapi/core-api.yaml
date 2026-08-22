@@ -682,7 +682,7 @@ components:
 
     Usage:
       type: object
-      required: [tier, backtestsUsedThisMonth, backtestMonthlyLimit, allowedAssets, maxBacktestPeriodDays, strategySaveEnabled]
+      required: [tier, backtestsUsedThisMonth, backtestMonthlyLimit, allowedAssets, maxBacktestPeriodDays]
       description: "UTC calendar month 기준 현재 tier의 Backtest 정책과 사용량. 한도 필드는 null이 아니다."
       properties:
         tier:
@@ -699,4 +699,3 @@ components:
         maxBacktestPeriodDays:
           type: integer
           description: FREE는 365, PRO는 3650.
-        strategySaveEnabled: { type: boolean }

@@ -12,7 +12,7 @@ Phase 1(Core MVP) 범위의 Use Case만 다룬다. 신규 Use Case를 추가할 
 | `DefineStrategyVersion` | Command | Primary Signal Asset, Condition, Execution Asset, Lag, Exit을 지정해 새 `StrategyVersion` 생성. 불변식(`docs/DOMAIN.md` §1.2) 검증 포함 |
 | `PreviewStrategy` | Query | 현재 편집 중인 조건을 자연어 문장으로 미리 보여줌 (DSL과 1:1 대응) |
 | `GetStrategy` | Query | Strategy와 그 버전 목록 조회 |
-| `ListStrategies` | Query | 사용자의 전략 목록 (Pro: 무제한, Free: 개수 제한) |
+| `ListStrategies` | Query | 사용자의 전략 목록 |
 
 ## Backtest 모듈 (Core, Compute 오케스트레이션)
 

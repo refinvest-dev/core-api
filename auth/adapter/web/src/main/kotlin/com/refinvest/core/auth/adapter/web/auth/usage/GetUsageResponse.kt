@@ -8,7 +8,6 @@ data class GetUsageResponse(
     val backtestMonthlyLimit: Int,
     val allowedAssets: List<String>,
     val maxBacktestPeriodDays: Long,
-    val strategySaveEnabled: Boolean,
 ) {
     companion object {
         fun from(result: GetUsageResult): GetUsageResponse = GetUsageResponse(
@@ -17,7 +16,6 @@ data class GetUsageResponse(
             backtestMonthlyLimit = result.backtestMonthlyLimit,
             allowedAssets = result.allowedAssets,
             maxBacktestPeriodDays = result.maxBacktestPeriodDays,
-            strategySaveEnabled = result.strategySaveEnabled,
         )
     }
 }

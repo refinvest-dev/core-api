@@ -183,7 +183,6 @@ class RefinvestApplicationTests(
         assertEquals(200, response.statusCode(), response.body())
         assertTrue(response.body().contains("\"tier\":\"PRO\""), response.body())
         assertTrue(response.body().contains("\"backtestsUsedThisMonth\":2"), response.body())
-        assertTrue(response.body().contains("\"strategySaveEnabled\":true"), response.body())
     }
 
     @Test

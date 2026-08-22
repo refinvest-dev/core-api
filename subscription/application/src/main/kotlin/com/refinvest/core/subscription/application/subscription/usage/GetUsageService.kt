@@ -37,7 +37,6 @@ open class GetUsageService(
             backtestMonthlyLimit = policy.monthlyExecutionLimit,
             allowedAssets = policy.allowedAssets.sorted(),
             maxBacktestPeriodDays = policy.maxRequestedPeriodDays,
-            strategySaveEnabled = tier == SubscriptionTier.PRO,
         )
     }
 }

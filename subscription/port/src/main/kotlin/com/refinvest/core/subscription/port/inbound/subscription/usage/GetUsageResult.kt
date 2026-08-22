@@ -8,5 +8,4 @@ data class GetUsageResult(
     val backtestMonthlyLimit: Int,
     val allowedAssets: List<String>,
     val maxBacktestPeriodDays: Long,
-    val strategySaveEnabled: Boolean,
 )
