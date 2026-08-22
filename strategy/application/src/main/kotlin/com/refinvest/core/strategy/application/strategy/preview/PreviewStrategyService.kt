@@ -8,6 +8,7 @@ import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewOperand
 import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewStrategyCommand
 import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewStrategyResult
 import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewStrategyUseCase
+import com.refinvest.core.strategy.port.outbound.MemberIdProvider
 import com.refinvest.core.strategy.port.outbound.StrategyReader
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
@@ -15,9 +16,11 @@ import java.math.BigDecimal
 @Service
 class PreviewStrategyService(
     private val strategyReader: StrategyReader,
+    private val memberIdProvider: MemberIdProvider,
 ) : PreviewStrategyUseCase {
     override fun execute(command: PreviewStrategyCommand): PreviewStrategyResult? {
-        if (strategyReader.findById(command.strategyId) == null) return null
+        val strategy = strategyReader.findById(command.strategyId) ?: return null
+        if (strategy.memberId != memberIdProvider.currentMemberId()) return null
 
         return PreviewStrategyResult(
             previewText = buildString {

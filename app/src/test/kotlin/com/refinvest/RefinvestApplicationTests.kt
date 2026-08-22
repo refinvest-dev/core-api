@@ -553,7 +553,10 @@ class RefinvestApplicationTests(
         seedStrategy(9001L, 2L, "preview fixture", "2099-01-01 00:00:00")
 
         val response = authenticatedHttpClient().send(
-            authenticatedRequest(URI("http://localhost:$port/strategies/9001/versions/preview"))
+            authenticatedRequest(
+                URI("http://localhost:$port/strategies/9001/versions/preview"),
+                accessToken = accessToken(memberId = 2L),
+            )
                 .header("Content-Type", "application/json")
                 .header("X-XSRF-TOKEN", "test-csrf")
                 .POST(

@@ -4,15 +4,19 @@ import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyQuery
 import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyResult
 import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyVersionResult
 import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyUseCase
+import com.refinvest.core.strategy.port.outbound.MemberIdProvider
 import com.refinvest.core.strategy.port.outbound.StrategyReader
 import org.springframework.stereotype.Service
 
 @Service
 class GetStrategyService(
     private val strategyReader: StrategyReader,
+    private val memberIdProvider: MemberIdProvider,
 ) : GetStrategyUseCase {
     override fun execute(query: GetStrategyQuery): GetStrategyResult? =
-        strategyReader.findById(query.strategyId)?.let { strategy ->
+        strategyReader.findById(query.strategyId)
+            ?.takeIf { it.memberId == memberIdProvider.currentMemberId() }
+            ?.let { strategy ->
             GetStrategyResult(
                 id = strategy.id,
                 name = strategy.name,

@@ -39,6 +39,7 @@ class ListStrategiesServiceTest {
 
     private fun readModel() = StrategyReadModel(
         id = StrategyId(10L),
+        memberId = MemberId(7L),
         name = "volatility hypothesis",
         createdAt = Instant.parse("2026-08-20T00:00:00Z"),
         latestVersionId = null,

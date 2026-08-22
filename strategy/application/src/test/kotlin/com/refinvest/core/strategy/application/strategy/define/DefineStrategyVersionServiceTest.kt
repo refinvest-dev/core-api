@@ -15,6 +15,7 @@ import com.refinvest.core.strategy.domain.valueobject.TimeBasedExit
 import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionCommand
 import com.refinvest.core.strategy.port.outbound.StrategyStore
 import com.refinvest.core.strategy.port.outbound.StrategyVersionIdGenerator
+import com.refinvest.core.strategy.port.outbound.MemberIdProvider
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -33,6 +34,7 @@ class DefineStrategyVersionServiceTest {
         val service = DefineStrategyVersionService(
             strategyStore = store,
             strategyVersionIdGenerator = StrategyVersionIdGenerator { StrategyVersionId(2L) },
+            memberIdProvider = MemberIdProvider { MemberId(1L) },
             clock = clock,
         )
 
@@ -48,15 +50,30 @@ class DefineStrategyVersionServiceTest {
         val service = DefineStrategyVersionService(
             strategyStore = InMemoryStrategyStore(null),
             strategyVersionIdGenerator = StrategyVersionIdGenerator { StrategyVersionId(2L) },
+            memberIdProvider = MemberIdProvider { MemberId(1L) },
             clock = clock,
         )
 
         assertNull(service.execute(command()))
     }
 
-    private fun strategy(): Strategy = Strategy.create(
+    @Test
+    fun `returns null and does not save when the strategy belongs to another member`() {
+        val store = InMemoryStrategyStore(strategy(memberId = MemberId(2L)))
+        val service = DefineStrategyVersionService(
+            strategyStore = store,
+            strategyVersionIdGenerator = StrategyVersionIdGenerator { StrategyVersionId(2L) },
+            memberIdProvider = MemberIdProvider { MemberId(1L) },
+            clock = clock,
+        )
+
+        assertNull(service.execute(command()))
+        assertNull(store.saved)
+    }
+
+    private fun strategy(memberId: MemberId = MemberId(1L)): Strategy = Strategy.create(
         id = strategyId,
-        memberId = MemberId(1L),
+        memberId = memberId,
         name = "volatility hypothesis",
         createdAt = clock.instant(),
     )
