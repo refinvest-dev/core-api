@@ -7,6 +7,8 @@ import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewMetricRe
 import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewStrategyCommand
 import com.refinvest.core.strategy.port.outbound.StrategyReadModel
 import com.refinvest.core.strategy.port.outbound.StrategyReader
+import com.refinvest.core.strategy.port.outbound.MemberIdProvider
+import com.refinvest.core.shared.kernel.member.MemberId
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -16,7 +18,7 @@ class PreviewStrategyServiceTest {
     @Test
     fun `renders a strategy draft without persisting it`() {
         val strategyId = StrategyId(1L)
-        val service = PreviewStrategyService(StrategyReader { existingStrategy(it) })
+        val service = PreviewStrategyService(StrategyReader { existingStrategy(it) }, MemberIdProvider { MemberId(1L) })
 
         val result = service.execute(
             PreviewStrategyCommand(
@@ -44,7 +46,7 @@ class PreviewStrategyServiceTest {
 
     @Test
     fun `renders an incomplete draft with no conditions`() {
-        val service = PreviewStrategyService(StrategyReader { existingStrategy(it) })
+        val service = PreviewStrategyService(StrategyReader { existingStrategy(it) }, MemberIdProvider { MemberId(1L) })
 
         val result = service.execute(
             PreviewStrategyCommand(StrategyId(1L), "QQQ", emptyList(), "TQQQ", 0, 1),
@@ -58,13 +60,24 @@ class PreviewStrategyServiceTest {
 
     @Test
     fun `returns null when the strategy does not exist`() {
-        val service = PreviewStrategyService(StrategyReader { null })
+        val service = PreviewStrategyService(StrategyReader { null }, MemberIdProvider { MemberId(1L) })
+
+        assertNull(service.execute(PreviewStrategyCommand(StrategyId(1L), null, emptyList(), null, null, null)))
+    }
+
+    @Test
+    fun `returns null when the strategy belongs to another member`() {
+        val service = PreviewStrategyService(
+            StrategyReader { existingStrategy(it).copy(memberId = MemberId(2L)) },
+            MemberIdProvider { MemberId(1L) },
+        )
 
         assertNull(service.execute(PreviewStrategyCommand(StrategyId(1L), null, emptyList(), null, null, null)))
     }
 
     private fun existingStrategy(id: StrategyId) = StrategyReadModel(
         id = id,
+        memberId = MemberId(1L),
         name = "preview fixture",
         createdAt = Instant.parse("2026-08-20T00:00:00Z"),
         latestVersionId = null,

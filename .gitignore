@@ -44,3 +44,9 @@ out/
 
 ### Local context checkout ###
 /context/
+
+### Local pull-request draft ###
+PR_BODY.md
+
+### Local pull-request draft ###
+PR_BODY.md

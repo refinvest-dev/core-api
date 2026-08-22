@@ -39,6 +39,7 @@ class JpaStrategyReaderAdapter(
         val versions = versions.map { it.toReadModel() }
         return StrategyReadModel(
             id = StrategyId(id),
+            memberId = MemberId(memberId),
             name = name,
             createdAt = createdAt,
             latestVersionId = versions.lastOrNull()?.id,

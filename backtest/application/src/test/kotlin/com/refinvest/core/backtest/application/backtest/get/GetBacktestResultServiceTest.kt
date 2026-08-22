@@ -18,8 +18,12 @@ import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import com.refinvest.core.backtest.port.inbound.backtest.get.GetBacktestResultQuery
 import com.refinvest.core.backtest.port.outbound.BacktestResultReader
+import com.refinvest.core.backtest.port.outbound.BacktestMemberIdProvider
 import com.refinvest.core.backtest.port.outbound.BacktestRunReadModel
 import com.refinvest.core.backtest.port.outbound.BacktestRunReader
+import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestResult
+import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestUseCase
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -36,6 +40,8 @@ class GetBacktestResultServiceTest {
         val service = GetBacktestResultService(
             backtestRunReader = BacktestRunReader { completedRun(it) },
             backtestResultReader = BacktestResultReader { result },
+            lookupStrategyVersionForBacktestUseCase = ownerLookup(MemberId(1L)),
+            backtestMemberIdProvider = BacktestMemberIdProvider { MemberId(1L) },
         )
 
         val response = service.execute(GetBacktestResultQuery(runId))
@@ -51,6 +57,8 @@ class GetBacktestResultServiceTest {
         val service = GetBacktestResultService(
             backtestRunReader = BacktestRunReader { pendingRun(it) },
             backtestResultReader = BacktestResultReader { error("must not read result for a pending run") },
+            lookupStrategyVersionForBacktestUseCase = ownerLookup(MemberId(1L)),
+            backtestMemberIdProvider = BacktestMemberIdProvider { MemberId(1L) },
         )
 
         val response = service.execute(GetBacktestResultQuery(runId))
@@ -64,6 +72,8 @@ class GetBacktestResultServiceTest {
         val service = GetBacktestResultService(
             backtestRunReader = BacktestRunReader { completedRun(it) },
             backtestResultReader = BacktestResultReader { null },
+            lookupStrategyVersionForBacktestUseCase = ownerLookup(MemberId(1L)),
+            backtestMemberIdProvider = BacktestMemberIdProvider { MemberId(1L) },
         )
 
         assertFailsWith<IllegalArgumentException> {
@@ -76,10 +86,29 @@ class GetBacktestResultServiceTest {
         val service = GetBacktestResultService(
             backtestRunReader = BacktestRunReader { null },
             backtestResultReader = BacktestResultReader { error("must not read a missing run") },
+            lookupStrategyVersionForBacktestUseCase = ownerLookup(MemberId(1L)),
+            backtestMemberIdProvider = BacktestMemberIdProvider { MemberId(1L) },
         )
 
         assertNull(service.execute(GetBacktestResultQuery(BacktestRunId(10L))))
     }
+
+    @Test
+    fun `returns null when the run belongs to another member`() {
+        val service = GetBacktestResultService(
+            backtestRunReader = BacktestRunReader { pendingRun(it) },
+            backtestResultReader = BacktestResultReader { error("must not read another member result") },
+            lookupStrategyVersionForBacktestUseCase = ownerLookup(MemberId(2L)),
+            backtestMemberIdProvider = BacktestMemberIdProvider { MemberId(1L) },
+        )
+
+        assertNull(service.execute(GetBacktestResultQuery(BacktestRunId(10L))))
+    }
+
+    private fun ownerLookup(ownerMemberId: MemberId): LookupStrategyVersionForBacktestUseCase =
+        LookupStrategyVersionForBacktestUseCase {
+            LookupStrategyVersionForBacktestResult(30L, ownerMemberId, setOf("QQQ"))
+        }
 
     private fun pendingRun(id: BacktestRunId): BacktestRunReadModel = BacktestRunReadModel(
         id = id,

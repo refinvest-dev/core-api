@@ -4,6 +4,7 @@ import com.refinvest.core.strategy.domain.strategy.StrategyVersion
 import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionCommand
 import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionResult
 import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionUseCase
+import com.refinvest.core.strategy.port.outbound.MemberIdProvider
 import com.refinvest.core.strategy.port.outbound.StrategyStore
 import com.refinvest.core.strategy.port.outbound.StrategyVersionIdGenerator
 import org.springframework.stereotype.Service
@@ -14,11 +15,13 @@ import java.time.Clock
 open class DefineStrategyVersionService(
     private val strategyStore: StrategyStore,
     private val strategyVersionIdGenerator: StrategyVersionIdGenerator,
+    private val memberIdProvider: MemberIdProvider,
     private val clock: Clock,
 ) : DefineStrategyVersionUseCase {
     @Transactional
     override fun execute(command: DefineStrategyVersionCommand): DefineStrategyVersionResult? {
         val strategy = strategyStore.findById(command.strategyId) ?: return null
+        if (strategy.memberId != memberIdProvider.currentMemberId()) return null
         val version = StrategyVersion.create(
             id = strategyVersionIdGenerator.next(),
             strategyId = strategy.id,
