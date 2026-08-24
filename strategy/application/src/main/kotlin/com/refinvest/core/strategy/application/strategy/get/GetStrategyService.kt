@@ -13,26 +13,26 @@ class GetStrategyService(
     private val strategyReader: StrategyReader,
     private val memberIdProvider: MemberIdProvider,
 ) : GetStrategyUseCase {
-    override fun execute(query: GetStrategyQuery): GetStrategyResult? =
-        strategyReader.findById(query.strategyId)
-            ?.takeIf { it.memberId == memberIdProvider.currentMemberId() }
-            ?.let { strategy ->
-            GetStrategyResult(
-                id = strategy.id,
-                name = strategy.name,
-                createdAt = strategy.createdAt,
-                latestVersionId = strategy.latestVersionId,
-                versions = strategy.versions.map { version ->
-                    GetStrategyVersionResult(
-                        id = version.id,
-                        createdAt = version.createdAt,
-                        primarySignalAsset = version.primarySignalAsset,
-                        conditions = version.conditions,
-                        executionAsset = version.executionAsset,
-                        lag = version.lag,
-                        exit = version.exit,
-                    )
-                },
-            )
-        }
+    override fun execute(query: GetStrategyQuery): GetStrategyResult? {
+        val strategy = strategyReader.findById(query.strategyId) ?: return null
+        if (strategy.memberId != memberIdProvider.currentMemberId()) return null
+
+        return GetStrategyResult(
+            id = strategy.id,
+            name = strategy.name,
+            createdAt = strategy.createdAt,
+            latestVersionId = strategy.latestVersionId,
+            versions = strategy.versions.map { version ->
+                GetStrategyVersionResult(
+                    id = version.id,
+                    createdAt = version.createdAt,
+                    primarySignalAsset = version.primarySignalAsset,
+                    conditions = version.conditions,
+                    executionAsset = version.executionAsset,
+                    lag = version.lag,
+                    exit = version.exit,
+                )
+            },
+        )
+    }
 }
