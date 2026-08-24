@@ -1,0 +1,49 @@
+package com.refinvest.core.strategy.application.define
+
+import com.refinvest.core.strategy.domain.strategy.StrategyVersion
+import com.refinvest.core.strategy.port.inbound.define.DefineStrategyVersionCommand
+import com.refinvest.core.strategy.port.inbound.define.DefineStrategyVersionResult
+import com.refinvest.core.strategy.port.inbound.define.DefineStrategyVersionUseCase
+import com.refinvest.core.strategy.port.outbound.member.MemberIdProvider
+import com.refinvest.core.strategy.port.outbound.persistence.StrategyStore
+import com.refinvest.core.strategy.port.outbound.id.StrategyVersionIdGenerator
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
+
+@Service
+open class DefineStrategyVersionService(
+    private val strategyStore: StrategyStore,
+    private val strategyVersionIdGenerator: StrategyVersionIdGenerator,
+    private val memberIdProvider: MemberIdProvider,
+    private val clock: Clock,
+) : DefineStrategyVersionUseCase {
+    @Transactional
+    override fun execute(command: DefineStrategyVersionCommand): DefineStrategyVersionResult? {
+        val strategy = strategyStore.findById(command.strategyId) ?: return null
+        if (strategy.memberId != memberIdProvider.currentMemberId()) return null
+        val version = StrategyVersion.create(
+            id = strategyVersionIdGenerator.next(),
+            strategyId = strategy.id,
+            createdAt = clock.instant(),
+            primarySignalAsset = command.primarySignalAsset,
+            conditions = command.conditions,
+            executionAsset = command.executionAsset,
+            lag = command.lag,
+            exit = command.exit,
+        )
+        strategy.addVersion(version)
+        strategyStore.save(strategy)
+
+        return DefineStrategyVersionResult(
+            id = version.id,
+            strategyId = version.strategyId,
+            createdAt = version.createdAt,
+            primarySignalAsset = version.primarySignalAsset,
+            conditions = version.conditions,
+            executionAsset = version.executionAsset,
+            lag = version.lag,
+            exit = version.exit,
+        )
+    }
+}

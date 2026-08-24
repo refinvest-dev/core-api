@@ -1,6 +1,6 @@
 package com.refinvest.core.strategy.adapter.web.strategy.preview
 
-import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewMetricReference
+import com.refinvest.core.strategy.port.inbound.preview.PreviewMetricReference
 
 data class PreviewMetricReferenceRequest(
     val asset: String? = null,

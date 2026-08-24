@@ -6,8 +6,8 @@ import com.refinvest.core.backtest.port.inbound.backtest.list.ListBacktestRunsRe
 import com.refinvest.core.backtest.port.inbound.backtest.list.ListBacktestRunsUseCase
 import com.refinvest.core.backtest.port.outbound.BacktestRunReader
 import com.refinvest.core.strategy.domain.valueobject.StrategyId as StrategyIdInStrategy
-import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyQuery
-import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyUseCase
+import com.refinvest.core.strategy.port.inbound.get.GetStrategyQuery
+import com.refinvest.core.strategy.port.inbound.get.GetStrategyUseCase
 import org.springframework.stereotype.Service
 
 @Service

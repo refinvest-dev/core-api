@@ -2,7 +2,7 @@ package com.refinvest.core.strategy.adapter.web.strategy.get
 
 import com.refinvest.core.strategy.adapter.web.strategy.define.ConditionResponse
 import com.refinvest.core.strategy.adapter.web.strategy.define.TimeBasedExitResponse
-import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyVersionResult
+import com.refinvest.core.strategy.port.inbound.get.GetStrategyVersionResult
 import java.time.Instant
 
 data class GetStrategyVersionResponse(

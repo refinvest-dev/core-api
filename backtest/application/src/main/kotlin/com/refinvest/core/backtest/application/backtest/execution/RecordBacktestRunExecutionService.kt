@@ -9,8 +9,8 @@ import com.refinvest.core.backtest.port.outbound.BacktestQuotaStore
 import com.refinvest.core.backtest.port.outbound.BacktestRunStore
 import com.refinvest.core.backtest.domain.BacktestRun
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
-import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestQuery
-import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestUseCase
+import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestQuery
+import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.YearMonth

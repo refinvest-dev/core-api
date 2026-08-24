@@ -1,6 +1,6 @@
 package com.refinvest.core.strategy.adapter.web.strategy.preview
 
-import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewStrategyResult
+import com.refinvest.core.strategy.port.inbound.preview.PreviewStrategyResult
 
 data class PreviewStrategyResponse(
     val previewText: String,
