@@ -7,6 +7,7 @@ import com.refinvest.core.backtest.port.inbound.backtest.get.GetBacktestResultUs
 import com.refinvest.core.backtest.port.outbound.BacktestMemberIdProvider
 import com.refinvest.core.backtest.port.outbound.BacktestResultReader
 import com.refinvest.core.backtest.port.outbound.BacktestRunReader
+import com.refinvest.core.backtest.port.outbound.BacktestRunReadModel
 import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestQuery
 import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestUseCase
 import org.springframework.stereotype.Service
@@ -18,37 +19,39 @@ class GetBacktestResultService(
     private val lookupStrategyVersionForBacktestUseCase: LookupStrategyVersionForBacktestUseCase,
     private val backtestMemberIdProvider: BacktestMemberIdProvider,
 ) : GetBacktestResultUseCase {
-    override fun execute(query: GetBacktestResultQuery): GetBacktestResultResult? =
-        backtestRunReader.findById(query.backtestRunId)?.let { run ->
-            val version = lookupStrategyVersionForBacktestUseCase.execute(
-                LookupStrategyVersionForBacktestQuery(run.strategyVersionId.value),
-            ) ?: return null
-            if (version.ownerMemberId != backtestMemberIdProvider.currentMemberId()) return null
-            val result = if (run.status == BacktestRunStatus.COMPLETED) {
-                requireNotNull(backtestResultReader.findByBacktestRunId(run.id)) {
-                    "COMPLETED BacktestRun requires a BacktestResult"
-                }.also { backtestResult ->
-                    require(backtestResult.backtestRunId == run.id) {
-                        "BacktestResult belongs to another BacktestRun"
-                    }
-                }
-            } else {
-                null
-            }
+    override fun execute(query: GetBacktestResultQuery): GetBacktestResultResult? {
+        val backtestRun = backtestRunReader.findById(query.backtestRunId) ?: return null
+        val strategyVersion = lookupStrategyVersionForBacktestUseCase.execute(
+            LookupStrategyVersionForBacktestQuery(backtestRun.strategyVersionId.value),
+        ) ?: return null
+        if (strategyVersion.ownerMemberId != backtestMemberIdProvider.currentMemberId()) return null
 
-            GetBacktestResultResult(
-                id = run.id,
-                strategyId = run.strategyId,
-                strategyVersionId = run.strategyVersionId,
-                requestedPeriod = run.requestedPeriod,
-                feeModel = run.feeModel,
-                status = run.status,
-                actualPeriod = run.actualPeriod,
-                datasetSnapshotId = run.datasetSnapshotId,
-                engineVersion = run.engineVersion,
-                result = result,
-                failureReason = run.failureReason,
-                createdAt = run.createdAt,
-            )
+        return GetBacktestResultResult(
+            id = backtestRun.id,
+            strategyId = backtestRun.strategyId,
+            strategyVersionId = backtestRun.strategyVersionId,
+            requestedPeriod = backtestRun.requestedPeriod,
+            feeModel = backtestRun.feeModel,
+            status = backtestRun.status,
+            actualPeriod = backtestRun.actualPeriod,
+            datasetSnapshotId = backtestRun.datasetSnapshotId,
+            engineVersion = backtestRun.engineVersion,
+            result = completedResultOf(backtestRun),
+            failureReason = backtestRun.failureReason,
+            createdAt = backtestRun.createdAt,
+        )
+    }
+
+    private fun completedResultOf(backtestRun: BacktestRunReadModel) =
+        if (backtestRun.status != BacktestRunStatus.COMPLETED) {
+            null
+        } else {
+            requireNotNull(backtestResultReader.findByBacktestRunId(backtestRun.id)) {
+                "COMPLETED BacktestRun requires a BacktestResult"
+            }.also { backtestResult ->
+                require(backtestResult.backtestRunId == backtestRun.id) {
+                    "BacktestResult belongs to another BacktestRun"
+                }
+            }
         }
 }

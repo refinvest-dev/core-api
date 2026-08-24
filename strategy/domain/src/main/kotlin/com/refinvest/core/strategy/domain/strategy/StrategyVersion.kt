@@ -26,7 +26,7 @@ class StrategyVersion private constructor(
 
     init {
         require(this.conditions.isNotEmpty()) { "conditions must contain at least one condition" }
-        require(executionAsset in EXECUTION_ASSETS) { "$executionAsset cannot be an execution asset" }
+        require(executionAsset in EXECUTION_ASSETS) { "$executionAsset must be an execution asset" }
         require(this.conditions.first().logicalCombinator == null) {
             "The first condition must not have a logicalCombinator"
         }

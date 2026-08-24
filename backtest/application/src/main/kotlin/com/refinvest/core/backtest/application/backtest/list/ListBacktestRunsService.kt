@@ -18,25 +18,23 @@ class ListBacktestRunsService(
     override fun execute(query: ListBacktestRunsQuery): ListBacktestRunsResult {
         getStrategyUseCase.execute(GetStrategyQuery(StrategyIdInStrategy(query.strategyId.value)))
             ?: throw NoSuchElementException("Strategy not found")
-        return backtestRunReader
-        .findByStrategyId(query.strategyId, query.page, query.size)
-        .let { runs ->
-            ListBacktestRunsResult(
-                items = runs.items.map { run ->
-                    BacktestRunSummary(
-                        id = run.id,
-                        strategyId = run.strategyId,
-                        strategyVersionId = run.strategyVersionId,
-                        requestedPeriod = run.requestedPeriod,
-                        feeModel = run.feeModel,
-                        status = run.status,
-                        createdAt = run.createdAt,
-                    )
-                },
-                page = query.page,
-                size = query.size,
-                total = runs.total,
-            )
-        }
+        val backtestRuns = backtestRunReader.findByStrategyId(query.strategyId, query.page, query.size)
+
+        return ListBacktestRunsResult(
+            items = backtestRuns.items.map { run ->
+                BacktestRunSummary(
+                    id = run.id,
+                    strategyId = run.strategyId,
+                    strategyVersionId = run.strategyVersionId,
+                    requestedPeriod = run.requestedPeriod,
+                    feeModel = run.feeModel,
+                    status = run.status,
+                    createdAt = run.createdAt,
+                )
+            },
+            page = query.page,
+            size = query.size,
+            total = backtestRuns.total,
+        )
     }
 }
