@@ -12,8 +12,8 @@ import com.refinvest.core.backtest.port.outbound.BacktestRunPageReadModel
 import com.refinvest.core.backtest.port.outbound.BacktestRunReadModel
 import com.refinvest.core.backtest.port.outbound.BacktestRunReader
 import com.refinvest.core.strategy.domain.valueobject.StrategyId as StrategyIdInStrategy
-import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyResult
-import com.refinvest.core.strategy.port.inbound.strategy.get.GetStrategyUseCase
+import com.refinvest.core.strategy.port.inbound.get.GetStrategyResult
+import com.refinvest.core.strategy.port.inbound.get.GetStrategyUseCase
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate

@@ -1,6 +1,6 @@
 package com.refinvest.core.strategy.adapter.web.strategy.list
 
-import com.refinvest.core.strategy.port.inbound.strategy.list.StrategySummary
+import com.refinvest.core.strategy.port.inbound.list.StrategySummary
 import java.time.Instant
 
 data class StrategySummaryResponse(

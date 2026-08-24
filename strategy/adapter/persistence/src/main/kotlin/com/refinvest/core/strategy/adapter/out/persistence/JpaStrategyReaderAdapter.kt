@@ -13,10 +13,10 @@ import com.refinvest.core.strategy.domain.valueobject.SignalSessions
 import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import com.refinvest.core.strategy.domain.valueobject.StrategyVersionId
 import com.refinvest.core.strategy.domain.valueobject.TimeBasedExit
-import com.refinvest.core.strategy.port.outbound.StrategyReadModel
-import com.refinvest.core.strategy.port.outbound.StrategyReader
-import com.refinvest.core.strategy.port.outbound.StrategyPageReadModel
-import com.refinvest.core.strategy.port.outbound.StrategyVersionReadModel
+import com.refinvest.core.strategy.port.outbound.persistence.StrategyReadModel
+import com.refinvest.core.strategy.port.outbound.persistence.StrategyReader
+import com.refinvest.core.strategy.port.outbound.persistence.StrategyPageReadModel
+import com.refinvest.core.strategy.port.outbound.persistence.StrategyVersionReadModel
 import org.springframework.stereotype.Repository
 import org.springframework.data.domain.PageRequest
 

@@ -24,8 +24,8 @@ import com.refinvest.core.backtest.port.outbound.BacktestRunStore
 import com.refinvest.core.backtest.port.outbound.BacktestQuotaReservation
 import com.refinvest.core.backtest.port.outbound.BacktestQuotaStore
 import com.refinvest.core.shared.kernel.member.MemberId
-import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestResult
-import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestUseCase
+import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestResult
+import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate

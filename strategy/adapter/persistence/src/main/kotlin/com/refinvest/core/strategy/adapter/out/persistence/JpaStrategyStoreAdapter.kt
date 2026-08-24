@@ -16,7 +16,7 @@ import com.refinvest.core.strategy.domain.valueobject.SignalSessions
 import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import com.refinvest.core.strategy.domain.valueobject.StrategyVersionId
 import com.refinvest.core.strategy.domain.valueobject.TimeBasedExit
-import com.refinvest.core.strategy.port.outbound.StrategyStore
+import com.refinvest.core.strategy.port.outbound.persistence.StrategyStore
 import org.springframework.stereotype.Repository
 
 @Repository
@@ -37,12 +37,16 @@ class JpaStrategyStoreAdapter(
         strategyJpaStore.save(entity)
     }
 
-    private fun StrategyJpaEntity.toDomain(): Strategy = Strategy.create(
-        id = StrategyId(id),
-        memberId = MemberId(memberId),
-        name = name,
-        createdAt = createdAt,
-    ).also { strategy -> versions.forEach { strategy.addVersion(it.toDomain()) } }
+    private fun StrategyJpaEntity.toDomain(): Strategy {
+        val strategy = Strategy.create(
+            id = StrategyId(id),
+            memberId = MemberId(memberId),
+            name = name,
+            createdAt = createdAt,
+        )
+        versions.forEach { version -> strategy.addVersion(version.toDomain()) }
+        return strategy
+    }
 
     private fun StrategyVersionJpaEntity.toDomain(): StrategyVersion = StrategyVersion.create(
         id = StrategyVersionId(id),

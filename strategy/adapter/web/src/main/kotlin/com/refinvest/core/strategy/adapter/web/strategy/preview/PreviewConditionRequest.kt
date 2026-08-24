@@ -1,9 +1,9 @@
 package com.refinvest.core.strategy.adapter.web.strategy.preview
 
-import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewCondition
-import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewLiteralOperand
-import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewMetricOperand
-import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewOperand
+import com.refinvest.core.strategy.port.inbound.preview.PreviewCondition
+import com.refinvest.core.strategy.port.inbound.preview.PreviewLiteralOperand
+import com.refinvest.core.strategy.port.inbound.preview.PreviewMetricOperand
+import com.refinvest.core.strategy.port.inbound.preview.PreviewOperand
 import tools.jackson.databind.JsonNode
 
 data class PreviewConditionRequest(

@@ -2,8 +2,8 @@ package com.refinvest.core.strategy.adapter.out.persistence
 
 import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import com.refinvest.core.strategy.domain.valueobject.StrategyVersionId
-import com.refinvest.core.strategy.port.outbound.StrategyVersionOwnerReadModel
-import com.refinvest.core.strategy.port.outbound.StrategyVersionOwnerReader
+import com.refinvest.core.strategy.port.outbound.persistence.version.StrategyVersionOwnerReadModel
+import com.refinvest.core.strategy.port.outbound.persistence.version.StrategyVersionOwnerReader
 import org.springframework.stereotype.Repository
 
 @Repository

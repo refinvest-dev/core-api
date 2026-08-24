@@ -14,8 +14,8 @@ import com.refinvest.core.backtest.port.inbound.backtest.run.AssetNotAllowedForP
 import com.refinvest.core.backtest.port.inbound.backtest.run.BacktestConcurrencyLimitExceededException
 import com.refinvest.core.backtest.port.inbound.backtest.run.BacktestMonthlyLimitExceededException
 import com.refinvest.core.backtest.port.inbound.backtest.run.BacktestPeriodNotAllowedException
-import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestQuery
-import com.refinvest.core.strategy.port.inbound.strategy.version.backtest.LookupStrategyVersionForBacktestUseCase
+import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestQuery
+import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
 import com.refinvest.core.subscription.domain.policy.BacktestPolicy
 import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
 import com.refinvest.core.subscription.port.inbound.subscription.get.GetSubscriptionQuery

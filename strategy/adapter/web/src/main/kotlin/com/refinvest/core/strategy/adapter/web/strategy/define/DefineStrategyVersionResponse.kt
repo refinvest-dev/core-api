@@ -1,6 +1,6 @@
 package com.refinvest.core.strategy.adapter.web.strategy.define
 
-import com.refinvest.core.strategy.port.inbound.strategy.define.DefineStrategyVersionResult
+import com.refinvest.core.strategy.port.inbound.define.DefineStrategyVersionResult
 import java.time.Instant
 
 data class DefineStrategyVersionResponse(

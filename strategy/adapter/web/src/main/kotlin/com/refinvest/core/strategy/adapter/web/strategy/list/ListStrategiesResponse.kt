@@ -1,6 +1,6 @@
 package com.refinvest.core.strategy.adapter.web.strategy.list
 
-import com.refinvest.core.strategy.port.inbound.strategy.list.ListStrategiesResult
+import com.refinvest.core.strategy.port.inbound.list.ListStrategiesResult
 
 data class ListStrategiesResponse(
     val items: List<StrategySummaryResponse>,

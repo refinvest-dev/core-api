@@ -14,7 +14,7 @@ import com.refinvest.core.backtest.domain.valueobject.Period
 import com.refinvest.core.backtest.port.inbound.backtest.execution.CompleteBacktestRunCommand
 import com.refinvest.core.backtest.port.inbound.backtest.execution.RecordBacktestRunExecutionUseCase
 import com.refinvest.core.backtest.port.inbound.backtest.execution.StartBacktestRunCommand
-import com.refinvest.core.strategy.port.outbound.StrategyIdGenerator
+import com.refinvest.core.strategy.port.outbound.id.StrategyIdGenerator
 import com.refinvest.core.backtest.port.outbound.BacktestRunIdGenerator
 import com.refinvest.core.auth.domain.RefreshSession
 import com.refinvest.core.auth.port.outbound.AuthenticationTokenIssuer

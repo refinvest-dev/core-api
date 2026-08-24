@@ -1,7 +1,7 @@
 package com.refinvest.core.strategy.adapter.web.strategy.preview
 
 import com.refinvest.core.strategy.domain.valueobject.StrategyId
-import com.refinvest.core.strategy.port.inbound.strategy.preview.PreviewStrategyCommand
+import com.refinvest.core.strategy.port.inbound.preview.PreviewStrategyCommand
 
 data class PreviewStrategyRequest(
     val primarySignalAsset: String? = null,

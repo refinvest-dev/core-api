@@ -1,8 +1,8 @@
 package com.refinvest.core.strategy.adapter.out.persistence
 
 import com.refinvest.core.shared.kernel.member.MemberId
-import com.refinvest.core.strategy.port.outbound.StrategyVersionBacktestReadModel
-import com.refinvest.core.strategy.port.outbound.StrategyVersionBacktestReader
+import com.refinvest.core.strategy.port.outbound.persistence.version.StrategyVersionBacktestReadModel
+import com.refinvest.core.strategy.port.outbound.persistence.version.StrategyVersionBacktestReader
 import org.springframework.stereotype.Repository
 
 @Repository
