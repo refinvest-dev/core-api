@@ -1,5 +1,7 @@
 package com.refinvest.core.member.adapter.out.persistence
 
-import org.springframework.data.repository.CrudRepository
+import org.springframework.data.repository.Repository
 
-interface MemberJpaStore : CrudRepository<MemberJpaEntity, Long>
+interface MemberJpaStore : Repository<MemberJpaEntity, Long> {
+    fun save(member: MemberJpaEntity): MemberJpaEntity
+}

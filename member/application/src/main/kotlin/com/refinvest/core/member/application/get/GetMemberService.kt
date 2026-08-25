@@ -1,9 +1,9 @@
-package com.refinvest.core.member.application.member.get
+package com.refinvest.core.member.application.get
 
-import com.refinvest.core.member.port.inbound.member.get.GetMemberQuery
-import com.refinvest.core.member.port.inbound.member.get.GetMemberResult
-import com.refinvest.core.member.port.inbound.member.get.GetMemberUseCase
-import com.refinvest.core.member.port.outbound.MemberReader
+import com.refinvest.core.member.port.inbound.get.GetMemberQuery
+import com.refinvest.core.member.port.inbound.get.GetMemberResult
+import com.refinvest.core.member.port.inbound.get.GetMemberUseCase
+import com.refinvest.core.member.port.outbound.persistence.MemberReader
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 

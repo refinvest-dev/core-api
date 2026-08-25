@@ -6,9 +6,9 @@ import com.refinvest.core.auth.port.outbound.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.IssuedAuthenticationTokens
 import com.refinvest.core.auth.port.outbound.RefreshSessionStore
 import com.refinvest.core.member.domain.MemberRole
-import com.refinvest.core.member.port.inbound.member.get.GetMemberQuery
-import com.refinvest.core.member.port.inbound.member.get.GetMemberResult
-import com.refinvest.core.member.port.inbound.member.get.GetMemberUseCase
+import com.refinvest.core.member.port.inbound.get.GetMemberQuery
+import com.refinvest.core.member.port.inbound.get.GetMemberResult
+import com.refinvest.core.member.port.inbound.get.GetMemberUseCase
 import com.refinvest.core.shared.kernel.member.MemberId
 import java.time.Clock
 import java.time.Instant

@@ -9,10 +9,10 @@ import com.refinvest.core.auth.port.outbound.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.RefreshSessionStore
 import com.refinvest.core.auth.port.outbound.SocialIdentityStore
 import com.refinvest.core.member.domain.MemberRole
-import com.refinvest.core.member.port.inbound.member.create.CreateMemberCommand
-import com.refinvest.core.member.port.inbound.member.create.CreateMemberUseCase
-import com.refinvest.core.member.port.inbound.member.get.GetMemberQuery
-import com.refinvest.core.member.port.inbound.member.get.GetMemberUseCase
+import com.refinvest.core.member.port.inbound.create.CreateMemberCommand
+import com.refinvest.core.member.port.inbound.create.CreateMemberUseCase
+import com.refinvest.core.member.port.inbound.get.GetMemberQuery
+import com.refinvest.core.member.port.inbound.get.GetMemberUseCase
 import com.refinvest.core.shared.kernel.member.MemberId
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
