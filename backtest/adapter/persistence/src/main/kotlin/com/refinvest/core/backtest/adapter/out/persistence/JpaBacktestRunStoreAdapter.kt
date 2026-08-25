@@ -11,7 +11,7 @@ import com.refinvest.core.backtest.domain.valueobject.Percent
 import com.refinvest.core.backtest.domain.valueobject.Period
 import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
-import com.refinvest.core.backtest.port.outbound.BacktestRunStore
+import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
 import org.springframework.stereotype.Repository
 import tools.jackson.databind.ObjectMapper
 

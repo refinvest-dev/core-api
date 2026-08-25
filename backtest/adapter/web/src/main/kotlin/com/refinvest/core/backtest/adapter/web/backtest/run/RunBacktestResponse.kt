@@ -1,6 +1,6 @@
 package com.refinvest.core.backtest.adapter.web.backtest.run
 
-import com.refinvest.core.backtest.port.inbound.backtest.run.RunBacktestResult
+import com.refinvest.core.backtest.port.inbound.run.RunBacktestResult
 import java.time.Instant
 
 data class RunBacktestResponse(

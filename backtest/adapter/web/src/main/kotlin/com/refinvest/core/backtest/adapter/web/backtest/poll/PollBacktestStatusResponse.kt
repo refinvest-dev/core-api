@@ -2,7 +2,7 @@ package com.refinvest.core.backtest.adapter.web.backtest.poll
 
 import com.refinvest.core.backtest.adapter.web.backtest.run.FeeModelResponse
 import com.refinvest.core.backtest.adapter.web.backtest.run.PeriodResponse
-import com.refinvest.core.backtest.port.inbound.backtest.poll.PollBacktestStatusResult
+import com.refinvest.core.backtest.port.inbound.poll.PollBacktestStatusResult
 import java.time.Instant
 
 data class PollBacktestStatusResponse(

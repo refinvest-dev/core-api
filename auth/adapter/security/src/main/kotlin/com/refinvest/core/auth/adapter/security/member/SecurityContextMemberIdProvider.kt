@@ -1,7 +1,7 @@
 package com.refinvest.core.auth.adapter.security.member
 
 import com.refinvest.core.auth.port.outbound.CurrentMemberIdProvider
-import com.refinvest.core.backtest.port.outbound.BacktestMemberIdProvider
+import com.refinvest.core.backtest.port.outbound.member.BacktestMemberIdProvider
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.strategy.port.outbound.member.MemberIdProvider
 import org.springframework.security.access.AccessDeniedException

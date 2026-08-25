@@ -1,6 +1,6 @@
 package com.refinvest.core.backtest.adapter.web.backtest
 
-import com.refinvest.core.backtest.port.inbound.backtest.run.BacktestRunRejectedException
+import com.refinvest.core.backtest.port.inbound.run.BacktestRunRejectedException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
