@@ -1,6 +1,6 @@
 package com.refinvest.core.auth.adapter.web.auth.usage
 
-import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageResult
+import com.refinvest.core.subscription.port.inbound.usage.GetUsageResult
 
 data class GetUsageResponse(
     val tier: String,

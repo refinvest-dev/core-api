@@ -19,7 +19,7 @@ import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyV
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
 import com.refinvest.core.subscription.domain.Subscription
 import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
-import com.refinvest.core.subscription.port.inbound.subscription.get.GetSubscriptionUseCase
+import com.refinvest.core.subscription.port.inbound.get.GetSubscriptionUseCase
 import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
@@ -47,7 +47,7 @@ class RunBacktestServiceTest {
                 LookupStrategyVersionForBacktestResult(30L, MemberId(1L), setOf("QQQ"))
             },
             getSubscriptionUseCase = GetSubscriptionUseCase { Subscription.restore(it.memberId, SubscriptionTier.FREE).let { subscription ->
-                com.refinvest.core.subscription.port.inbound.subscription.get.GetSubscriptionResult(subscription.id, subscription.tier)
+                com.refinvest.core.subscription.port.inbound.get.GetSubscriptionResult(subscription.id, subscription.tier)
             } },
             backtestMemberIdProvider = BacktestMemberIdProvider { MemberId(1L) },
             backtestQuotaStore = object : BacktestQuotaStore {

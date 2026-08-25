@@ -1,6 +1,6 @@
 package com.refinvest.core.auth.adapter.web.auth.subscription
 
-import com.refinvest.core.subscription.port.inbound.subscription.upgrade.UpgradeSubscriptionResult
+import com.refinvest.core.subscription.port.inbound.upgrade.UpgradeSubscriptionResult
 
 data class UpgradeSubscriptionResponse(
     val tier: String,

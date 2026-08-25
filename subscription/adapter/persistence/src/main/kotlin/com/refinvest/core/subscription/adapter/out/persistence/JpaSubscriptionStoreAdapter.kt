@@ -3,7 +3,7 @@ package com.refinvest.core.subscription.adapter.out.persistence
 import com.refinvest.core.subscription.domain.Subscription
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
-import com.refinvest.core.subscription.port.outbound.SubscriptionStore
+import com.refinvest.core.subscription.port.outbound.persistence.SubscriptionStore
 import org.springframework.stereotype.Repository
 
 @Repository
