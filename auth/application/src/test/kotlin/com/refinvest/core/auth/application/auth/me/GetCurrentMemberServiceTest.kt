@@ -2,9 +2,9 @@ package com.refinvest.core.auth.application.auth.me
 
 import com.refinvest.core.auth.port.outbound.CurrentMemberIdProvider
 import com.refinvest.core.member.domain.MemberRole
-import com.refinvest.core.member.port.inbound.member.get.GetMemberQuery
-import com.refinvest.core.member.port.inbound.member.get.GetMemberResult
-import com.refinvest.core.member.port.inbound.member.get.GetMemberUseCase
+import com.refinvest.core.member.port.inbound.get.GetMemberQuery
+import com.refinvest.core.member.port.inbound.get.GetMemberResult
+import com.refinvest.core.member.port.inbound.get.GetMemberUseCase
 import com.refinvest.core.shared.kernel.member.MemberId
 import kotlin.test.Test
 import kotlin.test.assertEquals

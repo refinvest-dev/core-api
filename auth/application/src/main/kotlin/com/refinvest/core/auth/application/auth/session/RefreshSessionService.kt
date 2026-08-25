@@ -6,8 +6,8 @@ import com.refinvest.core.auth.port.inbound.auth.session.RefreshSessionResult
 import com.refinvest.core.auth.port.inbound.auth.session.RefreshSessionUseCase
 import com.refinvest.core.auth.port.outbound.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.RefreshSessionStore
-import com.refinvest.core.member.port.inbound.member.get.GetMemberQuery
-import com.refinvest.core.member.port.inbound.member.get.GetMemberUseCase
+import com.refinvest.core.member.port.inbound.get.GetMemberQuery
+import com.refinvest.core.member.port.inbound.get.GetMemberUseCase
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock

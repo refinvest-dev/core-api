@@ -20,8 +20,8 @@ import com.refinvest.core.auth.domain.RefreshSession
 import com.refinvest.core.auth.port.outbound.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.IssuedAuthenticationTokens
 import com.refinvest.core.auth.port.outbound.RefreshSessionStore
-import com.refinvest.core.member.port.inbound.member.create.CreateMemberCommand
-import com.refinvest.core.member.port.inbound.member.create.CreateMemberUseCase
+import com.refinvest.core.member.port.inbound.create.CreateMemberCommand
+import com.refinvest.core.member.port.inbound.create.CreateMemberUseCase
 import com.refinvest.core.shared.kernel.member.MemberId
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.BeforeEach
