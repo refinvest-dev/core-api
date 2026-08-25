@@ -2,7 +2,7 @@ package com.refinvest.core.auth.adapter.out.persistence
 
 import com.refinvest.core.auth.domain.SocialIdentity
 import com.refinvest.core.auth.domain.SocialProvider
-import com.refinvest.core.auth.port.outbound.SocialIdentityStore
+import com.refinvest.core.auth.port.outbound.persistence.SocialIdentityStore
 import com.refinvest.core.shared.kernel.member.MemberId
 import org.springframework.stereotype.Repository
 

@@ -1,8 +1,8 @@
 package com.refinvest.core.auth.adapter.security.jwt
 
 import com.refinvest.core.auth.adapter.security.config.RefInvestSecurityProperties
-import com.refinvest.core.auth.port.outbound.AuthenticationTokenIssuer
-import com.refinvest.core.auth.port.outbound.IssuedAuthenticationTokens
+import com.refinvest.core.auth.port.outbound.token.AuthenticationTokenIssuer
+import com.refinvest.core.auth.port.outbound.token.IssuedAuthenticationTokens
 import com.refinvest.core.shared.kernel.member.MemberId
 import org.springframework.security.oauth2.jwt.JwtClaimsSet
 import org.springframework.security.oauth2.jwt.JwtEncoder

@@ -4,12 +4,13 @@ import com.refinvest.core.auth.adapter.security.cookie.AuthCookieWriter
 import com.refinvest.core.auth.adapter.web.auth.me.GetCurrentMemberResponse
 import com.refinvest.core.auth.adapter.web.auth.subscription.UpgradeSubscriptionResponse
 import com.refinvest.core.auth.adapter.web.auth.usage.GetUsageResponse
-import com.refinvest.core.auth.port.inbound.auth.me.GetCurrentMemberUseCase
-import com.refinvest.core.auth.port.inbound.auth.logout.LogoutCommand
-import com.refinvest.core.auth.port.inbound.auth.logout.LogoutUseCase
-import com.refinvest.core.auth.port.inbound.auth.session.RefreshSessionCommand
-import com.refinvest.core.auth.port.inbound.auth.session.RefreshSessionUseCase
-import com.refinvest.core.auth.port.outbound.RefreshTokenParser
+import com.refinvest.core.auth.port.inbound.me.GetCurrentMemberResult
+import com.refinvest.core.auth.port.inbound.me.GetCurrentMemberUseCase
+import com.refinvest.core.auth.port.inbound.logout.LogoutCommand
+import com.refinvest.core.auth.port.inbound.logout.LogoutUseCase
+import com.refinvest.core.auth.port.inbound.session.RefreshSessionCommand
+import com.refinvest.core.auth.port.inbound.session.RefreshSessionUseCase
+import com.refinvest.core.auth.port.outbound.token.RefreshTokenParser
 import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageQuery
 import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageUseCase
 import com.refinvest.core.subscription.port.inbound.subscription.upgrade.UpgradeSubscriptionCommand
@@ -34,21 +35,17 @@ class AuthController(
     private val authCookieWriter: AuthCookieWriter,
 ) {
     @GetMapping("/auth/me")
-    fun me(): GetCurrentMemberResponse = getCurrentMemberUseCase.execute()
-        ?.let(GetCurrentMemberResponse::from)
-        ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated member is unavailable")
+    fun me(): GetCurrentMemberResponse = GetCurrentMemberResponse.from(currentMember())
 
     @GetMapping("/me/usage")
-    fun usage(): GetUsageResponse = getCurrentMemberUseCase.execute()
-        ?.let { member -> getUsageUseCase.execute(GetUsageQuery(member.memberId)) }
-        ?.let(GetUsageResponse::from)
-        ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated member is unavailable")
+    fun usage(): GetUsageResponse = GetUsageResponse.from(
+        getUsageUseCase.execute(GetUsageQuery(currentMember().memberId)),
+    )
 
     @PostMapping("/me/subscription/upgrade")
-    fun upgradeSubscription(): UpgradeSubscriptionResponse = getCurrentMemberUseCase.execute()
-        ?.let { member -> upgradeSubscriptionUseCase.execute(UpgradeSubscriptionCommand(member.memberId)) }
-        ?.let(UpgradeSubscriptionResponse::from)
-        ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated member is unavailable")
+    fun upgradeSubscription(): UpgradeSubscriptionResponse = UpgradeSubscriptionResponse.from(
+        upgradeSubscriptionUseCase.execute(UpgradeSubscriptionCommand(currentMember().memberId)),
+    )
 
     @GetMapping("/auth/csrf")
     @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.NO_CONTENT)
@@ -86,4 +83,7 @@ class AuthController(
         }
         authCookieWriter.clear(response)
     }
+
+    private fun currentMember(): GetCurrentMemberResult = getCurrentMemberUseCase.execute()
+        ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated member is unavailable")
 }

@@ -2,7 +2,7 @@ package com.refinvest.core.auth.adapter.security.oauth
 
 import com.refinvest.core.auth.adapter.security.config.RefInvestSecurityProperties
 import com.refinvest.core.auth.adapter.security.cookie.AuthCookieWriter
-import com.refinvest.core.auth.port.inbound.auth.login.SocialLoginUseCase
+import com.refinvest.core.auth.port.inbound.login.SocialLoginUseCase
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.security.core.Authentication

@@ -1,6 +1,6 @@
 package com.refinvest.core.auth.adapter.web.auth.me
 
-import com.refinvest.core.auth.port.inbound.auth.me.GetCurrentMemberResult
+import com.refinvest.core.auth.port.inbound.me.GetCurrentMemberResult
 
 data class GetCurrentMemberResponse(
     val memberId: String,
