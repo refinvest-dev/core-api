@@ -276,7 +276,14 @@ class RefinvestApplicationTests(
     @Test
     fun `rejects an access token with an invalid signature`() {
         val issuedToken = accessToken(validate = false)
-        val token = issuedToken.dropLast(1) + if (issuedToken.last() == 'x') 'y' else 'x'
+        val tokenParts = issuedToken.split('.')
+        val originalSignature = tokenParts[2]
+        val invalidSignature = originalSignature.replaceRange(
+            0,
+            1,
+            if (originalSignature.first() == 'A') "B" else "A",
+        )
+        val token = "${tokenParts[0]}.${tokenParts[1]}.$invalidSignature"
         val response = HttpClient.newHttpClient().send(
             authenticatedRequest(URI("http://localhost:$port/strategies"), token).GET().build(),
             HttpResponse.BodyHandlers.ofString(),
