@@ -1,4 +1,4 @@
-package com.refinvest.core.member.port.outbound
+package com.refinvest.core.member.port.outbound.id
 
 import com.refinvest.core.shared.kernel.member.MemberId
 
