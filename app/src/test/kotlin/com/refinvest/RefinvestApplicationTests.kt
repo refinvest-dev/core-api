@@ -17,9 +17,9 @@ import com.refinvest.core.backtest.port.inbound.execution.StartBacktestRunComman
 import com.refinvest.core.strategy.port.outbound.id.StrategyIdGenerator
 import com.refinvest.core.backtest.port.outbound.id.BacktestRunIdGenerator
 import com.refinvest.core.auth.domain.RefreshSession
-import com.refinvest.core.auth.port.outbound.AuthenticationTokenIssuer
-import com.refinvest.core.auth.port.outbound.IssuedAuthenticationTokens
-import com.refinvest.core.auth.port.outbound.RefreshSessionStore
+import com.refinvest.core.auth.port.outbound.token.AuthenticationTokenIssuer
+import com.refinvest.core.auth.port.outbound.token.IssuedAuthenticationTokens
+import com.refinvest.core.auth.port.outbound.persistence.RefreshSessionStore
 import com.refinvest.core.member.port.inbound.create.CreateMemberCommand
 import com.refinvest.core.member.port.inbound.create.CreateMemberUseCase
 import com.refinvest.core.shared.kernel.member.MemberId

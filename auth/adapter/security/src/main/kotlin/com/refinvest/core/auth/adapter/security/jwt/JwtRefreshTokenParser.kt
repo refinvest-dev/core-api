@@ -1,7 +1,7 @@
 package com.refinvest.core.auth.adapter.security.jwt
 
-import com.refinvest.core.auth.port.outbound.RefreshTokenClaims
-import com.refinvest.core.auth.port.outbound.RefreshTokenParser
+import com.refinvest.core.auth.port.outbound.token.RefreshTokenClaims
+import com.refinvest.core.auth.port.outbound.token.RefreshTokenParser
 import com.refinvest.core.shared.kernel.member.MemberId
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.stereotype.Component

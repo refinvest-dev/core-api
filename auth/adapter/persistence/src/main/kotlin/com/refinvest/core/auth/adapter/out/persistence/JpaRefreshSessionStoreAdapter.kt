@@ -1,7 +1,7 @@
 package com.refinvest.core.auth.adapter.out.persistence
 
 import com.refinvest.core.auth.domain.RefreshSession
-import com.refinvest.core.auth.port.outbound.RefreshSessionStore
+import com.refinvest.core.auth.port.outbound.persistence.RefreshSessionStore
 import com.refinvest.core.shared.kernel.member.MemberId
 import org.springframework.stereotype.Repository
 import java.time.Instant

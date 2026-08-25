@@ -1,8 +1,8 @@
 package com.refinvest.core.auth.adapter.security.cookie
 
 import com.refinvest.core.auth.adapter.security.config.RefInvestSecurityProperties
-import com.refinvest.core.auth.port.inbound.auth.login.SocialLoginResult
-import com.refinvest.core.auth.port.inbound.auth.session.RefreshSessionResult
+import com.refinvest.core.auth.port.inbound.login.SocialLoginResult
+import com.refinvest.core.auth.port.inbound.session.RefreshSessionResult
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseCookie
