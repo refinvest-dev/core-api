@@ -9,9 +9,9 @@ import com.refinvest.core.backtest.domain.valueobject.Percent
 import com.refinvest.core.backtest.domain.valueobject.Period
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import com.refinvest.core.backtest.domain.valueobject.StrategyId
-import com.refinvest.core.backtest.port.outbound.BacktestRunReadModel
-import com.refinvest.core.backtest.port.outbound.BacktestRunPageReadModel
-import com.refinvest.core.backtest.port.outbound.BacktestRunReader
+import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunReadModel
+import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunPageReadModel
+import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunReader
 import com.refinvest.core.shared.kernel.member.MemberId
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Repository

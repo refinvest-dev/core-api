@@ -2,7 +2,7 @@ package com.refinvest.core.backtest.adapter.out.persistence
 
 import com.refinvest.core.backtest.domain.backtest.BacktestResult
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
-import com.refinvest.core.backtest.port.outbound.BacktestResultReader
+import com.refinvest.core.backtest.port.outbound.persistence.BacktestResultReader
 import org.springframework.stereotype.Repository
 import tools.jackson.databind.ObjectMapper
 

@@ -1,7 +1,7 @@
 package com.refinvest.core.backtest.adapter.out.persistence
 
-import com.refinvest.core.backtest.port.outbound.BacktestQuotaStore
-import com.refinvest.core.backtest.port.outbound.BacktestQuotaReservation
+import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaStore
+import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaReservation
 import com.refinvest.core.shared.kernel.member.MemberId
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository

@@ -1,8 +1,8 @@
 package com.refinvest.core.subscription.application.subscription.usage
 
-import com.refinvest.core.backtest.port.inbound.backtest.usage.GetMonthlyBacktestUsageQuery
-import com.refinvest.core.backtest.port.inbound.backtest.usage.GetMonthlyBacktestUsageResult
-import com.refinvest.core.backtest.port.inbound.backtest.usage.GetMonthlyBacktestUsageUseCase
+import com.refinvest.core.backtest.port.inbound.usage.GetMonthlyBacktestUsageQuery
+import com.refinvest.core.backtest.port.inbound.usage.GetMonthlyBacktestUsageResult
+import com.refinvest.core.backtest.port.inbound.usage.GetMonthlyBacktestUsageUseCase
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.subscription.domain.Subscription
 import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier

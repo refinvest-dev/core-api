@@ -1,6 +1,6 @@
 package com.refinvest.core.backtest.adapter.web.backtest.list
 
-import com.refinvest.core.backtest.port.inbound.backtest.list.ListBacktestRunsResult
+import com.refinvest.core.backtest.port.inbound.list.ListBacktestRunsResult
 
 data class ListBacktestRunsResponse(
     val items: List<BacktestRunSummaryResponse>,

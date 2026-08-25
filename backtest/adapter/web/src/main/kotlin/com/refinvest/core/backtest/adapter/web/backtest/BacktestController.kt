@@ -7,11 +7,11 @@ import com.refinvest.core.backtest.adapter.web.backtest.run.RunBacktestResponse
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
 import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
-import com.refinvest.core.backtest.port.inbound.backtest.get.GetBacktestResultQuery
-import com.refinvest.core.backtest.port.inbound.backtest.get.GetBacktestResultUseCase
-import com.refinvest.core.backtest.port.inbound.backtest.list.ListBacktestRunsQuery
-import com.refinvest.core.backtest.port.inbound.backtest.list.ListBacktestRunsUseCase
-import com.refinvest.core.backtest.port.inbound.backtest.run.RunBacktestUseCase
+import com.refinvest.core.backtest.port.inbound.get.GetBacktestResultQuery
+import com.refinvest.core.backtest.port.inbound.get.GetBacktestResultUseCase
+import com.refinvest.core.backtest.port.inbound.list.ListBacktestRunsQuery
+import com.refinvest.core.backtest.port.inbound.list.ListBacktestRunsUseCase
+import com.refinvest.core.backtest.port.inbound.run.RunBacktestUseCase
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.PathVariable

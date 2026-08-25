@@ -4,7 +4,7 @@ import com.refinvest.core.backtest.domain.valueobject.FeeModel
 import com.refinvest.core.backtest.domain.valueobject.Percent
 import com.refinvest.core.backtest.domain.valueobject.Period
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
-import com.refinvest.core.backtest.port.inbound.backtest.run.RunBacktestCommand
+import com.refinvest.core.backtest.port.inbound.run.RunBacktestCommand
 import jakarta.validation.Valid
 
 data class RunBacktestRequest(

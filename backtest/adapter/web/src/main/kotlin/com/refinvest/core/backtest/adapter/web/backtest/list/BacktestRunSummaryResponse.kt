@@ -2,7 +2,7 @@ package com.refinvest.core.backtest.adapter.web.backtest.list
 
 import com.refinvest.core.backtest.adapter.web.backtest.run.FeeModelResponse
 import com.refinvest.core.backtest.adapter.web.backtest.run.PeriodResponse
-import com.refinvest.core.backtest.port.inbound.backtest.list.BacktestRunSummary
+import com.refinvest.core.backtest.port.inbound.list.BacktestRunSummary
 import java.time.Instant
 
 data class BacktestRunSummaryResponse(

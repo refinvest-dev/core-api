@@ -1,7 +1,7 @@
 package com.refinvest.core.subscription.application.subscription.usage
 
-import com.refinvest.core.backtest.port.inbound.backtest.usage.GetMonthlyBacktestUsageQuery
-import com.refinvest.core.backtest.port.inbound.backtest.usage.GetMonthlyBacktestUsageUseCase
+import com.refinvest.core.backtest.port.inbound.usage.GetMonthlyBacktestUsageQuery
+import com.refinvest.core.backtest.port.inbound.usage.GetMonthlyBacktestUsageUseCase
 import com.refinvest.core.subscription.domain.policy.BacktestPolicy
 import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
 import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageQuery
