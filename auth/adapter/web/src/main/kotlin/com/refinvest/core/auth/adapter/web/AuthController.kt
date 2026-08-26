@@ -11,10 +11,10 @@ import com.refinvest.core.auth.port.inbound.logout.LogoutUseCase
 import com.refinvest.core.auth.port.inbound.session.RefreshSessionCommand
 import com.refinvest.core.auth.port.inbound.session.RefreshSessionUseCase
 import com.refinvest.core.auth.port.outbound.token.RefreshTokenParser
-import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageQuery
-import com.refinvest.core.subscription.port.inbound.subscription.usage.GetUsageUseCase
-import com.refinvest.core.subscription.port.inbound.subscription.upgrade.UpgradeSubscriptionCommand
-import com.refinvest.core.subscription.port.inbound.subscription.upgrade.UpgradeSubscriptionUseCase
+import com.refinvest.core.subscription.port.inbound.usage.GetUsageQuery
+import com.refinvest.core.subscription.port.inbound.usage.GetUsageUseCase
+import com.refinvest.core.subscription.port.inbound.upgrade.UpgradeSubscriptionCommand
+import com.refinvest.core.subscription.port.inbound.upgrade.UpgradeSubscriptionUseCase
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.http.HttpStatus
 import org.springframework.security.web.csrf.CsrfToken

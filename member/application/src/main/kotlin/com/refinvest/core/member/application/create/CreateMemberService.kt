@@ -6,8 +6,8 @@ import com.refinvest.core.member.port.inbound.create.CreateMemberResult
 import com.refinvest.core.member.port.inbound.create.CreateMemberUseCase
 import com.refinvest.core.member.port.outbound.id.MemberIdGenerator
 import com.refinvest.core.member.port.outbound.persistence.MemberStore
-import com.refinvest.core.subscription.port.inbound.subscription.create.CreateSubscriptionCommand
-import com.refinvest.core.subscription.port.inbound.subscription.create.CreateSubscriptionUseCase
+import com.refinvest.core.subscription.port.inbound.create.CreateSubscriptionCommand
+import com.refinvest.core.subscription.port.inbound.create.CreateSubscriptionUseCase
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock

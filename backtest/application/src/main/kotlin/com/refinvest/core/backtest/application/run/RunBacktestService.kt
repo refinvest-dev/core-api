@@ -18,8 +18,8 @@ import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyV
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
 import com.refinvest.core.subscription.domain.policy.BacktestPolicy
 import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
-import com.refinvest.core.subscription.port.inbound.subscription.get.GetSubscriptionQuery
-import com.refinvest.core.subscription.port.inbound.subscription.get.GetSubscriptionUseCase
+import com.refinvest.core.subscription.port.inbound.get.GetSubscriptionQuery
+import com.refinvest.core.subscription.port.inbound.get.GetSubscriptionUseCase
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
