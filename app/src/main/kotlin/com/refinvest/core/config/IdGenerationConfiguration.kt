@@ -11,5 +11,4 @@ class IdGenerationConfiguration {
     fun snowflakeIdGenerator(
         @Value("\${refinvest.id.node-id}") nodeId: Long,
     ): SnowflakeIdGenerator = SnowflakeIdGenerator(nodeId)
-
 }
