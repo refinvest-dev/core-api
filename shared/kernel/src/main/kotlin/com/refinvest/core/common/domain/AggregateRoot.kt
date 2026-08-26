@@ -1,7 +1,7 @@
 package com.refinvest.core.common.domain
 
 abstract class AggregateRoot<ID : Identifier<*>>(
-    override val id: ID,
+    id: ID,
 ) : DomainEntity<ID>(id) {
     private val recordedDomainEvents = mutableListOf<DomainEvent>()
 
