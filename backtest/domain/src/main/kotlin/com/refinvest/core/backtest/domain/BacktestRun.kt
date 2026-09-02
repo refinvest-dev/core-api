@@ -75,9 +75,9 @@ class BacktestRun private constructor(
         validateState()
     }
 
-    /** Records a Compute request rejection before Compute has started execution. */
-    fun failBeforeExecution(failureReason: String) {
-        require(status == BacktestRunStatus.PENDING) { "BacktestRun can be rejected only from PENDING" }
+    /** Records a terminal failure when Compute execution was never observed. */
+    fun failWithoutExecution(failureReason: String) {
+        require(status == BacktestRunStatus.PENDING) { "BacktestRun can fail without execution only from PENDING" }
         require(failureReason.isNotBlank()) { "failureReason must not be blank" }
         status = BacktestRunStatus.FAILED
         this.failureReason = failureReason

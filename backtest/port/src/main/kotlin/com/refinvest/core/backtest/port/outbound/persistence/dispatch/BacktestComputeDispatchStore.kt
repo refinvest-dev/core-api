@@ -11,11 +11,17 @@ interface BacktestComputeDispatchStore {
 
     fun claimNext(now: Instant, leaseDuration: Duration): ClaimedBacktestComputeDispatch?
 
+    fun claimNextSubmitted(now: Instant, leaseDuration: Duration): ClaimedSubmittedBacktestComputeDispatch?
+
     fun markAccepted(backtestRunId: BacktestRunId, claimToken: UUID, computeRunId: String)
 
     fun scheduleRetry(backtestRunId: BacktestRunId, claimToken: UUID, nextAttemptAt: Instant)
 
     fun markRejected(backtestRunId: BacktestRunId, claimToken: UUID): Boolean
+
+    fun scheduleNextPoll(backtestRunId: BacktestRunId, claimToken: UUID, nextAttemptAt: Instant)
+
+    fun markTerminal(backtestRunId: BacktestRunId, claimToken: UUID)
 }
 
 data class PendingBacktestComputeDispatch(
@@ -27,5 +33,11 @@ data class PendingBacktestComputeDispatch(
 data class ClaimedBacktestComputeDispatch(
     val backtestRunId: BacktestRunId,
     val idempotencyKey: ComputeIdempotencyKey,
+    val claimToken: UUID,
+)
+
+data class ClaimedSubmittedBacktestComputeDispatch(
+    val backtestRunId: BacktestRunId,
+    val computeRunId: String,
     val claimToken: UUID,
 )

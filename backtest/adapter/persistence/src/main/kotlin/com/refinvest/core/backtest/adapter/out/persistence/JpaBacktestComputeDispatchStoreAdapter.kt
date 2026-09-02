@@ -4,6 +4,7 @@ import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
 import com.refinvest.core.backtest.port.outbound.compute.ComputeIdempotencyKey
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchStore
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.ClaimedBacktestComputeDispatch
+import com.refinvest.core.backtest.port.outbound.persistence.dispatch.ClaimedSubmittedBacktestComputeDispatch
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.PendingBacktestComputeDispatch
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Repository
@@ -48,6 +49,27 @@ class JpaBacktestComputeDispatchStoreAdapter(
     }
 
     @Transactional
+    override fun claimNextSubmitted(
+        now: Instant,
+        leaseDuration: Duration,
+    ): ClaimedSubmittedBacktestComputeDispatch? {
+        val dispatch = dispatchJpaStore.findClaimable(
+            now,
+            BacktestComputeDispatchStatusJpa.SUBMITTED,
+            PageRequest.of(0, 1),
+        ).firstOrNull() ?: return null
+        val claimToken = UUID.randomUUID()
+        dispatch.leaseToken = claimToken
+        dispatch.leaseExpiresAt = now.plus(leaseDuration)
+        dispatch.updatedAt = now
+        return ClaimedSubmittedBacktestComputeDispatch(
+            backtestRunId = BacktestRunId(dispatch.backtestRunId),
+            computeRunId = requireNotNull(dispatch.computeRunId),
+            claimToken = claimToken,
+        )
+    }
+
+    @Transactional
     override fun markAccepted(backtestRunId: BacktestRunId, claimToken: UUID, computeRunId: String) {
         updateClaimed(backtestRunId, claimToken) { dispatch, now ->
             dispatch.status = BacktestComputeDispatchStatusJpa.SUBMITTED
@@ -79,6 +101,30 @@ class JpaBacktestComputeDispatchStoreAdapter(
         return true
     }
 
+    @Transactional
+    override fun scheduleNextPoll(
+        backtestRunId: BacktestRunId,
+        claimToken: UUID,
+        nextAttemptAt: Instant,
+    ) {
+        updateSubmitted(backtestRunId, claimToken) { dispatch, now ->
+            dispatch.leaseToken = null
+            dispatch.leaseExpiresAt = null
+            dispatch.nextAttemptAt = nextAttemptAt
+            dispatch.updatedAt = now
+        }
+    }
+
+    @Transactional
+    override fun markTerminal(backtestRunId: BacktestRunId, claimToken: UUID) {
+        updateSubmitted(backtestRunId, claimToken) { dispatch, now ->
+            dispatch.status = BacktestComputeDispatchStatusJpa.TERMINAL
+            dispatch.leaseToken = null
+            dispatch.leaseExpiresAt = null
+            dispatch.updatedAt = now
+        }
+    }
+
     private fun updateClaimed(
         backtestRunId: BacktestRunId,
         claimToken: UUID,
@@ -86,6 +132,17 @@ class JpaBacktestComputeDispatchStoreAdapter(
     ) {
         val dispatch = dispatchJpaStore.findById(backtestRunId.value).orElse(null) ?: return
         if (dispatch.status == BacktestComputeDispatchStatusJpa.PENDING && dispatch.leaseToken == claimToken) {
+            update(dispatch, Instant.now())
+        }
+    }
+
+    private fun updateSubmitted(
+        backtestRunId: BacktestRunId,
+        claimToken: UUID,
+        update: (BacktestComputeDispatchJpaEntity, Instant) -> Unit,
+    ) {
+        val dispatch = dispatchJpaStore.findById(backtestRunId.value).orElse(null) ?: return
+        if (dispatch.status == BacktestComputeDispatchStatusJpa.SUBMITTED && dispatch.leaseToken == claimToken) {
             update(dispatch, Instant.now())
         }
     }

@@ -2,6 +2,7 @@ package com.refinvest.core.backtest.application.execution
 
 import com.refinvest.core.backtest.port.inbound.execution.CompleteBacktestRunCommand
 import com.refinvest.core.backtest.port.inbound.execution.FailBacktestRunCommand
+import com.refinvest.core.backtest.port.inbound.execution.FailBacktestRunWithoutExecutionCommand
 import com.refinvest.core.backtest.port.inbound.execution.RecordBacktestRunExecutionCommand
 import com.refinvest.core.backtest.port.inbound.execution.RecordBacktestRunExecutionUseCase
 import com.refinvest.core.backtest.port.inbound.execution.StartBacktestRunCommand
@@ -36,10 +37,14 @@ open class RecordBacktestRunExecutionService(
             )
             is CompleteBacktestRunCommand -> backtestRun.complete(command.result)
             is FailBacktestRunCommand -> backtestRun.fail(command.failureReason)
+            is FailBacktestRunWithoutExecutionCommand -> backtestRun.failWithoutExecution(command.failureReason)
         }
         backtestRunStore.save(backtestRun)
 
-        if (command is CompleteBacktestRunCommand || command is FailBacktestRunCommand) {
+        if (command is CompleteBacktestRunCommand ||
+            command is FailBacktestRunCommand ||
+            command is FailBacktestRunWithoutExecutionCommand
+        ) {
             releaseConcurrentCapacity(backtestRun)
         }
 

@@ -1,0 +1,8 @@
+package com.refinvest.core.backtest.port.inbound.execution
+
+import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
+
+data class FailBacktestRunWithoutExecutionCommand(
+    override val backtestRunId: BacktestRunId,
+    val failureReason: String,
+) : RecordBacktestRunExecutionCommand

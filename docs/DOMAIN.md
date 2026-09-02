@@ -97,9 +97,9 @@ BacktestRun
 **불변식**:
 - `status`가 `COMPLETED`가 되려면 `BacktestResult`가 반드시 함께 존재해야 한다.
 - `status`가 `FAILED`이면 `failureReason`이 필수.
-- 상태 전이: `PENDING → RUNNING → (COMPLETED | FAILED)` 또는 Compute가 job을 접수하기 전에 영구적으로 거절한 경우의 `PENDING → FAILED`. 역방향 전이 없음. transport 재시도는 같은 `BacktestRun`의 durable dispatch를 사용하며, 사용자가 새로 실행하면 새 `BacktestRun`을 생성한다.
+- 상태 전이: `PENDING → RUNNING → (COMPLETED | FAILED)` 또는 Compute가 job을 접수하기 전에 영구적으로 거절했거나 acceptance 뒤 실행 시작을 관측하기 전에 runtime 상태를 잃은 경우의 `PENDING → FAILED`. 역방향 전이 없음. transport 재시도는 같은 `BacktestRun`의 durable dispatch를 사용하며, 사용자가 새로 실행하면 새 `BacktestRun`을 생성한다.
 - `datasetSnapshotId`, `engineVersion`은 **Compute가 실행을 시작한 이후에만 채워진다** — `PENDING` 상태에서는 `null`이다. Core가 요청 시점에 스냅샷을 미리 지정하지 않고, Compute가 실행 시점에 선택한 값을 응답으로 돌려받아 기록한다.
-- Compute job 접수 전 `FAILED`는 `failureReason`만 필수이며 `actualPeriod`, `datasetSnapshotId`, `engineVersion`은 `null`이다. Compute가 `RUNNING` 이후 실패한 `FAILED`는 실행 metadata를 모두 가진다.
+- Compute job 접수 전 영구 거절 또는 acceptance 뒤 runtime 상태 유실로 인한 `FAILED`는 `failureReason`만 필수이며 `actualPeriod`, `datasetSnapshotId`, `engineVersion`은 `null`일 수 있다. Compute가 `RUNNING` 이후 실패한 `FAILED`는 실행 metadata를 모두 가진다.
 
 ### 1.4 BacktestResult (Entity, BacktestRun에 종속)
 
@@ -112,7 +112,7 @@ BacktestResult
 ├── equityCurve: List<{ date, value }>
 ├── trades: List<Trade>
 ├── benchmark: { primary: BuyAndHoldResult, secondaryReference: BuyAndHoldResult | null }  # ADR-007
-├── signalExecutionDelay: { median, max, distribution }
+├── signalExecutionDelay: { median, max, distribution }  # 각 값은 시간(hours) 단위, ADR-048
 ├── sampleSizeWarning: NONE | LOW | ZERO    # ADR-006
 └── dataIntegrityStatus: { datasetSnapshotId, corporateActionsApplied, pointInTimeValidationPassed }  # datasetSnapshotId는 BacktestRun.datasetSnapshotId와 동일 값 (필드명 통일)
 
@@ -122,6 +122,8 @@ Trade
 ├── returnPct
 └── holdingPeriod
 ```
+
+`signalExecutionDelay.distribution`은 각 Trade의 `entryTime - signalTime`을 시간(hours) 단위로 기록한다. `median`과 `max`는 이 분포에서 계산하며, 무거래 결과는 빈 분포와 `median = max = 0`을 사용한다(ADR-048).
 
 ### 1.5 Member / Auth / Subscription
 

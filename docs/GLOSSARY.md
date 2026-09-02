@@ -20,7 +20,7 @@
 | 체결 | `execution` | 실제 주문이 이뤄지는 것. Execution Asset의 Next Available Session에서 발생 | ADR-003 |
 | 다음 가능 세션 | Next Available Session | Execution Asset이 거래 가능한 가장 이른 세션 | ADR-003 |
 | 결측 세션 | Missing Session | 데이터가 없는 세션. 예상된 결측(정상 Calendar 차이)과 예상치 못한 결측(Fail-fast 대상)으로 구분 | ADR-005 |
-| 신호-체결 지연 | Signal-to-Execution Delay | Cross-Market 전략에서 Signal Timestamp와 실제 Execution Timestamp의 차이 | — |
+| 신호-체결 지연 | Signal-to-Execution Delay | 각 거래의 Signal Timestamp와 Execution Timestamp의 차이. 결과에서는 시간(hours) 단위로 기록 | ADR-048 |
 | 중복 진입 | Duplicate Entry | 포지션 보유 중 새 Entry Signal 발생. MVP는 무시(Ignore) | ADR-009 |
 | 청산 | `exit` | 포지션 종료. MVP는 Time-based Exit만 지원 | ADR-008 |
 | 데이터셋 스냅샷 | `DatasetSnapshot` | 특정 시점에 정규화되어 저장된 불변 데이터셋. 재현성의 기준 | ADR-010 |

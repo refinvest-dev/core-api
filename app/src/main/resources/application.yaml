@@ -42,3 +42,4 @@ refinvest:
     base-url: ${COMPUTE_API_BASE_URL:http://localhost:8000}
     api-key: ${COMPUTE_API_KEY:}
     dispatch-delay: ${COMPUTE_DISPATCH_DELAY:5000}
+    poll-delay: ${COMPUTE_POLL_DELAY:5000}

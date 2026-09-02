@@ -76,7 +76,7 @@ open class DispatchPendingBacktestsService(
             }
             is ComputeBacktestSubmission.Rejected -> transactionTemplate.execute {
                 if (backtestComputeDispatchStore.markRejected(backtestRun.id, dispatch.claimToken)) {
-                    backtestRun.failBeforeExecution(submission.reason)
+                    backtestRun.failWithoutExecution(submission.reason)
                     backtestRunStore.save(backtestRun)
                     backtestQuotaStore.releaseConcurrentCapacity(
                         strategyVersion.ownerMemberId,
