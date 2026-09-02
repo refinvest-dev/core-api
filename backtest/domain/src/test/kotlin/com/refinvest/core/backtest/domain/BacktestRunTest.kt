@@ -62,6 +62,18 @@ class BacktestRunTest {
         assertFailsWith<IllegalArgumentException> { run.fail(" ") }
     }
 
+    @Test
+    fun `allows a pending run to fail without Compute execution metadata when submission is rejected`() {
+        val run = pendingRun()
+
+        run.failBeforeExecution("DSL_INVALID")
+
+        assertEquals(BacktestRunStatus.FAILED, run.status)
+        assertNull(run.actualPeriod)
+        assertNull(run.datasetSnapshotId)
+        assertNull(run.engineVersion)
+    }
+
     private fun pendingRun(): BacktestRun = BacktestRun.createPending(
         id = BacktestRunId(1L),
         strategyId = StrategyId(3L),

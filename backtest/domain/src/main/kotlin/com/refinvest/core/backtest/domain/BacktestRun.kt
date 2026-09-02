@@ -13,7 +13,7 @@ import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import java.time.Instant
 
 class BacktestRun private constructor(
-    override val id: BacktestRunId,
+    id: BacktestRunId,
     val strategyId: StrategyId,
     val strategyVersionId: StrategyVersionId,
     val requestedPeriod: Period,
@@ -75,6 +75,15 @@ class BacktestRun private constructor(
         validateState()
     }
 
+    /** Records a Compute request rejection before Compute has started execution. */
+    fun failBeforeExecution(failureReason: String) {
+        require(status == BacktestRunStatus.PENDING) { "BacktestRun can be rejected only from PENDING" }
+        require(failureReason.isNotBlank()) { "failureReason must not be blank" }
+        status = BacktestRunStatus.FAILED
+        this.failureReason = failureReason
+        validateState()
+    }
+
     private fun validateState() {
         when (status) {
             BacktestRunStatus.PENDING -> {
@@ -99,8 +108,10 @@ class BacktestRun private constructor(
                 require(failureReason == null) { "COMPLETED BacktestRun must not have a failureReason" }
             }
             BacktestRunStatus.FAILED -> {
-                require(actualPeriod != null && datasetSnapshotId != null && engineVersion != null) {
-                    "FAILED BacktestRun requires Compute execution metadata"
+                val hasExecutionMetadata = actualPeriod != null && datasetSnapshotId != null && engineVersion != null
+                val hasNoExecutionMetadata = actualPeriod == null && datasetSnapshotId == null && engineVersion == null
+                require(hasExecutionMetadata || hasNoExecutionMetadata) {
+                    "FAILED BacktestRun requires either complete or absent Compute execution metadata"
                 }
                 require(result == null) { "FAILED BacktestRun must not have a result" }
                 require(!failureReason.isNullOrBlank()) { "FAILED BacktestRun requires a failureReason" }

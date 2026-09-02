@@ -19,6 +19,7 @@ dependencies {
     implementation(project(":backtest:adapter:snowflake"))
     implementation(project(":backtest:adapter:persistence"))
     implementation(project(":backtest:adapter:web"))
+    implementation(project(":backtest:adapter:compute"))
     implementation(project(":shared:infrastructure"))
     implementation(libs.spring.boot.starter.actuator)
     implementation(libs.spring.boot.starter.jdbc)

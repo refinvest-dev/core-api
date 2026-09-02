@@ -97,8 +97,9 @@ BacktestRun
 **불변식**:
 - `status`가 `COMPLETED`가 되려면 `BacktestResult`가 반드시 함께 존재해야 한다.
 - `status`가 `FAILED`이면 `failureReason`이 필수.
-- 상태 전이: `PENDING → RUNNING → (COMPLETED | FAILED)`. 역방향 전이 없음. 재시도는 새 `BacktestRun`을 생성한다.
+- 상태 전이: `PENDING → RUNNING → (COMPLETED | FAILED)` 또는 Compute가 job을 접수하기 전에 영구적으로 거절한 경우의 `PENDING → FAILED`. 역방향 전이 없음. transport 재시도는 같은 `BacktestRun`의 durable dispatch를 사용하며, 사용자가 새로 실행하면 새 `BacktestRun`을 생성한다.
 - `datasetSnapshotId`, `engineVersion`은 **Compute가 실행을 시작한 이후에만 채워진다** — `PENDING` 상태에서는 `null`이다. Core가 요청 시점에 스냅샷을 미리 지정하지 않고, Compute가 실행 시점에 선택한 값을 응답으로 돌려받아 기록한다.
+- Compute job 접수 전 `FAILED`는 `failureReason`만 필수이며 `actualPeriod`, `datasetSnapshotId`, `engineVersion`은 `null`이다. Compute가 `RUNNING` 이후 실패한 `FAILED`는 실행 metadata를 모두 가진다.
 
 ### 1.4 BacktestResult (Entity, BacktestRun에 종속)
 

@@ -37,3 +37,8 @@ refinvest:
     web-origin: ${REFINVEST_WEB_ORIGIN:http://localhost:3001}
     cookie-secure: ${REFINVEST_COOKIE_SECURE:true}
     cookie-same-site: ${REFINVEST_COOKIE_SAME_SITE:Lax}
+  compute:
+    enabled: ${REFINVEST_COMPUTE_ENABLED:false}
+    base-url: ${COMPUTE_API_BASE_URL:http://localhost:8000}
+    api-key: ${COMPUTE_API_KEY:}
+    dispatch-delay: ${COMPUTE_DISPATCH_DELAY:5000}

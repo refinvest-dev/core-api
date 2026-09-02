@@ -12,7 +12,7 @@ import com.refinvest.core.common.domain.DomainEntity
 import java.time.Instant
 
 class StrategyVersion private constructor(
-    override val id: StrategyVersionId,
+    id: StrategyVersionId,
     val strategyId: StrategyId,
     val createdAt: Instant,
     val primarySignalAsset: AssetSymbol,

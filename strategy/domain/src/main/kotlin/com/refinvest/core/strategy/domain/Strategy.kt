@@ -7,7 +7,7 @@ import com.refinvest.core.strategy.domain.valueobject.StrategyId
 import java.time.Instant
 
 class Strategy private constructor(
-    override val id: StrategyId,
+    id: StrategyId,
     val memberId: MemberId,
     val name: String,
     val createdAt: Instant,
