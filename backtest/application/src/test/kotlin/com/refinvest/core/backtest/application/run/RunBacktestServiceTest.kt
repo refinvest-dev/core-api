@@ -71,9 +71,19 @@ class RunBacktestServiceTest {
             backtestComputeDispatchStore = object : BacktestComputeDispatchStore {
                 override fun enqueue(dispatch: PendingBacktestComputeDispatch) { enqueued = dispatch }
                 override fun claimNext(now: Instant, leaseDuration: Duration): ClaimedBacktestComputeDispatch? = null
+                override fun claimNextSubmitted(
+                    now: Instant,
+                    leaseDuration: Duration,
+                ): com.refinvest.core.backtest.port.outbound.persistence.dispatch.ClaimedSubmittedBacktestComputeDispatch? = null
                 override fun markAccepted(backtestRunId: BacktestRunId, claimToken: UUID, computeRunId: String) = Unit
                 override fun scheduleRetry(backtestRunId: BacktestRunId, claimToken: UUID, nextAttemptAt: Instant) = Unit
                 override fun markRejected(backtestRunId: BacktestRunId, claimToken: UUID): Boolean = false
+                override fun scheduleNextPoll(
+                    backtestRunId: BacktestRunId,
+                    claimToken: UUID,
+                    nextAttemptAt: Instant,
+                ) = Unit
+                override fun markTerminal(backtestRunId: BacktestRunId, claimToken: UUID) = Unit
             },
             computeIdempotencyKeyGenerator = ComputeIdempotencyKeyGenerator {
                 ComputeIdempotencyKey(UUID.fromString("123e4567-e89b-12d3-a456-426614174000"))

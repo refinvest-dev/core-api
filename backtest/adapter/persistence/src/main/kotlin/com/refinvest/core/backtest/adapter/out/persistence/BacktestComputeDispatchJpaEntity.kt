@@ -38,4 +38,5 @@ enum class BacktestComputeDispatchStatusJpa {
     PENDING,
     SUBMITTED,
     REJECTED,
+    TERMINAL,
 }

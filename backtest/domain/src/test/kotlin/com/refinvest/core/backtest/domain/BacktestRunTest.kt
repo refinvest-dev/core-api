@@ -66,7 +66,7 @@ class BacktestRunTest {
     fun `allows a pending run to fail without Compute execution metadata when submission is rejected`() {
         val run = pendingRun()
 
-        run.failBeforeExecution("DSL_INVALID")
+        run.failWithoutExecution("DSL_INVALID")
 
         assertEquals(BacktestRunStatus.FAILED, run.status)
         assertNull(run.actualPeriod)

@@ -307,7 +307,7 @@ quota month는 UTC calendar month다. entitlement와 기간 검사를 통과하�
 
 **결정**: Compute는 terminal(`COMPLETED`, `FAILED`) job과 runtime result/failure payload, request payload, idempotency 정보를 terminal 전이 후 24시간 보관한다. terminal 전이에는 `terminal_at`을 원자적으로 기록하며, cleanup timer는 매시간 PostgreSQL 현재 시각 기준으로 24시간 이상 지난 terminal row만 최대 1,000건 삭제한다. `PENDING`과 `RUNNING` job은 삭제하지 않는다.
 
-Core는 retention 만료 전에 terminal 결과를 자신의 장기 저장소에 복사한다. 이후 `GET /backtests/{runId}`의 `404`는 Compute가 모르는 run이거나 runtime retention이 만료됐음을 뜻하며, Core는 이를 근거로 같은 논리 요청을 재제출하지 않는다.
+Core는 retention 만료 전에 terminal 결과를 자신의 장기 저장소에 복사한다. 이후 `GET /backtests/{runId}`의 `404`는 Compute가 모르는 run이거나 runtime retention이 만료됐음을 뜻하며, Core는 이를 근거로 같은 논리 요청을 재제출하지 않는다. Compute acceptance를 기록한 dispatch의 `runId`가 `404`이면 Core는 runtime 상태 유실로 간주하고 `BacktestRun`을 `FAILED`로 종료한다. 이때 failure reason은 `COMPUTE_RUNTIME_STATUS_UNAVAILABLE`이며, Core가 실행 시작을 관측하지 못했다면 `actualPeriod`, `datasetSnapshotId`, `engineVersion`은 `null`일 수 있다. terminal 전이로 동시 실행 capacity만 해제하고 월간 quota는 환불하지 않는다.
 
 **이유**: Compute는 실행 runtime만 소유하고 장기 product result는 Core가 소유한다. terminal job과 idempotency record의 retention을 동일하게 두면 replay key가 원 acceptance 없이 남지 않는다. 이 결정은 dataset artifact나 계산 의미론을 변경하지 않는다.
 
@@ -349,8 +349,20 @@ endpoint는 1~6개의 서로 다른 지원 symbol, 최대 10년·20,000 point의
 
 **결정**: Core는 `RunBacktest`가 entitlement·기간·quota 검사를 통과하면 `BacktestRun(PENDING)`과 Compute dispatch record를 같은 database transaction에서 만든다. dispatch record는 Core의 `BacktestRunId`, Compute가 요구하는 UUID v4 `Idempotency-Key`, Compute acceptance 뒤의 `runId`, retry/lease 상태를 Core 소유 데이터로 보관한다.
 
-dispatcher는 database transaction 밖에서 Compute에 요청한다. timeout, connection failure, `503`은 같은 idempotency key로 재시도한다. `400` 또는 `409`처럼 Compute가 job을 영구적으로 접수하지 않은 경우 Core는 해당 run을 `PENDING → FAILED`로 전이하고, failure reason을 기록하며 동시 실행 capacity만 해제한다. 이 pre-acceptance failure에는 actual period, dataset snapshot, engine version이 없다. 월간 quota는 Core의 PENDING 정상 접수 시 이미 소비됐으므로 환불하지 않는다.
+dispatcher는 database transaction 밖에서 Compute에 요청한다. timeout, connection failure, `503`은 같은 idempotency key로 재시도한다. `400` 또는 `409`처럼 Compute가 job을 영구적으로 접수하지 않은 경우 Core는 해당 run을 `PENDING → FAILED`로 전이하고, failure reason을 기록하며 동시 실행 capacity만 해제한다. 이 pre-acceptance failure에는 actual period, dataset snapshot, engine version이 없다. acceptance가 기록된 뒤 Compute runtime 상태를 더 이상 조회할 수 없는 경우의 종료 규칙은 ADR-041을 따른다. 월간 quota는 Core의 PENDING 정상 접수 시 이미 소비됐으므로 환불하지 않는다.
 
 **이유**: 외부 HTTP 호출을 Core database transaction 안에 넣으면 lock과 rollback 경계가 원격 호출에 묶이고, 반대로 단순 post-commit 호출은 request 유실을 만든다. durable dispatch와 idempotency key를 함께 영속화하면 응답 유실에도 중복 job 없이 재시도할 수 있다. Compute가 job을 만들기 전에 거절한 경우도 public API가 이미 반환한 PENDING run의 terminal outcome으로 표현해야 polling이 무한 대기하지 않는다.
 
 **관련**: ADR-020(quota/entitlement), ADR-040(idempotent Compute submission), ADR-041(runtime retention), ADR-044(admission capacity). Determinism과 Point-in-Time Correctness에 영향 없음.
+
+---
+
+## ADR-048 — Signal-to-Execution Delay Result Contract
+
+**결정**: `BacktestResult.signalExecutionDelay`는 각 체결 거래의 immutable calendar 기준 `entryTime - signalTime`을 시간(hours) 단위 `Decimal`로 기록한다. `distribution`은 거래 입력 순서를 보존한 각 거래의 delay이며, `median`은 오름차순 정렬한 값의 중앙값(짝수 개면 두 중앙값의 산술 평균), `max`는 최댓값이다. 거래가 없으면 `distribution`은 빈 배열이고 `median`, `max`는 `0`이다. 모든 값은 0 이상이며 Core와 Compute는 동일한 `median`, `max`, `distribution` 필드로 이 단위를 사용한다.
+
+`signalTime`과 `entryTime`은 이미 결과의 Trade payload가 사용하는 immutable session completion timestamp다. Reference Price가 execution session open이라는 ADR-010의 체결 가격 규칙은 이 결과 metadata로 변경하지 않는다.
+
+**이유**: Cross-Market 전략에서는 Primary Signal Asset의 신호 확정과 Execution Asset의 다음 가능 세션 사이에 실제 시간 차이가 생긴다. 이를 명시적으로 보존하면 Web이 단순 lag 설정과 calendar 차이로 생긴 실제 체결 지연을 구분해 설명할 수 있다. 단위와 zero-trade 표현을 계약으로 고정해 Core가 임의의 기본값을 만들지 않게 한다.
+
+**관련**: ADR-003(Temporal Rule), ADR-010(Determinism Contract). Determinism과 Point-in-Time Correctness에 영향 없음.
