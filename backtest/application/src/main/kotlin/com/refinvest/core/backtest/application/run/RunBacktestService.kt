@@ -7,6 +7,9 @@ import com.refinvest.core.backtest.port.inbound.run.RunBacktestResult
 import com.refinvest.core.backtest.port.inbound.run.RunBacktestUseCase
 import com.refinvest.core.backtest.port.outbound.id.BacktestRunIdGenerator
 import com.refinvest.core.backtest.port.outbound.member.BacktestMemberIdProvider
+import com.refinvest.core.backtest.port.outbound.compute.ComputeIdempotencyKeyGenerator
+import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchStore
+import com.refinvest.core.backtest.port.outbound.persistence.dispatch.PendingBacktestComputeDispatch
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaReservation
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaStore
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
@@ -35,6 +38,8 @@ open class RunBacktestService(
     private val getSubscriptionUseCase: GetSubscriptionUseCase,
     private val backtestMemberIdProvider: BacktestMemberIdProvider,
     private val backtestQuotaStore: BacktestQuotaStore,
+    private val backtestComputeDispatchStore: BacktestComputeDispatchStore,
+    private val computeIdempotencyKeyGenerator: ComputeIdempotencyKeyGenerator,
     private val clock: Clock,
 ) : RunBacktestUseCase {
     @Transactional
@@ -77,6 +82,13 @@ open class RunBacktestService(
             createdAt = clock.instant(),
         )
         backtestRunStore.save(backtestRun)
+        backtestComputeDispatchStore.enqueue(
+            PendingBacktestComputeDispatch(
+                backtestRunId = backtestRun.id,
+                idempotencyKey = computeIdempotencyKeyGenerator.next(),
+                createdAt = clock.instant(),
+            ),
+        )
         return RunBacktestResult(
             id = backtestRun.id,
             strategyId = backtestRun.strategyId,

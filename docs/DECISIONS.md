@@ -288,3 +288,69 @@ quota month는 UTC calendar month다. entitlement와 기간 검사를 통과하�
 **이유**: quota(얼마나 실행할 수 있는가)와 entitlement(무엇을 실행할 수 있는가)를 분리하면, Controller나 Application 곳곳에 tier 조건을 하드코딩하지 않고 향후 실제 비용·사용량에 따라 정책만 조정할 수 있다. 원자적 reservation은 동시 요청이 한도를 우회하는 것을 막고, PENDING 접수 시점 차감은 Compute 실패·재시도 정책과 billing 정책을 MVP 범위에서 분리한다.
 
 **관련**: ADR-001(MVP Asset Universe), ADR-018(feature-centric Core architecture).
+
+---
+
+## ADR-040 — Backtest Submission Idempotency
+
+**결정**: Core는 논리적 Backtest 제출마다 하나의 불투명한 UUID v4 `Idempotency-Key`를 생성하고, 24시간 이내 transport 재시도에서는 정확히 같은 키를 사용한다. 새 사용자의 제출은 새 키를 사용한다.
+
+`POST /backtests`는 이 헤더를 필수로 하며, Compute는 키·canonical request fingerprint·생성한 `runId`·초기 acceptance를 durable job과 원자적으로 저장한다. 같은 키와 같은 요청은 같은 `runId`가 담긴 최초 `202 Accepted`를 다시 반환하며 실행을 재시작하지 않는다. 같은 키로 다른 payload를 보내면 `409 Conflict`를 반환한다.
+
+**이유**: Core가 timeout 또는 응답 유실을 겪으면 Compute가 job을 접수했는지 알 수 없다. 명시적 idempotency key 없이 재시도하면 중복 계산과 중복 polling state가 생긴다. HTTP header는 계산 입력인 StrategyVersion/Engine payload와 retry identity를 분리한다.
+
+**운영 조건**: Core는 key를 영속화하고 24시간보다 짧은 retry horizon에서만 재사용한다. Compute의 terminal job·request·idempotency 기록은 같은 24시간 retention을 갖는다. 이 결정은 DatasetSnapshot, EngineVersion, 계산 입력을 바꾸지 않으므로 Determinism과 Point-in-Time Correctness에 영향이 없다.
+
+---
+
+## ADR-041 — Backtest Job Retention and Cleanup
+
+**결정**: Compute는 terminal(`COMPLETED`, `FAILED`) job과 runtime result/failure payload, request payload, idempotency 정보를 terminal 전이 후 24시간 보관한다. terminal 전이에는 `terminal_at`을 원자적으로 기록하며, cleanup timer는 매시간 PostgreSQL 현재 시각 기준으로 24시간 이상 지난 terminal row만 최대 1,000건 삭제한다. `PENDING`과 `RUNNING` job은 삭제하지 않는다.
+
+Core는 retention 만료 전에 terminal 결과를 자신의 장기 저장소에 복사한다. 이후 `GET /backtests/{runId}`의 `404`는 Compute가 모르는 run이거나 runtime retention이 만료됐음을 뜻하며, Core는 이를 근거로 같은 논리 요청을 재제출하지 않는다.
+
+**이유**: Compute는 실행 runtime만 소유하고 장기 product result는 Core가 소유한다. terminal job과 idempotency record의 retention을 동일하게 두면 replay key가 원 acceptance 없이 남지 않는다. 이 결정은 dataset artifact나 계산 의미론을 변경하지 않는다.
+
+---
+
+## ADR-042 — Backtest Execution Deadline and Process Isolation
+
+**결정**: snapshot-pinned execution attempt 하나의 deadline은 isolated child process 시작부터 결과 생산까지 10분이다. lease를 소유한 worker의 parent process만 PostgreSQL `COMPLETED`/`FAILED` 전이를 기록하고, child process는 local IPC로 outcome만 반환한다.
+
+deadline 초과 시 parent는 child를 종료하고 최대 30초 후 force-kill하며 `EXECUTION_TIMEOUT` terminal failure를 기록한다. 이 경우 일반 transient retry는 하지 않는다. 기존 60초 lease와 15초 heartbeat는 parent worker 장애 복구용이며 execution deadline이 아니다.
+
+**이유**: 비협조적인 engine/data-loader 호출이 worker를 무한정 점유하지 않게 하며, 종료된 child가 terminal state를 다시 덮어쓰지 못하게 한다. `EXECUTION_TIMEOUT`은 Compute error-code 계약에 포함한다.
+
+---
+
+## ADR-044 — Backtest Admission Capacity
+
+**결정**: Compute는 전역적으로 최대 20개의 active job만 허용한다. active는 `PENDING` 또는 `RUNNING`이며 bounded transient retry 대기 중인 `RUNNING`도 포함한다. terminal job은 capacity를 소비하지 않는다.
+
+capacity가 가득 차면 새 제출은 `503 Service Unavailable`, `BACKTEST_CAPACITY_EXCEEDED`, `Retry-After: 30`으로 거절한다. 같은 `Idempotency-Key`와 canonical request의 replay는 capacity 검사보다 먼저 기존 `202/runId`를 반환한다. capacity 거절은 job과 idempotency record를 만들지 않으므로 Core는 안내된 시간 뒤 같은 key로 재시도할 수 있다.
+
+PostgreSQL transaction-scoped advisory lock이 idempotency lookup, active-job count, insert를 직렬화한다. Core는 member별 quota·rate limit·priority를 소유하고 Compute는 user-specific policy를 적용하지 않는다.
+
+**이유**: Compute overload를 durable runtime state 생성 전에 명시적으로 차단하면서도, Core의 product policy와 Compute의 global execution capacity를 분리한다. admission은 snapshot 선택이나 engine semantics를 변경하지 않는다.
+
+---
+
+## ADR-046 — Immutable Snapshot Series API
+
+**결정**: `GET /series`는 요청 시작 시 정확히 하나의 immutable `DatasetSnapshot`을 해석한다. caller가 `datasetSnapshotId`를 주면 그것을 사용하고, 없으면 Compute가 latest published snapshot 하나를 선택한다. 모든 200 응답은 snapshot ID, creation time, adjustment policy를 반환한다.
+
+endpoint는 1~6개의 서로 다른 지원 symbol, 최대 10년·20,000 point의 date range를 받으며 `PRICE`(session close), `RETURN`(직전 available session close 대비 수익률), `NORMALIZED`(범위 안 첫 available close를 100으로 정규화)를 제공한다. Asset별 trading session은 독립적으로 반환하며 common date를 만들거나 이전 값 복제·interpolation을 하지 않는다. expected session의 close 결측 또는 손상된 snapshot artifact는 `503 DATASET_CORRUPTION`, latest snapshot 부재는 `503 DATASET_UNAVAILABLE`, 명시한 snapshot 미존재는 `404`다.
+
+**이유**: Data Explorer가 vendor의 mutable latest data에 의존하지 않고 동일 snapshot을 반복 조회해 재현 가능해야 한다. Cross-calendar 시각 정렬은 Core/Web의 presentation concern이며 Compute의 관측값을 바꾸지 않는다.
+
+---
+
+## ADR-047 — Core Backtest Durable Dispatch and Pre-acceptance Failure
+
+**결정**: Core는 `RunBacktest`가 entitlement·기간·quota 검사를 통과하면 `BacktestRun(PENDING)`과 Compute dispatch record를 같은 database transaction에서 만든다. dispatch record는 Core의 `BacktestRunId`, Compute가 요구하는 UUID v4 `Idempotency-Key`, Compute acceptance 뒤의 `runId`, retry/lease 상태를 Core 소유 데이터로 보관한다.
+
+dispatcher는 database transaction 밖에서 Compute에 요청한다. timeout, connection failure, `503`은 같은 idempotency key로 재시도한다. `400` 또는 `409`처럼 Compute가 job을 영구적으로 접수하지 않은 경우 Core는 해당 run을 `PENDING → FAILED`로 전이하고, failure reason을 기록하며 동시 실행 capacity만 해제한다. 이 pre-acceptance failure에는 actual period, dataset snapshot, engine version이 없다. 월간 quota는 Core의 PENDING 정상 접수 시 이미 소비됐으므로 환불하지 않는다.
+
+**이유**: 외부 HTTP 호출을 Core database transaction 안에 넣으면 lock과 rollback 경계가 원격 호출에 묶이고, 반대로 단순 post-commit 호출은 request 유실을 만든다. durable dispatch와 idempotency key를 함께 영속화하면 응답 유실에도 중복 job 없이 재시도할 수 있다. Compute가 job을 만들기 전에 거절한 경우도 public API가 이미 반환한 PENDING run의 terminal outcome으로 표현해야 polling이 무한 대기하지 않는다.
+
+**관련**: ADR-020(quota/entitlement), ADR-040(idempotent Compute submission), ADR-041(runtime retention), ADR-044(admission capacity). Determinism과 Point-in-Time Correctness에 영향 없음.

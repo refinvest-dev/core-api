@@ -14,10 +14,8 @@ info:
       (`docs/DOMAIN.md` §3).
     - 필드명은 `docs/GLOSSARY.md`의 코드 네이밍을 그대로 따른다. 임의로 축약하거나 동의어로 바꾸지 않는다.
 
-    ## 미확정 사항 (TODO — 구현 전 팀 확인 필요)
-    - `POST /backtests`의 폴링 간격(Web은 2~3초, `docs/ARCHITECTURE.md` §5)과 Compute 내부 Job
-      처리 SLA(타임아웃 등)는 아직 계약에 없다.
-    - Rate Limit/동시 요청 처리 정책은 정의되지 않았다.
+    - Core는 사용자별 quota/rate limit을 소유한다. Compute는 ADR-044의 전역 active-job
+      admission capacity만 적용한다.
 
 servers:
   - url: http://compute.internal:8000
@@ -47,6 +45,8 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateBacktestRequest'
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '202':
           description: 요청 접수됨. 계산은 아직 시작 전이거나 큐에 있음.
@@ -56,7 +56,7 @@ paths:
                 $ref: '#/components/schemas/BacktestAccepted'
         '400':
           description: |
-            StrategyVersion payload가 DSL Validation을 통과하지 못함
+            `Idempotency-Key`가 없거나 UUID v4가 아니거나, StrategyVersion payload가 DSL Validation을 통과하지 못함
             (Asset 존재 여부, Data Availability, Calendar Compatibility, Condition/Window/Lag
             Validity, Execution Asset Availability, Exit Validity — `docs/DOMAIN.md` §1.2 불변식
             및 `docs/USECASES.md`의 `ExecuteBacktest` 설명). 이 경우 Job을 큐에 넣지 않고 즉시
@@ -65,7 +65,29 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ValidationErrorResponse'
+                anyOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+        '409':
+          description: 동일한 Idempotency-Key가 다른 request payload와 함께 재사용됨.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: |
+            Compute의 전역 `PENDING` + `RUNNING` job capacity가 가득 참. 새 job과
+            idempotency record는 생성되지 않으며, Core는 `Retry-After` 이후 동일 key로 재시도한다.
+          headers:
+            Retry-After:
+              description: Core가 재시도 전에 기다릴 초 단위 시간.
+              schema:
+                type: integer
+                example: 30
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BacktestCapacityErrorResponse'
 
   /backtests/{runId}:
     get:
@@ -89,7 +111,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/BacktestStatusResponse'
         '404':
-          description: 존재하지 않는 runId.
+          description: |
+            존재하지 않는 runId 또는 24시간 Compute runtime retention이 만료되어 정리된 terminal job.
+            Core는 이 응답을 근거로 동일한 논리 요청을 다시 제출하지 않는다(ADR-041).
           content:
             application/json:
               schema:
@@ -106,13 +130,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [assets]
-                properties:
-                  assets:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Asset'
+                $ref: '#/components/schemas/AssetListResponse'
 
   /assets/{symbol}/availability:
     get:
@@ -139,6 +157,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 지원 Asset이지만 latest published DatasetSnapshot이 없거나 해당 asset data가 없음.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetUnavailableErrorResponse'
 
   /series:
     get:
@@ -148,6 +172,7 @@ paths:
       description: |
         `docs/USECASES.md`의 `GetSeries`(Data Explorer 데이터 소스). 여러 Asset을 동시에 조회할 수 있다.
         Correlation/Lead-Lag 등 통계 분석은 포함하지 않는다 — 순수 시계열 조회만 지원한다(Phase 1 범위).
+        조회 시작 시 하나의 immutable DatasetSnapshot을 선택하며, 이후 최신 데이터는 섞지 않는다(ADR-046).
       parameters:
         - name: symbols
           in: query
@@ -173,30 +198,52 @@ paths:
           schema:
             type: string
             format: date
+        - name: datasetSnapshotId
+          in: query
+          required: false
+          description: 과거 재현용 Snapshot ID. 생략하면 요청 시작 시 최신 published Snapshot 하나를 선택한다.
+          schema:
+            type: string
       responses:
         '200':
           description: |
-            요청한 각 Asset의 `dataAvailability` 범위를 벗어나는 구간은 응답에서 제외한다(값을
-            만들어내지 않는다 — ADR-005와 동일한 원칙을 차트 데이터에도 적용. 단, 이는 계산 결과가
-            아닌 참조 데이터 조회이므로 ADR-005의 "백테스트 중단" 대상은 아니다).
+            Asset별 실제 trading session만 반환하며 공통 날짜를 만들거나 비거래일 값을 채우지 않는다.
+            Expected session의 close 결측은 보정하지 않고 503으로 fail-fast한다.
           content:
             application/json:
               schema:
-                type: object
-                required: [series]
-                properties:
-                  series:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/AssetSeries'
+                $ref: '#/components/schemas/SeriesResponse'
         '400':
-          description: 존재하지 않는 symbol이 포함되었거나 start > end.
+          description: 존재하지 않는 symbol, 중복 symbol, 1~6개 범위 초과, start > end, 최대 10년/20,000 point 제한 초과.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 명시한 datasetSnapshotId가 존재하지 않음.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Snapshot이 없거나 immutable artifact/expected close가 손상·결측됨.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeriesDataErrorResponse'
 
 components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Core가 논리적 백테스트 요청마다 생성하는 UUID v4. 네트워크 재시도에는 동일 값을 사용한다.
+        동일 key와 동일 request는 최초 202 acceptance를 재반환하고, payload가 다르면 409이다.
+      schema:
+        type: string
+        format: uuid
   securitySchemes:
     InternalApiKey:
       type: apiKey
@@ -268,7 +315,10 @@ components:
       type: string
       enum: [AND, OR]
       nullable: true
-      description: 첫 번째 Condition은 null. MVP는 단일 Condition Group만 허용, 중첩 없음(§5.2).
+      description: |
+        첫 번째 Condition은 null. MVP는 단일 Condition Group만 허용하며 중첩은 없다.
+        후속 Condition은 모두 동일한 combinator(전부 AND 또는 전부 OR)를 사용해야 한다.
+        혼합 combinator는 DSL_INVALID이며, 모든 condition은 short-circuit 없이 평가된다.
 
     Condition:
       type: object
@@ -392,10 +442,11 @@ components:
         - DATASET_CORRUPTION
         - CALENDAR_RESOLUTION_FAILED
         - PRICE_DATA_MISSING
+        - EXECUTION_TIMEOUT
         - DSL_INVALID
       description: |
-        `docs/DECISIONS.md` ADR-005 Fatal Error 5종을 그대로 코드화. 이 목록이 바뀌면 ADR-005를
-        먼저 갱신한다(`AI_AGENT.md` §1).
+        데이터/계산 fatal error와 terminal execution timeout의 Compute error code. 시간 제한은
+        ADR-042에 정의되며, 이 목록 변경은 관련 ADR과 함께 계약으로 검토한다.
 
     BacktestResultMetrics:
       type: object
@@ -575,18 +626,21 @@ components:
 
     Asset:
       type: object
-      required: [symbol, calendar, listingDate, dataAvailability]
+      required: [symbol, calendar, inceptionDate, executionEnabled]
       properties:
         symbol:
           $ref: '#/components/schemas/AssetSymbol'
         calendar:
           $ref: '#/components/schemas/Calendar'
           description: 시장 구분은 이 값으로 충분하다(US_EQUITY↔주식/ETF, CRYPTO_UTC↔크립토). 별도 market 필드 없음(`docs/DOMAIN.md` §2.1).
-        listingDate:
+        inceptionDate:
           type: string
           format: date
+        executionEnabled:
+          type: boolean
         dataAvailability:
           $ref: '#/components/schemas/DataAvailability'
+          nullable: true
         corporateActions:
           type: array
           items:
@@ -594,21 +648,63 @@ components:
 
     AssetAvailability:
       type: object
-      required: [symbol, listingDate, dataAvailability]
+      required: [symbol, inceptionDate, dataAvailability, datasetSnapshotId, snapshotCreatedAt]
       properties:
         symbol:
           $ref: '#/components/schemas/AssetSymbol'
-        listingDate:
+        inceptionDate:
           type: string
           format: date
         dataAvailability:
           $ref: '#/components/schemas/DataAvailability'
+        datasetSnapshotId:
+          type: string
+        snapshotCreatedAt:
+          type: string
+          format: date-time
+
+    AssetListResponse:
+      type: object
+      required: [assets]
+      properties:
+        assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Asset'
+        datasetSnapshotId:
+          type: string
+          nullable: true
+        snapshotCreatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    DatasetUnavailableErrorResponse:
+      type: object
+      required: [message, errorCode]
+      properties:
+        message:
+          type: string
+        errorCode:
+          type: string
+          enum: [DATASET_UNAVAILABLE]
+
+    SeriesDataErrorResponse:
+      type: object
+      required: [message, errorCode]
+      properties:
+        message:
+          type: string
+        errorCode:
+          type: string
+          enum: [DATASET_UNAVAILABLE, DATASET_CORRUPTION]
 
     SeriesMetric:
       type: string
       enum: [PRICE, RETURN, NORMALIZED]
       description: |
-        NORMALIZED는 조회 기간 시작점을 100으로 맞춘 값(`docs/USECASES.md`의 `GetSeries`).
+        PRICE는 close, RETURN은 직전 available session close 대비 일간 수익률, NORMALIZED는
+        요청 범위 안 첫 close를 100으로 맞춘 값(ADR-046).
 
     SeriesPoint:
       type: object
@@ -627,6 +723,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SeriesPoint'
+
+    SeriesResponse:
+      type: object
+      required: [datasetSnapshotId, snapshotCreatedAt, adjustmentPolicy, series]
+      properties:
+        datasetSnapshotId:
+          type: string
+        snapshotCreatedAt:
+          type: string
+          format: date-time
+        adjustmentPolicy:
+          type: string
+        series:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssetSeries'
 
     # ---- 공통 에러 ----
     ErrorResponse:
@@ -649,3 +761,13 @@ components:
           items:
             type: string
           description: 실패한 개별 Validation 항목(`docs/DOMAIN.md` §1.2 불변식).
+
+    BacktestCapacityErrorResponse:
+      type: object
+      required: [message, errorCode]
+      properties:
+        message:
+          type: string
+        errorCode:
+          type: string
+          enum: [BACKTEST_CAPACITY_EXCEEDED]

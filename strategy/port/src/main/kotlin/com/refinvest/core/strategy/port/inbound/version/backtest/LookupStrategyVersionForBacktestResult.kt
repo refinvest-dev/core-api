@@ -6,4 +6,5 @@ data class LookupStrategyVersionForBacktestResult(
     val strategyId: Long,
     val ownerMemberId: MemberId,
     val assetSymbols: Set<String>,
+    val definition: StrategyVersionForBacktest? = null,
 )

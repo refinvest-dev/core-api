@@ -11,6 +11,11 @@ import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.port.inbound.run.RunBacktestCommand
 import com.refinvest.core.backtest.port.outbound.id.BacktestRunIdGenerator
 import com.refinvest.core.backtest.port.outbound.member.BacktestMemberIdProvider
+import com.refinvest.core.backtest.port.outbound.compute.ComputeIdempotencyKeyGenerator
+import com.refinvest.core.backtest.port.outbound.compute.ComputeIdempotencyKey
+import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchStore
+import com.refinvest.core.backtest.port.outbound.persistence.dispatch.ClaimedBacktestComputeDispatch
+import com.refinvest.core.backtest.port.outbound.persistence.dispatch.PendingBacktestComputeDispatch
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaReservation
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaStore
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
@@ -25,6 +30,8 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.time.Duration
+import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -33,6 +40,7 @@ class RunBacktestServiceTest {
     @Test
     fun `creates and persists only a pending backtest run`() {
         var saved: BacktestRun? = null
+        var enqueued: PendingBacktestComputeDispatch? = null
         val id = BacktestRunId(10L)
         val service = RunBacktestService(
             backtestRunStore = object : BacktestRunStore {
@@ -60,6 +68,16 @@ class RunBacktestServiceTest {
 
                 override fun releaseConcurrentCapacity(memberId: MemberId, quotaMonth: java.time.YearMonth) = Unit
             },
+            backtestComputeDispatchStore = object : BacktestComputeDispatchStore {
+                override fun enqueue(dispatch: PendingBacktestComputeDispatch) { enqueued = dispatch }
+                override fun claimNext(now: Instant, leaseDuration: Duration): ClaimedBacktestComputeDispatch? = null
+                override fun markAccepted(backtestRunId: BacktestRunId, claimToken: UUID, computeRunId: String) = Unit
+                override fun scheduleRetry(backtestRunId: BacktestRunId, claimToken: UUID, nextAttemptAt: Instant) = Unit
+                override fun markRejected(backtestRunId: BacktestRunId, claimToken: UUID): Boolean = false
+            },
+            computeIdempotencyKeyGenerator = ComputeIdempotencyKeyGenerator {
+                ComputeIdempotencyKey(UUID.fromString("123e4567-e89b-12d3-a456-426614174000"))
+            },
             clock = Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"), ZoneOffset.UTC),
         )
 
@@ -77,5 +95,6 @@ class RunBacktestServiceTest {
         assertEquals(StrategyVersionId(20L), saved?.strategyVersionId)
         assertNull(saved?.datasetSnapshotId)
         assertNull(saved?.engineVersion)
+        assertEquals(id, enqueued?.backtestRunId)
     }
 }

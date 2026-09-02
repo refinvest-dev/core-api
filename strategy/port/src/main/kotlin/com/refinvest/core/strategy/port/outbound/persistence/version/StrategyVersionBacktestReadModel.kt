@@ -6,4 +6,5 @@ data class StrategyVersionBacktestReadModel(
     val strategyId: Long,
     val ownerMemberId: MemberId,
     val assetSymbols: Set<String>,
+    val definition: com.refinvest.core.strategy.port.inbound.version.backtest.StrategyVersionForBacktest,
 )

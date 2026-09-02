@@ -18,6 +18,7 @@ open class LookupStrategyVersionForBacktestService(
                 strategyId = version.strategyId,
                 ownerMemberId = version.ownerMemberId,
                 assetSymbols = version.assetSymbols,
+                definition = version.definition,
             )
         }
 }

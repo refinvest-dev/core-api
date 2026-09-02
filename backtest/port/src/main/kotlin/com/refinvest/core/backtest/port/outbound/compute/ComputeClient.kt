@@ -4,6 +4,8 @@ import com.refinvest.core.backtest.domain.valueobject.DatasetSnapshotId
 import com.refinvest.core.backtest.domain.valueobject.FeeModel
 import com.refinvest.core.backtest.domain.valueobject.Period
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
+import java.time.Duration
+import java.util.UUID
 
 /**
  * Port for Compute's asynchronous backtest API.
@@ -12,10 +14,11 @@ import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
  * before invoking this port. RunBacktest currently creates only a PENDING BacktestRun.
  */
 fun interface ComputeClient {
-    fun requestBacktest(request: ComputeBacktestRequest): ComputeBacktestAccepted
+    fun requestBacktest(request: ComputeBacktestRequest): ComputeBacktestSubmission
 }
 
 data class ComputeBacktestRequest(
+    val idempotencyKey: ComputeIdempotencyKey,
     val strategyVersionId: StrategyVersionId,
     val strategyVersion: StrategyVersionPayload,
     val feeModel: FeeModel,
@@ -23,9 +26,18 @@ data class ComputeBacktestRequest(
     val datasetSnapshotId: DatasetSnapshotId? = null,
 )
 
-data class ComputeBacktestAccepted(
-    val runId: String,
-)
+@JvmInline
+value class ComputeIdempotencyKey(val value: UUID)
+
+fun interface ComputeIdempotencyKeyGenerator {
+    fun next(): ComputeIdempotencyKey
+}
+
+sealed interface ComputeBacktestSubmission {
+    data class Accepted(val computeRunId: String) : ComputeBacktestSubmission
+    data class RetryLater(val retryAfter: Duration) : ComputeBacktestSubmission
+    data class Rejected(val reason: String) : ComputeBacktestSubmission
+}
 
 /** Mirrors compute-api's StrategyVersionPayload without coupling to strategy domain. */
 data class StrategyVersionPayload(
