@@ -10,7 +10,6 @@ import com.refinvest.core.asset.port.inbound.series.GetSeriesQuery
 import com.refinvest.core.asset.port.inbound.series.GetSeriesUseCase
 import com.refinvest.core.asset.port.outbound.compute.SeriesMetric
 import com.refinvest.core.asset.domain.exception.DatasetSnapshotNotFoundException
-import com.refinvest.core.asset.domain.exception.SeriesDataUnavailableException
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
@@ -54,7 +53,5 @@ class AssetController(
         throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message, exception)
     } catch (exception: DatasetSnapshotNotFoundException) {
         throw ResponseStatusException(HttpStatus.NOT_FOUND, exception.message, exception)
-    } catch (exception: SeriesDataUnavailableException) {
-        throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, exception.message, exception)
     }
 }

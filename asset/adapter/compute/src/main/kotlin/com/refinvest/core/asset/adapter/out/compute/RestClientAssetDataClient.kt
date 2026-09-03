@@ -10,9 +10,10 @@ import com.refinvest.core.asset.domain.DataAvailability
 import com.refinvest.core.asset.domain.SeriesPoint
 import com.refinvest.core.asset.domain.SeriesSnapshot
 import com.refinvest.core.asset.domain.exception.DatasetSnapshotNotFoundException
-import com.refinvest.core.asset.domain.exception.SeriesDataUnavailableException
 import com.refinvest.core.asset.port.outbound.compute.AssetDataClient
 import com.refinvest.core.asset.port.outbound.compute.AssetSeriesQuery
+import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorCode
+import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorException
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.client.JdkClientHttpRequestFactory
@@ -92,7 +93,7 @@ class RestClientAssetDataClient private constructor(
                         ?: "Invalid series request",
                 )
                 404 -> throw DatasetSnapshotNotFoundException()
-                503 -> throw SeriesDataUnavailableException()
+                503 -> throw seriesDataUnavailable(response.bodyTo(String::class.java))
                 else -> throw IllegalStateException(
                     "Compute series lookup failed with HTTP ${response.statusCode.value()}",
                 )
@@ -100,6 +101,17 @@ class RestClientAssetDataClient private constructor(
         }
 
     private fun requireBody(body: String?): String = requireNotNull(body) { "Compute returned an empty response body" }
+
+    private fun seriesDataUnavailable(body: String?): SeriesDataErrorException {
+        val error = try {
+            objectMapper.readValue(requireBody(body), ComputeSeriesDataErrorResponse::class.java)
+        } catch (exception: Exception) {
+            throw IllegalStateException("Compute returned an invalid series data error response", exception)
+        }
+        val errorCode = SeriesDataErrorCode.entries.firstOrNull { it.name == error.errorCode }
+            ?: throw IllegalStateException("Compute returned an unsupported series data error code: ${error.errorCode}")
+        return SeriesDataErrorException(errorCode, error.message)
+    }
 
     private fun ComputeAssetResponse.toDomain(): Asset = Asset(
         symbol = symbol,
@@ -172,6 +184,11 @@ class RestClientAssetDataClient private constructor(
         val snapshotCreatedAt: Instant,
         val adjustmentPolicy: String,
         val series: List<ComputeAssetSeriesResponse>,
+    )
+
+    private data class ComputeSeriesDataErrorResponse(
+        val message: String,
+        val errorCode: String,
     )
 
     private data class ComputeAssetSeriesResponse(val symbol: String, val points: List<ComputeSeriesPointResponse>)

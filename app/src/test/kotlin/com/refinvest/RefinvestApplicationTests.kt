@@ -23,11 +23,22 @@ import com.refinvest.core.auth.port.outbound.persistence.RefreshSessionStore
 import com.refinvest.core.member.port.inbound.create.CreateMemberCommand
 import com.refinvest.core.member.port.inbound.create.CreateMemberUseCase
 import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.asset.domain.Asset
+import com.refinvest.core.asset.domain.AssetAvailability
+import com.refinvest.core.asset.domain.SeriesSnapshot
+import com.refinvest.core.asset.port.outbound.compute.AssetDataClient
+import com.refinvest.core.asset.port.outbound.compute.AssetSeriesQuery
+import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorCode
+import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorException
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.BeforeEach
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.web.server.LocalServerPort
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Import
+import org.springframework.context.annotation.Primary
 import org.springframework.test.context.TestPropertySource
 import org.springframework.security.oauth2.jwt.JwtClaimsSet
 import org.springframework.security.oauth2.jwt.JwtEncoder
@@ -51,6 +62,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(AssetDataClientTestConfiguration::class)
 @TestPropertySource(
     properties = [
         "spring.datasource.url=jdbc:h2:mem:refinvest;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
@@ -678,6 +690,20 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `preserves Compute series data errors through the Core HTTP response`() {
+        val response = authenticatedHttpClient().send(
+            authenticatedRequest(
+                URI("http://localhost:$port/assets/series?symbols=QQQ&metric=PRICE&start=2026-08-03&end=2026-08-25"),
+            ).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertEquals(503, response.statusCode(), response.body())
+        assertTrue(response.body().contains("\"errorCode\":\"DATASET_CORRUPTION\""), response.body())
+        assertTrue(response.body().contains("\"message\":\"Required daily bar is missing.\""), response.body())
+    }
+
+    @Test
     fun `creates a pending backtest run through HTTP and persists it`() {
         seedStrategyVersion()
         val response = authenticatedHttpClient().send(
@@ -1080,4 +1106,21 @@ class RefinvestApplicationTests(
         dataIntegrityStatus = DataIntegrityStatus(DatasetSnapshotId(datasetSnapshotId), true, true),
     )
 
+}
+
+@TestConfiguration
+class AssetDataClientTestConfiguration {
+    @Bean
+    @Primary
+    fun assetDataClient(): AssetDataClient = object : AssetDataClient {
+        override fun listAssets(): List<Asset> = emptyList()
+
+        override fun getAvailability(symbol: String): AssetAvailability? = null
+
+        override fun getSeries(query: AssetSeriesQuery): SeriesSnapshot =
+            throw SeriesDataErrorException(
+                SeriesDataErrorCode.DATASET_CORRUPTION,
+                "Required daily bar is missing.",
+            )
+    }
 }
