@@ -2,8 +2,9 @@ package com.refinvest.core.asset.adapter.out.compute
 
 import com.refinvest.core.asset.domain.AssetCalendar
 import com.refinvest.core.asset.domain.exception.DatasetSnapshotNotFoundException
-import com.refinvest.core.asset.domain.exception.SeriesDataUnavailableException
 import com.refinvest.core.asset.port.outbound.compute.AssetSeriesQuery
+import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorCode
+import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorException
 import com.refinvest.core.asset.port.outbound.compute.SeriesMetric
 import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
@@ -94,7 +95,7 @@ class RestClientAssetDataClientTest {
     }
 
     @Test
-    fun `maps missing and unavailable snapshots to asset-level failures`() {
+    fun `maps missing snapshots and preserves unavailable series data codes`() {
         val missingSnapshot = client()
         missingSnapshot.server.expect(requestTo("http://compute/series?symbols=QQQ&metric=PRICE&start=2026-01-01&end=2026-01-31&datasetSnapshotId=missing"))
             .andRespond(withStatus(HttpStatus.NOT_FOUND))
@@ -108,14 +109,37 @@ class RestClientAssetDataClientTest {
 
         val unavailableSnapshot = client()
         unavailableSnapshot.server.expect(requestTo("http://compute/series?symbols=QQQ&metric=PRICE&start=2026-01-01&end=2026-01-31"))
-            .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE))
+            .andRespond(
+                withStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("""{"message":"Required daily bar is missing.","errorCode":"DATASET_CORRUPTION"}"""),
+            )
 
-        assertFailsWith<SeriesDataUnavailableException> {
+        val exception = assertFailsWith<SeriesDataErrorException> {
             unavailableSnapshot.client.getSeries(
                 AssetSeriesQuery(listOf("QQQ"), SeriesMetric.PRICE, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), null),
             )
         }
+        assertEquals(SeriesDataErrorCode.DATASET_CORRUPTION, exception.errorCode)
+        assertEquals("Required daily bar is missing.", exception.message)
         unavailableSnapshot.server.verify()
+
+        val unavailableDataset = client()
+        unavailableDataset.server.expect(requestTo("http://compute/series?symbols=QQQ&metric=PRICE&start=2026-01-01&end=2026-01-31"))
+            .andRespond(
+                withStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("""{"message":"DatasetSnapshot is unavailable.","errorCode":"DATASET_UNAVAILABLE"}"""),
+            )
+
+        val datasetException = assertFailsWith<SeriesDataErrorException> {
+            unavailableDataset.client.getSeries(
+                AssetSeriesQuery(listOf("QQQ"), SeriesMetric.PRICE, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), null),
+            )
+        }
+        assertEquals(SeriesDataErrorCode.DATASET_UNAVAILABLE, datasetException.errorCode)
+        assertEquals("DatasetSnapshot is unavailable.", datasetException.message)
+        unavailableDataset.server.verify()
     }
 
     private fun client(): ClientFixture {

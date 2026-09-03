@@ -31,6 +31,8 @@ dependencies {
     runtimeOnly(libs.postgresql)
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.spring.boot.starter.oauth2.resource.server)
+    testImplementation(project(":asset:domain"))
+    testImplementation(project(":asset:port"))
     testImplementation(project(":auth:domain"))
     testImplementation(project(":auth:port"))
     testImplementation(project(":member:port"))
