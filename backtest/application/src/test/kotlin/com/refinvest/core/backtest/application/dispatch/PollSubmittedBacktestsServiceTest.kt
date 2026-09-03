@@ -84,6 +84,32 @@ class PollSubmittedBacktestsServiceTest {
         assertTrue(dispatchStore.terminal)
     }
 
+    @Test
+    fun `fails a running Core run from a failed Compute status`() {
+        val run = pendingRun().also {
+            it.start(period(), DatasetSnapshotId("snapshot-1"), EngineVersion("engine-1"))
+        }
+        val dispatchStore = FakeDispatchStore(run.id)
+        val service = service(
+            run = run,
+            dispatchStore = dispatchStore,
+            computeStatusLookup = ComputeBacktestStatusLookup.Found(
+                ComputeBacktestStatus(
+                    status = ComputeBacktestStatusValue.FAILED,
+                    actualPeriod = period(),
+                    datasetSnapshotId = DatasetSnapshotId("snapshot-1"),
+                    engineVersion = EngineVersion("engine-1"),
+                    failureReason = "PRICE_DATA_MISSING",
+                ),
+            ),
+        )
+
+        assertTrue(service.execute())
+        assertEquals(BacktestRunStatus.FAILED, run.status)
+        assertEquals("PRICE_DATA_MISSING", run.failureReason)
+        assertTrue(dispatchStore.terminal)
+    }
+
     private fun service(
         run: BacktestRun,
         dispatchStore: FakeDispatchStore,
