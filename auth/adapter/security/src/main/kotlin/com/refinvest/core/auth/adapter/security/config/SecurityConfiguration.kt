@@ -4,6 +4,8 @@ import com.nimbusds.jose.jwk.source.ImmutableSecret
 import com.nimbusds.jose.proc.SecurityContext
 import com.refinvest.core.auth.adapter.security.jwt.AccessCookieBearerTokenResolver
 import com.refinvest.core.auth.adapter.security.jwt.JwtAuthenticationTokenIssuer
+import com.refinvest.core.auth.adapter.security.error.JsonAccessDeniedHandler
+import com.refinvest.core.auth.adapter.security.error.JsonAuthenticationEntryPoint
 import com.refinvest.core.auth.adapter.security.oauth.ReturnToAuthorizationRequestResolver
 import com.refinvest.core.auth.adapter.security.oauth.SocialLoginFailureHandler
 import com.refinvest.core.auth.adapter.security.oauth.SocialLoginSuccessHandler
@@ -11,7 +13,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
-import org.springframework.http.HttpStatus
 import org.springframework.security.authentication.AbstractAuthenticationToken
 import org.springframework.security.authentication.AuthenticationManager
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -30,7 +31,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter
 import org.springframework.security.web.authentication.AuthenticationConverter
-import org.springframework.security.web.authentication.HttpStatusEntryPoint
+import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository
 import org.springframework.security.web.csrf.CsrfFilter
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler
@@ -68,6 +69,8 @@ class SecurityConfiguration {
         socialLoginSuccessHandler: SocialLoginSuccessHandler,
         socialLoginFailureHandler: SocialLoginFailureHandler,
         returnToAuthorizationRequestResolver: ReturnToAuthorizationRequestResolver,
+        jsonAuthenticationEntryPoint: JsonAuthenticationEntryPoint,
+        jsonAccessDeniedHandler: JsonAccessDeniedHandler,
     ): SecurityFilterChain {
         http.cors { it.configurationSource(corsConfigurationSource(properties)) }
         http.oauth2Login {
@@ -87,12 +90,15 @@ class SecurityConfiguration {
                 .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout").permitAll()
                 .anyRequest().authenticated()
         }
-        http.exceptionHandling { it.authenticationEntryPoint(HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)) }
+        http.exceptionHandling {
+            it.authenticationEntryPoint(jsonAuthenticationEntryPoint)
+                .accessDeniedHandler(jsonAccessDeniedHandler)
+        }
         // The Resource Server DSL exempts all bearer-token requests from CSRF by design. That is appropriate for
         // Authorization headers, but not for our browser cookies. Keep Spring Security's standard JWT provider and
         // bearer filter while retaining CSRF protection for every unsafe cookie-authenticated request.
         http.addFilterBefore(
-            accessTokenAuthenticationFilter(jwtDecoder(properties)),
+            accessTokenAuthenticationFilter(jwtDecoder(properties), jsonAuthenticationEntryPoint),
             CsrfFilter::class.java,
         )
         return http.build()
@@ -113,7 +119,10 @@ class SecurityConfiguration {
             }
         }::convert
 
-    private fun accessTokenAuthenticationFilter(jwtDecoder: JwtDecoder): BearerTokenAuthenticationFilter {
+    private fun accessTokenAuthenticationFilter(
+        jwtDecoder: JwtDecoder,
+        authenticationEntryPoint: JsonAuthenticationEntryPoint,
+    ): BearerTokenAuthenticationFilter {
         val accessTokenDecoder = JwtDecoder { token ->
             jwtDecoder.decode(token).also { jwt ->
                 if (jwt.getClaimAsString("typ") != JwtAuthenticationTokenIssuer.ACCESS_TOKEN_TYPE) {
@@ -131,7 +140,9 @@ class SecurityConfiguration {
         return BearerTokenAuthenticationFilter(
             AuthenticationManager(authenticationProvider::authenticate),
             authenticationConverter,
-        )
+        ).apply {
+            setAuthenticationFailureHandler(AuthenticationEntryPointFailureHandler(authenticationEntryPoint))
+        }
     }
 
     private fun corsConfigurationSource(properties: RefInvestSecurityProperties): CorsConfigurationSource {
