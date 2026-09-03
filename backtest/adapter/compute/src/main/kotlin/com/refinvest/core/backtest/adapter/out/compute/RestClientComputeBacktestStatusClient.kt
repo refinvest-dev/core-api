@@ -17,6 +17,7 @@ import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatus
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusClient
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusLookup
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusValue
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.stereotype.Component
@@ -29,19 +30,24 @@ import java.time.Instant
 import java.time.LocalDate
 
 @Component
-class RestClientComputeBacktestStatusClient(
-    @Value("\${refinvest.compute.base-url:http://localhost:8000}") baseUrl: String,
-    @Value("\${refinvest.compute.api-key:}") private val apiKey: String,
+class RestClientComputeBacktestStatusClient private constructor(
+    private val restClient: RestClient,
+    private val apiKey: String,
     private val objectMapper: ObjectMapper,
 ) : ComputeBacktestStatusClient {
-    private val restClient = RestClient.builder()
-        .baseUrl(baseUrl)
-        .requestFactory(
-            JdkClientHttpRequestFactory(
-                HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build(),
-            ),
-        )
-        .build()
+    @Autowired
+    constructor(
+        @Value("\${refinvest.compute.base-url:http://localhost:8000}") baseUrl: String,
+        @Value("\${refinvest.compute.api-key:}") apiKey: String,
+        objectMapper: ObjectMapper,
+    ) : this(createRestClient(baseUrl), apiKey, objectMapper)
+
+    internal constructor(
+        baseUrl: String,
+        apiKey: String,
+        objectMapper: ObjectMapper,
+        restClientBuilder: RestClient.Builder,
+    ) : this(restClientBuilder.baseUrl(baseUrl).build(), apiKey, objectMapper)
 
     override fun getBacktestStatus(
         computeRunId: String,
@@ -197,5 +203,14 @@ class RestClientComputeBacktestStatusClient(
     private companion object {
         val RETRY_AFTER_SERVICE_UNAVAILABLE: Duration = Duration.ofSeconds(30)
         val RETRY_AFTER_TRANSIENT_FAILURE: Duration = Duration.ofSeconds(10)
+
+        fun createRestClient(baseUrl: String): RestClient = RestClient.builder()
+            .baseUrl(baseUrl)
+            .requestFactory(
+                JdkClientHttpRequestFactory(
+                    HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build(),
+                ),
+            )
+            .build()
     }
 }
