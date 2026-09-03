@@ -134,6 +134,8 @@ class RefinvestApplicationTests(
         )
 
         assertTrue(response.statusCode() == 401, response.body())
+        assertTrue(response.body().contains("\"code\":\"UNAUTHORIZED\""), response.body())
+        assertTrue(response.body().contains("\"message\":"), response.body())
     }
 
     @Test
@@ -241,6 +243,8 @@ class RefinvestApplicationTests(
         )
 
         assertTrue(response.statusCode() == 403, "status=${response.statusCode()}, body=${response.body()}")
+        assertTrue(response.body().contains("\"code\":\"FORBIDDEN\""), response.body())
+        assertTrue(response.body().contains("\"message\":"), response.body())
     }
 
     @Test
@@ -290,6 +294,8 @@ class RefinvestApplicationTests(
         )
 
         assertTrue(response.statusCode() == 401, response.body())
+        assertTrue(response.body().contains("\"code\":\"UNAUTHORIZED\""), response.body())
+        assertTrue(response.body().contains("\"message\":"), response.body())
     }
 
     @Test
@@ -653,6 +659,22 @@ class RefinvestApplicationTests(
         )
 
         assertTrue(response.statusCode() == 404, response.body())
+        assertTrue(response.body().contains("\"code\":\"NOT_FOUND\""), response.body())
+        assertTrue(response.body().contains("\"message\":"), response.body())
+    }
+
+    @Test
+    fun `returns the error response contract for an invalid asset series request`() {
+        val response = authenticatedHttpClient().send(
+            authenticatedRequest(
+                URI("http://localhost:$port/assets/series?symbols=QQQ&metric=INVALID&start=2026-08-03&end=2026-08-25"),
+            ).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertEquals(400, response.statusCode(), response.body())
+        assertTrue(response.body().contains("\"code\":\"BAD_REQUEST\""), response.body())
+        assertTrue(response.body().contains("\"message\":"), response.body())
     }
 
     @Test
