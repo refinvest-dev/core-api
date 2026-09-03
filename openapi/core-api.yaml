@@ -365,21 +365,29 @@ paths:
           in: query
           required: true
           schema: { type: string, format: date }
+        - name: datasetSnapshotId
+          in: query
+          required: false
+          description: 과거 재현용 Snapshot ID. 생략하면 요청 시작 시 최신 published Snapshot 하나를 선택한다.
+          schema: { type: string }
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                required: [series]
-                properties:
-                  series:
-                    type: array
-                    items:
-                      $ref: 'compute-api.yaml#/components/schemas/AssetSeries'
+                $ref: 'compute-api.yaml#/components/schemas/SeriesResponse'
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503':
+          description: 선택한 DatasetSnapshot을 사용할 수 없거나 시계열 데이터가 손상됨.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: 'compute-api.yaml#/components/schemas/DatasetUnavailableErrorResponse'
+                  - $ref: 'compute-api.yaml#/components/schemas/SeriesDataErrorResponse'
 
   # ============ Auth / Account ============
   /oauth2/authorization/{provider}:
