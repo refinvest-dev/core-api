@@ -108,7 +108,7 @@ Compute가 계산한 결과를 Core가 영속화한 읽기 모델. Compute는 �
 ```text
 BacktestResult
 ├── backtestRunId
-├── metrics: { totalReturn, cagr, mdd, sharpe, winRate, tradeCount, avgTradeReturn, avgHoldingPeriod, profitFactor }
+├── metrics: { totalReturn?, cagr?, mdd?, sharpe?, winRate?, tradeCount, avgTradeReturn?, avgHoldingPeriod?, profitFactor? }
 ├── equityCurve: List<{ date, value }>
 ├── trades: List<Trade>
 ├── benchmark: { primary: BuyAndHoldResult, secondaryReference: BuyAndHoldResult | null }  # ADR-007
@@ -124,6 +124,8 @@ Trade
 ```
 
 `signalExecutionDelay.distribution`은 각 Trade의 `entryTime - signalTime`을 시간(hours) 단위로 기록한다. `median`과 `max`는 이 분포에서 계산하며, 무거래 결과는 빈 분포와 `median = max = 0`을 사용한다(ADR-048).
+
+`sampleSizeWarning = ZERO`이면 `tradeCount`를 제외한 전략 성과 지표는 계산 불가능한 값으로 `null`이다. Core와 Web은 이를 숫자 `0`으로 대체하지 않고 Empty State로 표시한다(ADR-006).
 
 ### 1.5 Member / Auth / Subscription
 

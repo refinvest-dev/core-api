@@ -18,9 +18,12 @@ import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusCl
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusLookup
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusValue
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
+import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
+import java.net.http.HttpClient
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -29,8 +32,16 @@ import java.time.LocalDate
 class RestClientComputeBacktestStatusClient(
     @Value("\${refinvest.compute.base-url:http://localhost:8000}") baseUrl: String,
     @Value("\${refinvest.compute.api-key:}") private val apiKey: String,
+    private val objectMapper: ObjectMapper,
 ) : ComputeBacktestStatusClient {
-    private val restClient = RestClient.create(baseUrl)
+    private val restClient = RestClient.builder()
+        .baseUrl(baseUrl)
+        .requestFactory(
+            JdkClientHttpRequestFactory(
+                HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build(),
+            ),
+        )
+        .build()
 
     override fun getBacktestStatus(
         computeRunId: String,
@@ -41,7 +52,8 @@ class RestClientComputeBacktestStatusClient(
             .header("X-Internal-Api-Key", apiKey)
             .exchange { _, response ->
                 when (response.statusCode.value()) {
-                    200 -> response.bodyTo(ComputeBacktestStatusResponse::class.java)
+                    200 -> response.bodyTo(String::class.java)
+                        ?.let { body -> objectMapper.readValue(body, ComputeBacktestStatusResponse::class.java) }
                         ?.toLookup(backtestRunId)
                         ?: ComputeBacktestStatusLookup.RetryLater(RETRY_AFTER_TRANSIENT_FAILURE)
                     404 -> ComputeBacktestStatusLookup.NotFound
@@ -136,15 +148,15 @@ class RestClientComputeBacktestStatusClient(
     )
 
     private data class ComputeBacktestResultMetricsResponse(
-        val totalReturn: BigDecimal,
-        val cagr: BigDecimal,
-        val mdd: BigDecimal,
-        val sharpe: BigDecimal,
-        val winRate: BigDecimal,
+        val totalReturn: BigDecimal?,
+        val cagr: BigDecimal?,
+        val mdd: BigDecimal?,
+        val sharpe: BigDecimal?,
+        val winRate: BigDecimal?,
         val tradeCount: Int,
-        val avgTradeReturn: BigDecimal,
-        val avgHoldingPeriod: BigDecimal,
-        val profitFactor: BigDecimal,
+        val avgTradeReturn: BigDecimal?,
+        val avgHoldingPeriod: BigDecimal?,
+        val profitFactor: BigDecimal?,
     )
 
     private data class ComputeEquityCurvePointResponse(val date: LocalDate, val value: BigDecimal)

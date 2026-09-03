@@ -63,6 +63,18 @@ class BacktestRunTest {
     }
 
     @Test
+    fun `preserves undefined metrics for a zero trade result`() {
+        val run = pendingRun()
+        val snapshotId = DatasetSnapshotId("snapshot-1")
+        run.start(period(), snapshotId, EngineVersion("engine-1"))
+
+        run.complete(resultFor(run, snapshotId))
+
+        assertNull(run.result!!.metrics.sharpe)
+        assertNull(run.result!!.metrics.profitFactor)
+    }
+
+    @Test
     fun `allows a pending run to fail without Compute execution metadata when submission is rejected`() {
         val run = pendingRun()
 
@@ -88,8 +100,15 @@ class BacktestRunTest {
     private fun resultFor(run: BacktestRun, snapshotId: DatasetSnapshotId): BacktestResult = BacktestResult(
         backtestRunId = run.id,
         metrics = BacktestResultMetrics(
-            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-            0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+            totalReturn = null,
+            cagr = null,
+            mdd = null,
+            sharpe = null,
+            winRate = null,
+            tradeCount = 0,
+            avgTradeReturn = null,
+            avgHoldingPeriod = null,
+            profitFactor = null,
         ),
         equityCurve = emptyList(),
         trades = emptyList(),

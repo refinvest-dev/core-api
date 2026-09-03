@@ -84,7 +84,7 @@ DSL_INVALID                  # 실행 전 Validation 단계에서 걸러짐 (Job
 
 **결정**:
 - Trade Count < 10 → **Low Sample Warning** 표시 (`⚠ Only N trades occurred. Performance statistics may not be statistically meaningful.`)
-- Trade Count = 0 → 별도 **Empty State**로 처리. 백테스트는 정상 완료하되 Win Rate/Sharpe/Profit Factor 등을 `0`으로 표시하지 않고 "조건을 충족한 신호가 한 번도 발생하지 않았습니다"라는 안내로 대체한다.
+- Trade Count = 0 → 별도 **Empty State**로 처리. 백테스트는 정상 완료하되 전략 성과 지표는 `null`로 보존하고, Win Rate/Sharpe/Profit Factor 등을 `0`으로 표시하지 않고 "조건을 충족한 신호가 한 번도 발생하지 않았습니다"라는 안내로 대체한다.
 
 **이유**: 0으로 나누는 연산(Win Rate = 승리 거래 / 전체 거래)을 그대로 노출하면 오해를 부르는 숫자(`Win Rate: 0%`처럼 "전략이 항상 실패했다"는 잘못된 인상)가 나갈 수 있다.
 

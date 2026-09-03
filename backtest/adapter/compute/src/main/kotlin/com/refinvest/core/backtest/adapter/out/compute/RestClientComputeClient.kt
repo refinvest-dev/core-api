@@ -5,18 +5,32 @@ import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestSubmissi
 import com.refinvest.core.backtest.port.outbound.compute.ComputeClient
 import com.refinvest.core.backtest.port.outbound.compute.LiteralOperandPayload
 import com.refinvest.core.backtest.port.outbound.compute.MetricOperandPayload
+import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.MediaType
+import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
+import java.net.http.HttpClient
 import java.time.Duration
 
 @Component
-class RestClientComputeClient(
-    @Value("\${refinvest.compute.base-url:http://localhost:8000}") baseUrl: String,
-    @Value("\${refinvest.compute.api-key:}") private val apiKey: String,
+class RestClientComputeClient private constructor(
+    private val restClient: RestClient,
+    private val apiKey: String,
 ) : ComputeClient {
-    private val restClient = RestClient.create(baseUrl)
+    @Autowired
+    constructor(
+        @Value("\${refinvest.compute.base-url:http://localhost:8000}") baseUrl: String,
+        @Value("\${refinvest.compute.api-key:}") apiKey: String,
+    ) : this(createRestClient(baseUrl), apiKey)
+
+    internal constructor(
+        baseUrl: String,
+        apiKey: String,
+        restClientBuilder: RestClient.Builder,
+    ) : this(restClientBuilder.baseUrl(baseUrl).build(), apiKey)
 
     override fun requestBacktest(request: ComputeBacktestRequest): ComputeBacktestSubmission = try {
         restClient.post()
@@ -27,22 +41,26 @@ class RestClientComputeClient(
             .body(request.toBody())
             .exchange { _, response ->
                 when (response.statusCode.value()) {
-                    202 -> ComputeBacktestSubmission.Accepted(
-                        requireNotNull(response.bodyTo(ComputeAcceptedResponse::class.java)).runId,
-                    )
+                    202 -> response.bodyTo(String::class.java)
+                        ?.computeRunId()
+                        ?.let(ComputeBacktestSubmission::Accepted)
+                        ?: ComputeBacktestSubmission.RetryLater(RETRY_AFTER_TRANSIENT_FAILURE)
                     400, 409 -> ComputeBacktestSubmission.Rejected(
-                        response.bodyTo(ComputeErrorResponse::class.java)?.message ?: "Compute rejected backtest request",
+                        response.bodyTo(String::class.java)
+                            ?.takeIf(String::isNotBlank)
+                            ?: "Compute rejected backtest request",
                     )
                     503 -> ComputeBacktestSubmission.RetryLater(RETRY_AFTER_SERVICE_UNAVAILABLE)
                     else -> ComputeBacktestSubmission.RetryLater(RETRY_AFTER_TRANSIENT_FAILURE)
                 }
             }
-    } catch (_: Exception) {
+    } catch (exception: Exception) {
+        logger.warn("Compute backtest submission failed; scheduling a retry.", exception)
         ComputeBacktestSubmission.RetryLater(RETRY_AFTER_TRANSIENT_FAILURE)
     }
 
     private fun ComputeBacktestRequest.toBody(): Map<String, Any> = mapOf(
-        "strategyVersionId" to strategyVersionId.value,
+        "strategyVersionId" to strategyVersionId.value.toString(),
         "strategyVersion" to mapOf(
             "primarySignalAsset" to strategyVersion.primarySignalAsset,
             "conditions" to strategyVersion.conditions.map { condition ->
@@ -80,11 +98,21 @@ class RestClientComputeClient(
         is MetricOperandPayload -> value.toBody()
     }
 
-    private data class ComputeAcceptedResponse(val runId: String)
-    private data class ComputeErrorResponse(val message: String?)
+    private fun String.computeRunId(): String? = RUN_ID_PATTERN.find(this)?.groupValues?.get(1)
 
     private companion object {
+        val logger = LoggerFactory.getLogger(RestClientComputeClient::class.java)
+        val RUN_ID_PATTERN = Regex("\\\"runId\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
         val RETRY_AFTER_SERVICE_UNAVAILABLE: Duration = Duration.ofSeconds(30)
         val RETRY_AFTER_TRANSIENT_FAILURE: Duration = Duration.ofSeconds(10)
+
+        fun createRestClient(baseUrl: String): RestClient = RestClient.builder()
+            .baseUrl(baseUrl)
+            .requestFactory(
+                JdkClientHttpRequestFactory(
+                    HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build(),
+                ),
+            )
+            .build()
     }
 }

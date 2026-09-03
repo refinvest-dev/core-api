@@ -4,15 +4,15 @@ import com.refinvest.core.backtest.domain.backtest.BacktestResultMetrics
 import java.math.BigDecimal
 
 data class BacktestResultMetricsResponse(
-    val totalReturn: BigDecimal,
-    val cagr: BigDecimal,
-    val mdd: BigDecimal,
-    val sharpe: BigDecimal,
-    val winRate: BigDecimal,
+    val totalReturn: BigDecimal?,
+    val cagr: BigDecimal?,
+    val mdd: BigDecimal?,
+    val sharpe: BigDecimal?,
+    val winRate: BigDecimal?,
     val tradeCount: Int,
-    val avgTradeReturn: BigDecimal,
-    val avgHoldingPeriod: BigDecimal,
-    val profitFactor: BigDecimal,
+    val avgTradeReturn: BigDecimal?,
+    val avgHoldingPeriod: BigDecimal?,
+    val profitFactor: BigDecimal?,
 ) {
     companion object {
         fun from(metrics: BacktestResultMetrics): BacktestResultMetricsResponse = BacktestResultMetricsResponse(
