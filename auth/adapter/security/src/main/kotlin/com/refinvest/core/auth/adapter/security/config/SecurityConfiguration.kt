@@ -9,6 +9,7 @@ import com.refinvest.core.auth.adapter.security.error.JsonAuthenticationEntryPoi
 import com.refinvest.core.auth.adapter.security.oauth.ReturnToAuthorizationRequestResolver
 import com.refinvest.core.auth.adapter.security.oauth.SocialLoginFailureHandler
 import com.refinvest.core.auth.adapter.security.oauth.SocialLoginSuccessHandler
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -17,6 +18,7 @@ import org.springframework.security.authentication.AbstractAuthenticationToken
 import org.springframework.security.authentication.AuthenticationManager
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository
 import org.springframework.security.oauth2.core.OAuth2TokenValidator
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator
@@ -69,14 +71,17 @@ class SecurityConfiguration {
         socialLoginSuccessHandler: SocialLoginSuccessHandler,
         socialLoginFailureHandler: SocialLoginFailureHandler,
         returnToAuthorizationRequestResolver: ReturnToAuthorizationRequestResolver,
+        clientRegistrationRepositoryProvider: ObjectProvider<ClientRegistrationRepository>,
         jsonAuthenticationEntryPoint: JsonAuthenticationEntryPoint,
         jsonAccessDeniedHandler: JsonAccessDeniedHandler,
     ): SecurityFilterChain {
         http.cors { it.configurationSource(corsConfigurationSource(properties)) }
-        http.oauth2Login {
-            it.authorizationEndpoint { endpoint -> endpoint.authorizationRequestResolver(returnToAuthorizationRequestResolver) }
-            it.successHandler(socialLoginSuccessHandler)
-                .failureHandler(socialLoginFailureHandler)
+        if (clientRegistrationRepositoryProvider.getIfAvailable() != null) {
+            http.oauth2Login {
+                it.authorizationEndpoint { endpoint -> endpoint.authorizationRequestResolver(returnToAuthorizationRequestResolver) }
+                it.successHandler(socialLoginSuccessHandler)
+                    .failureHandler(socialLoginFailureHandler)
+            }
         }
         http.csrf {
             it.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
