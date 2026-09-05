@@ -15,6 +15,7 @@ import com.refinvest.core.subscription.port.inbound.usage.GetUsageQuery
 import com.refinvest.core.subscription.port.inbound.usage.GetUsageUseCase
 import com.refinvest.core.subscription.port.inbound.upgrade.UpgradeSubscriptionCommand
 import com.refinvest.core.subscription.port.inbound.upgrade.UpgradeSubscriptionUseCase
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.http.HttpStatus
 import org.springframework.security.web.csrf.CsrfToken
@@ -76,11 +77,13 @@ class AuthController(
     @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.NO_CONTENT)
     fun logout(
         @CookieValue(AuthCookieWriter.REFRESH_COOKIE_NAME, required = false) rawRefreshToken: String?,
+        request: HttpServletRequest,
         response: HttpServletResponse,
     ) {
         rawRefreshToken?.let(refreshTokenParser::parse)?.let { claims ->
             logoutUseCase.execute(LogoutCommand(claims.familyId))
         }
+        request.getSession(false)?.invalidate()
         authCookieWriter.clear(response)
     }
 
