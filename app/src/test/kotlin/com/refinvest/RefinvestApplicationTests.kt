@@ -56,6 +56,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.mock.web.MockHttpSession
 import tools.jackson.databind.ObjectMapper
@@ -448,6 +449,21 @@ class RefinvestApplicationTests(
                 )
                 .header("X-XSRF-TOKEN", "test-csrf"),
         ).andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `rejects unsafe OAuth returnTo values as bad requests`() {
+        listOf(
+            "https://attacker.example/",
+            "//attacker.example/",
+            "/\\attacker.example/",
+        ).forEach { returnTo ->
+            mockMvc.perform(
+                get("/oauth2/authorization/google")
+                    .queryParam("returnTo", returnTo),
+            ).andExpect(status().isBadRequest)
+                .andExpect(content().json("""{"code":"BAD_REQUEST","message":"Invalid returnTo"}"""))
+        }
     }
 
     @Test

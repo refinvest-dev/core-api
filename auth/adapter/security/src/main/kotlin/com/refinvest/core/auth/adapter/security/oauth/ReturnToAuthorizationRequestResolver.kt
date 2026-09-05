@@ -30,14 +30,19 @@ class ReturnToAuthorizationRequestResolver(
         request.getSession(true).setAttribute(attributeName(requireNotNull(authorizationRequest.state)), returnTo)
     }
 
-    private fun isSafeRelativePath(value: String): Boolean = runCatching {
-        val uri = URI(value)
-        value.startsWith('/') && !value.startsWith("//") && !uri.isAbsolute && uri.rawAuthority == null
-    }.getOrDefault(false)
-
     companion object {
         const val RETURN_TO_PARAMETER = "returnTo"
+        const val AUTHORIZATION_PATH_PREFIX = "/oauth2/authorization/"
 
         fun attributeName(state: String): String = "refinvest.auth.return-to.$state"
+
+        fun isSafeRelativePath(value: String): Boolean = runCatching {
+            val uri = URI(value)
+            value.startsWith('/') &&
+                !value.startsWith("//") &&
+                !value.contains('\\') &&
+                !uri.isAbsolute &&
+                uri.rawAuthority == null
+        }.getOrDefault(false)
     }
 }
