@@ -27,6 +27,7 @@ class AuthCookieWriter(
     fun clear(response: HttpServletResponse) {
         response.addHeader(HttpHeaders.SET_COOKIE, accessCookie("", null).toString())
         response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie("", null).toString())
+        response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie().toString())
     }
 
     private fun write(
@@ -44,6 +45,8 @@ class AuthCookieWriter(
 
     private fun refreshCookie(value: String, expiresAt: Instant?): ResponseCookie = cookie(REFRESH_COOKIE_NAME, value, "/auth", expiresAt)
 
+    private fun sessionCookie(): ResponseCookie = cookie(SERVLET_SESSION_COOKIE_NAME, "", "/", null)
+
     private fun cookie(name: String, value: String, path: String, expiresAt: Instant?): ResponseCookie = ResponseCookie.from(name, value)
         .httpOnly(true)
         .secure(properties.cookieSecure)
@@ -59,5 +62,6 @@ class AuthCookieWriter(
     companion object {
         const val ACCESS_COOKIE_NAME = "REFINVEST_ACCESS_TOKEN"
         const val REFRESH_COOKIE_NAME = "REFINVEST_REFRESH_TOKEN"
+        const val SERVLET_SESSION_COOKIE_NAME = "JSESSIONID"
     }
 }

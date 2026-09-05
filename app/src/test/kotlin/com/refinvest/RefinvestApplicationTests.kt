@@ -376,11 +376,24 @@ class RefinvestApplicationTests(
     }
 
     @Test
-    fun `logout revokes refresh family and clears authentication cookies`() {
+    fun `logout revokes refresh family, invalidates servlet session, and clears authentication cookies`() {
         val issued = issueRefreshSession(memberId = 402L)
+        val oauthAuthorization = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .build()
+            .send(
+                HttpRequest.newBuilder(URI("http://localhost:$port/oauth2/authorization/google"))
+                    .GET()
+                    .build(),
+                HttpResponse.BodyHandlers.ofString(),
+            )
+        val sessionId = oauthAuthorization.headers().allValues("set-cookie")
+            .single { it.startsWith("JSESSIONID=") }
+            .substringAfter("JSESSIONID=")
+            .substringBefore(';')
         val response = HttpClient.newHttpClient().send(
             HttpRequest.newBuilder(URI("http://localhost:$port/auth/logout"))
-                .header("Cookie", "REFINVEST_REFRESH_TOKEN=${issued.refreshToken}; XSRF-TOKEN=test-csrf")
+                .header("Cookie", "JSESSIONID=$sessionId; REFINVEST_REFRESH_TOKEN=${issued.refreshToken}; XSRF-TOKEN=test-csrf")
                 .header("X-XSRF-TOKEN", "test-csrf")
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .build(),
@@ -392,6 +405,7 @@ class RefinvestApplicationTests(
         val cookies = response.headers().allValues("set-cookie")
         assertTrue(cookies.any { it.startsWith("REFINVEST_ACCESS_TOKEN=") && it.contains("Max-Age=0") }, cookies.toString())
         assertTrue(cookies.any { it.startsWith("REFINVEST_REFRESH_TOKEN=") && it.contains("Max-Age=0") }, cookies.toString())
+        assertTrue(cookies.any { it.startsWith("JSESSIONID=") && it.contains("Max-Age=0") }, cookies.toString())
     }
 
     @Test
