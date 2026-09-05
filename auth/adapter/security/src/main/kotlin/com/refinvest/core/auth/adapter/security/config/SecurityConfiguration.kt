@@ -7,6 +7,7 @@ import com.refinvest.core.auth.adapter.security.jwt.JwtAuthenticationTokenIssuer
 import com.refinvest.core.auth.adapter.security.error.JsonAccessDeniedHandler
 import com.refinvest.core.auth.adapter.security.error.JsonAuthenticationEntryPoint
 import com.refinvest.core.auth.adapter.security.oauth.ReturnToAuthorizationRequestResolver
+import com.refinvest.core.auth.adapter.security.oauth.ReturnToValidationFilter
 import com.refinvest.core.auth.adapter.security.oauth.SocialLoginFailureHandler
 import com.refinvest.core.auth.adapter.security.oauth.SocialLoginSuccessHandler
 import org.springframework.beans.factory.ObjectProvider
@@ -19,6 +20,7 @@ import org.springframework.security.authentication.AuthenticationManager
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter
 import org.springframework.security.oauth2.core.OAuth2TokenValidator
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator
@@ -71,6 +73,7 @@ class SecurityConfiguration {
         socialLoginSuccessHandler: SocialLoginSuccessHandler,
         socialLoginFailureHandler: SocialLoginFailureHandler,
         returnToAuthorizationRequestResolver: ReturnToAuthorizationRequestResolver,
+        returnToValidationFilter: ReturnToValidationFilter,
         clientRegistrationRepositoryProvider: ObjectProvider<ClientRegistrationRepository>,
         jsonAuthenticationEntryPoint: JsonAuthenticationEntryPoint,
         jsonAccessDeniedHandler: JsonAccessDeniedHandler,
@@ -82,6 +85,7 @@ class SecurityConfiguration {
                 it.successHandler(socialLoginSuccessHandler)
                     .failureHandler(socialLoginFailureHandler)
             }
+            http.addFilterBefore(returnToValidationFilter, OAuth2AuthorizationRequestRedirectFilter::class.java)
         }
         http.csrf {
             it.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
