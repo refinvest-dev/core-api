@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.BeforeEach
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.context.annotation.Bean
@@ -46,7 +47,17 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm
 import org.springframework.security.oauth2.jwt.JwsHeader
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken
+import org.springframework.security.oauth2.core.user.DefaultOAuth2User
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.core.context.SecurityContextImpl
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.mock.web.MockHttpSession
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.time.Instant
@@ -56,12 +67,14 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
+import jakarta.servlet.http.Cookie
 import kotlin.test.assertNotEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureMockMvc
 @Import(AssetDataClientTestConfiguration::class)
 @TestPropertySource(
     properties = [
@@ -82,6 +95,7 @@ class RefinvestApplicationTests(
     @Autowired private val authenticationTokenIssuer: AuthenticationTokenIssuer,
     @Autowired private val refreshSessionStore: RefreshSessionStore,
     @Autowired private val createMemberUseCase: CreateMemberUseCase,
+    @Autowired private val mockMvc: MockMvc,
     @LocalServerPort private val port: Int,
 ) {
 
@@ -406,6 +420,34 @@ class RefinvestApplicationTests(
         assertTrue(cookies.any { it.startsWith("REFINVEST_ACCESS_TOKEN=") && it.contains("Max-Age=0") }, cookies.toString())
         assertTrue(cookies.any { it.startsWith("REFINVEST_REFRESH_TOKEN=") && it.contains("Max-Age=0") }, cookies.toString())
         assertTrue(cookies.any { it.startsWith("JSESSIONID=") && it.contains("Max-Age=0") }, cookies.toString())
+    }
+
+    @Test
+    fun `logout invalidates OAuth session and rejects protected and refresh requests`() {
+        val issued = issueRefreshSession(memberId = 403L)
+        val session = oauthAuthenticatedSession()
+
+        mockMvc.perform(
+            post("/auth/logout")
+                .session(session)
+                .cookie(
+                    Cookie("JSESSIONID", session.id),
+                    Cookie("REFINVEST_REFRESH_TOKEN", issued.refreshToken),
+                    Cookie("XSRF-TOKEN", "test-csrf"),
+                )
+                .header("X-XSRF-TOKEN", "test-csrf"),
+        ).andExpect(status().isNoContent)
+
+        assertTrue(session.isInvalid)
+        mockMvc.perform(get("/strategies")).andExpect(status().isUnauthorized)
+        mockMvc.perform(
+            post("/auth/refresh")
+                .cookie(
+                    Cookie("REFINVEST_REFRESH_TOKEN", issued.refreshToken),
+                    Cookie("XSRF-TOKEN", "test-csrf"),
+                )
+                .header("X-XSRF-TOKEN", "test-csrf"),
+        ).andExpect(status().isUnauthorized)
     }
 
     @Test
@@ -970,6 +1012,18 @@ class RefinvestApplicationTests(
 
     private fun authenticatedRequest(uri: URI, accessToken: String = accessToken()): HttpRequest.Builder = HttpRequest.newBuilder(uri)
         .header("Cookie", "REFINVEST_ACCESS_TOKEN=$accessToken; XSRF-TOKEN=test-csrf")
+
+    private fun oauthAuthenticatedSession(): MockHttpSession {
+        val authorities = listOf(SimpleGrantedAuthority("ROLE_MEMBER"))
+        val principal = DefaultOAuth2User(authorities, mapOf("sub" to "oauth-subject"), "sub")
+        val authentication = OAuth2AuthenticationToken(principal, authorities, "google")
+        return MockHttpSession().apply {
+            setAttribute(
+                HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
+                SecurityContextImpl(authentication),
+            )
+        }
+    }
 
     private fun accessToken(
         memberId: Long = 1,
