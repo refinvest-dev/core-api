@@ -42,7 +42,7 @@ tags:
   - name: backtests
     description: 백테스트 실행·조회 (`docs/USECASES.md` Backtest 모듈, 항상 비동기)
   - name: assets
-    description: Data Explorer용 Asset/시계열 프록시 (`docs/USECASES.md` Asset / Data Explorer — Core는 Compute를 그대로 읽기 전용 프록시)
+    description: Strategy Builder용 Asset 메타데이터와 향후 Data Explorer용 보류 시계열 프록시 (`docs/USECASES.md`, ADR-049)
   - name: account
     description: 소셜 로그인·세션·사용량·구독 (`docs/USECASES.md` Member / Auth / Subscription 모듈)
 
@@ -296,7 +296,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  # ============ Asset / Data Explorer (읽기 전용 프록시) ============
+  # ============ Asset / Strategy Builder 지원 (시계열 공개는 보류) ============
   /assets:
     get:
       operationId: listAssets
@@ -343,8 +343,11 @@ paths:
     get:
       operationId: getSeries
       tags: [assets]
-      summary: Data Explorer용 다중 자산 시계열 (`GetSeries`)
-      description: Compute의 `GET /series`(`compute-api.yaml`)를 그대로 프록시한다.
+      summary: 보류된 다중 자산 시계열 capability (`GetSeries`)
+      description: |
+        Compute의 `GET /series`(`compute-api.yaml`)를 그대로 프록시하는 향후 Data Explorer용 capability다.
+        ADR-049에 따라 MVP Web은 이 operation을 호출하거나 사용자에게 노출하지 않는다.
+      x-refinvest-mvp-status: deferred
       parameters:
         - name: symbols
           in: query
