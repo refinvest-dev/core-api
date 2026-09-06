@@ -17,6 +17,8 @@ import com.refinvest.core.backtest.port.inbound.execution.StartBacktestRunComman
 import com.refinvest.core.strategy.port.outbound.id.StrategyIdGenerator
 import com.refinvest.core.backtest.port.outbound.id.BacktestRunIdGenerator
 import com.refinvest.core.auth.domain.RefreshSession
+import com.refinvest.core.auth.adapter.security.oauth.ReturnToAuthorizationRequestResolver
+import com.refinvest.core.auth.adapter.security.oauth.SocialLoginSuccessHandler
 import com.refinvest.core.auth.port.outbound.token.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.token.IssuedAuthenticationTokens
 import com.refinvest.core.auth.port.outbound.persistence.RefreshSessionStore
@@ -51,6 +53,7 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.context.SecurityContextImpl
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
@@ -59,6 +62,8 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.mock.web.MockHttpSession
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.mock.web.MockHttpServletResponse
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.time.Instant
@@ -72,6 +77,7 @@ import jakarta.servlet.http.Cookie
 import kotlin.test.assertNotEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -96,6 +102,7 @@ class RefinvestApplicationTests(
     @Autowired private val authenticationTokenIssuer: AuthenticationTokenIssuer,
     @Autowired private val refreshSessionStore: RefreshSessionStore,
     @Autowired private val createMemberUseCase: CreateMemberUseCase,
+    @Autowired private val socialLoginSuccessHandler: SocialLoginSuccessHandler,
     @Autowired private val mockMvc: MockMvc,
     @LocalServerPort private val port: Int,
 ) {
@@ -449,6 +456,36 @@ class RefinvestApplicationTests(
                 )
                 .header("X-XSRF-TOKEN", "test-csrf"),
         ).andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `social login success clears OAuth session and unauthenticated protected request is unauthorized`() {
+        val state = "oauth-callback-state"
+        val session = MockHttpSession().apply {
+            setAttribute(ReturnToAuthorizationRequestResolver.attributeName(state), "/strategies/new")
+        }
+        val request = MockHttpServletRequest("GET", "/login/oauth2/code/google").apply {
+            setParameter("state", state)
+            setSession(session)
+        }
+        val response = MockHttpServletResponse()
+        val authentication = oauthAuthentication("callback-subject")
+        SecurityContextHolder.getContext().authentication = authentication
+
+        try {
+            socialLoginSuccessHandler.onAuthenticationSuccess(request, response, authentication)
+
+            assertTrue(session.isInvalid)
+            assertNull(SecurityContextHolder.getContext().authentication)
+            assertEquals("http://localhost:3001/strategies/new", response.redirectedUrl)
+            assertTrue(response.getHeaders("Set-Cookie").any { it.startsWith("REFINVEST_ACCESS_TOKEN=") && !it.contains("Max-Age=0") })
+            assertTrue(response.getHeaders("Set-Cookie").any { it.startsWith("REFINVEST_REFRESH_TOKEN=") && !it.contains("Max-Age=0") })
+            assertTrue(response.getHeaders("Set-Cookie").any { it.startsWith("JSESSIONID=") && it.contains("Max-Age=0") })
+
+            mockMvc.perform(get("/strategies")).andExpect(status().isUnauthorized)
+        } finally {
+            SecurityContextHolder.clearContext()
+        }
     }
 
     @Test
@@ -1030,15 +1067,18 @@ class RefinvestApplicationTests(
         .header("Cookie", "REFINVEST_ACCESS_TOKEN=$accessToken; XSRF-TOKEN=test-csrf")
 
     private fun oauthAuthenticatedSession(): MockHttpSession {
-        val authorities = listOf(SimpleGrantedAuthority("ROLE_MEMBER"))
-        val principal = DefaultOAuth2User(authorities, mapOf("sub" to "oauth-subject"), "sub")
-        val authentication = OAuth2AuthenticationToken(principal, authorities, "google")
         return MockHttpSession().apply {
             setAttribute(
                 HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
-                SecurityContextImpl(authentication),
+                SecurityContextImpl(oauthAuthentication("oauth-subject")),
             )
         }
+    }
+
+    private fun oauthAuthentication(subject: String): OAuth2AuthenticationToken {
+        val authorities = listOf(SimpleGrantedAuthority("ROLE_MEMBER"))
+        val principal = DefaultOAuth2User(authorities, mapOf("sub" to subject), "sub")
+        return OAuth2AuthenticationToken(principal, authorities, "google")
     }
 
     private fun accessToken(

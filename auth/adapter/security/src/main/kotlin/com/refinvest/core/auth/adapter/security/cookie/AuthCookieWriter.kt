@@ -27,6 +27,10 @@ class AuthCookieWriter(
     fun clear(response: HttpServletResponse) {
         response.addHeader(HttpHeaders.SET_COOKIE, accessCookie("", null).toString())
         response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie("", null).toString())
+        clearServletSession(response)
+    }
+
+    fun clearServletSession(response: HttpServletResponse) {
         response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie().toString())
     }
 

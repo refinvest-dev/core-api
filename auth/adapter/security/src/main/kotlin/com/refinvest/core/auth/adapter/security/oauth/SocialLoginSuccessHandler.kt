@@ -6,6 +6,7 @@ import com.refinvest.core.auth.port.inbound.login.SocialLoginUseCase
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.security.core.Authentication
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler
 import org.springframework.stereotype.Component
@@ -31,9 +32,11 @@ class SocialLoginSuccessHandler(
     ) {
         val oauth = authentication as? OAuth2AuthenticationToken
             ?: throw IllegalStateException("OAuth2 authentication is required")
+        val returnTo = returnTo(request)
         val result = socialLoginUseCase.execute(providerIdentityNormalizer.normalize(oauth))
         authCookieWriter.write(response, result)
-        response.sendRedirect(webOrigin + returnTo(request))
+        clearOAuthSession(request, response)
+        response.sendRedirect(webOrigin + returnTo)
     }
 
     private fun returnTo(request: HttpServletRequest): String {
@@ -42,5 +45,11 @@ class SocialLoginSuccessHandler(
             ?: return "/"
         val session = request.getSession(false) ?: return "/"
         return (session.getAttribute(attributeName) as? String).also { session.removeAttribute(attributeName) } ?: "/"
+    }
+
+    private fun clearOAuthSession(request: HttpServletRequest, response: HttpServletResponse) {
+        request.getSession(false)?.invalidate()
+        SecurityContextHolder.clearContext()
+        authCookieWriter.clearServletSession(response)
     }
 }
