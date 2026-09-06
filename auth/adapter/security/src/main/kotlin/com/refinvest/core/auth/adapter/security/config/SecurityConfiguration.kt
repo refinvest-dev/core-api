@@ -95,7 +95,7 @@ class SecurityConfiguration {
                 })
         }
         http.authorizeHttpRequests {
-            it.requestMatchers(HttpMethod.GET, "/actuator/health", "/oauth2/**", "/login/**", "/auth/csrf").permitAll()
+            it.requestMatchers(HttpMethod.GET, "/actuator/health", "/oauth2/**", "/login/**", "/auth/csrf", "/assets/series").permitAll()
                 .requestMatchers(HttpMethod.POST, "/auth/refresh", "/auth/logout").permitAll()
                 .anyRequest().authenticated()
         }

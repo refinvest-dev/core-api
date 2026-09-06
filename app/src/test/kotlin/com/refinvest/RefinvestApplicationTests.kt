@@ -27,11 +27,11 @@ import com.refinvest.core.member.port.inbound.create.CreateMemberUseCase
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.asset.domain.Asset
 import com.refinvest.core.asset.domain.AssetAvailability
+import com.refinvest.core.asset.domain.AssetCalendar
+import com.refinvest.core.asset.domain.DataAvailability
 import com.refinvest.core.asset.domain.SeriesSnapshot
 import com.refinvest.core.asset.port.outbound.compute.AssetDataClient
 import com.refinvest.core.asset.port.outbound.compute.AssetSeriesQuery
-import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorCode
-import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorException
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.BeforeEach
 import org.springframework.beans.factory.annotation.Autowired
@@ -103,6 +103,7 @@ class RefinvestApplicationTests(
     @Autowired private val refreshSessionStore: RefreshSessionStore,
     @Autowired private val createMemberUseCase: CreateMemberUseCase,
     @Autowired private val socialLoginSuccessHandler: SocialLoginSuccessHandler,
+    @Autowired private val assetDataClient: AssetDataClientTestDouble,
     @Autowired private val mockMvc: MockMvc,
     @LocalServerPort private val port: Int,
 ) {
@@ -110,6 +111,7 @@ class RefinvestApplicationTests(
     @BeforeEach
     fun clearBacktestQuotaReservations() {
         jdbcTemplate.update("delete from backtest_quotas")
+        assetDataClient.reset()
     }
 
 	@Test
@@ -785,31 +787,42 @@ class RefinvestApplicationTests(
     }
 
     @Test
-    fun `returns the error response contract for an invalid asset series request`() {
-        val response = authenticatedHttpClient().send(
+    fun `hides asset series from both authenticated and unauthenticated requests without calling Compute`() {
+        val authenticatedResponse = authenticatedHttpClient().send(
             authenticatedRequest(
                 URI("http://localhost:$port/assets/series?symbols=QQQ&metric=INVALID&start=2026-08-03&end=2026-08-25"),
             ).GET().build(),
             HttpResponse.BodyHandlers.ofString(),
         )
-
-        assertEquals(400, response.statusCode(), response.body())
-        assertTrue(response.body().contains("\"code\":\"BAD_REQUEST\""), response.body())
-        assertTrue(response.body().contains("\"message\":"), response.body())
-    }
-
-    @Test
-    fun `preserves Compute series data errors through the Core HTTP response`() {
-        val response = authenticatedHttpClient().send(
-            authenticatedRequest(
+        val unauthenticatedResponse = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(
                 URI("http://localhost:$port/assets/series?symbols=QQQ&metric=PRICE&start=2026-08-03&end=2026-08-25"),
             ).GET().build(),
             HttpResponse.BodyHandlers.ofString(),
         )
 
-        assertEquals(503, response.statusCode(), response.body())
-        assertTrue(response.body().contains("\"errorCode\":\"DATASET_CORRUPTION\""), response.body())
-        assertTrue(response.body().contains("\"message\":\"Required daily bar is missing.\""), response.body())
+        assertEquals(404, authenticatedResponse.statusCode(), authenticatedResponse.body())
+        assertTrue(authenticatedResponse.body().contains("\"code\":\"NOT_FOUND\""), authenticatedResponse.body())
+        assertEquals(404, unauthenticatedResponse.statusCode(), unauthenticatedResponse.body())
+        assertTrue(unauthenticatedResponse.body().contains("\"code\":\"NOT_FOUND\""), unauthenticatedResponse.body())
+        assertEquals(0, assetDataClient.seriesRequestCount)
+    }
+
+    @Test
+    fun `keeps asset metadata endpoints available`() {
+        val assets = authenticatedHttpClient().send(
+            authenticatedRequest(URI("http://localhost:$port/assets")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+        val availability = authenticatedHttpClient().send(
+            authenticatedRequest(URI("http://localhost:$port/assets/QQQ/availability")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertEquals(200, assets.statusCode(), assets.body())
+        assertTrue(assets.body().contains("\"symbol\":\"QQQ\""), assets.body())
+        assertEquals(200, availability.statusCode(), availability.body())
+        assertTrue(availability.body().contains("\"symbol\":\"QQQ\""), availability.body())
     }
 
     @Test
@@ -1236,15 +1249,38 @@ class RefinvestApplicationTests(
 class AssetDataClientTestConfiguration {
     @Bean
     @Primary
-    fun assetDataClient(): AssetDataClient = object : AssetDataClient {
-        override fun listAssets(): List<Asset> = emptyList()
+    fun assetDataClient(): AssetDataClientTestDouble = AssetDataClientTestDouble()
+}
 
-        override fun getAvailability(symbol: String): AssetAvailability? = null
+class AssetDataClientTestDouble : AssetDataClient {
+    var seriesRequestCount = 0
 
-        override fun getSeries(query: AssetSeriesQuery): SeriesSnapshot =
-            throw SeriesDataErrorException(
-                SeriesDataErrorCode.DATASET_CORRUPTION,
-                "Required daily bar is missing.",
-            )
+    private val availability = AssetAvailability(
+        symbol = "QQQ",
+        inceptionDate = LocalDate.of(1999, 3, 10),
+        dataAvailability = DataAvailability(LocalDate.of(1999, 3, 10), LocalDate.of(2026, 8, 25)),
+        datasetSnapshotId = "test-snapshot",
+        snapshotCreatedAt = Instant.parse("2026-08-25T00:00:00Z"),
+    )
+    private val asset = Asset(
+        symbol = "QQQ",
+        calendar = AssetCalendar.US_EQUITY,
+        inceptionDate = availability.inceptionDate,
+        executionEnabled = true,
+        dataAvailability = availability.dataAvailability,
+        corporateActions = emptyList(),
+    )
+
+    override fun listAssets(): List<Asset> = listOf(asset)
+
+    override fun getAvailability(symbol: String): AssetAvailability? = availability.takeIf { symbol == it.symbol }
+
+    override fun getSeries(query: AssetSeriesQuery): SeriesSnapshot {
+        seriesRequestCount += 1
+        error("The deferred Core endpoint must not call Compute series retrieval")
+    }
+
+    fun reset() {
+        seriesRequestCount = 0
     }
 }
