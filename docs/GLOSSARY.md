@@ -9,7 +9,7 @@
 | 전략 버전 | `StrategyVersion` | 불변 엔터티. 생성 후 수정 불가 | ADR-013 |
 | 신호 자산 | `signalAsset` | 조건 계산에 사용되는 자산 (Primary와 구분됨) | ADR-002 |
 | 기준 신호 자산 | `primarySignalAsset` | Signal Timestamp/Lag/Exit의 시간 기준이 되는 단 하나의 자산. 항상 명시적으로 지정 | ADR-002, ADR-003 |
-| 조건 참조 자산 | `conditionReferenceAsset` | 조건 계산에 쓰이지만 시간 기준은 아닌 자산 (예: VIX) | ADR-002 |
+| 조건 참조 자산 | `conditionReferenceAsset` | 조건 계산에 쓰이지만 시간 기준은 아닌 자산 (예: SPY) | ADR-002 |
 | 실행 자산 | `executionAsset` | 실제로 매수/매도하는 자산 | ADR-003 |
 | 신호 캘린더 | `signalCalendar` | Primary Signal Asset이 속한 Calendar(`US_EQUITY` \| `CRYPTO_UTC`) | ADR-003 |
 | 거래 세션 | Trading Session | 특정 자산이 거래되는 하루 단위. Metric Window(Return/Change/Lookback) 계산은 **Referenced Asset 자신의** Trading Session을 기준으로 한다 | ADR-003 |
@@ -24,6 +24,7 @@
 | 중복 진입 | Duplicate Entry | 포지션 보유 중 새 Entry Signal 발생. MVP는 무시(Ignore) | ADR-009 |
 | 청산 | `exit` | 포지션 종료. MVP는 Time-based Exit만 지원 | ADR-008 |
 | 데이터셋 스냅샷 | `DatasetSnapshot` | 특정 시점에 정규화되어 저장된 불변 데이터셋. 재현성의 기준 | ADR-010 |
+| source artifact | `sourceArtifact` | Snapshot을 만들 때 검증한 공급사 archive의 URI, SHA-256, 수집 시각. BTCUSDT는 Binance Public Data archive를 사용 | ADR-051 |
 | 결정론성 | Determinism | 동일 입력(Strategy Version + Dataset Snapshot + Engine Version + Fee/Slippage) → 동일 결과 | ADR-010 |
 | 시점 정확성 | Point-in-Time Correctness | 계산 시점 이후의 데이터를 절대 참조하지 않는 원칙 | ADR-004 |
 | 미래참조편향 | Look-ahead Bias | Point-in-Time Correctness를 위반해 미래 정보를 사용하는 오류. 방지 대상 | ADR-004 |
@@ -44,14 +45,14 @@
 
 | 타입 | 코드 상 값 | 설명 |
 |---|---|---|
-| Simple Comparison | `SIMPLE` | `VIX > 25` 형태, window 없음 |
+| Simple Comparison | `SIMPLE` | `QQQ > 500` 형태, window 없음 |
 | Lookback | `RETURN` | `QQQ.return(20) > 0.10` |
-| Change | `CHANGE` | `VIX.change(5) > 0.20` |
+| Change | `CHANGE` | `QQQ.change(5) > 0.20` |
 | Relative | 위 두 타입의 조합으로 표현 (별도 타입 아님) | `QQQ.return(20) > SPY.return(20)` — operandB도 MetricReference인 경우 |
 
 ## Market Calendar
 
 | 값 | 대상 자산 | 특징 |
 |---|---|---|
-| `US_EQUITY` | QQQ, SPY, TQQQ, SOXL, VIX | 거래일 기준, 주말/미국 공휴일 제외 |
+| `US_EQUITY` | QQQ, SPY, TQQQ, SOXL | 거래일 기준, 주말/미국 공휴일 제외 |
 | `CRYPTO_UTC` | BTCUSDT | 24/7, UTC 기준 Daily Session |

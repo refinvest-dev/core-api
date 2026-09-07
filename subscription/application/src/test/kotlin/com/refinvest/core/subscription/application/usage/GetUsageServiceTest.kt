@@ -32,7 +32,7 @@ class GetUsageServiceTest {
         assertEquals(Instant.parse("2026-08-01T00:00:00Z"), backtestUsage.query?.startInclusive)
         assertEquals(Instant.parse("2026-09-01T00:00:00Z"), backtestUsage.query?.endExclusive)
         assertEquals(500, result.backtestMonthlyLimit)
-        assertEquals(listOf("BTCUSDT", "QQQ", "SOXL", "SPY", "TQQQ", "VIX"), result.allowedAssets)
+        assertEquals(listOf("BTCUSDT", "QQQ", "SOXL", "SPY", "TQQQ"), result.allowedAssets)
         assertEquals(3_650, result.maxBacktestPeriodDays)
     }
 

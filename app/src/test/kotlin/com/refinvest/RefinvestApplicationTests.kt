@@ -729,7 +729,7 @@ class RefinvestApplicationTests(
     }
 
     @Test
-    fun `rejects VIX as an execution asset when defining a strategy version`() {
+    fun `rejects VIX in every StrategyVersion asset reference`() {
         val created = authenticatedHttpClient().send(
             authenticatedRequest(URI("http://localhost:$port/strategies"))
                 .header("Content-Type", "application/json")
@@ -741,30 +741,27 @@ class RefinvestApplicationTests(
         val strategyId = "\"id\":\"(\\d+)\"".toRegex().find(created.body())?.groupValues?.get(1)
         assertTrue(created.statusCode() == 201 && strategyId != null, created.body())
 
-        val response = authenticatedHttpClient().send(
-            authenticatedRequest(URI("http://localhost:$port/strategies/$strategyId/versions"))
-                .header("Content-Type", "application/json")
-                .header("X-XSRF-TOKEN", "test-csrf")
-                .POST(
-                    HttpRequest.BodyPublishers.ofString(
-                        """{
-                        |  "primarySignalAsset":"QQQ",
-                        |  "conditions":[{
-                        |    "operator":"GT",
-                        |    "operandA":{"asset":"QQQ","metric":"SIMPLE"},
-                        |    "operandB":1
-                        |  }],
-                        |  "executionAsset":"VIX",
-                        |  "lag":0,
-                        |  "exit":{"holdingSignalSessions":1}
-                        |}""".trimMargin(),
-                    ),
-                )
-                .build(),
-            HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+        val vixDefinitions = listOf(
+            """{"primarySignalAsset":"VIX","conditions":[{"operator":"GT","operandA":{"asset":"QQQ","metric":"SIMPLE"},"operandB":1}],"executionAsset":"QQQ","lag":0,"exit":{"holdingSignalSessions":1}}""",
+            """{"primarySignalAsset":"QQQ","conditions":[{"operator":"GT","operandA":{"asset":"VIX","metric":"SIMPLE"},"operandB":1}],"executionAsset":"QQQ","lag":0,"exit":{"holdingSignalSessions":1}}""",
+            """{"primarySignalAsset":"QQQ","conditions":[{"operator":"GT","operandA":{"asset":"QQQ","metric":"SIMPLE"},"operandB":{"asset":"VIX","metric":"SIMPLE"}}],"executionAsset":"QQQ","lag":0,"exit":{"holdingSignalSessions":1}}""",
+            """{"primarySignalAsset":"QQQ","conditions":[{"operator":"GT","operandA":{"asset":"QQQ","metric":"SIMPLE"},"operandB":1}],"executionAsset":"VIX","lag":0,"exit":{"holdingSignalSessions":1}}""",
         )
 
-        assertTrue(response.statusCode() == 400, response.body())
+        vixDefinitions.forEach { definition ->
+            val response = authenticatedHttpClient().send(
+                authenticatedRequest(URI("http://localhost:$port/strategies/$strategyId/versions"))
+                    .header("Content-Type", "application/json")
+                    .header("X-XSRF-TOKEN", "test-csrf")
+                    .POST(HttpRequest.BodyPublishers.ofString(definition))
+                    .build(),
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+            )
+
+            assertEquals(400, response.statusCode(), response.body())
+            assertTrue(response.body().contains("\"code\":\"BAD_REQUEST\""), response.body())
+        }
+
         assertTrue(
             jdbcTemplate.queryForObject(
                 "select count(*) from strategy_versions where strategy_id = ?",
@@ -772,6 +769,35 @@ class RefinvestApplicationTests(
                 strategyId.toLong(),
             ) == 0L,
         )
+    }
+
+    @Test
+    fun `accepts every MVP asset including BTCUSDT cross-market strategy versions`() {
+        val created = authenticatedHttpClient().send(
+            authenticatedRequest(URI("http://localhost:$port/strategies"))
+                .header("Content-Type", "application/json")
+                .header("X-XSRF-TOKEN", "test-csrf")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"name\":\"MVP asset universe\"}"))
+                .build(),
+            HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+        )
+        val strategyId = "\"id\":\"(\\d+)\"".toRegex().find(created.body())?.groupValues?.get(1)
+        assertTrue(created.statusCode() == 201 && strategyId != null, created.body())
+
+        listOf("QQQ", "SPY", "TQQQ", "SOXL", "BTCUSDT").forEach { asset ->
+            val executionAsset = if (asset == "BTCUSDT") "QQQ" else asset
+            val definition = """{"primarySignalAsset":"$asset","conditions":[{"operator":"GT","operandA":{"asset":"$asset","metric":"SIMPLE"},"operandB":1}],"executionAsset":"$executionAsset","lag":0,"exit":{"holdingSignalSessions":1}}"""
+            val response = authenticatedHttpClient().send(
+                authenticatedRequest(URI("http://localhost:$port/strategies/$strategyId/versions"))
+                    .header("Content-Type", "application/json")
+                    .header("X-XSRF-TOKEN", "test-csrf")
+                    .POST(HttpRequest.BodyPublishers.ofString(definition))
+                    .build(),
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+            )
+
+            assertEquals(201, response.statusCode(), response.body())
+        }
     }
 
     @Test
@@ -818,11 +844,18 @@ class RefinvestApplicationTests(
             authenticatedRequest(URI("http://localhost:$port/assets/QQQ/availability")).GET().build(),
             HttpResponse.BodyHandlers.ofString(),
         )
+        val deferredAsset = authenticatedHttpClient().send(
+            authenticatedRequest(URI("http://localhost:$port/assets/VIX/availability")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
 
         assertEquals(200, assets.statusCode(), assets.body())
         assertTrue(assets.body().contains("\"symbol\":\"QQQ\""), assets.body())
+        assertEquals(5, "\"symbol\":".toRegex().findAll(assets.body()).count(), assets.body())
+        assertFalse(assets.body().contains("\"symbol\":\"VIX\""), assets.body())
         assertEquals(200, availability.statusCode(), availability.body())
         assertTrue(availability.body().contains("\"symbol\":\"QQQ\""), availability.body())
+        assertEquals(404, deferredAsset.statusCode(), deferredAsset.body())
     }
 
     @Test
@@ -1262,16 +1295,18 @@ class AssetDataClientTestDouble : AssetDataClient {
         datasetSnapshotId = "test-snapshot",
         snapshotCreatedAt = Instant.parse("2026-08-25T00:00:00Z"),
     )
-    private val asset = Asset(
-        symbol = "QQQ",
-        calendar = AssetCalendar.US_EQUITY,
-        inceptionDate = availability.inceptionDate,
-        executionEnabled = true,
-        dataAvailability = availability.dataAvailability,
-        corporateActions = emptyList(),
-    )
+    private val assets = listOf("QQQ", "SPY", "TQQQ", "SOXL", "BTCUSDT", "VIX").map { symbol ->
+        Asset(
+            symbol = symbol,
+            calendar = AssetCalendar.US_EQUITY,
+            inceptionDate = availability.inceptionDate,
+            executionEnabled = true,
+            dataAvailability = availability.dataAvailability,
+            corporateActions = emptyList(),
+        )
+    }
 
-    override fun listAssets(): List<Asset> = listOf(asset)
+    override fun listAssets(): List<Asset> = assets
 
     override fun getAvailability(symbol: String): AssetAvailability? = availability.takeIf { symbol == it.symbol }
 

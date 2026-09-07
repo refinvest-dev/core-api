@@ -11,7 +11,7 @@ data class BacktestPolicy(
     fun allowsAll(assetSymbols: Set<String>): Boolean = assetSymbols.all(allowedAssets::contains)
 
     companion object {
-        private val mvpAssetUniverse = setOf("QQQ", "SPY", "TQQQ", "SOXL", "BTCUSDT", "VIX")
+        private val mvpAssetUniverse = setOf("QQQ", "SPY", "TQQQ", "SOXL", "BTCUSDT")
         private val freeAssets = setOf("QQQ", "SPY", "BTCUSDT")
 
         fun forTier(tier: SubscriptionTier): BacktestPolicy = when (tier) {

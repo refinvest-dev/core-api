@@ -33,10 +33,16 @@ class StrategyVersionTest {
     }
 
     @Test
-    fun `rejects VIX as execution asset`() {
-        assertFailsWith<IllegalArgumentException> {
-            version(executionAsset = AssetSymbol.VIX)
-        }
+    fun `rejects VIX as an asset outside the MVP universe`() {
+        assertFailsWith<IllegalArgumentException> { AssetSymbol.from("VIX") }
+    }
+
+    @Test
+    fun `accepts every MVP asset`() {
+        assertEquals(
+            setOf("QQQ", "SPY", "TQQQ", "SOXL", "BTCUSDT"),
+            AssetSymbol.entries.map(AssetSymbol::name).toSet(),
+        )
     }
 
     @Test
