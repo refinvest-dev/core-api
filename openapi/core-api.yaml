@@ -121,7 +121,7 @@ paths:
       summary: 새 StrategyVersion 생성 (`DefineStrategyVersion`)
       description: |
         `docs/DOMAIN.md` §1.2 불변식을 동기적으로 검증한다(Primary Signal Asset 정확히 1개,
-        Execution Asset이 `ExecutionAssetSymbol`(VIX 제외)에 속함, conditions 최소 1개, window/lag
+        Execution Asset이 `ExecutionAssetSymbol`에 속함, conditions 최소 1개, window/lag
         양수 등). `positionPolicy`는 요청 바디에 없다 — ADR-009에 따라 서버가 고정값
         (`longOnly: true, singlePosition: true, duplicateEntry: IGNORE`)으로 채운다.
         생성된 StrategyVersion은 불변이다(ADR-013) — 수정 API는 없고, 조건을 바꾸려면 이 엔드포인트를
@@ -637,7 +637,7 @@ components:
           items: { type: string }
           example:
             - "primarySignalAsset은 정확히 1개여야 합니다"
-            - "executionAsset으로 VIX를 지정할 수 없습니다"
+            - "executionAsset은 MVP Asset Universe에 속해야 합니다"
 
     # ---- Backtest ----
     BacktestRunStatus:

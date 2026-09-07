@@ -5,8 +5,7 @@ enum class AssetSymbol {
     SPY,
     TQQQ,
     SOXL,
-    BTCUSDT,
-    VIX;
+    BTCUSDT;
 
     companion object {
         fun from(value: String): AssetSymbol =

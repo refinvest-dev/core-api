@@ -39,8 +39,8 @@ StrategyVersion
 
 **불변식**:
 - `primarySignalAsset`은 정확히 1개, null 불가.
-- `primarySignalAsset`은 MVP Asset Universe(ADR-001) 6종(`QQQ`, `SPY`, `TQQQ`, `SOXL`, `BTCUSDT`, `VIX`) 중 하나여야 한다 — `VIX`도 Signal Asset으로는 허용된다(ADR-002).
-- `executionAsset`은 MVP Asset Universe 중 **Execution Asset 하위 집합**(`QQQ`, `SPY`, `TQQQ`, `SOXL`, `BTCUSDT`)에만 속해야 한다 — `VIX`는 Execution Asset으로 지정할 수 없다(ADR-001).
+- `primarySignalAsset`은 MVP Asset Universe(ADR-001, ADR-050) 5종(`QQQ`, `SPY`, `TQQQ`, `SOXL`, `BTCUSDT`) 중 하나여야 한다.
+- `executionAsset`은 MVP Asset Universe의 5종(`QQQ`, `SPY`, `TQQQ`, `SOXL`, `BTCUSDT`) 중 하나여야 한다.
 - `conditions`는 최소 1개 이상.
 - `conditions` 내 각 Operand의 Asset이 MVP Asset Universe(ADR-001)에 속해야 한다.
 - `lag >= 0`, `exit.holdingSignalSessions > 0`, `MetricReference.window`가 존재하는 경우(`RETURN`/`CHANGE`) `window > 0`.
@@ -59,14 +59,14 @@ MetricReference
 └── window: Int | null                      # SIMPLE(Simple Comparison)은 window 없음
 ```
 
-**예시** — "QQQ가 5일간 7% 이상 하락하고 VIX가 5일간 20% 이상 상승하면, 3 Signal Session 후 TQQQ를 매수해 5 Signal Session 보유":
+**예시** — "QQQ가 5일간 7% 이상 하락하고 SPY가 5일간 5% 이상 하락하면, 3 Signal Session 후 TQQQ를 매수해 5 Signal Session 보유":
 
 ```text
 StrategyVersion {
     primarySignalAsset: QQQ
     conditions: [
         { operandA: {asset: QQQ, metric: RETURN, window: 5}, operator: LT, operandB: -0.07 },
-        { logicalCombinator: AND, operandA: {asset: VIX, metric: CHANGE, window: 5}, operator: GT, operandB: 0.20 }
+        { logicalCombinator: AND, operandA: {asset: SPY, metric: RETURN, window: 5}, operator: LT, operandB: -0.05 }
     ]
     lag: 3
     executionAsset: TQQQ
@@ -123,9 +123,8 @@ Trade
 └── holdingPeriod
 ```
 
-`signalExecutionDelay.distribution`은 각 Trade의 `entryTime - signalTime`을 시간(hours) 단위로 기록한다. `median`과 `max`는 이 분포에서 계산하며, 무거래 결과는 빈 분포와 `median = max = 0`을 사용한다(ADR-048).
-
 `sampleSizeWarning = ZERO`이면 `tradeCount`를 제외한 전략 성과 지표는 계산 불가능한 값으로 `null`이다. Core와 Web은 이를 숫자 `0`으로 대체하지 않고 Empty State로 표시한다(ADR-006).
+`signalExecutionDelay.distribution`은 각 Trade의 `entryTime - signalTime`을 시간(hours) 단위로 기록한다. `median`과 `max`는 이 분포에서 계산하며, 무거래 결과는 빈 분포와 `median = max = 0`을 사용한다(ADR-048).
 
 ### 1.5 Member / Auth / Subscription
 
@@ -170,7 +169,7 @@ RefreshSession
 | Strategy/StrategyVersion 저장 | 제공 | 제공 |
 | Strategy 비교, 결과 Export | MVP 미제공 (향후 PRO 전용) | MVP 미제공 (향후 제공) |
 
-- MVP Asset Universe는 ADR-001의 `QQQ`, `SPY`, `TQQQ`, `SOXL`, `BTCUSDT`, `VIX`를 유지한다. 이 정책을 위해 Asset을 추가하지 않는다.
+- MVP Asset Universe는 ADR-001과 ADR-050의 `QQQ`, `SPY`, `TQQQ`, `SOXL`, `BTCUSDT`를 유지한다. 이 정책을 위해 Asset을 추가하지 않는다.
 - Strategy/StrategyVersion 저장은 FREE와 PRO 모두 허용한다. Backtest 실행은 저장된 StrategyVersion을 참조하므로, 저장 자체를 FREE entitlement로 제한하지 않는다.
 - Strategy 비교와 결과 Export는 Phase 1 범위 밖이다. 해당 Use Case를 도입할 때 FREE에는 허용하지 않고 PRO entitlement로 별도 적용한다. 현재 `GetUsage`는 이 미구현 기능의 enablement를 반환하지 않는다.
 - Asset entitlement는 **Backtest 실행**에만 적용한다. `StrategyVersion` 정의·저장 시점에는 Plan entitlement를 검사하지 않는다. 실행 시 primarySignalAsset, 모든 Condition이 참조하는 Asset, executionAsset이 현재 tier에 모두 허용되어야 한다.
@@ -208,13 +207,16 @@ CorporateAction
 DatasetSnapshot
 ├── id (version)
 ├── createdAt
-├── source: VendorName
+├── source: VendorName                         # BTCUSDT: BINANCE_PUBLIC_DATA
+├── sourceArtifacts: List<{uri, sha256, retrievedAt}>
 ├── coverage: { assets: List<AssetSymbol>, start, end }
 ├── adjustmentPolicy
 └── storagePath                             # Object Storage 상의 Parquet 경로
 ```
 
-**불변식**: 한번 생성된 Snapshot은 절대 수정하지 않는다. 새 데이터가 들어오면 새 Snapshot을 생성한다(ADR-010).
+**불변식**: 한번 생성된 Snapshot은 절대 수정하지 않는다. 새 데이터가 들어오거나 source archive의
+SHA-256이 바뀌면 새 Snapshot을 생성한다. `sourceArtifacts`는 해당 Snapshot을 만들 때 실제로 검증한
+source archive의 provenance이며, Snapshot 생성 후 변경하지 않는다(ADR-010, ADR-051).
 
 ---
 

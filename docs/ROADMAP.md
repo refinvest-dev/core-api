@@ -11,7 +11,7 @@
 **범위**:
 
 *Data*
-- 데이터 벤더 확정 (US Equity/ETF, Crypto 각각) — 상업적 이용·재배포·캐싱 권리 확인 (ADR-014 우선 해결)
+- 데이터 벤더 확정 (US Equity/ETF, Crypto 각각) — BTCUSDT는 Binance Public Data archive를 사용하며, ETF 공급사의 상업적 이용·재배포·캐싱 권리를 확인 (ADR-014, ADR-051)
 - API Rate Limit, 비용 확인
 - 데이터 품질 샘플 검증
 
@@ -35,6 +35,8 @@
 - 경쟁 제품(TradingView, QuantConnect, Composer, Portfolio123, 국내 퀀트 서비스) 직접 사용, 동일 가설 구현 비교
 
 *UX*
+- 사용자는 자신이 사용하는 증권사·거래소 등 외부 차트에서 시장을 관찰하고, RefInvest에서는
+  전략 템플릿·조건 빌더로 가설을 정의해 백테스트한다(ADR-049).
 - Strategy Builder Level 1~3 프로토타입으로 TTFB(Time to First Backtest) 예비 측정
 
 *Compliance*
@@ -47,8 +49,8 @@
 ```text
 1. 단일 자산 조건 (QQQ.return(5) < -7% → BUY QQQ)
 2. Signal Asset ≠ Execution Asset (QQQ 조건 → TQQQ 매수)
-3. AND 조건 (QQQ + VIX → TQQQ 매수)
-4. Signal Asset이 조건에 직접 등장하지 않는 경우 (BTC Signal, VIX 조건 → 허용)
+3. AND 조건 (QQQ + SPY → TQQQ 매수)
+4. Signal Asset이 조건에 직접 등장하지 않는 경우 (BTC Signal, QQQ 조건 → 허용)
 5. Cross-Market 진입 (BTC Signal → TQQQ Execution)
 6. BTC 주말 신호 → 월요일 TQQQ 체결
 7. QQQ 예상 세션 결측 → Fail-fast
@@ -73,11 +75,11 @@
 
 | 영역 | 포함 |
 |---|---|
-| Data | 6개 Asset(ADR-001) Daily OHLC, Calendar, Corporate Action, Dataset Snapshot |
+| Data | 5개 Asset(ADR-001, ADR-050) Daily OHLC, Calendar, Corporate Action, Dataset Snapshot |
 | Strategy | Primary Signal Asset, Execution Asset, Simple/Lookback/Change/Relative Condition, AND/OR, Lag, Time-based Exit, Long Only, Single Position, Duplicate Entry Ignore |
 | Backtest | Next Available Session 체결, Open 기준가, 고정 Fee/Slippage, Point-in-Time Validation, Missing Session Fail-fast, Determinism |
 | Result | Equity Curve, Drawdown, Trade Table/Timeline, Return/CAGR/Sharpe/MDD/Win Rate, Benchmark, Low Sample Warning, Zero Trade Empty State, Data Integrity 표시 |
-| UX | Data Explorer, Strategy Builder(Progressive Disclosure Level 1~3) |
+| UX | Strategy Builder(Progressive Disclosure Level 1~3), 전략 템플릿, 백테스트 결과 해석. 사용자용 원시 가격 차트·Data Explorer·원시 데이터 다운로드는 제외(ADR-049) |
 
 **명시적 제외**: Condition-based Exit, Short, Multi-position, Strategy 비교, 자연어 입력, AI 전 영역.
 
@@ -97,7 +99,9 @@
 
 ## Phase 3 — Research Expansion
 
-**범위**: Correlation, Conditional Return, Lead-Lag, Market Regime. 백테스트 이전 단계에서 더 많은 가설을 발견할 수 있도록 Data Explorer를 확장.
+**범위**: Correlation, Conditional Return, Lead-Lag, Market Regime. Data Explorer의 공개 여부와
+데이터 벤더 라이선스를 재검토한 뒤, 백테스트 이전 단계에서 더 많은 가설을 발견할 수 있도록
+Data Explorer를 도입·확장한다.
 
 ---
 

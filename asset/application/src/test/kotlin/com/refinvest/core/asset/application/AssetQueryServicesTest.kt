@@ -30,7 +30,8 @@ class AssetQueryServicesTest {
 
     @Test
     fun `lists assets from the Compute boundary`() {
-        val result = ListAssetsService(FakeAssetDataClient(assets = listOf(asset))).execute()
+        val vix = asset.copy(symbol = "VIX")
+        val result = ListAssetsService(FakeAssetDataClient(assets = listOf(asset, vix))).execute()
 
         assertEquals(listOf(asset), result.assets)
     }

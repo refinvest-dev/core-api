@@ -6,10 +6,9 @@
 
 ## ADR-001 — MVP Asset Universe 고정
 
-**결정**: MVP는 6개 자산으로 제한한다.
+**결정**: MVP는 5개 자산으로 제한한다(ADR-050에 따라 VIX 보류).
 
-- Execution Assets: `QQQ`, `SPY`, `TQQQ`, `SOXL`, `BTCUSDT`
-- Signal/Reference 전용: `VIX` (Execution Asset으로는 사용하지 않음)
+- Assets: `QQQ`, `SPY`, `TQQQ`, `SOXL`, `BTCUSDT`
 
 일봉(Daily Bar)만 지원하며, Intraday 데이터는 다루지 않는다.
 
@@ -27,7 +26,7 @@
 
 **단일 자산 조건의 경우**: UI에서는 자동으로 채워주되(UX), 내부 도메인 모델에는 항상 명시적 값을 저장한다(Domain). Fallback 규칙("Signal Asset 미지정 시 첫 번째 Operand")은 안전장치로만 코드에 남기고, 실제로는 UI가 항상 강제하므로 정상 경로에서 발동하지 않는다.
 
-**Condition에 등장하지 않는 자산을 Primary Signal Asset으로 지정하는 것도 허용한다** (예: `SIGNAL ASSET = BTCUSDT`, 조건은 `VIX.change(5) > 20%`). 다른 시장의 상태로 특정 자산의 진입 타이밍을 결정하는 것은 핵심 사용 사례이기 때문이다.
+**Condition에 등장하지 않는 자산을 Primary Signal Asset으로 지정하는 것도 허용한다** (예: `SIGNAL ASSET = BTCUSDT`, 조건은 `QQQ.change(5) > 0.20`). 다른 시장의 상태로 특정 자산의 진입 타이밍을 결정하는 것은 핵심 사용 사례이기 때문이다.
 
 ---
 
@@ -165,7 +164,7 @@ Signal Asset을 Primary Benchmark로 사용하지 않는다.
 - Kotlin은 도메인 로직(유저/전략/구독/사용량 제한)의 타입 안전성과 트랜잭션 관리에 강점이 있다.
 - Python은 시계열 벡터 연산(Cross-Calendar 정렬, Metric 계산) 생태계가 압도적으로 유리하다.
 - 백테스트는 동기 처리하기엔 무거울 수 있어(10년치 일봉 × Cross-Calendar 조인) 비동기로 분리해야 API 서버가 블로킹되지 않는다.
-- DB 물리 분리는 지금 데이터 볼륨(6개 자산 × 일봉)에서 얻는 이득보다 운영 복잡도가 커서 보류한다. 테이블 소유권만 코드 리뷰 규칙으로 강제한다.
+- DB 물리 분리는 지금 데이터 볼륨(5개 자산 × 일봉)에서 얻는 이득보다 운영 복잡도가 커서 보류한다. 테이블 소유권만 코드 리뷰 규칙으로 강제한다.
 
 **Alternatives considered**: DB도 서비스별로 완전 분리(참고 아키텍처 패턴) — 검토했으나 이번 프로젝트는 데이터 볼륨이 작고 팀 규모도 작아 오버엔지니어링으로 판단, 보류. 향후 트래픽/팀 규모가 커지면 재검토(§ Revisit 참고).
 
@@ -181,13 +180,21 @@ Signal Asset을 Primary Benchmark로 사용하지 않는다.
 
 ---
 
-## ADR-014 — Crypto 데이터 벤더 리스크 (Phase 0 블로커)
+## ADR-014 — BTCUSDT 데이터 공급사: Binance Public Data
 
-**결정**: BTCUSDT 데이터를 Binance 공개 API에서 직접 가져와 상업 서비스(특히 유료 플랜)에 그대로 사용하지 않는다.
+**결정**: `BTCUSDT`의 MVP 기준 시장은 **Binance Spot**이며, Compute는
+`data.binance.vision`의 공개 archive를 초기 이력 적재와 일일 갱신의 입력으로 사용한다.
+이 결정은 RefInvest의 현재 출시 전 개인 사용 단계와 Binance Public Data의 상업적 이용·서버 측
+보관·고객 대상 파생 결과 표시 권리가 허용된다는 전제에 한정한다.
 
-**이유**: Binance 이용약관은 "Binance 시장 데이터를 이용해 과금하거나 수익을 내는 서비스"를 별도 서면 동의 없이 명시적으로 금지한다. 개발/검증 단계에서 무료로 사용하는 것은 무방하나, 프로덕션 반영 전 CryptoCompare, Kaiko, CoinAPI 등 상업적 라이선스가 명시된 벤더로 전환하거나 Binance와 별도 계약을 체결해야 한다.
+**운영 경계**: 이 source는 Compute ingestion 전용이다. Web, Core의 사용자 요청 경로 및 사용자
+브라우저는 Binance API나 archive를 직접 호출하지 않는다. RefInvest는 원시 OHLCV·가격 차트·다운로드를
+MVP 사용자에게 제공하지 않고, fixed snapshot을 사용한 백테스트의 파생 결과만 제공한다(ADR-049).
 
-**Status**: 미해결. Phase 0 체크리스트의 최우선 항목.
+**재검토**: 실제 공개 또는 유료 플랜 출시 전에 당시 적용되는 공급사 약관과 허용 범위를 다시 확인한다.
+허용 범위가 달라지면 이 ADR을 갱신하고 대체 공급사 또는 asset 범위를 결정한다.
+
+**관련**: ADR-010(Determinism Contract), ADR-049(MVP 시장 관찰과 원시 데이터 노출 경계), ADR-051(Binance archive ingestion). Determinism과 Point-in-Time Correctness에 영향 없음.
 
 ---
 
@@ -339,7 +346,7 @@ PostgreSQL transaction-scoped advisory lock이 idempotency lookup, active-job co
 
 **결정**: `GET /series`는 요청 시작 시 정확히 하나의 immutable `DatasetSnapshot`을 해석한다. caller가 `datasetSnapshotId`를 주면 그것을 사용하고, 없으면 Compute가 latest published snapshot 하나를 선택한다. 모든 200 응답은 snapshot ID, creation time, adjustment policy를 반환한다.
 
-endpoint는 1~6개의 서로 다른 지원 symbol, 최대 10년·20,000 point의 date range를 받으며 `PRICE`(session close), `RETURN`(직전 available session close 대비 수익률), `NORMALIZED`(범위 안 첫 available close를 100으로 정규화)를 제공한다. Asset별 trading session은 독립적으로 반환하며 common date를 만들거나 이전 값 복제·interpolation을 하지 않는다. expected session의 close 결측 또는 손상된 snapshot artifact는 `503 DATASET_CORRUPTION`, latest snapshot 부재는 `503 DATASET_UNAVAILABLE`, 명시한 snapshot 미존재는 `404`다.
+endpoint는 1~5개의 서로 다른 지원 symbol, 최대 10년·20,000 point의 date range를 받으며 `PRICE`(session close), `RETURN`(직전 available session close 대비 수익률), `NORMALIZED`(범위 안 첫 available close를 100으로 정규화)를 제공한다. Asset별 trading session은 독립적으로 반환하며 common date를 만들거나 이전 값 복제·interpolation을 하지 않는다. expected session의 close 결측 또는 손상된 snapshot artifact는 `503 DATASET_CORRUPTION`, latest snapshot 부재는 `503 DATASET_UNAVAILABLE`, 명시한 snapshot 미존재는 `404`다.
 
 **이유**: Data Explorer가 vendor의 mutable latest data에 의존하지 않고 동일 snapshot을 반복 조회해 재현 가능해야 한다. Cross-calendar 시각 정렬은 Core/Web의 presentation concern이며 Compute의 관측값을 바꾸지 않는다.
 
@@ -366,3 +373,70 @@ dispatcher는 database transaction 밖에서 Compute에 요청한다. timeout, c
 **이유**: Cross-Market 전략에서는 Primary Signal Asset의 신호 확정과 Execution Asset의 다음 가능 세션 사이에 실제 시간 차이가 생긴다. 이를 명시적으로 보존하면 Web이 단순 lag 설정과 calendar 차이로 생긴 실제 체결 지연을 구분해 설명할 수 있다. 단위와 zero-trade 표현을 계약으로 고정해 Core가 임의의 기본값을 만들지 않게 한다.
 
 **관련**: ADR-003(Temporal Rule), ADR-010(Determinism Contract). Determinism과 Point-in-Time Correctness에 영향 없음.
+
+---
+
+## ADR-049 — MVP 시장 관찰과 원시 데이터 노출 경계
+
+**결정**: MVP의 시장 관찰은 사용자가 자신의 증권사·거래소 또는 기타 외부 도구에서 수행한다.
+RefInvest는 전략 템플릿, 조건 빌더와 백테스트 결과 해석을 제공한다. 사용자용
+Data Explorer, 원시 가격/수익률/정규화 시계열 차트, OHLC 또는 원시 데이터 다운로드는 MVP에서
+제공하지 않는다. 증권사·거래소 계정 연동, 주문 실행, 사용자 요청에 따른 실시간 또는 벤더 API
+조회도 MVP 범위 밖이다.
+
+Compute는 백테스트를 위해 상업적 이용·캐싱 권리가 확인된 공급사 데이터만 정기 ingestion으로
+immutable `DatasetSnapshot`에 적재한다. Web의 어떤 사용자 흐름도 벤더 API를 직접 또는 Core/Compute
+경유로 호출하지 않는다. `GET /series`와 Core의 `/assets/series`는 향후 Data Explorer를 위한 계약 및
+Compute capability로 유지하되 MVP Web은 호출하거나 노출하지 않는다. 해당 공개 기능을 다시 도입하려면
+원시 데이터 표시·재배포·보관 권리를 공급사와 서면으로 확인하고 이 ADR 및 공개 API 정책을 재검토한다.
+
+백테스트 결과의 Equity Curve, Drawdown, 지표, 거래 이벤트와 같이 원시 시세를 재게시하지 않는 파생
+결과도 공급사 계약상 고객 대상 표시가 허용되는지 별도로 확인한다. 이 정책은 데이터 라이선스 검토를
+대체하지 않는다.
+
+**이유**: 초기 제품의 핵심은 외부에서 관찰한 가설을 조건으로 정의하고, 고정된 스냅샷으로 재현 가능한
+과거 시뮬레이션을 수행하는 데 있다. 원시 데이터 탐색·차트·다운로드를 제외하면 벤더 호출량과 고객 대상
+데이터 재배포 범위를 줄이고, 계정 연동·실시간 시세·주문 실행에 따른 보안 및 규제 범위 확대를 피할 수
+있다. 전략 정의와 백테스트 결과 해석에는 영향을 주지 않는다.
+
+**관련**: ADR-010(Determinism Contract), ADR-014(BTCUSDT 데이터 공급사), ADR-046(Immutable Snapshot Series API). Determinism과 Point-in-Time Correctness에 영향 없음.
+
+---
+
+## ADR-050 — VIX MVP 보류
+
+**결정**: VIX를 MVP Asset Universe에서 제외한다. 따라서 MVP StrategyVersion의
+`primarySignalAsset`, `executionAsset`, Condition operand는 VIX를 참조할 수 없다.
+MVP Asset Universe는 `QQQ`, `SPY`, `TQQQ`, `SOXL`, `BTCUSDT` 다섯 자산이다.
+
+VIX 데이터 공급·보관·고객 대상 파생 결과 표시 권리가 서면으로 확인되고, 이를 사용하는
+가설의 제품 가치를 재검토한 뒤에만 별도 ADR과 계약 변경으로 다시 도입한다.
+
+**이유**: Cboe VIX 데이터의 상업적 사용 조건이 확정되지 않은 상태에서 signal/reference
+자산으로 남기면, 사용자에게 생성 가능한 전략이 실제 published DatasetSnapshot에서 실행되지
+않는 경로가 생긴다. 자산을 contract와 DSL에서 함께 제외하면 snapshot ingestion, entitlement,
+availability, Web 조건 선택지가 일관되게 유지된다.
+
+**관련**: ADR-001(MVP Asset Universe), ADR-014(BTCUSDT 데이터 공급사), ADR-049(MVP 시장 관찰과 원시 데이터 노출 경계). Determinism과 Point-in-Time Correctness에 영향 없음.
+
+---
+
+## ADR-051 — Binance Public Data Archive Ingestion
+
+**결정**: `BTCUSDT` 일봉 데이터의 초기 backfill은 Binance Spot 월별 Kline archive로, 이후 갱신은
+전일의 일별 Kline archive로 수행한다. Compute는 source archive의 `.CHECKSUM`을 검증한 뒤에만
+정규화 데이터를 적재하고, source URI·SHA-256·수집 시각을 생성하는 `DatasetSnapshot`의 provenance로
+보관한다. BTCUSDT의 Trading Session은 `CRYPTO_UTC` 기준 UTC 일봉이며 corporate action adjustment를
+적용하지 않는다.
+
+동일 URI의 archive SHA-256이 기존 provenance와 다르면 Compute는 기존 snapshot이나 정규화 행을
+수정하지 않고 새 revision과 immutable `DatasetSnapshot`을 생성한다. checksum 검증 실패·archive 누락·
+정규화 실패가 발생하면 새 snapshot을 publish하지 않으며, 이미 publish된 snapshot은 계속 백테스트에
+사용할 수 있다.
+
+**이유**: 월별 archive는 초기 이력 적재의 요청 수를 줄이고, 일별 archive는 운영 갱신 범위를 고정한다.
+공개 archive도 사후 수정될 수 있으므로, URI만 기록하면 과거 입력을 식별할 수 없다. source hash와
+수집 시각을 snapshot에 고정하면 공급사 수정이 기존 결과를 조용히 바꾸지 않으며 ADR-010의 재현성
+계약을 유지한다.
+
+**관련**: ADR-003(Temporal Rule), ADR-010(Determinism Contract), ADR-014(BTCUSDT 데이터 공급사), ADR-049(MVP 시장 관찰과 원시 데이터 노출 경계). Determinism에 영향 있음: 동일 snapshot에는 동일한 source artifact와 정규화 데이터가 고정된다. Point-in-Time Correctness에 영향 없음.

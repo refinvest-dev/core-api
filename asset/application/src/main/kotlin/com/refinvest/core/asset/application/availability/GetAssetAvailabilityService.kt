@@ -1,5 +1,6 @@
 package com.refinvest.core.asset.application.availability
 
+import com.refinvest.core.asset.domain.policy.MvpAssetUniverse
 import com.refinvest.core.asset.port.inbound.availability.GetAssetAvailabilityQuery
 import com.refinvest.core.asset.port.inbound.availability.GetAssetAvailabilityResult
 import com.refinvest.core.asset.port.inbound.availability.GetAssetAvailabilityUseCase
@@ -11,5 +12,7 @@ class GetAssetAvailabilityService(
     private val assetDataClient: AssetDataClient,
 ) : GetAssetAvailabilityUseCase {
     override fun execute(query: GetAssetAvailabilityQuery): GetAssetAvailabilityResult? =
-        assetDataClient.getAvailability(query.symbol)?.let(::GetAssetAvailabilityResult)
+        query.symbol.takeIf(MvpAssetUniverse::contains)
+            ?.let(assetDataClient::getAvailability)
+            ?.let(::GetAssetAvailabilityResult)
 }
