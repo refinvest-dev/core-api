@@ -8,6 +8,7 @@ class BacktestResult(
     equityCurve: List<EquityCurvePoint>,
     trades: List<Trade>,
     val benchmark: Benchmark,
+    val signalExecutionMarketRelation: SignalExecutionMarketRelation,
     val signalExecutionDelay: SignalExecutionDelay,
     val sampleSizeWarning: SampleSizeWarning,
     val dataIntegrityStatus: DataIntegrityStatus,

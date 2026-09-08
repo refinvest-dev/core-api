@@ -1,6 +1,7 @@
 package com.refinvest.core.backtest.adapter.out.compute
 
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
+import com.refinvest.core.backtest.domain.backtest.SignalExecutionMarketRelation
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusLookup
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusValue
 import org.springframework.http.HttpMethod
@@ -20,7 +21,7 @@ import kotlin.test.assertIs
 
 class RestClientComputeBacktestStatusClientTest {
     @Test
-    fun `maps a completed Compute result with trades`() {
+    fun `maps a completed cross-market Compute result with benchmark curves`() {
         val fixture = client(completedResponse())
 
         val lookup = fixture.client.getBacktestStatus("compute-run", BacktestRunId(42L))
@@ -30,6 +31,11 @@ class RestClientComputeBacktestStatusClientTest {
         assertEquals(BigDecimal("0.12"), status.result!!.metrics.totalReturn)
         assertEquals(1, status.result!!.metrics.tradeCount)
         assertEquals(1, status.result!!.trades.size)
+        assertEquals(SignalExecutionMarketRelation.CROSS_MARKET, status.result!!.signalExecutionMarketRelation)
+        assertEquals("TQQQ", status.result!!.benchmark.primary.asset)
+        assertEquals(2, status.result!!.benchmark.primary.equityCurve.size)
+        assertEquals(null, status.result!!.benchmark.primary.cagr)
+        assertEquals("QQQ", status.result!!.benchmark.secondaryReference!!.asset)
         assertEquals(BigDecimal("24"), status.result!!.signalExecutionDelay.median)
         fixture.server.verify()
     }
@@ -54,6 +60,17 @@ class RestClientComputeBacktestStatusClientTest {
         assertEquals(ComputeBacktestStatusValue.FAILED, status.status)
         assertEquals("PRICE_DATA_MISSING", status.failureReason)
         assertEquals("snapshot-1", status.datasetSnapshotId!!.value)
+        fixture.server.verify()
+    }
+
+    @Test
+    fun `maps a same-market relation`() {
+        val fixture = client(completedResponse().replace("\"CROSS_MARKET\"", "\"SAME_MARKET\""))
+
+        val lookup = fixture.client.getBacktestStatus("compute-run", BacktestRunId(42L))
+
+        val status = assertIs<ComputeBacktestStatusLookup.Found>(lookup).status
+        assertEquals(SignalExecutionMarketRelation.SAME_MARKET, status.result!!.signalExecutionMarketRelation)
         fixture.server.verify()
     }
 
@@ -102,7 +119,19 @@ class RestClientComputeBacktestStatusClientTest {
               "entryPrice":100,"exitTime":"2026-08-27T00:00:00Z","exitPrice":112,
               "returnPct":0.12,"holdingPeriod":2
             }],
-            "benchmark":{"primary":{"totalReturn":0.05,"cagr":0.03,"mdd":-0.01}},
+            "benchmark":{
+              "primary":{
+                "asset":"TQQQ",
+                "equityCurve":[{"date":"2026-08-25","value":1.0},{"date":"2026-08-27","value":1.05}],
+                "totalReturn":0.05,"cagr":null,"mdd":-0.01
+              },
+              "secondaryReference":{
+                "asset":"QQQ",
+                "equityCurve":[{"date":"2026-08-25","value":1.0},{"date":"2026-08-27","value":1.02}],
+                "totalReturn":0.02,"cagr":0.01,"mdd":-0.01
+              }
+            },
+            "signalExecutionMarketRelation":"CROSS_MARKET",
             "signalExecutionDelay":{"median":24,"max":24,"distribution":[24]},
             "sampleSizeWarning":"LOW",
             "dataIntegrityStatus":{

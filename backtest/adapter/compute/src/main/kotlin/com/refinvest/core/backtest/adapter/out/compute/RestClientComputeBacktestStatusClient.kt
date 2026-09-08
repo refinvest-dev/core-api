@@ -8,6 +8,7 @@ import com.refinvest.core.backtest.domain.backtest.DataIntegrityStatus
 import com.refinvest.core.backtest.domain.backtest.EquityCurvePoint
 import com.refinvest.core.backtest.domain.backtest.SampleSizeWarning
 import com.refinvest.core.backtest.domain.backtest.SignalExecutionDelay
+import com.refinvest.core.backtest.domain.backtest.SignalExecutionMarketRelation
 import com.refinvest.core.backtest.domain.backtest.Trade
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
 import com.refinvest.core.backtest.domain.valueobject.DatasetSnapshotId
@@ -112,6 +113,7 @@ class RestClientComputeBacktestStatusClient private constructor(
             primary = benchmark.primary.toDomain(),
             secondaryReference = benchmark.secondaryReference?.toDomain(),
         ),
+        signalExecutionMarketRelation = SignalExecutionMarketRelation.valueOf(signalExecutionMarketRelation),
         signalExecutionDelay = SignalExecutionDelay(
             median = signalExecutionDelay.median,
             max = signalExecutionDelay.max,
@@ -126,6 +128,8 @@ class RestClientComputeBacktestStatusClient private constructor(
     )
 
     private fun ComputeBuyAndHoldResultResponse.toDomain() = BuyAndHoldResult(
+        asset = asset,
+        equityCurve = equityCurve.map { EquityCurvePoint(it.date, it.value) },
         totalReturn = totalReturn,
         cagr = cagr,
         mdd = mdd,
@@ -148,6 +152,7 @@ class RestClientComputeBacktestStatusClient private constructor(
         val equityCurve: List<ComputeEquityCurvePointResponse>,
         val trades: List<ComputeTradeResponse>,
         val benchmark: ComputeBenchmarkResponse,
+        val signalExecutionMarketRelation: String,
         val signalExecutionDelay: ComputeSignalExecutionDelayResponse,
         val sampleSizeWarning: String,
         val dataIntegrityStatus: ComputeDataIntegrityStatusResponse,
@@ -183,8 +188,10 @@ class RestClientComputeBacktestStatusClient private constructor(
     )
 
     private data class ComputeBuyAndHoldResultResponse(
+        val asset: String,
+        val equityCurve: List<ComputeEquityCurvePointResponse>,
         val totalReturn: BigDecimal,
-        val cagr: BigDecimal,
+        val cagr: BigDecimal?,
         val mdd: BigDecimal,
     )
 
