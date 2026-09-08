@@ -440,3 +440,37 @@ availability, Web 조건 선택지가 일관되게 유지된다.
 계약을 유지한다.
 
 **관련**: ADR-003(Temporal Rule), ADR-010(Determinism Contract), ADR-014(BTCUSDT 데이터 공급사), ADR-049(MVP 시장 관찰과 원시 데이터 노출 경계). Determinism에 영향 있음: 동일 snapshot에는 동일한 source artifact와 정규화 데이터가 고정된다. Point-in-Time Correctness에 영향 없음.
+
+---
+
+## ADR-052 — Backtest Result Visualization Contract
+
+**결정**: MVP 결과 화면은 원시 시세를 노출하지 않고, pinned `BacktestResult` 안의 파생
+portfolio series와 거래 이벤트만으로 다음을 표시한다.
+
+- Equity Curve는 Strategy와 Primary Benchmark(Execution Asset Buy & Hold)를 함께 표시한다.
+- Drawdown은 각 equity curve의 `value / runningPeak - 1`로 Web이 결정론적으로 계산한다.
+  별도의 drawdown series를 Core/Compute 계약에 중복 저장하지 않는다.
+- Timeline은 각 `Trade`의 `signalTime`, `entryTime`, `exitTime`으로 만든다. 결과에는
+  `signalExecutionMarketRelation`을 보존해, Primary Signal Asset과 Execution Asset의
+  calendar가 다를 때(`CROSS_MARKET`) 신호와 체결의 시장 구분을 명확히 표시한다.
+
+`equityCurve`와 각 Buy & Hold의 `equityCurve`는 모두 시작값 `1`의 portfolio index다.
+Strategy curve는 Execution Asset의 session별 전략 자본가치이고, Buy & Hold curve는 해당
+asset의 session close를 첫 available close로 나눈 값이다. date/value는 원시 close나 OHLC가
+아니며 백테스트가 고정한 Snapshot의 파생 결과다. 서로 calendar가 다른 series를 차트에 함께
+그릴 때 Web은 session을 합성하거나 이전 값을 복제·보간하지 않고, 관측된 date에만 값을 표시한다.
+
+Primary Benchmark에는 asset symbol과 curve를 항상 포함한다. Secondary Reference는
+`primarySignalAsset != executionAsset`일 때만 포함하며, Signal Asset Buy & Hold를 나타낸다.
+이는 Cross-Market 여부와 별개로 서로 다른 signal/execution asset을 해석할 수 있게 하는 참고값이다.
+
+**이유**: 기존 엔진은 이미 pinned snapshot에서 B&H curve를 계산하지만, public result에는
+집계 지표만 전달해 Strategy와 동일 축에서 비교할 수 없었다. 비교 curve와 event의 의미를 결과
+계약에 고정하면 Web이 원시 가격을 다시 요청하거나 자체 시장 데이터를 추측하지 않고 결과를
+해석할 수 있다. Drawdown은 동일한 immutable portfolio index로부터 유일하게 계산되므로 중복
+저장은 version drift와 persistence 용량만 늘린다.
+
+**관련**: ADR-003(Temporal Rule), ADR-007(Benchmark), ADR-010(Determinism Contract),
+ADR-048(Signal-to-Execution Delay), ADR-049(원시 데이터 노출 경계). Determinism과
+Point-in-Time Correctness에 영향 없음.

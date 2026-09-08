@@ -127,7 +127,7 @@ refinvest-web/
 
 - MVP 사용자는 외부 증권사·거래소 차트에서 시장을 관찰한다(ADR-049). RefInvest는 원시 가격 시계열·오버레이·다운로드를 제공하지 않으며, 백테스트 결과의 Equity Curve/Drawdown 등 파생 결과 시각화에는 Recharts를 사용한다. Data Explorer를 도입하는 Phase 3 이후 시계열 오버레이·줌/팬에는 [lightweight-charts](https://github.com/tradingview/lightweight-charts)를 사용한다.
 - API 클라이언트는 `openapi/core-api.yaml`을 기준으로 생성/구현한다(경로, 요청/응답 스키마는 이 스펙이 정본).
-- 결과 페이지 필수 구성: Equity Curve(Strategy vs Execution Asset B&H), Drawdown Chart, 거래 이벤트 Timeline(원시 가격 차트 위 마커는 제외하되 Signal/Entry/Exit 시점과 Cross-Market 구분은 표시), Trade Table, TQQQ/SOXL은 `docs/DECISIONS.md` ADR-016 경고 고정 표시.
+- 결과 페이지 필수 구성: Equity Curve(Strategy vs Execution Asset B&H), Drawdown Chart, 거래 이벤트 Timeline(원시 가격 차트 위 마커는 제외하되 `Trade`의 Signal/Entry/Exit 시점과 `signalExecutionMarketRelation`의 Cross-Market 구분은 표시), Trade Table, TQQQ/SOXL은 `docs/DECISIONS.md` ADR-016 경고 고정 표시. Equity/Drawdown은 `BacktestResult`의 파생 portfolio index만 사용하며 원시 가격을 보간하거나 재요청하지 않는다(ADR-052).
 - 상태 관리: 서버 상태는 TanStack Query. 별도 전역 상태 관리 라이브러리는 도입하지 않는다.
 - 백테스트 결과 대기: `GET /backtests/{id}`를 2~3초 간격으로 폴링. WebSocket 미도입.
 

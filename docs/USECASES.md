@@ -20,7 +20,7 @@ Phase 1(Core MVP) 범위의 Use Case만 다룬다. 신규 Use Case를 추가할 
 |---|---|---|
 | `RunBacktest` | Command | 현재 Subscription tier의 모든 Asset entitlement·기간 제한을 검사하고, 월간 quota/동시 실행 capacity를 원자적으로 예약한 뒤 `BacktestRun(PENDING)` 생성, Compute에 비동기 요청 |
 | `PollBacktestStatus` | Query | `BacktestRun.status` 조회 (Web이 폴링) |
-| `GetBacktestResult` | Query | `COMPLETED` 상태의 `BacktestRun`에 대한 `BacktestResult` 전체(지표, Equity Curve, Trade Table 등) 조회 |
+| `GetBacktestResult` | Query | `COMPLETED` 상태의 `BacktestRun`에 대한 `BacktestResult` 전체(지표, Strategy/Execution Asset B&H Equity Curve, Trade Table/Timeline source, 시장 관계 등) 조회 |
 | `ListBacktestRuns` | Query | 특정 Strategy의 백테스트 실행 이력 (Second Backtest Rate 계측의 데이터 소스) |
 
 **주의**: `RunBacktest`는 항상 비동기다. 동기로 결과를 바로 반환하는 Use Case를 만들지 않는다(`AI_AGENT.md` §2).

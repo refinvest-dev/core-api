@@ -1,7 +1,6 @@
 package com.refinvest.core.backtest.adapter.out.persistence
 
 import com.refinvest.core.backtest.domain.BacktestRun
-import com.refinvest.core.backtest.domain.backtest.BacktestResult
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunStatus
 import com.refinvest.core.backtest.domain.valueobject.DatasetSnapshotId
@@ -13,13 +12,12 @@ import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
 import org.springframework.stereotype.Repository
-import tools.jackson.databind.ObjectMapper
 
 @Repository
 class JpaBacktestRunStoreAdapter(
     private val backtestRunJpaStore: BacktestRunJpaStore,
     private val backtestResultJpaStore: BacktestResultJpaStore,
-    private val objectMapper: ObjectMapper,
+    private val resultPayloadMapper: BacktestResultPayloadMapper,
 ) : BacktestRunStore {
     override fun save(backtestRun: BacktestRun) {
         backtestRunJpaStore.save(backtestRun.toEntity())
@@ -27,7 +25,7 @@ class JpaBacktestRunStoreAdapter(
             backtestResultJpaStore.save(
                 BacktestResultJpaEntity(
                     backtestRunId = backtestRun.id.value,
-                    resultPayload = objectMapper.writeValueAsString(result),
+                    resultPayload = resultPayloadMapper.serialize(result),
                 ),
             )
         }
@@ -58,7 +56,7 @@ class JpaBacktestRunStoreAdapter(
     private fun BacktestRunJpaEntity.toDomain(): BacktestRun {
         val runId = BacktestRunId(id)
         val result = backtestResultJpaStore.findById(runId.value)
-            .map { entity -> objectMapper.readValue(entity.resultPayload, BacktestResult::class.java) }
+            .map { entity -> resultPayloadMapper.deserialize(entity.resultPayload) }
             .orElse(null)
         return BacktestRun.restore(
             id = runId,

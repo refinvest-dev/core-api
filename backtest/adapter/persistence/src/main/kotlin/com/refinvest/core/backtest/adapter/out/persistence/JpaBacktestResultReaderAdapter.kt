@@ -4,15 +4,14 @@ import com.refinvest.core.backtest.domain.backtest.BacktestResult
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestResultReader
 import org.springframework.stereotype.Repository
-import tools.jackson.databind.ObjectMapper
 
 @Repository
 class JpaBacktestResultReaderAdapter(
     private val backtestResultJpaReader: BacktestResultJpaReader,
-    private val objectMapper: ObjectMapper,
+    private val resultPayloadMapper: BacktestResultPayloadMapper,
 ) : BacktestResultReader {
     override fun findByBacktestRunId(backtestRunId: BacktestRunId): BacktestResult? =
         backtestResultJpaReader.findById(backtestRunId.value)?.let { entity ->
-            objectMapper.readValue(entity.resultPayload, BacktestResult::class.java)
+            resultPayloadMapper.deserialize(entity.resultPayload)
         }
 }

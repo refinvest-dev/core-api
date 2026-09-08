@@ -5,8 +5,10 @@ import com.refinvest.core.backtest.domain.backtest.BacktestResultMetrics
 import com.refinvest.core.backtest.domain.backtest.Benchmark
 import com.refinvest.core.backtest.domain.backtest.BuyAndHoldResult
 import com.refinvest.core.backtest.domain.backtest.DataIntegrityStatus
+import com.refinvest.core.backtest.domain.backtest.EquityCurvePoint
 import com.refinvest.core.backtest.domain.backtest.SampleSizeWarning
 import com.refinvest.core.backtest.domain.backtest.SignalExecutionDelay
+import com.refinvest.core.backtest.domain.backtest.SignalExecutionMarketRelation
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
 import com.refinvest.core.backtest.domain.valueobject.DatasetSnapshotId
 import com.refinvest.core.backtest.domain.valueobject.EngineVersion
@@ -963,6 +965,28 @@ class RefinvestApplicationTests(
         assertTrue(response.body().contains("\"datasetSnapshotId\":\"snapshot-99\""), response.body())
         assertTrue(response.body().contains("\"totalReturn\":0.10"), response.body())
         assertTrue(response.body().contains("\"backtestRunId\":\"99\""), response.body())
+        assertTrue(response.body().contains("\"signalExecutionMarketRelation\":\"CROSS_MARKET\""), response.body())
+        assertTrue(response.body().contains("\"asset\":\"QQQ\""), response.body())
+        assertTrue(response.body().contains("\"equityCurve\":[{\"date\":\"2025-01-01\",\"value\":1}"), response.body())
+        assertTrue(response.body().contains("\"cagr\":null"), response.body())
+    }
+
+    @Test
+    fun `returns gone for a completed run with a legacy result payload`() {
+        seedCompletedBacktestRun(100L)
+        jdbcTemplate.update(
+            "update backtest_results set result_payload = ? where backtest_run_id = ?",
+            """{"backtestRunId":{"value":100},"benchmark":{"primary":{"totalReturn":0.05,"cagr":0.04,"mdd":0.02}}}""",
+            100L,
+        )
+
+        val response = authenticatedHttpClient().send(
+            authenticatedRequest(URI("http://localhost:$port/backtest-runs/100")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        assertTrue(response.statusCode() == 410, response.body())
+        assertTrue(response.body().contains("\"code\":\"HTTP_410\""), response.body())
     }
 
     @Test
@@ -1007,6 +1031,18 @@ class RefinvestApplicationTests(
         assertTrue(response.body().contains("\"status\":\"COMPLETED\""), response.body())
         assertTrue(response.body().contains("\"datasetSnapshotId\":\"snapshot-$runId\""), response.body())
         assertTrue(response.body().contains("\"backtestRunId\":\"$runId\""), response.body())
+        assertTrue(response.body().contains("\"signalExecutionMarketRelation\":\"CROSS_MARKET\""), response.body())
+
+        val persistedPayload = jdbcTemplate.queryForObject(
+            "select result_payload from backtest_results where backtest_run_id = ?",
+            String::class.java,
+            runId,
+        )
+        val persistedResult = objectMapper.readTree(persistedPayload)
+        assertEquals("CROSS_MARKET", persistedResult["signalExecutionMarketRelation"].asText())
+        assertEquals("QQQ", persistedResult["benchmark"]["primary"]["asset"].asText())
+        assertEquals(1, persistedResult["benchmark"]["primary"]["equityCurve"].size())
+        assertTrue(persistedResult["benchmark"]["primary"]["cagr"].isNull)
     }
 
     @Test
@@ -1270,7 +1306,23 @@ class RefinvestApplicationTests(
         ),
         equityCurve = emptyList(),
         trades = emptyList(),
-        benchmark = Benchmark(BuyAndHoldResult(BigDecimal("0.05"), BigDecimal("0.04"), BigDecimal("0.02")), null),
+        benchmark = Benchmark(
+            primary = BuyAndHoldResult(
+                asset = "QQQ",
+                equityCurve = listOf(EquityCurvePoint(LocalDate.of(2025, 1, 1), BigDecimal.ONE)),
+                totalReturn = BigDecimal("0.05"),
+                cagr = null,
+                mdd = BigDecimal("0.02"),
+            ),
+            secondaryReference = BuyAndHoldResult(
+                asset = "SPY",
+                equityCurve = listOf(EquityCurvePoint(LocalDate.of(2025, 1, 1), BigDecimal.ONE)),
+                totalReturn = BigDecimal("0.04"),
+                cagr = BigDecimal("0.03"),
+                mdd = BigDecimal("0.01"),
+            ),
+        ),
+        signalExecutionMarketRelation = SignalExecutionMarketRelation.CROSS_MARKET,
         signalExecutionDelay = SignalExecutionDelay(BigDecimal.ONE, BigDecimal.ONE, emptyList()),
         sampleSizeWarning = SampleSizeWarning.LOW,
         dataIntegrityStatus = DataIntegrityStatus(DatasetSnapshotId(datasetSnapshotId), true, true),

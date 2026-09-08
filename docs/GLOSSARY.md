@@ -32,7 +32,9 @@
 | 낮은 표본 경고 | Low Sample Warning | Trade Count < 10일 때 표시하는 경고 | ADR-006 |
 | 무거래 결과 | Zero Trades / Empty State | Trade Count = 0일 때의 별도 처리 | ADR-006 |
 | 기본 벤치마크 | Primary Benchmark | Execution Asset Buy & Hold | ADR-007 |
-| 참고 벤치마크 | Secondary Reference | Signal Asset Buy & Hold (Cross-Market 전략에서만) | ADR-007 |
+| 참고 벤치마크 | Secondary Reference | Primary Signal Asset과 Execution Asset이 다를 때의 Signal Asset Buy & Hold | ADR-007, ADR-052 |
+| 신호-체결 시장 관계 | `signalExecutionMarketRelation` | Primary Signal Asset과 Execution Asset의 calendar가 같으면 `SAME_MARKET`, 다르면 `CROSS_MARKET`. 결과 Timeline의 시장 구분에 사용 | ADR-052 |
+| 포트폴리오 지수 | portfolio index | Strategy 또는 Buy & Hold의 equity curve 값. 시작값은 1이며 원시 가격이 아니다 | ADR-052 |
 | 레버리지 ETF 경고 | Leveraged ETF Warning | TQQQ/SOXL 결과에 고정 표시하는 구조적 특성 안내 | ADR-016 |
 | 백테스트 실행 | `BacktestRun` | 하나의 백테스트 요청과 상태(PENDING/RUNNING/COMPLETED/FAILED) | — |
 | 백테스트 결과 | `BacktestResult` | 계산이 끝난 뒤 Core가 영속화하는 지표/차트/거래 내역 | — |

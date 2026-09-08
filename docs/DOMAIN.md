@@ -109,12 +109,18 @@ Compute가 계산한 결과를 Core가 영속화한 읽기 모델. Compute는 �
 BacktestResult
 ├── backtestRunId
 ├── metrics: { totalReturn?, cagr?, mdd?, sharpe?, winRate?, tradeCount, avgTradeReturn?, avgHoldingPeriod?, profitFactor? }
-├── equityCurve: List<{ date, value }>
+├── equityCurve: List<{ date, value }>          # Execution Asset session별 Strategy portfolio index, 시작값 1
 ├── trades: List<Trade>
-├── benchmark: { primary: BuyAndHoldResult, secondaryReference: BuyAndHoldResult | null }  # ADR-007
+├── benchmark: { primary: BuyAndHoldResult, secondaryReference: BuyAndHoldResult | null }  # ADR-007, ADR-052
+├── signalExecutionMarketRelation: SAME_MARKET | CROSS_MARKET
 ├── signalExecutionDelay: { median, max, distribution }  # 각 값은 시간(hours) 단위, ADR-048
 ├── sampleSizeWarning: NONE | LOW | ZERO    # ADR-006
 └── dataIntegrityStatus: { datasetSnapshotId, corporateActionsApplied, pointInTimeValidationPassed }  # datasetSnapshotId는 BacktestRun.datasetSnapshotId와 동일 값 (필드명 통일)
+
+BuyAndHoldResult
+├── asset
+├── equityCurve: List<{ date, value }>          # 해당 Asset session별 Close-to-Close portfolio index, 시작값 1
+└── totalReturn, cagr?, mdd
 
 Trade
 ├── signalTime, entryTime, entryPrice
@@ -125,6 +131,7 @@ Trade
 
 `sampleSizeWarning = ZERO`이면 `tradeCount`를 제외한 전략 성과 지표는 계산 불가능한 값으로 `null`이다. Core와 Web은 이를 숫자 `0`으로 대체하지 않고 Empty State로 표시한다(ADR-006).
 `signalExecutionDelay.distribution`은 각 Trade의 `entryTime - signalTime`을 시간(hours) 단위로 기록한다. `median`과 `max`는 이 분포에서 계산하며, 무거래 결과는 빈 분포와 `median = max = 0`을 사용한다(ADR-048).
+`signalExecutionMarketRelation`은 Primary Signal Asset과 Execution Asset의 calendar가 같으면 `SAME_MARKET`, 다르면 `CROSS_MARKET`이다. Timeline은 `trades`의 signal/entry/exit 시각과 이 값을 사용해 신호와 체결의 시장 관계를 표시한다. Drawdown은 Strategy와 Benchmark 각각의 `equityCurve`에서 `value / 해당 시점까지의 최고 value - 1`로 파생하며, 원시 가격 series나 별도 drawdown persistence를 만들지 않는다(ADR-052).
 
 ### 1.5 Member / Auth / Subscription
 

@@ -1,5 +1,6 @@
 package com.refinvest.core.backtest.adapter.web.backtest
 
+import com.refinvest.core.backtest.domain.exception.LegacyBacktestResultPayloadException
 import com.refinvest.core.backtest.port.inbound.run.BacktestRunRejectedException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -16,6 +17,11 @@ class BacktestRunExceptionHandler {
                 else -> HttpStatus.FORBIDDEN
             },
         ).body(BacktestRunErrorResponse(exception.code, requireNotNull(exception.message)))
+
+    @ExceptionHandler(LegacyBacktestResultPayloadException::class)
+    fun handleLegacyResult(exception: LegacyBacktestResultPayloadException): ResponseEntity<BacktestRunErrorResponse> =
+        ResponseEntity.status(HttpStatus.GONE)
+            .body(BacktestRunErrorResponse("HTTP_410", requireNotNull(exception.message)))
 }
 
 data class BacktestRunErrorResponse(

@@ -8,6 +8,7 @@ import com.refinvest.core.backtest.domain.backtest.BuyAndHoldResult
 import com.refinvest.core.backtest.domain.backtest.DataIntegrityStatus
 import com.refinvest.core.backtest.domain.backtest.SampleSizeWarning
 import com.refinvest.core.backtest.domain.backtest.SignalExecutionDelay
+import com.refinvest.core.backtest.domain.backtest.SignalExecutionMarketRelation
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunStatus
 import com.refinvest.core.backtest.domain.valueobject.DatasetSnapshotId
@@ -105,7 +106,8 @@ class RecordBacktestRunExecutionServiceTest {
         ),
         equityCurve = emptyList(),
         trades = emptyList(),
-        benchmark = Benchmark(BuyAndHoldResult(BigDecimal("0.05"), BigDecimal("0.04"), BigDecimal("0.02")), null),
+        benchmark = Benchmark(BuyAndHoldResult("QQQ", emptyList(), BigDecimal("0.05"), BigDecimal("0.04"), BigDecimal("0.02")), null),
+        signalExecutionMarketRelation = SignalExecutionMarketRelation.SAME_MARKET,
         signalExecutionDelay = SignalExecutionDelay(BigDecimal.ONE, BigDecimal.ONE, emptyList()),
         sampleSizeWarning = SampleSizeWarning.LOW,
         dataIntegrityStatus = DataIntegrityStatus(DatasetSnapshotId("snapshot-1"), true, true),
