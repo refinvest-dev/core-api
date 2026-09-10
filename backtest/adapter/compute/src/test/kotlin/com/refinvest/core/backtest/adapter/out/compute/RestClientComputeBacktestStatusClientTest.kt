@@ -49,7 +49,8 @@ class RestClientComputeBacktestStatusClientTest {
               "actualPeriod":{"start":"2026-08-25","end":"2026-08-27"},
               "datasetSnapshotId":"snapshot-1",
               "engineVersion":"0.1.0",
-              "failureReason":"PRICE_DATA_MISSING"
+              "failureReason":"Price data is missing for the requested period.",
+              "errorCode":"PRICE_DATA_MISSING"
             }
             """.trimIndent(),
         )
@@ -58,7 +59,8 @@ class RestClientComputeBacktestStatusClientTest {
 
         val status = assertIs<ComputeBacktestStatusLookup.Found>(lookup).status
         assertEquals(ComputeBacktestStatusValue.FAILED, status.status)
-        assertEquals("PRICE_DATA_MISSING", status.failureReason)
+        assertEquals("Price data is missing for the requested period.", status.failureReason)
+        assertEquals("PRICE_DATA_MISSING", status.errorCode)
         assertEquals("snapshot-1", status.datasetSnapshotId!!.value)
         fixture.server.verify()
     }

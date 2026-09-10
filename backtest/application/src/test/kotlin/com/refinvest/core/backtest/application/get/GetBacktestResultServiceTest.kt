@@ -69,6 +69,29 @@ class GetBacktestResultServiceTest {
     }
 
     @Test
+    fun `returns the structured failure code without reading a result`() {
+        val runId = BacktestRunId(10L)
+        val service = GetBacktestResultService(
+            backtestRunReader = runReader {
+                pendingRun(it).copy(
+                    status = BacktestRunStatus.FAILED,
+                    failureReason = "Price data is missing for the requested period.",
+                    errorCode = "PRICE_DATA_MISSING",
+                )
+            },
+            backtestResultReader = BacktestResultReader { error("must not read a failed run result") },
+            lookupStrategyVersionForBacktestUseCase = ownerLookup(MemberId(1L)),
+            backtestMemberIdProvider = BacktestMemberIdProvider { MemberId(1L) },
+        )
+
+        val response = service.execute(GetBacktestResultQuery(runId))
+
+        assertEquals(BacktestRunStatus.FAILED, response?.status)
+        assertEquals("PRICE_DATA_MISSING", response?.errorCode)
+        assertNull(response?.result)
+    }
+
+    @Test
     fun `rejects a completed run without a persisted result`() {
         val service = GetBacktestResultService(
             backtestRunReader = runReader { completedRun(it) },

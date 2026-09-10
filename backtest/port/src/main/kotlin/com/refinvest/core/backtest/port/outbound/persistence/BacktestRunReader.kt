@@ -9,6 +9,7 @@ import java.time.Instant
 interface BacktestRunReader {
     fun findById(id: BacktestRunId): BacktestRunReadModel?
     fun findLatestCompletedByStrategyVersionId(strategyVersionId: StrategyVersionId): BacktestRunReadModel? = null
+    fun findLatestTerminalByStrategyVersionId(strategyVersionId: StrategyVersionId): BacktestRunReadModel? = null
 
     fun findByStrategyId(
         strategyId: StrategyId,

@@ -17,6 +17,7 @@ data class GetBacktestResultResponse(
     val engineVersion: String?,
     val result: BacktestResultResponse?,
     val failureReason: String?,
+    val errorCode: String?,
     val createdAt: Instant,
 ) {
     companion object {
@@ -32,6 +33,7 @@ data class GetBacktestResultResponse(
             engineVersion = result.engineVersion?.value,
             result = result.result?.let(BacktestResultResponse::from),
             failureReason = result.failureReason,
+            errorCode = result.errorCode,
             createdAt = result.createdAt,
         )
     }

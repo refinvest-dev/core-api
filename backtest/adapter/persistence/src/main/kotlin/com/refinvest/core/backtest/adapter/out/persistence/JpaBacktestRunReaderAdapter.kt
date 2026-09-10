@@ -27,6 +27,12 @@ class JpaBacktestRunReaderAdapter(
     override fun findLatestCompletedByStrategyVersionId(strategyVersionId: StrategyVersionId): BacktestRunReadModel? =
         backtestRunJpaReader.findFirstByStrategyVersionIdAndStatusOrderByCreatedAtDesc(strategyVersionId.value, BacktestRunStatusJpa.COMPLETED)?.toReadModel()
 
+    override fun findLatestTerminalByStrategyVersionId(strategyVersionId: StrategyVersionId): BacktestRunReadModel? =
+        backtestRunJpaReader.findFirstByStrategyVersionIdAndStatusInOrderByCreatedAtDesc(
+            strategyVersionId.value,
+            TERMINAL_STATUSES,
+        )?.toReadModel()
+
     override fun findByStrategyId(
         strategyId: StrategyId,
         page: Int,
@@ -59,6 +65,11 @@ class JpaBacktestRunReaderAdapter(
             datasetSnapshotId = datasetSnapshotId?.let(::DatasetSnapshotId),
             engineVersion = engineVersion?.let(::EngineVersion),
             failureReason = failureReason,
+            errorCode = errorCode,
             createdAt = createdAt,
         )
+
+    private companion object {
+        val TERMINAL_STATUSES = listOf(BacktestRunStatusJpa.COMPLETED, BacktestRunStatusJpa.FAILED)
+    }
 }

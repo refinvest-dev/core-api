@@ -27,6 +27,11 @@ class JpaBacktestRunReaderAdapterTest {
                 return entity(id = 12L, strategyVersionId = strategyVersionId)
             }
 
+            override fun findFirstByStrategyVersionIdAndStatusInOrderByCreatedAtDesc(
+                strategyVersionId: Long,
+                statuses: Collection<BacktestRunStatusJpa>,
+            ): BacktestRunJpaEntity? = error("findFirstByStrategyVersionIdAndStatusInOrderByCreatedAtDesc is not used")
+
             override fun findAllByStrategyIdOrderByCreatedAtDesc(
                 strategyId: Long,
                 pageable: Pageable,
@@ -56,6 +61,11 @@ class JpaBacktestRunReaderAdapterTest {
                 strategyVersionId: Long,
                 status: BacktestRunStatusJpa,
             ): BacktestRunJpaEntity? = null
+
+            override fun findFirstByStrategyVersionIdAndStatusInOrderByCreatedAtDesc(
+                strategyVersionId: Long,
+                statuses: Collection<BacktestRunStatusJpa>,
+            ): BacktestRunJpaEntity? = error("findFirstByStrategyVersionIdAndStatusInOrderByCreatedAtDesc is not used")
 
             override fun findAllByStrategyIdOrderByCreatedAtDesc(
                 strategyId: Long,

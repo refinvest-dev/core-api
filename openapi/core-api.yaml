@@ -269,6 +269,32 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /strategy-versions/{versionId}/backtest-runs/latest-terminal:
+    get:
+      operationId: getLatestTerminalBacktestRun
+      tags: [backtests]
+      summary: StrategyVersion의 최신 종결 백테스트 조회
+      description: |
+        Web 상세 페이지의 직접 진입·새로고침 시 마지막 실행이 실패한 경우에도 실패 상태를 복원한다.
+        이 조회는 `COMPLETED` 또는 `FAILED` 상태의 run 중 `createdAt DESC` 기준 최신 한 건을
+        반환한다. 성공 결과 차트 복원은 `latest-completed`를 계속 사용하므로, 최신 실패가
+        이전 완료 결과를 덮어쓰지 않는다. 현재 인증 사용자가 소유한 StrategyVersion만 조회할
+        수 있으며, 존재하지 않거나 타인 소유이면 404를 반환한다.
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 종결 run이 없으면 `run`은 null이고, 있으면 createdAt DESC 기준 최신 COMPLETED 또는 FAILED run이다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LatestTerminalBacktestRunResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
 
   /backtest-runs/{runId}:
     get:
@@ -277,8 +303,9 @@ paths:
       summary: 상태 폴링 및 결과 조회 (`PollBacktestStatus`, `GetBacktestResult` 통합)
       description: |
         Web은 이 엔드포인트를 2~3초 간격으로 폴링한다(`docs/ARCHITECTURE.md` §5). `status`가
-        `COMPLETED`일 때만 `result`가 존재하고, `FAILED`일 때만 `failureReason`/`errorCode`가
-        존재한다(`docs/DOMAIN.md` §1.3 불변식).
+        `COMPLETED`일 때만 `result`가 존재하고, `FAILED`일 때만 `failureReason`가 존재한다.
+        Compute가 structured fatal error를 반환한 실패에는 `errorCode`도 존재한다
+        (`docs/DOMAIN.md` §1.3 불변식).
       parameters:
         - name: runId
           in: path
@@ -696,6 +723,15 @@ components:
             - $ref: '#/components/schemas/BacktestRunSummary'
           nullable: true
 
+    LatestTerminalBacktestRunResponse:
+      type: object
+      required: [run]
+      properties:
+        run:
+          allOf:
+            - $ref: '#/components/schemas/BacktestRunSummary'
+          nullable: true
+
     BacktestRunDetail:
       allOf:
         - $ref: '#/components/schemas/BacktestRunSummary'
@@ -726,6 +762,7 @@ components:
               allOf:
                 - $ref: 'compute-api.yaml#/components/schemas/FatalErrorCode'
               nullable: true
+              description: Compute가 structured fatal error를 반환한 FAILED run에만 존재.
 
     # ---- Account ----
     Member:
