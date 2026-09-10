@@ -24,6 +24,9 @@ class JpaBacktestRunReaderAdapter(
     override fun findById(id: BacktestRunId): BacktestRunReadModel? =
         backtestRunJpaReader.findById(id.value)?.toReadModel()
 
+    override fun findLatestCompletedByStrategyVersionId(strategyVersionId: StrategyVersionId): BacktestRunReadModel? =
+        backtestRunJpaReader.findFirstByStrategyVersionIdAndStatusOrderByCreatedAtDesc(strategyVersionId.value, BacktestRunStatusJpa.COMPLETED)?.toReadModel()
+
     override fun findByStrategyId(
         strategyId: StrategyId,
         page: Int,

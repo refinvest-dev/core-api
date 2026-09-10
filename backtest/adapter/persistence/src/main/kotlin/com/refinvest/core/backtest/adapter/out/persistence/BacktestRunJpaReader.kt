@@ -9,6 +9,7 @@ import java.time.Instant
 
 interface BacktestRunJpaReader : Repository<BacktestRunJpaEntity, Long> {
     fun findById(id: Long): BacktestRunJpaEntity?
+    fun findFirstByStrategyVersionIdAndStatusOrderByCreatedAtDesc(strategyVersionId: Long, status: BacktestRunStatusJpa): BacktestRunJpaEntity?
 
     fun findAllByStrategyIdOrderByCreatedAtDesc(strategyId: Long, pageable: Pageable): Page<BacktestRunJpaEntity>
 
