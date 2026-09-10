@@ -243,6 +243,33 @@ paths:
                   value: { code: BACKTEST_CONCURRENCY_LIMIT_EXCEEDED, message: Concurrent backtest execution limit exceeded. }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /strategy-versions/{versionId}/backtest-runs/latest-completed:
+    get:
+      operationId: getLatestCompletedBacktestRun
+      tags: [backtests]
+      summary: StrategyVersion의 최신 완료 백테스트 조회
+      description: |
+        Web 상세 페이지의 직접 진입·새로고침 시 해당 StrategyVersion의 마지막 완료 결과를 복원한다.
+        Strategy별 실행 이력 목록은 Second Backtest Rate 계측을 위한 pagination API이므로, 이 단건
+        복원 조회에 목록을 페이지 조회·필터링해서 사용하지 않는다. 현재 인증 사용자가 소유한
+        StrategyVersion만 조회할 수 있으며, 존재하지 않거나 타인 소유이면 404를 반환한다. 대상은
+        `COMPLETED` 상태의 run으로 한정하고 `createdAt DESC` 기준 최신 한 건을 반환한다.
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 완료 run이 없으면 `run`은 null이고, 있으면 createdAt DESC 기준 최신 COMPLETED run이다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LatestCompletedBacktestRunResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+
   /backtest-runs/{runId}:
     get:
       operationId: getBacktestRun
@@ -444,7 +471,7 @@ paths:
           in: header
           required: true
           schema: { type: string }
-          description: `XSRF-TOKEN` Cookie 값을 echo한 CSRF token.
+          description: "`XSRF-TOKEN` Cookie 값을 echo한 CSRF token."
       security:
         - RefreshCookieAuth: []
       responses:
@@ -468,7 +495,7 @@ paths:
           in: header
           required: true
           schema: { type: string }
-          description: `XSRF-TOKEN` Cookie 값을 echo한 CSRF token.
+          description: "`XSRF-TOKEN` Cookie 값을 echo한 CSRF token."
       security:
         - RefreshCookieAuth: []
       responses:
@@ -659,6 +686,15 @@ components:
         feeModel:
           $ref: 'compute-api.yaml#/components/schemas/FeeModel'
         createdAt: { type: string, format: date-time }
+
+    LatestCompletedBacktestRunResponse:
+      type: object
+      required: [run]
+      properties:
+        run:
+          allOf:
+            - $ref: '#/components/schemas/BacktestRunSummary'
+          nullable: true
 
     BacktestRunDetail:
       allOf:
