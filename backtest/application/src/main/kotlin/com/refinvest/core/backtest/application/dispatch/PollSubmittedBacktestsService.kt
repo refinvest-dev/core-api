@@ -64,7 +64,9 @@ open class PollSubmittedBacktestsService(
         when (computeStatus.status) {
             ComputeBacktestStatusValue.PENDING -> scheduleNextPoll(dispatch)
             ComputeBacktestStatusValue.RUNNING -> {
-                startIfPending(dispatch.backtestRunId, computeStatus)
+                if (computeStatus.hasExecutionMetadata()) {
+                    startIfPending(dispatch.backtestRunId, computeStatus)
+                }
                 scheduleNextPoll(dispatch)
             }
             ComputeBacktestStatusValue.COMPLETED -> {
@@ -105,15 +107,15 @@ open class PollSubmittedBacktestsService(
             BacktestRunStatus.PENDING -> {
                 if (status.actualPeriod == null || status.datasetSnapshotId == null || status.engineVersion == null) {
                     recordBacktestRunExecutionUseCase.execute(
-                        FailBacktestRunWithoutExecutionCommand(backtestRunId, failureReason),
+                        FailBacktestRunWithoutExecutionCommand(backtestRunId, failureReason, status.errorCode),
                     )
                 } else {
                     startIfPending(backtestRunId, status)
-                    recordBacktestRunExecutionUseCase.execute(FailBacktestRunCommand(backtestRunId, failureReason))
+                    recordBacktestRunExecutionUseCase.execute(FailBacktestRunCommand(backtestRunId, failureReason, status.errorCode))
                 }
             }
             BacktestRunStatus.RUNNING -> recordBacktestRunExecutionUseCase.execute(
-                FailBacktestRunCommand(backtestRunId, failureReason),
+                FailBacktestRunCommand(backtestRunId, failureReason, status.errorCode),
             )
             BacktestRunStatus.COMPLETED, BacktestRunStatus.FAILED -> Unit
         }

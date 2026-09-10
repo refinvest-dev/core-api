@@ -25,6 +25,7 @@ class BacktestRun private constructor(
     engineVersion: EngineVersion?,
     result: BacktestResult?,
     failureReason: String?,
+    errorCode: String?,
 ) : AggregateRoot<BacktestRunId>(id) {
     var status: BacktestRunStatus = status
         private set
@@ -37,6 +38,8 @@ class BacktestRun private constructor(
     var result: BacktestResult? = result
         private set
     var failureReason: String? = failureReason
+        private set
+    var errorCode: String? = errorCode
         private set
 
     init {
@@ -67,20 +70,22 @@ class BacktestRun private constructor(
         validateState()
     }
 
-    fun fail(failureReason: String) {
+    fun fail(failureReason: String, errorCode: String? = null) {
         require(status == BacktestRunStatus.RUNNING) { "BacktestRun can fail only from RUNNING" }
         require(failureReason.isNotBlank()) { "failureReason must not be blank" }
         status = BacktestRunStatus.FAILED
         this.failureReason = failureReason
+        this.errorCode = errorCode
         validateState()
     }
 
     /** Records a terminal failure when Compute execution was never observed. */
-    fun failWithoutExecution(failureReason: String) {
+    fun failWithoutExecution(failureReason: String, errorCode: String? = null) {
         require(status == BacktestRunStatus.PENDING) { "BacktestRun can fail without execution only from PENDING" }
         require(failureReason.isNotBlank()) { "failureReason must not be blank" }
         status = BacktestRunStatus.FAILED
         this.failureReason = failureReason
+        this.errorCode = errorCode
         validateState()
     }
 
@@ -92,6 +97,7 @@ class BacktestRun private constructor(
                 require(engineVersion == null) { "PENDING BacktestRun must not have engineVersion" }
                 require(result == null) { "PENDING BacktestRun must not have a result" }
                 require(failureReason == null) { "PENDING BacktestRun must not have a failureReason" }
+                require(errorCode == null) { "PENDING BacktestRun must not have an errorCode" }
             }
             BacktestRunStatus.RUNNING -> {
                 require(actualPeriod != null) { "RUNNING BacktestRun requires actualPeriod" }
@@ -99,6 +105,7 @@ class BacktestRun private constructor(
                 require(engineVersion != null) { "RUNNING BacktestRun requires engineVersion" }
                 require(result == null) { "RUNNING BacktestRun must not have a result" }
                 require(failureReason == null) { "RUNNING BacktestRun must not have a failureReason" }
+                require(errorCode == null) { "RUNNING BacktestRun must not have an errorCode" }
             }
             BacktestRunStatus.COMPLETED -> {
                 require(actualPeriod != null && datasetSnapshotId != null && engineVersion != null) {
@@ -106,6 +113,7 @@ class BacktestRun private constructor(
                 }
                 require(result != null) { "COMPLETED BacktestRun requires a BacktestResult" }
                 require(failureReason == null) { "COMPLETED BacktestRun must not have a failureReason" }
+                require(errorCode == null) { "COMPLETED BacktestRun must not have an errorCode" }
             }
             BacktestRunStatus.FAILED -> {
                 val hasExecutionMetadata = actualPeriod != null && datasetSnapshotId != null && engineVersion != null
@@ -115,6 +123,7 @@ class BacktestRun private constructor(
                 }
                 require(result == null) { "FAILED BacktestRun must not have a result" }
                 require(!failureReason.isNullOrBlank()) { "FAILED BacktestRun requires a failureReason" }
+                require(errorCode?.isNotBlank() != false) { "FAILED BacktestRun errorCode must not be blank" }
             }
         }
     }
@@ -140,6 +149,7 @@ class BacktestRun private constructor(
             engineVersion = null,
             result = null,
             failureReason = null,
+            errorCode = null,
         )
 
         fun restore(
@@ -155,6 +165,7 @@ class BacktestRun private constructor(
             engineVersion: EngineVersion?,
             result: BacktestResult?,
             failureReason: String?,
+            errorCode: String? = null,
         ): BacktestRun = BacktestRun(
             id = id,
             strategyId = strategyId,
@@ -168,6 +179,7 @@ class BacktestRun private constructor(
             engineVersion = engineVersion,
             result = result,
             failureReason = failureReason,
+            errorCode = errorCode,
         )
     }
 }

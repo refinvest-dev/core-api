@@ -49,6 +49,7 @@ class JpaBacktestRunStoreAdapter(
             datasetSnapshotId = datasetSnapshotId?.value,
             engineVersion = engineVersion?.value,
             failureReason = failureReason,
+            errorCode = errorCode,
             createdAt = createdAt,
         )
     }
@@ -71,6 +72,7 @@ class JpaBacktestRunStoreAdapter(
             engineVersion = engineVersion?.let(::EngineVersion),
             result = result,
             failureReason = failureReason,
+            errorCode = errorCode,
         )
     }
 }

@@ -2,6 +2,7 @@ package com.refinvest.core.backtest.adapter.web.backtest
 
 import com.refinvest.core.backtest.adapter.web.backtest.get.GetBacktestResultResponse
 import com.refinvest.core.backtest.adapter.web.backtest.list.LatestCompletedBacktestRunResponse
+import com.refinvest.core.backtest.adapter.web.backtest.list.LatestTerminalBacktestRunResponse
 import com.refinvest.core.backtest.adapter.web.backtest.list.ListBacktestRunsResponse
 import com.refinvest.core.backtest.adapter.web.backtest.run.RunBacktestRequest
 import com.refinvest.core.backtest.adapter.web.backtest.run.RunBacktestResponse
@@ -11,6 +12,7 @@ import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import com.refinvest.core.backtest.port.inbound.get.GetBacktestResultQuery
 import com.refinvest.core.backtest.port.inbound.get.GetBacktestResultUseCase
 import com.refinvest.core.backtest.port.inbound.list.GetLatestCompletedBacktestRunUseCase
+import com.refinvest.core.backtest.port.inbound.list.GetLatestTerminalBacktestRunUseCase
 import com.refinvest.core.backtest.port.inbound.list.ListBacktestRunsQuery
 import com.refinvest.core.backtest.port.inbound.list.ListBacktestRunsUseCase
 import com.refinvest.core.backtest.port.inbound.run.RunBacktestUseCase
@@ -31,6 +33,7 @@ class BacktestController(
     private val getBacktestResultUseCase: GetBacktestResultUseCase,
     private val listBacktestRunsUseCase: ListBacktestRunsUseCase,
     private val getLatestCompletedBacktestRunUseCase: GetLatestCompletedBacktestRunUseCase,
+    private val getLatestTerminalBacktestRunUseCase: GetLatestTerminalBacktestRunUseCase,
 ) {
     @PostMapping("/strategy-versions/{versionId}/backtests")
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -72,6 +75,17 @@ class BacktestController(
     fun getLatestCompleted(@PathVariable versionId: Long): LatestCompletedBacktestRunResponse = try {
         LatestCompletedBacktestRunResponse.from(
             getLatestCompletedBacktestRunUseCase.execute(StrategyVersionId(versionId)),
+        )
+    } catch (exception: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message, exception)
+    } catch (exception: NoSuchElementException) {
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, exception.message, exception)
+    }
+
+    @GetMapping("/strategy-versions/{versionId}/backtest-runs/latest-terminal")
+    fun getLatestTerminal(@PathVariable versionId: Long): LatestTerminalBacktestRunResponse = try {
+        LatestTerminalBacktestRunResponse.from(
+            getLatestTerminalBacktestRunUseCase.execute(StrategyVersionId(versionId)),
         )
     } catch (exception: IllegalArgumentException) {
         throw ResponseStatusException(HttpStatus.BAD_REQUEST, exception.message, exception)

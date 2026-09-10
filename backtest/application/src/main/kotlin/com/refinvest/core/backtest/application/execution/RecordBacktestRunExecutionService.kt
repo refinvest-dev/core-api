@@ -36,8 +36,8 @@ open class RecordBacktestRunExecutionService(
                 engineVersion = command.engineVersion,
             )
             is CompleteBacktestRunCommand -> backtestRun.complete(command.result)
-            is FailBacktestRunCommand -> backtestRun.fail(command.failureReason)
-            is FailBacktestRunWithoutExecutionCommand -> backtestRun.failWithoutExecution(command.failureReason)
+            is FailBacktestRunCommand -> backtestRun.fail(command.failureReason, command.errorCode)
+            is FailBacktestRunWithoutExecutionCommand -> backtestRun.failWithoutExecution(command.failureReason, command.errorCode)
         }
         backtestRunStore.save(backtestRun)
 

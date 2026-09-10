@@ -10,6 +10,10 @@ import java.time.Instant
 interface BacktestRunJpaReader : Repository<BacktestRunJpaEntity, Long> {
     fun findById(id: Long): BacktestRunJpaEntity?
     fun findFirstByStrategyVersionIdAndStatusOrderByCreatedAtDesc(strategyVersionId: Long, status: BacktestRunStatusJpa): BacktestRunJpaEntity?
+    fun findFirstByStrategyVersionIdAndStatusInOrderByCreatedAtDesc(
+        strategyVersionId: Long,
+        statuses: Collection<BacktestRunStatusJpa>,
+    ): BacktestRunJpaEntity?
 
     fun findAllByStrategyIdOrderByCreatedAtDesc(strategyId: Long, pageable: Pageable): Page<BacktestRunJpaEntity>
 

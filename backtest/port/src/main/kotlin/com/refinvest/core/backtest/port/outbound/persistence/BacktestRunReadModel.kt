@@ -21,5 +21,6 @@ data class BacktestRunReadModel(
     val datasetSnapshotId: DatasetSnapshotId? = null,
     val engineVersion: EngineVersion? = null,
     val failureReason: String? = null,
+    val errorCode: String? = null,
     val createdAt: Instant,
 )

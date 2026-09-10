@@ -87,6 +87,17 @@ class BacktestRunTest {
         assertNull(run.engineVersion)
     }
 
+    @Test
+    fun `preserves a structured Compute failure code`() {
+        val run = pendingRun()
+        run.start(period(), DatasetSnapshotId("snapshot-1"), EngineVersion("engine-1"))
+
+        run.fail("Price data is missing for the requested period.", "PRICE_DATA_MISSING")
+
+        assertEquals(BacktestRunStatus.FAILED, run.status)
+        assertEquals("PRICE_DATA_MISSING", run.errorCode)
+    }
+
     private fun pendingRun(): BacktestRun = BacktestRun.createPending(
         id = BacktestRunId(1L),
         strategyId = StrategyId(3L),

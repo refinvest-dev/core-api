@@ -23,5 +23,6 @@ data class GetBacktestResultResult(
     val engineVersion: EngineVersion?,
     val result: BacktestResult?,
     val failureReason: String?,
+    val errorCode: String?,
     val createdAt: Instant,
 )

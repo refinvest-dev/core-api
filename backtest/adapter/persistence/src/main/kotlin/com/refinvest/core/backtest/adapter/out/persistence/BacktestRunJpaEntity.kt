@@ -40,6 +40,8 @@ class BacktestRunJpaEntity(
     var engineVersion: String? = null,
     @Column(name = "failure_reason")
     var failureReason: String? = null,
+    @Column(name = "error_code")
+    var errorCode: String? = null,
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant,
 )

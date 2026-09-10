@@ -38,6 +38,7 @@ class GetBacktestResultService(
             engineVersion = backtestRun.engineVersion,
             result = completedResultOf(backtestRun),
             failureReason = backtestRun.failureReason,
+            errorCode = backtestRun.errorCode,
             createdAt = backtestRun.createdAt,
         )
     }

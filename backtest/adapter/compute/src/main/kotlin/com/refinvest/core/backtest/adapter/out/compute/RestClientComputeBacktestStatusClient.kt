@@ -81,6 +81,7 @@ class RestClientComputeBacktestStatusClient private constructor(
                 engineVersion = engineVersion?.let(::EngineVersion),
                 result = result?.toDomain(backtestRunId),
                 failureReason = failureReason,
+                errorCode = errorCode,
             ),
         )
 
@@ -142,6 +143,7 @@ class RestClientComputeBacktestStatusClient private constructor(
         val engineVersion: String? = null,
         val result: ComputeBacktestResultResponse? = null,
         val failureReason: String? = null,
+        val errorCode: String? = null,
     )
 
     private data class ComputePeriodResponse(val start: LocalDate, val end: LocalDate)

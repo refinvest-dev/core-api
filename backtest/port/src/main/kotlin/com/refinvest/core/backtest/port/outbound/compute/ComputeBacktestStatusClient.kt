@@ -27,7 +27,11 @@ data class ComputeBacktestStatus(
     val engineVersion: EngineVersion? = null,
     val result: BacktestResult? = null,
     val failureReason: String? = null,
+    val errorCode: String? = null,
 ) {
+    fun hasExecutionMetadata(): Boolean =
+        actualPeriod != null && datasetSnapshotId != null && engineVersion != null
+
     fun requireExecutionMetadata(): ComputeExecutionMetadata = ComputeExecutionMetadata(
         actualPeriod = requireNotNull(actualPeriod) { "Compute status requires actualPeriod" },
         datasetSnapshotId = requireNotNull(datasetSnapshotId) { "Compute status requires datasetSnapshotId" },

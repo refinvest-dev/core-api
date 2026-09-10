@@ -86,6 +86,23 @@ class PollSubmittedBacktestsServiceTest {
     }
 
     @Test
+    fun `keeps a pending Core run polling while Compute is running without execution metadata`() {
+        val run = pendingRun()
+        val dispatchStore = FakeDispatchStore(run.id)
+        val service = service(
+            run = run,
+            dispatchStore = dispatchStore,
+            computeStatusLookup = ComputeBacktestStatusLookup.Found(
+                ComputeBacktestStatus(status = ComputeBacktestStatusValue.RUNNING),
+            ),
+        )
+
+        assertTrue(service.execute())
+        assertEquals(BacktestRunStatus.PENDING, run.status)
+        assertTrue(!dispatchStore.terminal)
+    }
+
+    @Test
     fun `fails a running Core run from a failed Compute status`() {
         val run = pendingRun().also {
             it.start(period(), DatasetSnapshotId("snapshot-1"), EngineVersion("engine-1"))
@@ -100,14 +117,16 @@ class PollSubmittedBacktestsServiceTest {
                     actualPeriod = period(),
                     datasetSnapshotId = DatasetSnapshotId("snapshot-1"),
                     engineVersion = EngineVersion("engine-1"),
-                    failureReason = "PRICE_DATA_MISSING",
+                    failureReason = "Price data is missing for the requested period.",
+                    errorCode = "PRICE_DATA_MISSING",
                 ),
             ),
         )
 
         assertTrue(service.execute())
         assertEquals(BacktestRunStatus.FAILED, run.status)
-        assertEquals("PRICE_DATA_MISSING", run.failureReason)
+        assertEquals("Price data is missing for the requested period.", run.failureReason)
+        assertEquals("PRICE_DATA_MISSING", run.errorCode)
         assertTrue(dispatchStore.terminal)
     }
 
@@ -134,8 +153,8 @@ class PollSubmittedBacktestsServiceTest {
         when (command) {
             is StartBacktestRunCommand -> run.start(command.actualPeriod, command.datasetSnapshotId, command.engineVersion)
             is CompleteBacktestRunCommand -> run.complete(command.result)
-            is FailBacktestRunCommand -> run.fail(command.failureReason)
-            is FailBacktestRunWithoutExecutionCommand -> run.failWithoutExecution(command.failureReason)
+            is FailBacktestRunCommand -> run.fail(command.failureReason, command.errorCode)
+            is FailBacktestRunWithoutExecutionCommand -> run.failWithoutExecution(command.failureReason, command.errorCode)
         }
         run.id
     }
