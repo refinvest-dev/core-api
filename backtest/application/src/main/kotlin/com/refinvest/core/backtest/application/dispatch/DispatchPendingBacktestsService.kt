@@ -12,6 +12,8 @@ import com.refinvest.core.backtest.port.outbound.compute.MetricReferencePayload
 import com.refinvest.core.backtest.port.outbound.compute.PositionPolicyPayload
 import com.refinvest.core.backtest.port.outbound.compute.StrategyVersionPayload
 import com.refinvest.core.backtest.port.outbound.compute.TimeBasedExitPayload
+import com.refinvest.core.backtest.port.outbound.observability.BacktestFailureObserver
+import com.refinvest.core.backtest.port.outbound.observability.ComputeBacktestFailureObservation
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaStore
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchStore
@@ -34,6 +36,7 @@ open class DispatchPendingBacktestsService(
     private val backtestQuotaStore: BacktestQuotaStore,
     private val lookupStrategyVersionForBacktestUseCase: LookupStrategyVersionForBacktestUseCase,
     private val computeClient: ComputeClient,
+    private val backtestFailureObserver: BacktestFailureObserver,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
 ) : DispatchPendingBacktestsUseCase {
@@ -76,14 +79,22 @@ open class DispatchPendingBacktestsService(
             }
             is ComputeBacktestSubmission.Rejected -> transactionTemplate.execute {
                 if (backtestComputeDispatchStore.markRejected(backtestRun.id, dispatch.claimToken)) {
-                    backtestRun.failWithoutExecution(submission.reason)
+                    backtestRun.failWithoutExecution(submission.reason, submission.errorCode)
                     backtestRunStore.save(backtestRun)
                     backtestQuotaStore.releaseConcurrentCapacity(
                         strategyVersion.ownerMemberId,
                         YearMonth.from(backtestRun.createdAt.atZone(ZoneOffset.UTC)),
                     )
+                    ComputeBacktestFailureObservation(
+                        backtestRunId = backtestRun.id,
+                        strategyId = backtestRun.strategyId,
+                        strategyVersionId = backtestRun.strategyVersionId,
+                        errorCode = submission.errorCode,
+                    )
+                } else {
+                    null
                 }
-            }
+            }?.let(backtestFailureObserver::recordComputeFailure)
         }
         return true
     }

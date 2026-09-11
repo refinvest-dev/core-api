@@ -45,11 +45,10 @@ class RestClientComputeClient private constructor(
                         ?.computeRunId()
                         ?.let(ComputeBacktestSubmission::Accepted)
                         ?: ComputeBacktestSubmission.RetryLater(RETRY_AFTER_TRANSIENT_FAILURE)
-                    400, 409 -> ComputeBacktestSubmission.Rejected(
-                        response.bodyTo(String::class.java)
-                            ?.takeIf(String::isNotBlank)
-                            ?: "Compute rejected backtest request",
-                    )
+                    400, 409 -> response.bodyTo(String::class.java)
+                        ?.takeIf(String::isNotBlank)
+                        ?.let { body -> ComputeBacktestSubmission.Rejected(body, body.errorCode()) }
+                        ?: ComputeBacktestSubmission.Rejected("Compute rejected backtest request")
                     503 -> ComputeBacktestSubmission.RetryLater(RETRY_AFTER_SERVICE_UNAVAILABLE)
                     else -> ComputeBacktestSubmission.RetryLater(RETRY_AFTER_TRANSIENT_FAILURE)
                 }
@@ -100,9 +99,12 @@ class RestClientComputeClient private constructor(
 
     private fun String.computeRunId(): String? = RUN_ID_PATTERN.find(this)?.groupValues?.get(1)
 
+    private fun String.errorCode(): String? = ERROR_CODE_PATTERN.find(this)?.groupValues?.get(1)?.takeIf(String::isNotBlank)
+
     private companion object {
         val logger = LoggerFactory.getLogger(RestClientComputeClient::class.java)
         val RUN_ID_PATTERN = Regex("\\\"runId\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+        val ERROR_CODE_PATTERN = Regex("\\\"errorCode\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
         val RETRY_AFTER_SERVICE_UNAVAILABLE: Duration = Duration.ofSeconds(30)
         val RETRY_AFTER_TRANSIENT_FAILURE: Duration = Duration.ofSeconds(10)
 

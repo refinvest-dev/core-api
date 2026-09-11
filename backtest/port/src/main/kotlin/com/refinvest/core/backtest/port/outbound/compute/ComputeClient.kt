@@ -36,7 +36,7 @@ fun interface ComputeIdempotencyKeyGenerator {
 sealed interface ComputeBacktestSubmission {
     data class Accepted(val computeRunId: String) : ComputeBacktestSubmission
     data class RetryLater(val retryAfter: Duration) : ComputeBacktestSubmission
-    data class Rejected(val reason: String) : ComputeBacktestSubmission
+    data class Rejected(val reason: String, val errorCode: String? = null) : ComputeBacktestSubmission
 }
 
 /** Mirrors compute-api's StrategyVersionPayload without coupling to strategy domain. */
