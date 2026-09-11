@@ -28,6 +28,7 @@ import org.springframework.test.web.client.match.MockRestRequestMatchers.header
 import org.springframework.test.web.client.match.MockRestRequestMatchers.method
 import org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo
 import org.springframework.test.web.client.response.MockRestResponseCreators.withAccepted
+import org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest
 import org.springframework.web.client.RestClient
 
 class RestClientComputeClientTest {
@@ -51,6 +52,26 @@ class RestClientComputeClientTest {
 
         assertIs<ComputeBacktestSubmission.Accepted>(submission)
         assertEquals("compute-run", submission.computeRunId)
+        server.verify()
+    }
+
+    @Test
+    fun `maps an error code from a rejected Compute dispatch`() {
+        val restClientBuilder = RestClient.builder()
+        val server = MockRestServiceServer.bindTo(restClientBuilder).build()
+        server.expect(requestTo("http://compute/backtests"))
+            .andExpect(method(HttpMethod.POST))
+            .andRespond(
+                withBadRequest()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("""{"message":"Invalid DSL","errorCode":"DSL_INVALID"}"""),
+            )
+
+        val submission = RestClientComputeClient("http://compute", "test-key", restClientBuilder)
+            .requestBacktest(testRequest())
+
+        assertIs<ComputeBacktestSubmission.Rejected>(submission)
+        assertEquals("DSL_INVALID", submission.errorCode)
         server.verify()
     }
 

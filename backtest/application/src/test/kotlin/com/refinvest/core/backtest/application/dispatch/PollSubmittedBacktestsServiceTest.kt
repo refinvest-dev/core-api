@@ -28,6 +28,8 @@ import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatus
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusClient
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusLookup
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusValue
+import com.refinvest.core.backtest.port.outbound.observability.BacktestFailureObserver
+import com.refinvest.core.backtest.port.outbound.observability.ComputeBacktestFailureObservation
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchStore
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.ClaimedBacktestComputeDispatch
@@ -108,6 +110,7 @@ class PollSubmittedBacktestsServiceTest {
             it.start(period(), DatasetSnapshotId("snapshot-1"), EngineVersion("engine-1"))
         }
         val dispatchStore = FakeDispatchStore(run.id)
+        val observer = RecordingFailureObserver()
         val service = service(
             run = run,
             dispatchStore = dispatchStore,
@@ -121,19 +124,70 @@ class PollSubmittedBacktestsServiceTest {
                     errorCode = "PRICE_DATA_MISSING",
                 ),
             ),
+            failureObserver = observer,
         )
 
         assertTrue(service.execute())
         assertEquals(BacktestRunStatus.FAILED, run.status)
         assertEquals("Price data is missing for the requested period.", run.failureReason)
         assertEquals("PRICE_DATA_MISSING", run.errorCode)
+        assertEquals("PRICE_DATA_MISSING", observer.observations.single().errorCode)
         assertTrue(dispatchStore.terminal)
+    }
+
+    @Test
+    fun `observes a failed Compute status without an error code for fallback tagging`() {
+        val run = pendingRun()
+        val dispatchStore = FakeDispatchStore(run.id)
+        val observer = RecordingFailureObserver()
+        val service = service(
+            run = run,
+            dispatchStore = dispatchStore,
+            computeStatusLookup = ComputeBacktestStatusLookup.Found(
+                ComputeBacktestStatus(
+                    status = ComputeBacktestStatusValue.FAILED,
+                    failureReason = "Compute did not provide an error code.",
+                ),
+            ),
+            failureObserver = observer,
+        )
+
+        assertTrue(service.execute())
+        assertEquals(BacktestRunStatus.FAILED, run.status)
+        assertEquals(null, run.errorCode)
+        assertEquals(1, observer.observations.size)
+        assertEquals(null, observer.observations.single().errorCode)
+    }
+
+    @Test
+    fun `does not observe a failed Compute status again for an already terminal run`() {
+        val run = pendingRun()
+        val dispatchStore = FakeDispatchStore(run.id, maxClaims = 2)
+        val observer = RecordingFailureObserver()
+        val service = service(
+            run = run,
+            dispatchStore = dispatchStore,
+            computeStatusLookup = ComputeBacktestStatusLookup.Found(
+                ComputeBacktestStatus(
+                    status = ComputeBacktestStatusValue.FAILED,
+                    failureReason = "Price data is missing for the requested period.",
+                    errorCode = "PRICE_DATA_MISSING",
+                ),
+            ),
+            failureObserver = observer,
+        )
+
+        assertTrue(service.execute())
+        assertTrue(service.execute())
+        assertEquals(BacktestRunStatus.FAILED, run.status)
+        assertEquals(1, observer.observations.size)
     }
 
     private fun service(
         run: BacktestRun,
         dispatchStore: FakeDispatchStore,
         computeStatusLookup: ComputeBacktestStatusLookup,
+        failureObserver: BacktestFailureObserver = RecordingFailureObserver(),
     ): PollSubmittedBacktestsService {
         val store = object : BacktestRunStore {
             override fun save(backtestRun: BacktestRun) = Unit
@@ -144,6 +198,7 @@ class PollSubmittedBacktestsServiceTest {
             backtestRunStore = store,
             recordBacktestRunExecutionUseCase = executionUseCase(run),
             computeBacktestStatusClient = ComputeBacktestStatusClient { _, _ -> computeStatusLookup },
+            backtestFailureObserver = failureObserver,
             transactionTemplate = TransactionTemplate(NoOpTransactionManager()),
             clock = Clock.fixed(Instant.parse("2026-09-03T00:00:00Z"), ZoneOffset.UTC),
         )
@@ -185,15 +240,18 @@ class PollSubmittedBacktestsServiceTest {
         dataIntegrityStatus = DataIntegrityStatus(DatasetSnapshotId("snapshot-1"), true, true),
     )
 
-    private class FakeDispatchStore(private val backtestRunId: BacktestRunId) : BacktestComputeDispatchStore {
-        private var claimed = false
+    private class FakeDispatchStore(
+        private val backtestRunId: BacktestRunId,
+        private val maxClaims: Int = 1,
+    ) : BacktestComputeDispatchStore {
+        private var claims = 0
         var terminal = false
 
         override fun enqueue(dispatch: PendingBacktestComputeDispatch) = Unit
         override fun claimNext(now: Instant, leaseDuration: Duration): ClaimedBacktestComputeDispatch? = null
         override fun claimNextSubmitted(now: Instant, leaseDuration: Duration): ClaimedSubmittedBacktestComputeDispatch? {
-            if (claimed) return null
-            claimed = true
+            if (claims == maxClaims) return null
+            claims += 1
             return ClaimedSubmittedBacktestComputeDispatch(backtestRunId, "compute-10", UUID.randomUUID())
         }
         override fun markAccepted(backtestRunId: BacktestRunId, claimToken: UUID, computeRunId: String) = Unit
@@ -201,6 +259,14 @@ class PollSubmittedBacktestsServiceTest {
         override fun markRejected(backtestRunId: BacktestRunId, claimToken: UUID) = false
         override fun scheduleNextPoll(backtestRunId: BacktestRunId, claimToken: UUID, nextAttemptAt: Instant) = Unit
         override fun markTerminal(backtestRunId: BacktestRunId, claimToken: UUID) { terminal = true }
+    }
+
+    private class RecordingFailureObserver : BacktestFailureObserver {
+        val observations = mutableListOf<ComputeBacktestFailureObservation>()
+
+        override fun recordComputeFailure(observation: ComputeBacktestFailureObservation) {
+            observations += observation
+        }
     }
 
     private class NoOpTransactionManager : PlatformTransactionManager {

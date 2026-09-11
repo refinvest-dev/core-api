@@ -11,6 +11,8 @@ import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatus
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusClient
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusLookup
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusValue
+import com.refinvest.core.backtest.port.outbound.observability.BacktestFailureObserver
+import com.refinvest.core.backtest.port.outbound.observability.ComputeBacktestFailureObservation
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchStore
 import org.springframework.stereotype.Service
@@ -24,6 +26,7 @@ open class PollSubmittedBacktestsService(
     private val backtestRunStore: BacktestRunStore,
     private val recordBacktestRunExecutionUseCase: RecordBacktestRunExecutionUseCase,
     private val computeBacktestStatusClient: ComputeBacktestStatusClient,
+    private val backtestFailureObserver: BacktestFailureObserver,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
 ) : PollSubmittedBacktestsUseCase {
@@ -36,23 +39,30 @@ open class PollSubmittedBacktestsService(
             computeRunId = dispatch.computeRunId,
             backtestRunId = dispatch.backtestRunId,
         )
-        transactionTemplate.execute {
+        val failureObservation = transactionTemplate.execute {
             applyLookup(dispatch, lookup)
         }
+        failureObservation?.let(backtestFailureObserver::recordComputeFailure)
         return true
     }
 
     private fun applyLookup(
         dispatch: com.refinvest.core.backtest.port.outbound.persistence.dispatch.ClaimedSubmittedBacktestComputeDispatch,
         lookup: ComputeBacktestStatusLookup,
-    ) {
-        when (lookup) {
-            is ComputeBacktestStatusLookup.RetryLater -> backtestComputeDispatchStore.scheduleNextPoll(
-                dispatch.backtestRunId,
-                dispatch.claimToken,
-                clock.instant().plus(lookup.retryAfter),
-            )
-            ComputeBacktestStatusLookup.NotFound -> failForUnavailableRuntime(dispatch)
+    ): ComputeBacktestFailureObservation? {
+        return when (lookup) {
+            is ComputeBacktestStatusLookup.RetryLater -> {
+                backtestComputeDispatchStore.scheduleNextPoll(
+                    dispatch.backtestRunId,
+                    dispatch.claimToken,
+                    clock.instant().plus(lookup.retryAfter),
+                )
+                null
+            }
+            ComputeBacktestStatusLookup.NotFound -> {
+                failForUnavailableRuntime(dispatch)
+                null
+            }
             is ComputeBacktestStatusLookup.Found -> applyStatus(dispatch, lookup.status)
         }
     }
@@ -60,22 +70,28 @@ open class PollSubmittedBacktestsService(
     private fun applyStatus(
         dispatch: com.refinvest.core.backtest.port.outbound.persistence.dispatch.ClaimedSubmittedBacktestComputeDispatch,
         computeStatus: ComputeBacktestStatus,
-    ) {
-        when (computeStatus.status) {
-            ComputeBacktestStatusValue.PENDING -> scheduleNextPoll(dispatch)
+    ): ComputeBacktestFailureObservation? {
+        return when (computeStatus.status) {
+            ComputeBacktestStatusValue.PENDING -> {
+                scheduleNextPoll(dispatch)
+                null
+            }
             ComputeBacktestStatusValue.RUNNING -> {
                 if (computeStatus.hasExecutionMetadata()) {
                     startIfPending(dispatch.backtestRunId, computeStatus)
                 }
                 scheduleNextPoll(dispatch)
+                null
             }
             ComputeBacktestStatusValue.COMPLETED -> {
                 complete(dispatch.backtestRunId, computeStatus)
                 backtestComputeDispatchStore.markTerminal(dispatch.backtestRunId, dispatch.claimToken)
+                null
             }
             ComputeBacktestStatusValue.FAILED -> {
-                fail(dispatch.backtestRunId, computeStatus)
+                val failureObservation = fail(dispatch.backtestRunId, computeStatus)
                 backtestComputeDispatchStore.markTerminal(dispatch.backtestRunId, dispatch.claimToken)
+                failureObservation
             }
         }
     }
@@ -100,10 +116,13 @@ open class PollSubmittedBacktestsService(
         }
     }
 
-    private fun fail(backtestRunId: com.refinvest.core.backtest.domain.valueobject.BacktestRunId, status: ComputeBacktestStatus) {
-        val backtestRun = backtestRunStore.findById(backtestRunId) ?: return
+    private fun fail(
+        backtestRunId: com.refinvest.core.backtest.domain.valueobject.BacktestRunId,
+        status: ComputeBacktestStatus,
+    ): ComputeBacktestFailureObservation? {
+        val backtestRun = backtestRunStore.findById(backtestRunId) ?: return null
         val failureReason = requireNotNull(status.failureReason) { "FAILED Compute status requires a failureReason" }
-        when (backtestRun.status) {
+        return when (backtestRun.status) {
             BacktestRunStatus.PENDING -> {
                 if (status.actualPeriod == null || status.datasetSnapshotId == null || status.engineVersion == null) {
                     recordBacktestRunExecutionUseCase.execute(
@@ -113,13 +132,25 @@ open class PollSubmittedBacktestsService(
                     startIfPending(backtestRunId, status)
                     recordBacktestRunExecutionUseCase.execute(FailBacktestRunCommand(backtestRunId, failureReason, status.errorCode))
                 }
+                backtestRun.toFailureObservation(status.errorCode)
             }
-            BacktestRunStatus.RUNNING -> recordBacktestRunExecutionUseCase.execute(
-                FailBacktestRunCommand(backtestRunId, failureReason, status.errorCode),
-            )
-            BacktestRunStatus.COMPLETED, BacktestRunStatus.FAILED -> Unit
+            BacktestRunStatus.RUNNING -> {
+                recordBacktestRunExecutionUseCase.execute(
+                    FailBacktestRunCommand(backtestRunId, failureReason, status.errorCode),
+                )
+                backtestRun.toFailureObservation(status.errorCode)
+            }
+            BacktestRunStatus.COMPLETED, BacktestRunStatus.FAILED -> null
         }
     }
+
+    private fun com.refinvest.core.backtest.domain.BacktestRun.toFailureObservation(errorCode: String?) =
+        ComputeBacktestFailureObservation(
+            backtestRunId = id,
+            strategyId = strategyId,
+            strategyVersionId = strategyVersionId,
+            errorCode = errorCode,
+        )
 
     private fun failForUnavailableRuntime(
         dispatch: com.refinvest.core.backtest.port.outbound.persistence.dispatch.ClaimedSubmittedBacktestComputeDispatch,
