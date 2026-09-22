@@ -1,0 +1,7 @@
+# Activate explicitly in a private development or verification environment.
+# SecurityConfiguration still requires authentication for /actuator/prometheus.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus

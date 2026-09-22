@@ -12,6 +12,8 @@ import org.springframework.http.MediaType
 import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import java.net.http.HttpClient
 import java.time.Duration
 
@@ -24,13 +26,16 @@ class RestClientComputeClient private constructor(
     constructor(
         @Value("\${refinvest.compute.base-url:http://localhost:8000}") baseUrl: String,
         @Value("\${refinvest.compute.api-key:}") apiKey: String,
-    ) : this(createRestClient(baseUrl), apiKey)
+        registry: MeterRegistry,
+    ) : this(createRestClient(baseUrl, registry), apiKey)
 
     internal constructor(
         baseUrl: String,
         apiKey: String,
         restClientBuilder: RestClient.Builder,
-    ) : this(restClientBuilder.baseUrl(baseUrl).build(), apiKey)
+        registry: MeterRegistry = SimpleMeterRegistry(),
+    ) : this(restClientBuilder.baseUrl(baseUrl)
+        .requestInterceptor(ComputeClientTimingInterceptor(registry, "submit")).build(), apiKey)
 
     override fun requestBacktest(request: ComputeBacktestRequest): ComputeBacktestSubmission = try {
         restClient.post()
@@ -54,7 +59,7 @@ class RestClientComputeClient private constructor(
                 }
             }
     } catch (exception: Exception) {
-        logger.warn("Compute backtest submission failed; scheduling a retry.", exception)
+        logger.warn("Compute backtest submission failed; scheduling a retry ({})", exception.javaClass.simpleName)
         ComputeBacktestSubmission.RetryLater(RETRY_AFTER_TRANSIENT_FAILURE)
     }
 
@@ -108,8 +113,9 @@ class RestClientComputeClient private constructor(
         val RETRY_AFTER_SERVICE_UNAVAILABLE: Duration = Duration.ofSeconds(30)
         val RETRY_AFTER_TRANSIENT_FAILURE: Duration = Duration.ofSeconds(10)
 
-        fun createRestClient(baseUrl: String): RestClient = RestClient.builder()
+        fun createRestClient(baseUrl: String, registry: MeterRegistry): RestClient = RestClient.builder()
             .baseUrl(baseUrl)
+            .requestInterceptor(ComputeClientTimingInterceptor(registry, "submit"))
             .requestFactory(
                 JdkClientHttpRequestFactory(
                     HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build(),

@@ -66,6 +66,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.mock.web.MockHttpSession
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
+import io.micrometer.core.instrument.MeterRegistry
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.time.Instant
@@ -107,6 +108,7 @@ class RefinvestApplicationTests(
     @Autowired private val socialLoginSuccessHandler: SocialLoginSuccessHandler,
     @Autowired private val assetDataClient: AssetDataClientTestDouble,
     @Autowired private val mockMvc: MockMvc,
+    @Autowired private val meterRegistry: MeterRegistry,
     @LocalServerPort private val port: Int,
 ) {
 
@@ -911,6 +913,7 @@ class RefinvestApplicationTests(
     @Test
     fun `polls a pending backtest run through HTTP after it is created`() {
         seedStrategyVersion()
+        val previousSubmissions = meterRegistry.find("refinvest.backtest.submissions").counter()?.count() ?: 0.0
         val created = authenticatedHttpClient().send(
             authenticatedRequest(URI("http://localhost:$port/strategy-versions/42/backtests"))
                 .header("Content-Type", "application/json")
@@ -928,6 +931,12 @@ class RefinvestApplicationTests(
         )
         val runId = "\\\"id\\\":\\\"(\\d+)\\\"".toRegex().find(created.body())?.groupValues?.get(1)
         assertTrue(created.statusCode() == 202 && runId != null, created.body())
+        assertEquals(previousSubmissions + 1.0, meterRegistry.get("refinvest.backtest.submissions").counter().count())
+        assertTrue((meterRegistry.find("http.server.requests")
+            .tags("method", "POST", "uri", "/strategy-versions/{versionId}/backtests")
+            .timer()?.count() ?: 0L) > 0L)
+        assertEquals(emptySet(), meterRegistry.get("refinvest.backtest.submissions")
+            .counter().id.tags.map { it.key }.toSet())
 
         val polled = authenticatedHttpClient().send(
             authenticatedRequest(URI("http://localhost:$port/backtest-runs/$runId")).GET().build(),
@@ -992,6 +1001,8 @@ class RefinvestApplicationTests(
     @Test
     fun `records a completed execution and exposes its persisted result through HTTP`() {
         seedStrategyVersion()
+        val previousCompleted = meterRegistry.find("refinvest.backtest.terminal")
+            .tag("status", "COMPLETED").counter()?.count() ?: 0.0
         val created = authenticatedHttpClient().send(
             authenticatedRequest(URI("http://localhost:$port/strategy-versions/42/backtests"))
                 .header("Content-Type", "application/json")
@@ -1021,6 +1032,10 @@ class RefinvestApplicationTests(
         recordBacktestRunExecutionUseCase.execute(
             CompleteBacktestRunCommand(BacktestRunId(runId), completedResult(runId, "snapshot-$runId")),
         )
+        assertEquals(previousCompleted + 1.0, meterRegistry.get("refinvest.backtest.terminal")
+            .tag("status", "COMPLETED").counter().count())
+        assertEquals(setOf("status"), meterRegistry.get("refinvest.backtest.terminal")
+            .tag("status", "COMPLETED").counter().id.tags.map { it.key }.toSet())
 
         val response = authenticatedHttpClient().send(
             authenticatedRequest(URI("http://localhost:$port/backtest-runs/$runId")).GET().build(),

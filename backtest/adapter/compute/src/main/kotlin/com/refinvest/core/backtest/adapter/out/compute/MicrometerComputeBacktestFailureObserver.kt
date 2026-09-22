@@ -11,16 +11,10 @@ class MicrometerComputeBacktestFailureObserver(
     private val meterRegistry: MeterRegistry,
 ) : BacktestFailureObserver {
     override fun recordComputeFailure(observation: ComputeBacktestFailureObservation) {
-        val errorCode = observation.errorCode?.takeIf(String::isNotBlank) ?: UNSPECIFIED_ERROR_CODE
+        val errorCode = observation.errorCode?.takeIf { it in KNOWN_ERROR_CODES } ?: UNSPECIFIED_ERROR_CODE
 
-        logger.atWarn()
-            .addKeyValue("event", FAILED_EVENT)
-            .addKeyValue("terminal_status", TERMINAL_STATUS)
-            .addKeyValue("error_code", errorCode)
-            .addKeyValue("backtest_run_id", observation.backtestRunId.value)
-            .addKeyValue("strategy_id", observation.strategyId.value)
-            .addKeyValue("strategy_version_id", observation.strategyVersionId.value)
-            .log("Compute backtest run reached a terminal failed state")
+        logger.warn("event={} runId={} status={} errorCode={}",
+            FAILED_EVENT, observation.backtestRunId.value, TERMINAL_STATUS, errorCode)
 
         meterRegistry.counter(
             FAILED_METRIC,
@@ -34,6 +28,10 @@ class MicrometerComputeBacktestFailureObserver(
         const val TERMINAL_STATUS = "FAILED"
         const val UNSPECIFIED_ERROR_CODE = "UNSPECIFIED"
         const val FAILED_METRIC = "backtest.runs.failed"
+        val KNOWN_ERROR_CODES = setOf(
+            "MISSING_REQUIRED_DATA", "DATASET_CORRUPTION", "CALENDAR_RESOLUTION_FAILED",
+            "PRICE_DATA_MISSING", "DSL_INVALID",
+        )
 
         val logger = LoggerFactory.getLogger(MicrometerComputeBacktestFailureObserver::class.java)
     }
