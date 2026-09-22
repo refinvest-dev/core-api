@@ -30,6 +30,9 @@ import org.springframework.test.web.client.match.MockRestRequestMatchers.request
 import org.springframework.test.web.client.response.MockRestResponseCreators.withAccepted
 import org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest
 import org.springframework.web.client.RestClient
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import java.io.IOException
+import org.springframework.test.web.client.response.MockRestResponseCreators.withException
 
 class RestClientComputeClientTest {
     @Test
@@ -57,6 +60,7 @@ class RestClientComputeClientTest {
 
     @Test
     fun `maps an error code from a rejected Compute dispatch`() {
+        val registry = SimpleMeterRegistry()
         val restClientBuilder = RestClient.builder()
         val server = MockRestServiceServer.bindTo(restClientBuilder).build()
         server.expect(requestTo("http://compute/backtests"))
@@ -67,11 +71,32 @@ class RestClientComputeClientTest {
                     .body("""{"message":"Invalid DSL","errorCode":"DSL_INVALID"}"""),
             )
 
-        val submission = RestClientComputeClient("http://compute", "test-key", restClientBuilder)
+        val submission = RestClientComputeClient("http://compute", "test-key", restClientBuilder, registry)
             .requestBacktest(testRequest())
 
         assertIs<ComputeBacktestSubmission.Rejected>(submission)
         assertEquals("DSL_INVALID", submission.errorCode)
+        assertEquals(1L, registry.get("refinvest.core.compute.client")
+            .tag("operation", "submit").tag("outcome", "http_error").timer().count())
+        assertEquals(setOf("operation", "outcome"), registry.meters.single().id.tags.map { it.key }.toSet())
+        server.verify()
+    }
+
+    @Test
+    fun `records transport failure once for a submit attempt`() {
+        val registry = SimpleMeterRegistry()
+        val builder = RestClient.builder()
+        val server = MockRestServiceServer.bindTo(builder).build()
+        server.expect(requestTo("http://compute/backtests"))
+            .andRespond(withException(IOException("timeout")))
+
+        val result = RestClientComputeClient("http://compute", "test-key", builder, registry)
+            .requestBacktest(testRequest())
+
+        assertIs<ComputeBacktestSubmission.RetryLater>(result)
+        assertEquals(1L, registry.get("refinvest.core.compute.client")
+            .tag("operation", "submit").tag("outcome", "transport_error").timer().count())
+        assertEquals(setOf("operation", "outcome"), registry.meters.single().id.tags.map { it.key }.toSet())
         server.verify()
     }
 

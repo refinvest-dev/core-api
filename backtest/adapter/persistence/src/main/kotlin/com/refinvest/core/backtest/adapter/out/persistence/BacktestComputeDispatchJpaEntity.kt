@@ -32,6 +32,10 @@ class BacktestComputeDispatchJpaEntity(
     var createdAt: Instant,
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant,
+    @Column(name = "dispatch_attempt_count", nullable = false, columnDefinition = "integer default 0")
+    var dispatchAttemptCount: Int = 0,
+    @Column(name = "poll_retry_pending", nullable = false, columnDefinition = "boolean default false")
+    var pollRetryPending: Boolean = false,
 )
 
 enum class BacktestComputeDispatchStatusJpa {

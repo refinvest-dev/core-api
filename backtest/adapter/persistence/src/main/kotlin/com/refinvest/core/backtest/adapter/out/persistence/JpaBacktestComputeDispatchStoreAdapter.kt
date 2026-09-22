@@ -9,6 +9,9 @@ import com.refinvest.core.backtest.port.outbound.persistence.dispatch.PendingBac
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Timer
+import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -16,6 +19,7 @@ import java.util.UUID
 @Repository
 class JpaBacktestComputeDispatchStoreAdapter(
     private val dispatchJpaStore: BacktestComputeDispatchJpaStore,
+    private val meterRegistry: MeterRegistry,
 ) : BacktestComputeDispatchStore {
     override fun enqueue(dispatch: PendingBacktestComputeDispatch) {
         dispatchJpaStore.save(
@@ -28,6 +32,10 @@ class JpaBacktestComputeDispatchStoreAdapter(
                 updatedAt = dispatch.createdAt,
             ),
         )
+        afterCommit {
+            meterRegistry.counter("refinvest.backtest.submissions").increment()
+            logger.info("event=backtest_submitted runId={}", dispatch.backtestRunId.value)
+        }
     }
 
     @Transactional
@@ -38,9 +46,13 @@ class JpaBacktestComputeDispatchStoreAdapter(
             PageRequest.of(0, 1),
         ).firstOrNull() ?: return null
         val claimToken = UUID.randomUUID()
+        val scheduledAt = dispatch.nextAttemptAt
+        val retry = dispatch.dispatchAttemptCount > 0
+        dispatch.dispatchAttemptCount++
         dispatch.leaseToken = claimToken
         dispatch.leaseExpiresAt = now.plus(leaseDuration)
         dispatch.updatedAt = now
+        observeAttempt("dispatch", dispatch.backtestRunId, scheduledAt, Instant.now(), retry)
         return ClaimedBacktestComputeDispatch(
             backtestRunId = BacktestRunId(dispatch.backtestRunId),
             idempotencyKey = ComputeIdempotencyKey(dispatch.idempotencyKey),
@@ -59,9 +71,13 @@ class JpaBacktestComputeDispatchStoreAdapter(
             PageRequest.of(0, 1),
         ).firstOrNull() ?: return null
         val claimToken = UUID.randomUUID()
+        val scheduledAt = dispatch.nextAttemptAt
+        val retry = dispatch.pollRetryPending || dispatch.leaseToken != null
+        dispatch.pollRetryPending = false
         dispatch.leaseToken = claimToken
         dispatch.leaseExpiresAt = now.plus(leaseDuration)
         dispatch.updatedAt = now
+        observeAttempt("poll", dispatch.backtestRunId, scheduledAt, Instant.now(), retry)
         return ClaimedSubmittedBacktestComputeDispatch(
             backtestRunId = BacktestRunId(dispatch.backtestRunId),
             computeRunId = requireNotNull(dispatch.computeRunId),
@@ -111,6 +127,18 @@ class JpaBacktestComputeDispatchStoreAdapter(
             dispatch.leaseToken = null
             dispatch.leaseExpiresAt = null
             dispatch.nextAttemptAt = nextAttemptAt
+            dispatch.pollRetryPending = false
+            dispatch.updatedAt = now
+        }
+    }
+
+    @Transactional
+    override fun schedulePollRetry(backtestRunId: BacktestRunId, claimToken: UUID, nextAttemptAt: Instant) {
+        updateSubmitted(backtestRunId, claimToken) { dispatch, now ->
+            dispatch.leaseToken = null
+            dispatch.leaseExpiresAt = null
+            dispatch.nextAttemptAt = nextAttemptAt
+            dispatch.pollRetryPending = true
             dispatch.updatedAt = now
         }
     }
@@ -145,5 +173,19 @@ class JpaBacktestComputeDispatchStoreAdapter(
         if (dispatch.status == BacktestComputeDispatchStatusJpa.SUBMITTED && dispatch.leaseToken == claimToken) {
             update(dispatch, Instant.now())
         }
+    }
+
+    private fun observeAttempt(operation: String, runId: Long, scheduledAt: Instant, startedAt: Instant, retry: Boolean) {
+        afterCommit {
+            Timer.builder("refinvest.core.backtest.scheduler.lag").tag("operation", operation)
+                .publishPercentileHistogram().register(meterRegistry)
+                .record(Duration.between(scheduledAt, startedAt).coerceAtLeast(Duration.ZERO))
+            if (retry) meterRegistry.counter("refinvest.backtest.retries", "operation", operation).increment()
+            logger.info("event=backtest_attempt runId={} operation={} retry={}", runId, operation, retry)
+        }
+    }
+
+    private companion object {
+        val logger = LoggerFactory.getLogger(JpaBacktestComputeDispatchStoreAdapter::class.java)
     }
 }

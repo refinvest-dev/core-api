@@ -52,7 +52,7 @@ open class PollSubmittedBacktestsService(
     ): ComputeBacktestFailureObservation? {
         return when (lookup) {
             is ComputeBacktestStatusLookup.RetryLater -> {
-                backtestComputeDispatchStore.scheduleNextPoll(
+                backtestComputeDispatchStore.schedulePollRetry(
                     dispatch.backtestRunId,
                     dispatch.claimToken,
                     clock.instant().plus(lookup.retryAfter),

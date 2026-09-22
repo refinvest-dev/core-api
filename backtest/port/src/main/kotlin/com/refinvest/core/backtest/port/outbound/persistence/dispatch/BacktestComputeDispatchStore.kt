@@ -21,6 +21,9 @@ interface BacktestComputeDispatchStore {
 
     fun scheduleNextPoll(backtestRunId: BacktestRunId, claimToken: UUID, nextAttemptAt: Instant)
 
+    fun schedulePollRetry(backtestRunId: BacktestRunId, claimToken: UUID, nextAttemptAt: Instant) =
+        scheduleNextPoll(backtestRunId, claimToken, nextAttemptAt)
+
     fun markTerminal(backtestRunId: BacktestRunId, claimToken: UUID)
 }
 

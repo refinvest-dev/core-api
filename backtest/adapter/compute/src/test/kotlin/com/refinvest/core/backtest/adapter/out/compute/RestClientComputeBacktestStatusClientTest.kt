@@ -18,6 +18,7 @@ import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 
 class RestClientComputeBacktestStatusClientTest {
     @Test
@@ -63,6 +64,25 @@ class RestClientComputeBacktestStatusClientTest {
         assertEquals("PRICE_DATA_MISSING", status.errorCode)
         assertEquals("snapshot-1", status.datasetSnapshotId!!.value)
         fixture.server.verify()
+    }
+
+    @Test
+    fun `records poll HTTP error without a run id label`() {
+        val registry = SimpleMeterRegistry()
+        val builder = RestClient.builder()
+        val server = MockRestServiceServer.bindTo(builder).build()
+        server.expect(requestTo("http://compute/backtests/compute-run"))
+            .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withServerError())
+        val client = RestClientComputeBacktestStatusClient(
+            "http://compute", "test-key",
+            JsonMapper.builder().addModule(KotlinModule.Builder().build()).build(), builder, registry,
+        )
+
+        assertIs<ComputeBacktestStatusLookup.RetryLater>(client.getBacktestStatus("compute-run", BacktestRunId(42L)))
+        assertEquals(1L, registry.get("refinvest.core.compute.client")
+            .tag("operation", "poll").tag("outcome", "http_error").timer().count())
+        assertEquals(setOf("operation", "outcome"), registry.meters.single().id.tags.map { it.key }.toSet())
+        server.verify()
     }
 
     @Test

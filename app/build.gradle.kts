@@ -29,6 +29,7 @@ dependencies {
     implementation(libs.spring.boot.starter.web)
     implementation(libs.kotlin.reflect)
     runtimeOnly(libs.postgresql)
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.spring.boot.starter.oauth2.client)
     testImplementation(libs.spring.boot.starter.oauth2.resource.server)

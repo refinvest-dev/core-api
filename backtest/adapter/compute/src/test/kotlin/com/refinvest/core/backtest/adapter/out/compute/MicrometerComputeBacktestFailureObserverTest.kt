@@ -43,6 +43,20 @@ class MicrometerComputeBacktestFailureObserverTest {
         )
     }
 
+    @Test
+    fun `unknown error code cannot create a metric label`() {
+        val registry = SimpleMeterRegistry()
+        val observer = MicrometerComputeBacktestFailureObserver(registry)
+
+        observer.recordComputeFailure(observation(errorCode = "member-7 user supplied error"))
+
+        assertEquals(
+            1.0,
+            registry.get("backtest.runs.failed").tag("error_code", "UNSPECIFIED").counter().count(),
+        )
+        assertEquals(setOf("source", "error_code"), registry.meters.single().id.tags.map { it.key }.toSet())
+    }
+
     private fun observation(errorCode: String?) = ComputeBacktestFailureObservation(
         backtestRunId = BacktestRunId(10L),
         strategyId = StrategyId(7L),

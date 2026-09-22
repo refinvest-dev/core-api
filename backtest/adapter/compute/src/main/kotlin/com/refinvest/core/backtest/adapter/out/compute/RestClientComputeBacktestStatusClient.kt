@@ -23,6 +23,8 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.net.http.HttpClient
@@ -41,14 +43,17 @@ class RestClientComputeBacktestStatusClient private constructor(
         @Value("\${refinvest.compute.base-url:http://localhost:8000}") baseUrl: String,
         @Value("\${refinvest.compute.api-key:}") apiKey: String,
         objectMapper: ObjectMapper,
-    ) : this(createRestClient(baseUrl), apiKey, objectMapper)
+        registry: MeterRegistry,
+    ) : this(createRestClient(baseUrl, registry), apiKey, objectMapper)
 
     internal constructor(
         baseUrl: String,
         apiKey: String,
         objectMapper: ObjectMapper,
         restClientBuilder: RestClient.Builder,
-    ) : this(restClientBuilder.baseUrl(baseUrl).build(), apiKey, objectMapper)
+        registry: MeterRegistry = SimpleMeterRegistry(),
+    ) : this(restClientBuilder.baseUrl(baseUrl)
+        .requestInterceptor(ComputeClientTimingInterceptor(registry, "poll")).build(), apiKey, objectMapper)
 
     override fun getBacktestStatus(
         computeRunId: String,
@@ -213,8 +218,9 @@ class RestClientComputeBacktestStatusClient private constructor(
         val RETRY_AFTER_SERVICE_UNAVAILABLE: Duration = Duration.ofSeconds(30)
         val RETRY_AFTER_TRANSIENT_FAILURE: Duration = Duration.ofSeconds(10)
 
-        fun createRestClient(baseUrl: String): RestClient = RestClient.builder()
+        fun createRestClient(baseUrl: String, registry: MeterRegistry): RestClient = RestClient.builder()
             .baseUrl(baseUrl)
+            .requestInterceptor(ComputeClientTimingInterceptor(registry, "poll"))
             .requestFactory(
                 JdkClientHttpRequestFactory(
                     HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build(),

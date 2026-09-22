@@ -12,22 +12,59 @@ import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
 import org.springframework.stereotype.Repository
+import io.micrometer.core.instrument.MeterRegistry
+import org.slf4j.LoggerFactory
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 
 @Repository
 class JpaBacktestRunStoreAdapter(
     private val backtestRunJpaStore: BacktestRunJpaStore,
     private val backtestResultJpaStore: BacktestResultJpaStore,
     private val resultPayloadMapper: BacktestResultPayloadMapper,
+    private val meterRegistry: MeterRegistry,
 ) : BacktestRunStore {
     override fun save(backtestRun: BacktestRun) {
-        backtestRunJpaStore.save(backtestRun.toEntity())
-        backtestRun.result?.let { result ->
-            backtestResultJpaStore.save(
-                BacktestResultJpaEntity(
-                    backtestRunId = backtestRun.id.value,
-                    resultPayload = resultPayloadMapper.serialize(result),
-                ),
-            )
+        val previousStatus = backtestRunJpaStore.findById(backtestRun.id.value).orElse(null)?.status
+        val terminal = backtestRun.status in setOf(BacktestRunStatus.COMPLETED, BacktestRunStatus.FAILED)
+        try {
+            backtestRunJpaStore.save(backtestRun.toEntity())
+            backtestRun.result?.let { result ->
+                backtestResultJpaStore.save(
+                    BacktestResultJpaEntity(
+                        backtestRunId = backtestRun.id.value,
+                        resultPayload = resultPayloadMapper.serialize(result),
+                    ),
+                )
+            }
+        } catch (exception: Exception) {
+            if (terminal) {
+                meterRegistry.counter("refinvest.core.backtest.terminal.persistence.failures").increment()
+                logger.warn("event=backtest_terminal_persistence_failed runId={}", backtestRun.id.value)
+            }
+            throw exception
+        }
+        if (terminal &&
+            previousStatus !in setOf(BacktestRunStatusJpa.COMPLETED, BacktestRunStatusJpa.FAILED)
+        ) {
+            val observeSuccess = {
+                meterRegistry.counter("refinvest.backtest.terminal", "status", backtestRun.status.name).increment()
+                logger.info("event=backtest_terminal_persisted runId={} status={}",
+                    backtestRun.id.value, backtestRun.status.name)
+            }
+            val observeFailure = {
+                meterRegistry.counter("refinvest.core.backtest.terminal.persistence.failures").increment()
+                logger.warn("event=backtest_terminal_persistence_failed runId={}", backtestRun.id.value)
+            }
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
+                    override fun afterCompletion(status: Int) {
+                        if (status == TransactionSynchronization.STATUS_COMMITTED) observeSuccess() else observeFailure()
+                    }
+                })
+            } else {
+                observeSuccess()
+            }
         }
     }
 
@@ -74,5 +111,9 @@ class JpaBacktestRunStoreAdapter(
             failureReason = failureReason,
             errorCode = errorCode,
         )
+    }
+
+    private companion object {
+        val logger = LoggerFactory.getLogger(JpaBacktestRunStoreAdapter::class.java)
     }
 }
