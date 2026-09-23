@@ -1,5 +1,8 @@
 # Activate explicitly in a private development or verification environment.
-# SecurityConfiguration still requires authentication for /actuator/prometheus.
+# The dedicated scrape account requires REFINVEST_METRICS_SCRAPE_PASSWORD.
+server:
+  address: 127.0.0.1
+
 management:
   endpoints:
     web:
