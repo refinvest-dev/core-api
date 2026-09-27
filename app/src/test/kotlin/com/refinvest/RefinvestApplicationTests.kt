@@ -111,6 +111,7 @@ class RefinvestApplicationTests(
     @Autowired private val meterRegistry: MeterRegistry,
     @LocalServerPort private val port: Int,
 ) {
+    private val httpClient = HttpClient.newHttpClient()
 
     @BeforeEach
     fun clearBacktestQuotaReservations() {
@@ -1156,9 +1157,7 @@ class RefinvestApplicationTests(
         )
     }
 
-    private fun authenticatedHttpClient(): HttpClient {
-        return HttpClient.newHttpClient()
-    }
+    private fun authenticatedHttpClient(): HttpClient = httpClient
 
     private fun authenticatedRequest(uri: URI, accessToken: String = accessToken()): HttpRequest.Builder = HttpRequest.newBuilder(uri)
         .header("Cookie", "REFINVEST_ACCESS_TOKEN=$accessToken; XSRF-TOKEN=test-csrf")
@@ -1182,7 +1181,7 @@ class RefinvestApplicationTests(
         memberId: Long = 1,
         audience: String = "refinvest-core-api-test",
         issuedAt: Instant = Instant.now(),
-        expiresAt: Instant = Instant.now().plusSeconds(300),
+        expiresAt: Instant = Instant.now().plusSeconds(3_600),
         validate: Boolean = true,
     ): String = jwtEncoder.encode(
             JwtEncoderParameters.from(
