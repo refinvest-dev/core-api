@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: core-api Public API
-  version: "0.1.0"
+  version: "0.2.0"
   description: |
     Web(`web`) → Core(`core-api`) 계약. Web은 이 스펙만 보고 구현하며,
     Compute(`compute-api`)를 직접 호출하지 않는다(`AGENTS.md` §3, `AI_AGENT.md` §4).
@@ -45,6 +45,16 @@ tags:
     description: Strategy Builder용 Asset 메타데이터와 향후 Data Explorer용 보류 시계열 프록시 (`docs/USECASES.md`, ADR-049)
   - name: account
     description: 소셜 로그인·세션·사용량·구독 (`docs/USECASES.md` Member / Auth / Subscription 모듈)
+  - name: trading-accounts
+    description: Trading Review account와 homogeneous Book (`docs/TRADING_REVIEW_API.md`)
+  - name: trading-imports
+    description: dual-artifact upload, validation, quality와 immutable LedgerRevision
+  - name: trading-analysis
+    description: pinned Revision 분석, Review, Metric, ReviewUnit과 evidence
+  - name: trading-reprocessing
+    description: immutable version/config reprocessing과 lineage
+  - name: trading-deletion
+    description: raw/session/Book/Account async deletion과 상태
 
 paths:
   # ============ Strategy ============
@@ -227,9 +237,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 periodNotAllowed:
-                  value: { code: BACKTEST_PERIOD_NOT_ALLOWED, message: Requested backtest period is not available for the current plan. }
+                  value: { code: BACKTEST_PERIOD_NOT_ALLOWED, message: Requested backtest period is not available for the current plan., traceId: trace-synthetic-001, retryable: false }
                 assetNotAllowed:
-                  value: { code: ASSET_NOT_ALLOWED_FOR_PLAN, message: Requested asset is not available for the current plan. }
+                  value: { code: ASSET_NOT_ALLOWED_FOR_PLAN, message: Requested asset is not available for the current plan., traceId: trace-synthetic-002, retryable: false }
         '429':
           description: 현재 tier의 월간 quota 또는 동시 실행 capacity가 소진됨.
           content:
@@ -238,9 +248,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 monthlyLimitExceeded:
-                  value: { code: BACKTEST_MONTHLY_LIMIT_EXCEEDED, message: Monthly backtest execution limit exceeded. }
+                  value: { code: BACKTEST_MONTHLY_LIMIT_EXCEEDED, message: Monthly backtest execution limit exceeded., traceId: trace-synthetic-003, retryable: false }
                 concurrencyLimitExceeded:
-                  value: { code: BACKTEST_CONCURRENCY_LIMIT_EXCEEDED, message: Concurrent backtest execution limit exceeded. }
+                  value: { code: BACKTEST_CONCURRENCY_LIMIT_EXCEEDED, message: Concurrent backtest execution limit exceeded., traceId: trace-synthetic-004, retryable: false }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /strategy-versions/{versionId}/backtest-runs/latest-completed:
@@ -347,6 +357,574 @@ paths:
                   page: { type: integer }
                   size: { type: integer }
                   total: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============ Trading Review Account / Book ============
+  /trading-accounts:
+    post:
+      operationId: createTradingAccount
+      tags: [trading-accounts]
+      summary: TradingAccount 생성 (`CreateTradingAccount`)
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTradingAccountRequest' }
+      responses:
+        '201':
+          description: 생성됨. 같은 idempotency request는 같은 Account를 반환한다.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingAccount' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    get:
+      operationId: listTradingAccounts
+      tags: [trading-accounts]
+      summary: TradingAccount 목록 (`ListTradingAccounts`)
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingAccountPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /trading-accounts/{tradingAccountId}:
+    get:
+      operationId: getTradingAccount
+      tags: [trading-accounts]
+      summary: TradingAccount 조회 (`GetTradingAccount`)
+      parameters:
+        - $ref: '#/components/parameters/TradingAccountId'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingAccount' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+    delete:
+      operationId: deleteTradingAccount
+      tags: [trading-deletion]
+      summary: TradingAccount subtree 비동기 삭제 (`DeleteTradingAccount`)
+      parameters:
+        - $ref: '#/components/parameters/TradingAccountId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      responses:
+        '202':
+          description: tombstone/access revoke가 commit되고 삭제 요청이 접수됨.
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeletionRequest' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /trading-accounts/{tradingAccountId}/books:
+    post:
+      operationId: createTradingBook
+      tags: [trading-accounts]
+      summary: homogeneous TradingBook 생성 (`CreateTradingBook`)
+      parameters:
+        - $ref: '#/components/parameters/TradingAccountId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateTradingBookRequest' } } }
+      responses:
+        '201':
+          description: 생성됨.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingBook' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+    get:
+      operationId: listTradingBooks
+      tags: [trading-accounts]
+      summary: Account의 TradingBook 목록 (`ListTradingBooks`)
+      parameters:
+        - $ref: '#/components/parameters/TradingAccountId'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingBookPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /trading-books/{tradingBookId}:
+    get:
+      operationId: getTradingBook
+      tags: [trading-accounts]
+      summary: TradingBook 조회 (`GetTradingBook`)
+      parameters: [ { $ref: '#/components/parameters/TradingBookId' } ]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingBook' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+    delete:
+      operationId: deleteTradingBook
+      tags: [trading-deletion]
+      summary: TradingBook subtree 비동기 삭제 (`DeleteTradingBook`)
+      parameters:
+        - $ref: '#/components/parameters/TradingBookId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      responses:
+        '202':
+          description: 삭제 요청 접수.
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeletionRequest' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ============ Trading Review Import / Ledger ============
+  /trading-books/{tradingBookId}/imports:
+    post:
+      operationId: createTradingImportSession
+      tags: [trading-imports]
+      summary: dual-artifact ImportSession 생성 (`CreateTradingImportSession`)
+      parameters:
+        - $ref: '#/components/parameters/TradingBookId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateTradingImportSessionRequest' } } }
+      responses:
+        '201':
+          description: "`RECEIVED` session 생성."
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingImportSession' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+    get:
+      operationId: listTradingImports
+      tags: [trading-imports]
+      summary: Book ImportSession 목록 (`ListTradingImports`)
+      parameters:
+        - $ref: '#/components/parameters/TradingBookId'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingImportSessionPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /trading-import-sessions/{importSessionId}:
+    get:
+      operationId: getTradingImportSession
+      tags: [trading-imports]
+      summary: Import 상태/결과 조회 (`GetTradingImportSession`)
+      parameters: [ { $ref: '#/components/parameters/ImportSessionId' } ]
+      responses:
+        '200':
+          description: "`ACCEPTED`이면 createdLedgerRevisionId가 필수다."
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingImportSession' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+    delete:
+      operationId: deleteTradingImportSession
+      tags: [trading-deletion]
+      summary: ImportSession과 dependent immutable Revision/result 삭제 (`DeleteTradingImportSession`)
+      parameters:
+        - $ref: '#/components/parameters/ImportSessionId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      responses:
+        '202':
+          description: 삭제 요청 접수.
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeletionRequest' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /trading-import-sessions/{importSessionId}/artifacts:
+    post:
+      operationId: uploadTradingImportArtifact
+      tags: [trading-imports]
+      summary: CSV artifact를 Core에 multipart upload (`UploadTradingImportArtifact`)
+      description: |
+        artifact당 최대 50 MiB. Core encrypted write/verification이 끝나야 `UPLOADED`다.
+        file upload도 JWT Cookie와 CSRF를 모두 요구하며 Compute로 직접 전송하지 않는다.
+      parameters:
+        - $ref: '#/components/parameters/ImportSessionId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/UploadTradingImportArtifactRequest' }
+            encoding:
+              metadata: { contentType: application/json }
+              file: { contentType: 'text/csv, application/vnd.ms-excel' }
+      responses:
+        '201':
+          description: artifact 저장/검증 완료.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingSourceArtifact' } } }
+        '200':
+          description: same role/hash idempotent replay; 기존 artifact 반환.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingSourceArtifact' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /trading-import-sessions/{importSessionId}/validation:
+    post:
+      operationId: validateTradingImportSession
+      tags: [trading-imports]
+      summary: 비동기 normalization/reconciliation 시작 (`ValidateTradingImportSession`)
+      parameters:
+        - $ref: '#/components/parameters/ImportSessionId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ValidateTradingImportSessionRequest' } } }
+      responses:
+        '202':
+          description: session이 `VALIDATING`; 이후 session을 polling한다.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingImportSession' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /trading-import-sessions/{importSessionId}/quality-report:
+    get:
+      operationId: getTradingImportQualityReport
+      tags: [trading-imports]
+      summary: Import validation/reconciliation quality 조회 (`GetTradingImportQualityReport`)
+      parameters: [ { $ref: '#/components/parameters/ImportSessionId' } ]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingQualityReport' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ResultUnavailable' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  /trading-source-artifacts/{artifactId}:
+    delete:
+      operationId: deleteTradingSourceArtifact
+      tags: [trading-deletion]
+      summary: raw-only 비동기 삭제 (`DeleteTradingSourceArtifact`)
+      parameters:
+        - $ref: '#/components/parameters/ArtifactId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      responses:
+        '202':
+          description: raw 접근 차단과 삭제 요청 접수. snapshot/ledger/result는 유지한다.
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeletionRequest' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /trading-books/{tradingBookId}/ledger-revisions:
+    get:
+      operationId: listLedgerRevisions
+      tags: [trading-imports]
+      summary: Book LedgerRevision 목록 (`ListLedgerRevisions`)
+      parameters:
+        - $ref: '#/components/parameters/TradingBookId'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/LedgerRevisionPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /ledger-revisions/{ledgerRevisionId}:
+    get:
+      operationId: getLedgerRevision
+      tags: [trading-imports]
+      summary: immutable LedgerRevision 조회 (`GetLedgerRevision`)
+      parameters: [ { $ref: '#/components/parameters/LedgerRevisionId' } ]
+      responses:
+        '200':
+          description: full canonical record는 포함하지 않는다.
+          content: { application/json: { schema: { $ref: '#/components/schemas/LedgerRevision' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  # ============ Trading Review Analysis / Evidence ============
+  /ledger-revisions/{ledgerRevisionId}/analyses:
+    post:
+      operationId: runTradingAnalysis
+      tags: [trading-analysis]
+      summary: pinned Revision 분석 시작 (`RunTradingAnalysis`)
+      parameters:
+        - $ref: '#/components/parameters/LedgerRevisionId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RunTradingAnalysisRequest' } } }
+      responses:
+        '202':
+          description: Run 접수. same logical request는 기존 Run/Result를 반환한다.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingAnalysisRun' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /trading-analysis-runs/{analysisRunId}:
+    get:
+      operationId: pollTradingAnalysisStatus
+      tags: [trading-analysis]
+      summary: AnalysisRun polling (`PollTradingAnalysisStatus`)
+      parameters: [ { $ref: '#/components/parameters/AnalysisRunId' } ]
+      responses:
+        '200':
+          description: "`COMPLETED`이면 resultId/resultHash 필수."
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingAnalysisRun' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  /trading-books/{tradingBookId}/analysis-runs:
+    get:
+      operationId: listTradingAnalysisRuns
+      tags: [trading-analysis]
+      summary: Book AnalysisRun 목록 (`ListTradingAnalysisRuns`)
+      parameters:
+        - $ref: '#/components/parameters/TradingBookId'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingAnalysisRunPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /trading-analysis-runs/{analysisRunId}/review:
+    get:
+      operationId: getTradingReview
+      tags: [trading-analysis]
+      summary: completed TradingReview 조회 (`GetTradingReview`)
+      parameters: [ { $ref: '#/components/parameters/AnalysisRunId' } ]
+      responses:
+        '200':
+          description: immutable Review result.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingReview' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ResultUnavailable' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  /trading-analysis-runs/{analysisRunId}/metrics/{metricId}:
+    get:
+      operationId: getBehaviorMetric
+      tags: [trading-analysis]
+      summary: BehaviorMetric 단건 조회 (`GetBehaviorMetric`)
+      parameters:
+        - $ref: '#/components/parameters/AnalysisRunId'
+        - name: metricId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/BehaviorMetricId' }
+      responses:
+        '200':
+          description: status와 value null/zero를 구분한다.
+          content: { application/json: { schema: { $ref: '#/components/schemas/BehaviorMetric' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ResultUnavailable' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  /trading-analysis-runs/{analysisRunId}/review-units:
+    get:
+      operationId: listReviewUnits
+      tags: [trading-analysis]
+      summary: AnalysisRun ReviewUnit 목록 (`ListReviewUnits`)
+      parameters:
+        - $ref: '#/components/parameters/AnalysisRunId'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - name: metricId
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/BehaviorMetricId' }
+        - name: membershipRole
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/EvidenceMembershipRole' }
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/ReviewUnitPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ResultUnavailable' }
+
+  /trading-analysis-runs/{analysisRunId}/review-units/{reviewUnitId}:
+    get:
+      operationId: getReviewUnit
+      tags: [trading-analysis]
+      summary: ReviewUnit 조회 (`GetReviewUnit`)
+      parameters:
+        - $ref: '#/components/parameters/AnalysisRunId'
+        - $ref: '#/components/parameters/ReviewUnitId'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/ReviewUnit' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ResultUnavailable' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  /trading-analysis-runs/{analysisRunId}/review-units/{reviewUnitId}/evidence:
+    get:
+      operationId: getReviewUnitEvidence
+      tags: [trading-analysis]
+      summary: allocation→record→source snapshot evidence 조회 (`GetReviewUnitEvidence`)
+      parameters:
+        - $ref: '#/components/parameters/AnalysisRunId'
+        - $ref: '#/components/parameters/ReviewUnitId'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+      responses:
+        '200':
+          description: raw 삭제 뒤에도 retained allowlist snapshot을 명시해 반환.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ReviewUnitEvidencePage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/ResultUnavailable' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  # ============ Trading Review Reprocessing ============
+  /trading-books/{tradingBookId}/reprocessing-runs:
+    post:
+      operationId: requestTradingReprocessing
+      tags: [trading-reprocessing]
+      summary: immutable 재처리 시작 (`RequestTradingReprocessing`)
+      parameters:
+        - $ref: '#/components/parameters/TradingBookId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RequestTradingReprocessingRequest' } } }
+      responses:
+        '202':
+          description: Run 접수; same logical success는 기존 Run/result 반환.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingReprocessingRun' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    get:
+      operationId: listTradingReprocessingRuns
+      tags: [trading-reprocessing]
+      summary: Book reprocessing 이력 (`ListTradingReprocessingRuns`)
+      parameters:
+        - $ref: '#/components/parameters/TradingBookId'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingReprocessingRunPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /trading-reprocessing-runs/{reprocessingRunId}:
+    get:
+      operationId: pollTradingReprocessingStatus
+      tags: [trading-reprocessing]
+      summary: ReprocessingRun 조회 (`PollTradingReprocessingStatus`)
+      parameters: [ { $ref: '#/components/parameters/ReprocessingRunId' } ]
+      responses:
+        '200':
+          description: source availability, child IDs, difference/failure/lineage 포함.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingReprocessingRun' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  /trading-reprocessing-runs/{reprocessingRunId}/cancellation:
+    post:
+      operationId: cancelTradingReprocessing
+      tags: [trading-reprocessing]
+      summary: publication 전 재처리 best-effort 취소 (`CancelTradingReprocessing`)
+      parameters:
+        - $ref: '#/components/parameters/ReprocessingRunId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      responses:
+        '202':
+          description: 취소 요청 접수 또는 existing terminal Run 반환.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingReprocessingRun' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /trading-deletion-requests/{deletionRequestId}:
+    get:
+      operationId: getTradingDeletionRequest
+      tags: [trading-deletion]
+      summary: async deletion 상태 조회 (`GetTradingDeletionRequest`)
+      parameters: [ { $ref: '#/components/parameters/DeletionRequestId' } ]
+      responses:
+        '200':
+          description: primary/object/runtime/backup purge 상태와 safe failure.
+          content: { application/json: { schema: { $ref: '#/components/schemas/DeletionRequest' } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -484,6 +1062,8 @@ paths:
       responses:
         '204':
           description: CSRF Cookie가 설정됨.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /auth/refresh:
     post:
@@ -594,6 +1174,67 @@ components:
       in: query
       required: false
       schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    CsrfToken:
+      name: X-XSRF-TOKEN
+      in: header
+      required: true
+      description: "`XSRF-TOKEN` Cookie 값을 echo한다. Trading Review file upload도 예외가 아니다."
+      schema: { type: string, minLength: 1, maxLength: 512 }
+    PublicIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: owner+operation 범위의 opaque transport retry identity. same payload는 기존 resource, different payload는 409.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._~-]+$'
+    TradingAccountId:
+      name: tradingAccountId
+      in: path
+      required: true
+      schema: { type: string }
+    TradingBookId:
+      name: tradingBookId
+      in: path
+      required: true
+      schema: { type: string }
+    ImportSessionId:
+      name: importSessionId
+      in: path
+      required: true
+      schema: { type: string }
+    ArtifactId:
+      name: artifactId
+      in: path
+      required: true
+      schema: { type: string }
+    LedgerRevisionId:
+      name: ledgerRevisionId
+      in: path
+      required: true
+      schema: { type: string }
+    AnalysisRunId:
+      name: analysisRunId
+      in: path
+      required: true
+      schema: { type: string }
+    ReviewUnitId:
+      name: reviewUnitId
+      in: path
+      required: true
+      schema: { type: string }
+    ReprocessingRunId:
+      name: reprocessingRunId
+      in: path
+      required: true
+      schema: { type: string }
+    DeletionRequestId:
+      name: deletionRequestId
+      in: path
+      required: true
+      schema: { type: string }
 
   responses:
     Unauthorized:
@@ -611,14 +1252,1057 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: CSRF 또는 authorization 실패. 다른 owner resource는 이 응답 대신 404로 숨긴다.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: idempotency payload 또는 현재 resource state와 충돌.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Gone:
+      description: owner가 삭제한 resource 또는 raw-required operation의 source가 더 이상 없음.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    UnprocessableEntity:
+      description: syntactically valid하지만 현재 계약/도메인 precondition을 만족하지 못함.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    PayloadTooLarge:
+      description: artifact가 50 MiB 공개 계약 상한을 초과함.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    UnsupportedMediaType:
+      description: 허용되지 않은 multipart/file content type.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ServiceUnavailable:
+      description: 일시적 storage/Compute/capacity failure. retryable과 필요 시 Retry-After를 확인한다.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ResultUnavailable:
+      description: 비동기 run/result가 아직 완료되지 않아 요청한 read model이 없음.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
 
   schemas:
     ErrorResponse:
       type: object
-      required: [code, message]
+      required: [code, message, traceId, retryable]
       properties:
         code: { type: string }
         message: { type: string }
+        traceId:
+          type: string
+          description: 거래 payload와 무관한 correlation identifier.
+        retryable: { type: boolean }
+        details:
+          type: array
+          items: { $ref: '#/components/schemas/ErrorDetail' }
+          description: raw source value/identifier/storage locator를 포함하지 않는 allowlisted detail.
+    ErrorDetail:
+      type: object
+      required: [field, reason]
+      additionalProperties: false
+      properties:
+        field: { type: string }
+        reason: { type: string }
+        rowNumber: { type: integer, minimum: 1 }
+        artifactRole: { $ref: '#/components/schemas/TradingArtifactRole' }
+
+    # ---- Trading Review common values ----
+    DecimalString:
+      type: string
+      pattern: '^-?(0|[1-9][0-9]*)(\.[0-9]+)?$'
+      description: Arbitrary-precision decimal plain string. Exponent/leading plus 금지; source field는 sourceScale을 함께 보존한다.
+      example: '123.4500'
+    Sha256:
+      type: string
+      pattern: '^[a-f0-9]{64}$'
+      description: lowercase SHA-256 hex.
+    VersionIdentifier:
+      type: string
+      minLength: 1
+      maxLength: 200
+      description: immutable exact version ID. `latest` 같은 mutable alias는 저장 응답에 나타나지 않는다.
+    Money:
+      type: object
+      required: [amount, currency, sourceScale]
+      properties:
+        amount: { $ref: '#/components/schemas/DecimalString' }
+        currency: { type: string, minLength: 1, maxLength: 32 }
+        sourceScale: { type: integer, minimum: 0 }
+    Quantity:
+      type: object
+      required: [value, sourceScale]
+      properties:
+        value: { $ref: '#/components/schemas/DecimalString' }
+        sourceScale: { type: integer, minimum: 0 }
+    Price:
+      type: object
+      required: [value, sourceScale]
+      properties:
+        value: { $ref: '#/components/schemas/DecimalString' }
+        sourceScale: { type: integer, minimum: 0 }
+    Rational:
+      type: object
+      required: [numerator, denominator]
+      properties:
+        numerator: { type: string, pattern: '^-?(0|[1-9][0-9]*)$' }
+        denominator: { type: string, pattern: '^[1-9][0-9]*$' }
+      description: 기약분수. Ratio와 percentage point에 사용하며 denominator는 양수다.
+    DurationValue:
+      type: object
+      required: [microseconds]
+      properties:
+        microseconds: { type: integer, format: int64, minimum: 0 }
+        iso8601: { type: string, pattern: '^P' }
+    InstantInterval:
+      type: object
+      required: [startInclusive, endExclusive, precision]
+      properties:
+        startInclusive: { type: string, format: date-time }
+        endExclusive: { type: string, format: date-time }
+        precision: { type: string, enum: [MINUTE, EXACT_INSTANT] }
+      description: Position History minute value는 MINUTE interval이며 한 exact instant로 바꾸지 않는다.
+    AnalysisPeriod:
+      type: object
+      required: [startInclusive, endExclusive]
+      properties:
+        startInclusive: { type: string, format: date-time }
+        endExclusive: { type: string, format: date-time }
+    PageMetadata:
+      type: object
+      required: [page, size, total]
+      properties:
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, format: int64, minimum: 0 }
+    StructuredFailure:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code: { $ref: '#/components/schemas/TradingReviewFailureCode' }
+        message: { type: string }
+        retryable: { type: boolean }
+        details:
+          type: array
+          items: { $ref: '#/components/schemas/ErrorDetail' }
+      description: safe failure only; raw value/identifier/filename/path/URL 금지.
+    TradingReviewFailureCode:
+      type: string
+      enum:
+        - MISSING_REQUIRED_ARTIFACT
+        - FILE_FORMAT_INVALID
+        - REQUIRED_COLUMN_MISSING
+        - UNSUPPORTED_SOURCE_SCHEMA
+        - UNSUPPORTED_PRODUCT
+        - UNSUPPORTED_POSITION_MODE
+        - RECORD_CONFLICT
+        - CHECKSUM_MISMATCH
+        - SOURCE_ARTIFACT_DELETED
+        - ARTIFACT_REFERENCE_EXPIRED
+        - MISSING_CAPABILITY
+        - INVALID_ANALYSIS_CONFIG
+        - INCOMPLETE_ANALYSIS_RESULT
+        - RESULT_NOT_AVAILABLE
+        - VERSION_UNAVAILABLE
+        - VERSION_INCOMPATIBLE
+        - TARGET_VERSION_RETIRED
+        - REPROCESSING_SOURCE_UNAVAILABLE
+        - REPROCESSING_NOT_SUPPORTED
+        - CANONICAL_SCHEMA_INCOMPATIBLE
+        - INSTRUMENT_TERMS_UNAVAILABLE
+        - REPROCESSING_CONFLICT
+        - REPROCESSING_CANCELLED
+        - RESULT_HASH_MISMATCH
+        - STALE_RESULT_AFTER_DELETION
+        - LINEAGE_INCONSISTENT
+        - NOT_COMPARABLE_VERSION
+        - ARTIFACT_DELETION_FAILED
+        - DERIVED_DATA_DELETION_FAILED
+        - DELETION_PARTIALLY_COMPLETED
+        - DELETION_BLOCKED_BY_ACTIVE_JOB
+        - BACKUP_PURGE_PENDING
+        - TEMPORARY_DEPENDENCY_FAILURE
+        - INTERNAL_ERROR
+
+    NormalizerVersionSet:
+      type: object
+      required: [sourceDialectVersionsByArtifactRole, adapterVersion, normalizerVersion, canonicalSchemaVersion, implementationDigest, versionSetHash]
+      properties:
+        sourceDialectVersionsByArtifactRole:
+          type: object
+          required: [TRADE_HISTORY, POSITION_HISTORY]
+          properties:
+            TRADE_HISTORY: { $ref: '#/components/schemas/VersionIdentifier' }
+            POSITION_HISTORY: { $ref: '#/components/schemas/VersionIdentifier' }
+        adapterVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        normalizerVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        canonicalSchemaVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        implementationDigest: { type: string }
+        versionSetHash: { $ref: '#/components/schemas/Sha256' }
+    ReconstructionVersionSet:
+      type: object
+      required: [instrumentTermsVersionByInstrument, reconstructionPolicyVersion, reconciliationVersion, reviewUnitSchemaVersion, evidenceSchemaVersion, implementationDigest, versionSetHash]
+      properties:
+        instrumentTermsVersionByInstrument:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/VersionIdentifier' }
+        reconstructionPolicyVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        reconciliationVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        reviewUnitSchemaVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        evidenceSchemaVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        implementationDigest: { type: string }
+        versionSetHash: { $ref: '#/components/schemas/Sha256' }
+    AnalyticsVersionSet:
+      type: object
+      required: [metricDefinitionVersionsByMetricId, findingRuleSetVersion, analysisConfigVersion, evidenceSchemaVersion, implementationDigest, versionSetHash]
+      properties:
+        metricDefinitionVersionsByMetricId:
+          type: object
+          required: [ENTRY_WITHIN_WINDOW_AFTER_LOSS, INITIAL_EXPOSURE_CHANGE_AFTER_LOSS, WIN_LOSS_HOLDING_DURATION_DIFFERENCE]
+          properties:
+            ENTRY_WITHIN_WINDOW_AFTER_LOSS: { $ref: '#/components/schemas/VersionIdentifier' }
+            INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: { $ref: '#/components/schemas/VersionIdentifier' }
+            WIN_LOSS_HOLDING_DURATION_DIFFERENCE: { $ref: '#/components/schemas/VersionIdentifier' }
+        findingRuleSetVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        analysisConfigVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        evidenceSchemaVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        implementationDigest: { type: string }
+        versionSetHash: { $ref: '#/components/schemas/Sha256' }
+    TargetTradingVersionSet:
+      type: object
+      required: [versionSetHash]
+      properties:
+        normalizer:
+          allOf: [ { $ref: '#/components/schemas/NormalizerVersionSet' } ]
+          type: object
+          nullable: true
+        reconstruction:
+          allOf: [ { $ref: '#/components/schemas/ReconstructionVersionSet' } ]
+          type: object
+          nullable: true
+        analytics:
+          allOf: [ { $ref: '#/components/schemas/AnalyticsVersionSet' } ]
+          type: object
+          nullable: true
+        versionSetHash: { $ref: '#/components/schemas/Sha256' }
+
+    # ---- Trading Account / Book ----
+    TradingVenue:
+      type: string
+      enum: [BINANCE]
+    TradingProductFamily:
+      type: string
+      enum: [LINEAR_PERPETUAL]
+    TradingPositionMode:
+      type: string
+      enum: [ONE_WAY]
+    TradingResourceStatus:
+      type: string
+      enum: [ACTIVE, ARCHIVED]
+    CreateTradingAccountRequest:
+      type: object
+      required: [venue, displayName]
+      additionalProperties: false
+      properties:
+        venue: { $ref: '#/components/schemas/TradingVenue' }
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+    TradingAccount:
+      type: object
+      required: [id, venue, displayName, status, createdAt]
+      properties:
+        id: { type: string }
+        venue: { $ref: '#/components/schemas/TradingVenue' }
+        displayName: { type: string }
+        status: { $ref: '#/components/schemas/TradingResourceStatus' }
+        createdAt: { type: string, format: date-time }
+    TradingAccountPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/TradingAccount' } }
+    CreateTradingBookRequest:
+      type: object
+      required: [displayName, productFamily, positionMode, settlementAsset, reviewTimezone]
+      additionalProperties: false
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        productFamily: { $ref: '#/components/schemas/TradingProductFamily' }
+        positionMode: { $ref: '#/components/schemas/TradingPositionMode' }
+        settlementAsset: { type: string, enum: [USDT] }
+        reviewTimezone: { type: string, description: IANA timezone ID. }
+    TradingBook:
+      type: object
+      required: [id, tradingAccountId, venue, productFamily, positionMode, settlementAsset, reviewTimezone, status, createdAt]
+      properties:
+        id: { type: string }
+        tradingAccountId: { type: string }
+        venue: { $ref: '#/components/schemas/TradingVenue' }
+        productFamily: { $ref: '#/components/schemas/TradingProductFamily' }
+        positionMode: { $ref: '#/components/schemas/TradingPositionMode' }
+        settlementAsset: { type: string }
+        reviewTimezone: { type: string }
+        status: { $ref: '#/components/schemas/TradingResourceStatus' }
+        latestRevisionId: { type: string, nullable: true }
+        latestAnalysisRunId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    TradingBookPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/TradingBook' } }
+
+    # ---- Trading Import ----
+    TradingArtifactRole:
+      type: string
+      enum: [TRADE_HISTORY, POSITION_HISTORY]
+    ArtifactUploadStatus:
+      type: string
+      enum: [UPLOADED]
+    ArtifactRetentionStatus:
+      type: string
+      enum: [ACTIVE, RETENTION_SCHEDULED, DELETION_PENDING, DELETED, DELETION_FAILED]
+    CreateTradingImportSessionRequest:
+      type: object
+      required: [sourceTimezone, reviewTimezone, declaredPositionMode]
+      additionalProperties: false
+      properties:
+        sourceTimezone: { type: string, description: IANA timezone ID; source timestamp에서 추론하지 않는다. }
+        reviewTimezone: { type: string, description: IANA timezone ID. }
+        declaredPositionMode: { $ref: '#/components/schemas/TradingPositionMode' }
+        dataPolicyVersion:
+          allOf: [ { $ref: '#/components/schemas/VersionIdentifier' } ]
+          type: string
+          nullable: true
+          description: 생략하면 server-selected current immutable ID를 pin한다.
+        clientRequestReference: { type: string, maxLength: 100, nullable: true }
+    UploadArtifactMetadata:
+      type: object
+      required: [role, filename, contentType, byteSize, sha256, dialectCandidate]
+      additionalProperties: false
+      properties:
+        role: { $ref: '#/components/schemas/TradingArtifactRole' }
+        filename: { type: string, minLength: 1, maxLength: 255, description: display metadata only; path/identity 아님. }
+        contentType: { type: string, enum: [text/csv, application/vnd.ms-excel] }
+        byteSize: { type: integer, format: int64, minimum: 1, maximum: 52428800 }
+        sha256: { $ref: '#/components/schemas/Sha256' }
+        dialectCandidate:
+          type: string
+          enum: [AUTO, BINANCE_USDS_TRADE_HISTORY_V1, BINANCE_USDS_POSITION_HISTORY_V1]
+    UploadTradingImportArtifactRequest:
+      type: object
+      required: [metadata, file]
+      properties:
+        metadata: { $ref: '#/components/schemas/UploadArtifactMetadata' }
+        file:
+          type: string
+          format: binary
+          description: 최대 52,428,800 bytes.
+    TradingSourceArtifact:
+      type: object
+      required: [id, importSessionId, role, contentType, byteSize, sha256, uploadStatus, retentionStatus, rawReparseAvailable, uploadedAt]
+      properties:
+        id: { type: string }
+        importSessionId: { type: string }
+        role: { $ref: '#/components/schemas/TradingArtifactRole' }
+        filename: { type: string, nullable: true, description: raw lifecycle 뒤 null; storage path가 아니다. }
+        contentType: { type: string, enum: [text/csv, application/vnd.ms-excel] }
+        byteSize: { type: integer, format: int64, minimum: 1, maximum: 52428800 }
+        sha256: { $ref: '#/components/schemas/Sha256' }
+        dialectCandidate: { type: string }
+        detectedDialect: { type: string, nullable: true }
+        schemaFingerprint: { type: string, nullable: true }
+        uploadStatus: { $ref: '#/components/schemas/ArtifactUploadStatus' }
+        retentionStatus: { $ref: '#/components/schemas/ArtifactRetentionStatus' }
+        rawReparseAvailable: { type: boolean }
+        rawExpiresAt: { type: string, format: date-time, nullable: true }
+        uploadedAt: { type: string, format: date-time }
+        deletedAt: { type: string, format: date-time, nullable: true }
+    ValidateTradingImportSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        targetVersionSet:
+          allOf: [ { $ref: '#/components/schemas/TargetTradingVersionSet' } ]
+          type: object
+          nullable: true
+          description: 생략하면 server-selected current exact set을 admission에서 pin한다.
+    ValidationIssue:
+      type: object
+      required: [code, severity, artifactRole]
+      properties:
+        code: { type: string }
+        severity: { type: string, enum: [WARNING, ERROR] }
+        artifactRole: { $ref: '#/components/schemas/TradingArtifactRole' }
+        sourceRowNumber: { type: integer, minimum: 1, nullable: true }
+        field: { type: string, nullable: true }
+      description: offending raw value는 포함하지 않는다.
+    QualityStatus:
+      type: string
+      enum: [PENDING, ACCEPTABLE, ACCEPTABLE_WITH_EXCLUSIONS, REJECTED]
+    TradingQualityReport:
+      type: object
+      required: [qualityStatus, rowCountsByArtifactRole, ignoredNonTradingRowCounts, validationIssues, reconciliationStatusCounts, capability, excludedReasonCounts]
+      properties:
+        qualityStatus: { $ref: '#/components/schemas/QualityStatus' }
+        rowCountsByArtifactRole:
+          type: object
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+        ignoredNonTradingRowCounts:
+          type: object
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+        validationIssues: { type: array, items: { $ref: '#/components/schemas/ValidationIssue' } }
+        reconciliationStatusCounts:
+          type: object
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+        capability: { type: array, uniqueItems: true, items: { $ref: '#/components/schemas/AnalysisCapability' } }
+        excludedReasonCounts:
+          type: object
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+    TradingImportSessionBase:
+      type: object
+      required: [id, tradingBookId, sourceTimezone, reviewTimezone, declaredPositionMode, artifacts, dataPolicyVersion, retentionPolicy, maskingPolicyVersion, evidenceRetention, deletionPolicyVersion, versions, createdAt]
+      properties:
+        id: { type: string }
+        tradingBookId: { type: string }
+        sourceTimezone: { type: string }
+        reviewTimezone: { type: string }
+        declaredPositionMode: { $ref: '#/components/schemas/TradingPositionMode' }
+        artifacts: { type: array, maxItems: 2, items: { $ref: '#/components/schemas/TradingSourceArtifact' } }
+        dataPolicyVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        retentionPolicy: { $ref: '#/components/schemas/VersionIdentifier' }
+        maskingPolicyVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        evidenceRetention: { type: string, enum: [BOOK_LIFECYCLE] }
+        deletionPolicyVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        versions: { $ref: '#/components/schemas/TargetTradingVersionSet' }
+        createdAt: { type: string, format: date-time }
+        validationStartedAt: { type: string, format: date-time, nullable: true }
+    TradingImportSessionNonTerminal:
+      allOf:
+        - $ref: '#/components/schemas/TradingImportSessionBase'
+        - type: object
+          required: [status]
+          properties:
+            status: { type: string, enum: [RECEIVED, VALIDATING] }
+    TradingImportSessionAccepted:
+      allOf:
+        - $ref: '#/components/schemas/TradingImportSessionBase'
+        - type: object
+          required: [status, qualitySummary, createdLedgerRevisionId, completedAt]
+          properties:
+            status: { type: string, enum: [ACCEPTED] }
+            qualitySummary: { $ref: '#/components/schemas/TradingQualityReport' }
+            createdLedgerRevisionId: { type: string }
+            completedAt: { type: string, format: date-time }
+    TradingImportSessionRejected:
+      allOf:
+        - $ref: '#/components/schemas/TradingImportSessionBase'
+        - type: object
+          required: [status, qualitySummary, failure, completedAt]
+          properties:
+            status: { type: string, enum: [REJECTED] }
+            qualitySummary: { $ref: '#/components/schemas/TradingQualityReport' }
+            failure: { $ref: '#/components/schemas/StructuredFailure' }
+            completedAt: { type: string, format: date-time }
+    TradingImportSession:
+      oneOf:
+        - $ref: '#/components/schemas/TradingImportSessionNonTerminal'
+        - $ref: '#/components/schemas/TradingImportSessionAccepted'
+        - $ref: '#/components/schemas/TradingImportSessionRejected'
+      discriminator:
+        propertyName: status
+        mapping:
+          RECEIVED: '#/components/schemas/TradingImportSessionNonTerminal'
+          VALIDATING: '#/components/schemas/TradingImportSessionNonTerminal'
+          ACCEPTED: '#/components/schemas/TradingImportSessionAccepted'
+          REJECTED: '#/components/schemas/TradingImportSessionRejected'
+    TradingImportSessionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/TradingImportSession' } }
+
+    AnalysisCapability:
+      type: string
+      enum: [CLOSED_OUTCOME, INITIAL_EXPOSURE, MAX_EXPOSURE, POSITION_INCREASES, FEES, FUNDING_PAYMENTS, MARKET_PRICE_PATH, VENUE_REPORTED_PNL, POSITION_MODE_USER_DECLARED, POSITION_MODE_OBSERVED_COMPATIBLE, VENUE_POSITION_SUMMARY, EXECUTION_ORIGIN_KNOWN, STABLE_EPISODE_TIME]
+    Coverage:
+      type: object
+      required: [startInclusive, endExclusive]
+      properties:
+        startInclusive: { type: string, format: date-time }
+        endExclusive: { type: string, format: date-time }
+    InstrumentDescriptor:
+      type: object
+      required: [instrumentId, venue, venueSymbol, productFamily, baseAsset, quoteAsset, settlementAsset, quantityUnit, priceUnit, instrumentTermsVersion]
+      properties:
+        instrumentId: { type: string }
+        venue: { $ref: '#/components/schemas/TradingVenue' }
+        venueSymbol: { type: string }
+        productFamily: { $ref: '#/components/schemas/TradingProductFamily' }
+        baseAsset: { type: string }
+        quoteAsset: { type: string }
+        settlementAsset: { type: string }
+        quantityUnit: { type: string }
+        priceUnit: { type: string }
+        contractMultiplier: { $ref: '#/components/schemas/DecimalString' }
+        instrumentTermsVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+    VersionLineage:
+      type: object
+      required: [parentLedgerRevisionIds, sourceImportSessionIds, sourceVersionSet, targetVersionSet, initiatedBy, inputAvailability, resultHash, createdAt]
+      properties:
+        parentLedgerRevisionIds: { type: array, items: { type: string } }
+        parentAnalysisRunId: { type: string, nullable: true }
+        sourceImportSessionIds: { type: array, minItems: 1, items: { type: string } }
+        reprocessingRunId: { type: string, nullable: true }
+        reprocessingType: { $ref: '#/components/schemas/ReprocessingType' }
+        reasonCode: { type: string, nullable: true }
+        sourceVersionSet: { $ref: '#/components/schemas/TargetTradingVersionSet' }
+        targetVersionSet: { $ref: '#/components/schemas/TargetTradingVersionSet' }
+        initiatedBy: { type: string, enum: [USER_REQUESTED, SYSTEM_MIGRATION, BUG_FIX, SECURITY_FIX, DEFINITION_UPGRADE, SUPPORT_RECOVERY] }
+        inputAvailability: { $ref: '#/components/schemas/ReprocessingInputAvailability' }
+        resultHash: { $ref: '#/components/schemas/Sha256' }
+        createdAt: { type: string, format: date-time }
+    LedgerRevision:
+      type: object
+      required: [id, tradingBookId, revisionNumber, contentHash, sourceImportSessionIds, coverage, canonicalRecordCount, instrumentDescriptors, normalizerVersionSet, reconstructionVersionSet, reconciliationManifestHash, capability, qualitySummary, parentLedgerRevisionIds, createdAt]
+      properties:
+        id: { type: string }
+        tradingBookId: { type: string }
+        revisionNumber: { type: integer, format: int64, minimum: 1 }
+        contentHash: { $ref: '#/components/schemas/Sha256' }
+        sourceImportSessionIds: { type: array, minItems: 1, items: { type: string } }
+        coverage: { $ref: '#/components/schemas/Coverage' }
+        canonicalRecordCount: { type: integer, format: int64, minimum: 0 }
+        instrumentDescriptors: { type: array, items: { $ref: '#/components/schemas/InstrumentDescriptor' } }
+        normalizerVersionSet: { $ref: '#/components/schemas/NormalizerVersionSet' }
+        reconstructionVersionSet: { $ref: '#/components/schemas/ReconstructionVersionSet' }
+        dataPolicyVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        reconciliationManifestHash: { $ref: '#/components/schemas/Sha256' }
+        capability: { type: array, uniqueItems: true, items: { $ref: '#/components/schemas/AnalysisCapability' } }
+        qualitySummary: { $ref: '#/components/schemas/TradingQualityReport' }
+        parentLedgerRevisionIds: { type: array, items: { type: string } }
+        lineage:
+          allOf: [ { $ref: '#/components/schemas/VersionLineage' } ]
+          type: object
+          nullable: true
+        createdAt: { type: string, format: date-time }
+    LedgerRevisionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/LedgerRevision' } }
+
+    # ---- Trading Analysis ----
+    MetricMinimums:
+      type: object
+      required: [reentryEligibleLosses, exposurePairs, priorBaselineEpisodes, holdingWins, holdingLosses]
+      properties:
+        reentryEligibleLosses: { type: integer, minimum: 1 }
+        exposurePairs: { type: integer, minimum: 1 }
+        priorBaselineEpisodes: { type: integer, minimum: 1 }
+        holdingWins: { type: integer, minimum: 1 }
+        holdingLosses: { type: integer, minimum: 1 }
+    FindingMinimums:
+      type: object
+      required: [reentryEligibleLosses, exposurePairs, holdingWins, holdingLosses]
+      properties:
+        reentryEligibleLosses: { type: integer, minimum: 1 }
+        exposurePairs: { type: integer, minimum: 1 }
+        holdingWins: { type: integer, minimum: 1 }
+        holdingLosses: { type: integer, minimum: 1 }
+    AnalysisConfig:
+      type: object
+      required: [schemaVersion, analysisPeriod, reviewTimezone, timezoneDatabaseVersion, outcomeBasis, fundingTreatment, eligibleReviewUnitPolicy, reversalTreatment, reentryWindow, baselinePolicy, metricMinimums, findingMinimums]
+      additionalProperties: false
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        analysisPeriod: { $ref: '#/components/schemas/AnalysisPeriod' }
+        reviewTimezone: { type: string }
+        timezoneDatabaseVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        outcomeBasis: { type: string, enum: [NET_TRADING_PNL] }
+        fundingTreatment: { type: string, enum: [EXCLUDED] }
+        eligibleReviewUnitPolicy: { type: string, enum: [COMPLETE_AND_RECONCILED_ONLY] }
+        reversalTreatment: { type: string, enum: [SEPARATE] }
+        reentryWindow: { type: string, enum: [PT30M] }
+        baselinePolicy: { type: string, enum: [PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION] }
+        metricMinimums: { $ref: '#/components/schemas/MetricMinimums' }
+        findingMinimums: { $ref: '#/components/schemas/FindingMinimums' }
+    RunTradingAnalysisRequest:
+      type: object
+      required: [analysisConfig]
+      additionalProperties: false
+      properties:
+        analyticsVersionSet:
+          allOf: [ { $ref: '#/components/schemas/AnalyticsVersionSet' } ]
+          type: object
+          nullable: true
+          description: 생략하면 server-selected current exact set을 pin한다.
+        analysisConfig: { $ref: '#/components/schemas/AnalysisConfig' }
+        publishAsLatest: { type: boolean, default: true }
+    AnalysisProgressStage:
+      type: string
+      enum: [QUEUED, DISPATCHING, RECONSTRUCTING_REVIEW_UNITS, CALCULATING_METRICS, BUILDING_EVIDENCE, PERSISTING_RESULT, TERMINAL]
+    TradingAnalysisRunBase:
+      type: object
+      required: [id, tradingBookId, ledgerRevisionId, progressStage, analyticsVersionSet, analysisConfig, analysisConfigHash, qualityStatus, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        tradingBookId: { type: string }
+        ledgerRevisionId: { type: string }
+        progressStage: { $ref: '#/components/schemas/AnalysisProgressStage' }
+        analyticsVersionSet: { $ref: '#/components/schemas/AnalyticsVersionSet' }
+        analysisConfig: { $ref: '#/components/schemas/AnalysisConfig' }
+        analysisConfigHash: { $ref: '#/components/schemas/Sha256' }
+        qualityStatus: { $ref: '#/components/schemas/QualityStatus' }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time }
+    TradingAnalysisRunNonTerminal:
+      allOf:
+        - $ref: '#/components/schemas/TradingAnalysisRunBase'
+        - type: object
+          required: [status]
+          properties:
+            status: { type: string, enum: [PENDING, RUNNING] }
+    TradingAnalysisRunCompleted:
+      allOf:
+        - $ref: '#/components/schemas/TradingAnalysisRunBase'
+        - type: object
+          required: [status, resultId, resultHash, evidenceHash, completedAt]
+          properties:
+            status: { type: string, enum: [COMPLETED] }
+            resultId: { type: string }
+            resultHash: { $ref: '#/components/schemas/Sha256' }
+            evidenceHash: { $ref: '#/components/schemas/Sha256' }
+            completedAt: { type: string, format: date-time }
+    TradingAnalysisRunFailed:
+      allOf:
+        - $ref: '#/components/schemas/TradingAnalysisRunBase'
+        - type: object
+          required: [status, failure, completedAt]
+          properties:
+            status: { type: string, enum: [FAILED] }
+            failure: { $ref: '#/components/schemas/StructuredFailure' }
+            completedAt: { type: string, format: date-time }
+    TradingAnalysisRun:
+      oneOf:
+        - $ref: '#/components/schemas/TradingAnalysisRunNonTerminal'
+        - $ref: '#/components/schemas/TradingAnalysisRunCompleted'
+        - $ref: '#/components/schemas/TradingAnalysisRunFailed'
+      discriminator:
+        propertyName: status
+        mapping:
+          PENDING: '#/components/schemas/TradingAnalysisRunNonTerminal'
+          RUNNING: '#/components/schemas/TradingAnalysisRunNonTerminal'
+          COMPLETED: '#/components/schemas/TradingAnalysisRunCompleted'
+          FAILED: '#/components/schemas/TradingAnalysisRunFailed'
+    TradingAnalysisRunPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/TradingAnalysisRun' } }
+    BehaviorMetricId:
+      type: string
+      enum: [ENTRY_WITHIN_WINDOW_AFTER_LOSS, INITIAL_EXPOSURE_CHANGE_AFTER_LOSS, WIN_LOSS_HOLDING_DURATION_DIFFERENCE]
+    MetricStatus:
+      type: string
+      enum: [AVAILABLE, INSUFFICIENT_SAMPLE, MISSING_CAPABILITY, NOT_APPLICABLE]
+    FindingEligibility:
+      type: string
+      enum: [ELIGIBLE, INELIGIBLE_SAMPLE, INELIGIBLE_METRIC_STATUS]
+    EvidenceMembershipRole:
+      type: string
+      enum: [SUPPORTING, COMPARISON, EXCLUDED_CANDIDATE, SELECTION_BOUNDARY]
+    MembershipReference:
+      type: object
+      required: [reviewUnitId, role]
+      properties:
+        reviewUnitId: { type: string }
+        role: { $ref: '#/components/schemas/EvidenceMembershipRole' }
+        exclusionReason: { type: string, nullable: true }
+    MembershipSummary:
+      type: object
+      required: [items, total, evidenceReference]
+      properties:
+        items:
+          type: array
+          description: deterministic first page; full logical membership는 evidenceReference에 포함된다.
+          items: { $ref: '#/components/schemas/MembershipReference' }
+        total: { type: integer, format: int64, minimum: 0 }
+        evidenceReference: { type: string }
+    BehaviorMetricValue:
+      type: object
+      description: Metric definition에 해당하는 typed field만 채운다. AVAILABLE이 아니면 모든 scalar는 null이다.
+      properties:
+        decimal:
+          allOf: [ { $ref: '#/components/schemas/DecimalString' } ]
+          type: string
+          nullable: true
+        ratio:
+          allOf: [ { $ref: '#/components/schemas/Rational' } ]
+          type: object
+          nullable: true
+        percentagePoint:
+          allOf: [ { $ref: '#/components/schemas/Rational' } ]
+          type: object
+          nullable: true
+        duration:
+          allOf: [ { $ref: '#/components/schemas/DurationValue' } ]
+          type: object
+          nullable: true
+        count: { type: integer, format: int64, nullable: true }
+    BehaviorMetric:
+      type: object
+      required: [id, analysisRunId, definitionId, definitionVersion, status, findingEligibility, analysisPeriod, populationCount, eligibleCount, excludedCount, excludedReasonCounts, capabilitySnapshot, memberships, value, fundingTreatment, outcomeBasis, evidenceReference, resultHash]
+      properties:
+        id: { type: string }
+        analysisRunId: { type: string }
+        definitionId: { $ref: '#/components/schemas/BehaviorMetricId' }
+        definitionVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        status: { $ref: '#/components/schemas/MetricStatus' }
+        findingEligibility: { $ref: '#/components/schemas/FindingEligibility' }
+        analysisPeriod: { $ref: '#/components/schemas/AnalysisPeriod' }
+        populationCount: { type: integer, format: int64, minimum: 0 }
+        eligibleCount: { type: integer, format: int64, minimum: 0 }
+        excludedCount: { type: integer, format: int64, minimum: 0 }
+        excludedReasonCounts:
+          type: object
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+        capabilitySnapshot: { type: array, items: { $ref: '#/components/schemas/AnalysisCapability' } }
+        memberships: { $ref: '#/components/schemas/MembershipSummary' }
+        comparisonDefinition: { type: string }
+        scalarInputsReference: { type: string }
+        value: { $ref: '#/components/schemas/BehaviorMetricValue' }
+        fundingTreatment: { type: string, enum: [EXCLUDED] }
+        outcomeBasis: { type: string, enum: [NET_TRADING_PNL] }
+        evidenceReference: { type: string }
+        resultHash: { $ref: '#/components/schemas/Sha256' }
+    ReconstructionStatus:
+      type: string
+      enum: [COMPLETE, LEFT_CENSORED, RIGHT_CENSORED, INCONSISTENT, UNSUPPORTED]
+    ReconciliationStatus:
+      type: string
+      enum: [EXACT, WITHIN_ROUNDING_TOLERANCE, AMBIGUOUS, INCOMPLETE_TRADES, SUMMARY_MISMATCH, UNSUPPORTED_OVERLAP]
+    OutcomeClassification:
+      type: string
+      enum: [LOSS, BREAKEVEN, WIN, UNAVAILABLE]
+    TradingOutcome:
+      type: object
+      required: [classification, fundingTreatment]
+      properties:
+        classification: { $ref: '#/components/schemas/OutcomeClassification' }
+        grossTradingPnl:
+          allOf: [ { $ref: '#/components/schemas/Money' } ]
+          type: object
+          nullable: true
+        venuePositionPnl:
+          allOf: [ { $ref: '#/components/schemas/Money' } ]
+          type: object
+          nullable: true
+        tradingFees:
+          allOf: [ { $ref: '#/components/schemas/Money' } ]
+          type: object
+          nullable: true
+        netTradingPnl:
+          allOf: [ { $ref: '#/components/schemas/Money' } ]
+          type: object
+          nullable: true
+        fundingTreatment: { type: string, enum: [EXCLUDED] }
+    ReviewUnit:
+      type: object
+      required: [id, analysisRunId, type, instrumentIds, direction, outcome, reconstructionStatus, reconciliationStatus, capability, dataQuality]
+      properties:
+        id: { type: string }
+        analysisRunId: { type: string }
+        type: { type: string, enum: [FUTURES_POSITION_EPISODE] }
+        instrumentIds: { type: array, minItems: 1, items: { type: string } }
+        direction: { type: string, enum: [LONG, SHORT] }
+        openedAt: { type: string, format: date-time, nullable: true }
+        closedAt: { type: string, format: date-time, nullable: true }
+        initialQuantity:
+          allOf: [ { $ref: '#/components/schemas/Quantity' } ]
+          type: object
+          nullable: true
+        initialNotional:
+          allOf: [ { $ref: '#/components/schemas/Money' } ]
+          type: object
+          nullable: true
+        outcome: { $ref: '#/components/schemas/TradingOutcome' }
+        reconstructionStatus: { $ref: '#/components/schemas/ReconstructionStatus' }
+        reconciliationStatus: { $ref: '#/components/schemas/ReconciliationStatus' }
+        capability: { type: array, items: { $ref: '#/components/schemas/AnalysisCapability' } }
+        dataQuality: { type: array, items: { type: string } }
+    ReviewUnitPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/ReviewUnit' } }
+    PositionAllocationEvidence:
+      type: object
+      required: [tradingRecordId, action, allocatedQuantity]
+      properties:
+        tradingRecordId: { type: string }
+        action: { type: string, enum: [OPEN, INCREASE, REDUCE, CLOSE, REVERSAL_CLOSE, REVERSAL_OPEN] }
+        allocatedQuantity: { $ref: '#/components/schemas/Quantity' }
+        allocatedFee:
+          allOf: [ { $ref: '#/components/schemas/Money' } ]
+          type: object
+          nullable: true
+        allocatedReportedPnl:
+          allOf: [ { $ref: '#/components/schemas/Money' } ]
+          type: object
+          nullable: true
+    TradingRecordEvidence:
+      type: object
+      required: [recordId, recordType, sourceEvidenceSnapshotId]
+      properties:
+        recordId: { type: string }
+        recordType: { type: string, enum: [EXECUTION, FEE, VENUE_REPORTED_PNL, VENUE_POSITION_SUMMARY] }
+        occurredAt: { type: string, format: date-time, nullable: true }
+        price:
+          allOf: [ { $ref: '#/components/schemas/Price' } ]
+          type: object
+          nullable: true
+        occurredInterval:
+          allOf: [ { $ref: '#/components/schemas/InstantInterval' } ]
+          type: object
+          nullable: true
+        sourceEvidenceSnapshotId: { type: string }
+    SourceField:
+      type: object
+      required: [name, value]
+      properties:
+        name: { type: string }
+        value: { type: string, description: owner-visible allowlisted exact source lexeme; UID/full IDs 금지. }
+    SourceEvidenceSnapshot:
+      type: object
+      required: [id, artifactId, artifactRole, sourceRowNumber, sourceRowHash, dialect, evidenceKind, rawAvailability, rawReparseAvailable, maskingPolicyVersion, allowlistedFields, capturedAt]
+      properties:
+        id: { type: string }
+        artifactId: { type: string }
+        artifactRole: { $ref: '#/components/schemas/TradingArtifactRole' }
+        sourceRowNumber: { type: integer, minimum: 1 }
+        sourceRowHash: { $ref: '#/components/schemas/Sha256' }
+        dialect: { $ref: '#/components/schemas/VersionIdentifier' }
+        evidenceKind: { type: string, enum: [RETAINED_SNAPSHOT] }
+        rawAvailability: { type: string, enum: [AVAILABLE, DELETED] }
+        rawReparseAvailable: { type: boolean }
+        maskingPolicyVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        maskedTradeId: { type: string, nullable: true, pattern: '^tid_[A-Za-z0-9_-]+$' }
+        maskedOrderId: { type: string, nullable: true, pattern: '^oid_[A-Za-z0-9_-]+$' }
+        allowlistedFields: { type: array, items: { $ref: '#/components/schemas/SourceField' } }
+        capturedAt: { type: string, format: date-time }
+    ReviewUnitEvidenceItem:
+      type: object
+      required: [membershipRole, allocation, tradingRecord, sourceEvidence]
+      properties:
+        membershipRole: { $ref: '#/components/schemas/EvidenceMembershipRole' }
+        exclusionReason: { type: string, nullable: true }
+        allocation: { $ref: '#/components/schemas/PositionAllocationEvidence' }
+        tradingRecord: { $ref: '#/components/schemas/TradingRecordEvidence' }
+        sourceEvidence: { $ref: '#/components/schemas/SourceEvidenceSnapshot' }
+    ReviewUnitEvidencePage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items, evidenceSchemaVersion, evidenceHash]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/ReviewUnitEvidenceItem' } }
+            evidenceSchemaVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+            evidenceHash: { $ref: '#/components/schemas/Sha256' }
+    BehaviorFinding:
+      type: object
+      required: [id, definitionId, definitionVersion, observation, metricIds, supportingReviewUnitIds, comparisonReviewUnitIds, sampleAssessment, rankReason]
+      properties:
+        id: { type: string }
+        definitionId: { $ref: '#/components/schemas/BehaviorMetricId' }
+        definitionVersion: { $ref: '#/components/schemas/VersionIdentifier' }
+        observation: { type: string, description: descriptive only; causal/psychological/investment instruction 금지. }
+        metricIds: { type: array, minItems: 1, items: { type: string } }
+        supportingReviewUnitIds: { type: array, items: { type: string } }
+        comparisonReviewUnitIds: { type: array, items: { type: string } }
+        sampleAssessment: { type: string, enum: [INSUFFICIENT, LIMITED, DESCRIPTIVE] }
+        rankReason: { type: string }
+    TradingReview:
+      type: object
+      required: [analysisRunId, ledgerRevisionId, resultHash, evidenceHash, analysisPeriod, qualitySummary, populationCount, eligibleCount, excludedCount, exclusionReasonCounts, capabilitySnapshot, metrics, findings, analyticsVersionSet, analysisConfig, analysisConfigHash, fundingTreatment, outcomeBasis, createdAt]
+      properties:
+        analysisRunId: { type: string }
+        ledgerRevisionId: { type: string }
+        resultHash: { $ref: '#/components/schemas/Sha256' }
+        evidenceHash: { $ref: '#/components/schemas/Sha256' }
+        analysisPeriod: { $ref: '#/components/schemas/AnalysisPeriod' }
+        qualitySummary: { $ref: '#/components/schemas/TradingQualityReport' }
+        populationCount: { type: integer, format: int64, minimum: 0 }
+        eligibleCount: { type: integer, format: int64, minimum: 0 }
+        excludedCount: { type: integer, format: int64, minimum: 0 }
+        exclusionReasonCounts:
+          type: object
+          additionalProperties: { type: integer, format: int64, minimum: 0 }
+        capabilitySnapshot: { type: array, items: { $ref: '#/components/schemas/AnalysisCapability' } }
+        metrics: { type: array, minItems: 3, maxItems: 3, items: { $ref: '#/components/schemas/BehaviorMetric' } }
+        findings: { type: array, items: { $ref: '#/components/schemas/BehaviorFinding' } }
+        analyticsVersionSet: { $ref: '#/components/schemas/AnalyticsVersionSet' }
+        analysisConfig: { $ref: '#/components/schemas/AnalysisConfig' }
+        analysisConfigHash: { $ref: '#/components/schemas/Sha256' }
+        lineage:
+          allOf: [ { $ref: '#/components/schemas/VersionLineage' } ]
+          type: object
+          nullable: true
+        fundingTreatment: { type: string, enum: [EXCLUDED] }
+        outcomeBasis: { type: string, enum: [NET_TRADING_PNL] }
+        createdAt: { type: string, format: date-time }
+
+    # ---- Trading Reprocessing / Deletion ----
+    ReprocessingType:
+      type: string
+      enum: [REPARSE_SOURCE, REBUILD_LEDGER, RERUN_RECONSTRUCTION, RERUN_ANALYTICS, REEVALUATE_FINDINGS]
+    ReprocessingInputAvailability:
+      type: string
+      enum: [RAW_AND_CANONICAL, CANONICAL_ONLY, RESULT_ONLY, DELETED]
+    ReprocessingRunStatus:
+      type: string
+      enum: [PENDING, VALIDATING_INPUT, RUNNING, COMPLETED, FAILED, CANCELLED]
+    RequestTradingReprocessingRequest:
+      type: object
+      required: [sourceLedgerRevisionId, reprocessingType, targetVersionSet, reasonCode]
+      additionalProperties: false
+      properties:
+        sourceLedgerRevisionId: { type: string }
+        sourceAnalysisRunId: { type: string, nullable: true }
+        reprocessingType: { $ref: '#/components/schemas/ReprocessingType' }
+        targetVersionSet: { $ref: '#/components/schemas/TargetTradingVersionSet' }
+        reasonCode:
+          type: string
+          enum: [USER_REQUESTED, BUG_FIX, DEFINITION_UPGRADE, SUPPORT_RECOVERY]
+        analysisConfig:
+          allOf: [ { $ref: '#/components/schemas/AnalysisConfig' } ]
+          type: object
+          nullable: true
+        publishAsLatest: { type: boolean, default: true }
+    ReprocessingDifferenceSummary:
+      type: object
+      required: [sourceRevisionId, targetRevisionId, canonicalRecordCountDelta, episodeCountDelta, eligibleCountDelta, excludedCountDelta, exclusionReasonChanges, metricChanges, evidenceChanges, sourceVersionSet, targetVersionSet, outcomeChanged]
+      properties:
+        sourceRevisionId: { type: string }
+        targetRevisionId: { type: string }
+        sourceAnalysisRunId: { type: string, nullable: true }
+        targetAnalysisRunId: { type: string, nullable: true }
+        canonicalRecordCountDelta: { type: integer, format: int64 }
+        episodeCountDelta: { type: integer, format: int64 }
+        eligibleCountDelta: { type: integer, format: int64 }
+        excludedCountDelta: { type: integer, format: int64 }
+        exclusionReasonChanges: { type: array, items: { type: string } }
+        metricChanges: { type: array, items: { type: string } }
+        evidenceChanges: { type: array, items: { type: string } }
+        sourceVersionSet: { $ref: '#/components/schemas/TargetTradingVersionSet' }
+        targetVersionSet: { $ref: '#/components/schemas/TargetTradingVersionSet' }
+        outcomeChanged: { type: boolean }
+    TradingReprocessingRun:
+      type: object
+      required: [id, tradingBookId, sourceLedgerRevisionId, reprocessingType, sourceVersionSet, targetVersionSet, inputAvailability, status, progressStage, lineageParentRevisionIds, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        tradingBookId: { type: string }
+        sourceLedgerRevisionId: { type: string }
+        sourceAnalysisRunId: { type: string, nullable: true }
+        reprocessingType: { $ref: '#/components/schemas/ReprocessingType' }
+        reasonCode: { type: string }
+        sourceVersionSet: { $ref: '#/components/schemas/TargetTradingVersionSet' }
+        targetVersionSet: { $ref: '#/components/schemas/TargetTradingVersionSet' }
+        inputAvailability: { $ref: '#/components/schemas/ReprocessingInputAvailability' }
+        status: { $ref: '#/components/schemas/ReprocessingRunStatus' }
+        progressStage: { type: string }
+        lineageParentRevisionIds: { type: array, minItems: 1, items: { type: string } }
+        retryOfReprocessingRunId: { type: string, nullable: true }
+        createdLedgerRevisionId: { type: string, nullable: true }
+        createdAnalysisRunId: { type: string, nullable: true }
+        differenceSummary:
+          allOf: [ { $ref: '#/components/schemas/ReprocessingDifferenceSummary' } ]
+          type: object
+          nullable: true
+        failure:
+          allOf: [ { $ref: '#/components/schemas/StructuredFailure' } ]
+          type: object
+          nullable: true
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+    TradingReprocessingRunPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/TradingReprocessingRun' } }
+    DeletionTargetType:
+      type: string
+      enum: [TRADING_SOURCE_ARTIFACT, TRADING_IMPORT_SESSION, TRADING_BOOK, TRADING_ACCOUNT, MEMBER]
+    DeletionRequestState:
+      type: string
+      enum: [REQUESTED, CANCELLING_JOBS, PURGING_PRIMARY, PURGING_OBJECTS, COMPLETED, FAILED]
+    PurgeComponentStatus:
+      type: string
+      enum: [NOT_STARTED, IN_PROGRESS, COMPLETED, FAILED, NOT_APPLICABLE]
+    AffectedResourceSummary:
+      type: object
+      required: [accounts, books, importSessions, artifacts, ledgerRevisions, analysisRuns, reprocessingRuns]
+      properties:
+        accounts: { type: integer, format: int64, minimum: 0 }
+        books: { type: integer, format: int64, minimum: 0 }
+        importSessions: { type: integer, format: int64, minimum: 0 }
+        artifacts: { type: integer, format: int64, minimum: 0 }
+        ledgerRevisions: { type: integer, format: int64, minimum: 0 }
+        analysisRuns: { type: integer, format: int64, minimum: 0 }
+        reprocessingRuns: { type: integer, format: int64, minimum: 0 }
+    DeletionRequest:
+      type: object
+      required: [id, targetType, targetId, requestedScope, state, affectedResources, revokedAt, primaryPurgeStatus, objectPurgeStatus, computeRuntimePurgeStatus, backupPurgeStatus, retryable, requestedAt, updatedAt]
+      properties:
+        id: { type: string }
+        targetType: { $ref: '#/components/schemas/DeletionTargetType' }
+        targetId: { type: string, description: opaque resource ID; storage locator가 아니다. }
+        requestedScope: { type: string }
+        state: { $ref: '#/components/schemas/DeletionRequestState' }
+        affectedResources: { $ref: '#/components/schemas/AffectedResourceSummary' }
+        revokedAt: { type: string, format: date-time }
+        primaryPurgeStatus: { $ref: '#/components/schemas/PurgeComponentStatus' }
+        objectPurgeStatus: { $ref: '#/components/schemas/PurgeComponentStatus' }
+        computeRuntimePurgeStatus: { $ref: '#/components/schemas/PurgeComponentStatus' }
+        backupPurgeStatus: { $ref: '#/components/schemas/PurgeComponentStatus' }
+        backupPurgeDueAt: { type: string, format: date-time, nullable: true }
+        failure:
+          allOf: [ { $ref: '#/components/schemas/StructuredFailure' } ]
+          type: object
+          nullable: true
+        retryable: { type: boolean }
+        requestedAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
 
     # ---- Strategy ----
     StrategySummary:
@@ -721,6 +2405,7 @@ components:
         run:
           allOf:
             - $ref: '#/components/schemas/BacktestRunSummary'
+          type: object
           nullable: true
 
     LatestTerminalBacktestRunResponse:
@@ -730,6 +2415,7 @@ components:
         run:
           allOf:
             - $ref: '#/components/schemas/BacktestRunSummary'
+          type: object
           nullable: true
 
     BacktestRunDetail:
@@ -740,6 +2426,7 @@ components:
             actualPeriod:
               allOf:
                 - $ref: 'compute-api.yaml#/components/schemas/Period'
+              type: object
               nullable: true
               description: Asset Availability 교집합 반영 후 실제 기간. PENDING이면 null(`docs/DOMAIN.md` §1.3).
             datasetSnapshotId:
@@ -752,6 +2439,7 @@ components:
             result:
               allOf:
                 - $ref: 'compute-api.yaml#/components/schemas/BacktestResult'
+              type: object
               nullable: true
               description: status가 COMPLETED일 때만 존재.
             failureReason:
@@ -761,6 +2449,7 @@ components:
             errorCode:
               allOf:
                 - $ref: 'compute-api.yaml#/components/schemas/FatalErrorCode'
+              type: string
               nullable: true
               description: Compute가 structured fatal error를 반환한 FAILED run에만 존재.
 
