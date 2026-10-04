@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: core-api Public API
-  version: "0.2.0"
+  version: "0.3.0"
   description: |
     Web(`web`) → Core(`core-api`) 계약. Web은 이 스펙만 보고 구현하며,
     Compute(`compute-api`)를 직접 호출하지 않는다(`AGENTS.md` §3, `AI_AGENT.md` §4).
@@ -1365,14 +1365,6 @@ components:
       properties:
         microseconds: { type: integer, format: int64, minimum: 0 }
         iso8601: { type: string, pattern: '^P' }
-    InstantInterval:
-      type: object
-      required: [startInclusive, endExclusive, precision]
-      properties:
-        startInclusive: { type: string, format: date-time }
-        endExclusive: { type: string, format: date-time }
-        precision: { type: string, enum: [MINUTE, EXACT_INSTANT] }
-      description: Position History minute value는 MINUTE interval이며 한 exact instant로 바꾸지 않는다.
     AnalysisPeriod:
       type: object
       required: [startInclusive, endExclusive]
@@ -1614,7 +1606,7 @@ components:
           description: 최대 52,428,800 bytes.
     TradingSourceArtifact:
       type: object
-      required: [id, importSessionId, role, contentType, byteSize, sha256, uploadStatus, retentionStatus, rawReparseAvailable, uploadedAt]
+      required: [id, importSessionId, role, contentType, byteSize, sha256, uploadStatus, retentionStatus, rawReparseAvailable, coverage, uploadedAt]
       properties:
         id: { type: string }
         importSessionId: { type: string }
@@ -1629,6 +1621,11 @@ components:
         uploadStatus: { $ref: '#/components/schemas/ArtifactUploadStatus' }
         retentionStatus: { $ref: '#/components/schemas/ArtifactRetentionStatus' }
         rawReparseAvailable: { type: boolean }
+        coverage:
+          allOf: [ { $ref: '#/components/schemas/ArtifactCoverage' } ]
+          type: object
+          nullable: true
+          description: validation 전 또는 timestamp parse 실패 시 null; 유효 artifact는 role별 독립 observed coverage를 보존한다.
         rawExpiresAt: { type: string, format: date-time, nullable: true }
         uploadedAt: { type: string, format: date-time }
         deletedAt: { type: string, format: date-time, nullable: true }
@@ -1741,6 +1738,18 @@ components:
     AnalysisCapability:
       type: string
       enum: [CLOSED_OUTCOME, INITIAL_EXPOSURE, MAX_EXPOSURE, POSITION_INCREASES, FEES, FUNDING_PAYMENTS, MARKET_PRICE_PATH, VENUE_REPORTED_PNL, POSITION_MODE_USER_DECLARED, POSITION_MODE_OBSERVED_COMPATIBLE, VENUE_POSITION_SUMMARY, EXECUTION_ORIGIN_KNOWN, STABLE_EPISODE_TIME]
+    ArtifactCoverage:
+      type: object
+      required: [earliestObservedAt, latestObservedAt, rowCount, sourceTimezone, timestampPrecision, coverageCompleteness]
+      additionalProperties: false
+      properties:
+        earliestObservedAt: { type: string, format: date-time, nullable: true }
+        latestObservedAt: { type: string, format: date-time, nullable: true }
+        rowCount: { type: integer, format: int64, minimum: 0 }
+        sourceTimezone: { type: string, description: ImportSession에 고정된 IANA timezone ID. }
+        timestampPrecision: { type: string, enum: [SECOND] }
+        coverageCompleteness: { type: string, enum: [NOT_PROVEN] }
+      description: Trade는 Time min/max, Position은 Opened min/Closed max인 observed coverage이며 거래소 export의 연속성·완전성을 증명하지 않는다.
     Coverage:
       type: object
       required: [startInclusive, endExclusive]
@@ -1753,7 +1762,7 @@ components:
       properties:
         instrumentId: { type: string }
         venue: { $ref: '#/components/schemas/TradingVenue' }
-        venueSymbol: { type: string }
+        venueSymbol: { type: string, description: lossless opaque source symbol; trim/case/Unicode normalization 금지. }
         productFamily: { $ref: '#/components/schemas/TradingProductFamily' }
         baseAsset: { type: string }
         quoteAsset: { type: string }
@@ -2081,12 +2090,10 @@ components:
         recordId: { type: string }
         recordType: { type: string, enum: [EXECUTION, FEE, VENUE_REPORTED_PNL, VENUE_POSITION_SUMMARY] }
         occurredAt: { type: string, format: date-time, nullable: true }
+        openedAt: { type: string, format: date-time, nullable: true, description: Position summary exact UTC instant. }
+        closedAt: { type: string, format: date-time, nullable: true, description: Position summary exact UTC instant. }
         price:
           allOf: [ { $ref: '#/components/schemas/Price' } ]
-          type: object
-          nullable: true
-        occurredInterval:
-          allOf: [ { $ref: '#/components/schemas/InstantInterval' } ]
           type: object
           nullable: true
         sourceEvidenceSnapshotId: { type: string }
