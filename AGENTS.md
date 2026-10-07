@@ -8,8 +8,11 @@
 - 작업 전 다음 순서로 읽는다: `docs/AI_AGENT.md`, `docs/DECISIONS.md`,
   `docs/DOMAIN.md`, `docs/ARCHITECTURE.md`, `docs/USECASES.md`,
   `docs/GLOSSARY.md`, `docs/ROADMAP.md`, `docs/GIT_WORKFLOW.md`.
-- `docs/`와 `openapi/`는 context 저장소에서 동기화되는 파일이다. 이 저장소에서 직접
-  수정하지 않는다. 변경이 필요하면 context 저장소에서 수정하고 동기화한다.
+- Trading Review 작업은 `docs/AI_AGENT.md`의 라우팅에 따라 관련 `docs/TRADING_*.md`와
+  ADR을 추가로 읽는다.
+- `docs/README.md`에 명시된 문서와 `openapi/`는 context 저장소에서 동기화되는
+  파일이다. 이 저장소에서 직접 수정하지 않는다. 변경이 필요하면 context 저장소에서 수정하고 동기화한다.
+  `docs/README.md`와 `docs/GIT_WORKFLOW.md`는 Core가 소유하는 로컬 문서다.
 - 작업 트리의 `/context/`는 개발자가 편의상 둘 수 있는 로컬 checkout일 뿐이다. Git
   submodule 또는 core-api의 추적 대상에 추가하지 않는다.
 - Web 계약은 `openapi/core-api.yaml`, Compute 호출 계약은 `openapi/compute-api.yaml`을
@@ -78,6 +81,8 @@
   조립해 검증하는 local E2E harness다. Core source와 Gradle settings에 포함하지 않는다.
 - Core↔Compute 호출 또는 OpenAPI snapshot에 영향을 주는 변경은 context 정본을 먼저
   확인하고, 구현 전후 `../integration/scripts/verify-contract-sync.ps1`을 실행한다.
+- Context 문서 snapshot을 갱신한 뒤에는 `scripts/verify-context-doc-sync.ps1`을 실행해
+  정본과 byte-level 내용(개행 정규화 제외)이 일치하는지 확인한다.
 - Core↔Compute 동작 변경은 integration의 분리된 DB와 non-production fixture로 smoke를
   검증한다. 로컬 credential, fixture 산출물, compatibility evidence는 각 저장소에
   커밋하지 않는다.

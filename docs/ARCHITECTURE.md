@@ -18,17 +18,21 @@
          ↓
 ┌──────────────────────┐
 │  refinvest-compute   │  Python + FastAPI
-│  (Backtest Engine +       │
-│   Data Ingestion)          │
+│  (Backtest + Behavior      │
+│   Analytics + Ingestion)   │
 └──────────┬───────────┘
            ↓
    ┌───────┴────────┐
    ↓                ↓
 [Postgres]     [Object Storage]
-(공유 DB,       (Dataset Snapshot,
-테이블 소유권    Parquet)
-문서로 구분)
+(공유 DB 및     (Dataset Snapshot,
+Compute durable  manifest JSON +
+job queue)       encrypted raw/result artifacts)
 ```
+
+Object Storage는 물리 인프라를 공유할 수 있지만 logical namespace와 쓰기 권한은 분리한다. Compute는
+Dataset Snapshot을, Core는 Trading Review raw/manifest/result artifact를 소유하며 서로의 object를 직접
+열거하거나 장기 복사하지 않는다.
 
 `refinvest-system`은 코드가 없는 문서/계약 전용 레포로, 이 문서들과 두 API 계약을 보관한다: `openapi/compute-api.yaml`(Core↔Compute), `openapi/core-api.yaml`(Web↔Core).
 
@@ -51,6 +55,13 @@ refinvest-core/
 │   ├── adapter/in/web/  # BacktestController
 │   ├── adapter/out/persistence/
 │   └── adapter/out/compute/  # ComputeClient — backtest의 Compute 호출은 이 포트 뒤로만 격리
+├── tradingreview/
+│   ├── domain/          # TradingAccount/Book, TradingImportSession, LedgerRevision, TradingAnalysisRun
+│   ├── application/     # import/analysis/review Use Case
+│   ├── adapter/in/web/  # upload, run polling, review query
+│   ├── adapter/out/persistence/
+│   ├── adapter/out/artifact/ # 민감 원본 저장/삭제 port
+│   └── adapter/out/compute/  # normalization/analysis 호출 격리
 ├── asset/
 │   └── adapter/out/compute/  # Compute의 Asset/Calendar 참조 데이터를 읽어오는 Read-only 클라이언트
 ├── user/
@@ -60,7 +71,7 @@ refinvest-core/
 
 **모듈 간 규칙**:
 - 모듈은 서로의 `domain`을 직접 참조하지 않는다. 다른 모듈의 기능이 필요하면 그 모듈의 `application` 레이어(Use Case)를 통해서만 호출한다.
-- `backtest`와 `asset` 두 모듈만 `Compute`를 호출할 수 있다 — `backtest`는 백테스트 실행을, `asset`은 Asset/Calendar 참조 데이터 조회(`ListAssets`, `GetAssetAvailability`, `GetSeries`)를 전담하며, 각자 자신의 `adapter/out/compute/`에 클라이언트를 격리한다. 그 외 모듈(`strategy`, `user` 등)이 Compute 데이터가 필요하면 `backtest` 또는 `asset` 모듈의 Use Case를 거친다(직접 호출 금지). (`AI_AGENT.md` §2와 동일)
+- `backtest`, `asset`, `tradingreview`만 Compute를 호출할 수 있다. `backtest`는 백테스트 실행을, `asset`은 Asset/Calendar 참조 데이터 조회(`ListAssets`, `GetAssetAvailability`, `GetSeries`)를 전담하며, 각자 자신의 `adapter/out/compute/`에 클라이언트를 격리한다. `tradingreview`는 거래 정규화와 행동 분석만 자신의 포트로 호출한다. 그 외 모듈(`strategy`, `user` 등)은 Compute를 직접 호출하지 않는다. (`AI_AGENT.md` §2와 동일)
 
 ---
 
@@ -78,6 +89,11 @@ refinvest-compute/
 │   ├── vendors/               # 벤더별 어댑터 (Tiingo, 크립토 벤더 등)
 │   ├── corporate_actions/     # Split/Reverse Split/Dividend 정규화
 │   └── snapshot.py            # Immutable Dataset Snapshot 생성
+├── trading_review/          # 사용자 거래 기록 분석, backtest engine과 분리
+│   ├── adapters/binance/    # source schema detection/normalization
+│   ├── reconstruction/      # product-specific ReconstructionPolicy
+│   ├── analytics/           # Observation/Metric/Finding
+│   └── pipeline.py          # pinned ledger input → Review result
 ├── api/
 │   ├── routes/backtests.py    # POST /backtests (202 Accepted), GET /backtests/{id}
 │   └── routes/assets.py       # GET /assets, GET /assets/{symbol}/availability, GET /series (향후 Data Explorer용; MVP Web에는 비공개)
@@ -105,6 +121,9 @@ Strategy DSL → Validation → Dataset Snapshot Resolution → Calendar Resolut
 |---|---|---|
 | `users`, `strategies`, `strategy_versions`, `subscriptions` | Core | Core만 |
 | `backtest_runs`, `backtest_results`, `trades` | Core | Core만 (Compute는 응답을 반환할 뿐 직접 쓰지 않음) |
+| `trading_accounts`, `trading_books`, `trading_import_sessions`, `trading_source_artifacts`, `source_evidence_snapshots`, `trading_records`, `ledger_revisions`, revision-record membership, reconciliation manifests | Core | Core만 |
+| `trading_analysis_runs`, `trading_analysis_results`, `trading_reprocessing_runs`, `trading_deletion_requests`, artifact retention state, durable dispatch | Core | Core만 (Compute runtime/terminal payload는 제한 기간만 보관) |
+| Trading Review compute jobs, attempts, terminal payloads, artifact leases | Compute | Compute만; Core는 internal API로만 조회/ack |
 | `assets`, `market_calendars`, `corporate_actions` | Compute (Ingestion) | Core는 Compute API를 통해서만 조회, 직접 쿼리 금지 |
 | `dataset_snapshots` | Compute (Ingestion) | Compute 내부, Core는 스냅샷 ID만 참조값으로 저장 |
 
@@ -118,7 +137,9 @@ Strategy DSL → Validation → Dataset Snapshot Resolution → Calendar Resolut
 refinvest-web/
 ├── app/
 │   ├── strategies/[id]/build/  # Strategy Builder (Level 1~3)
-│   └── strategies/[id]/results/[runId]/  # 결과 페이지
+│   ├── strategies/[id]/results/[runId]/  # Backtest 결과 페이지
+│   ├── trading-review/imports/ # CSV import/verification
+│   └── trading-review/runs/[runId]/ # quality report, findings, evidence
 ├── lib/api/                 # Core API 클라이언트 (Compute를 직접 호출하는 코드는 존재하지 않는다)
 └── components/
     ├── chart/                # 향후 Data Explorer/Trade Timeline용 (MVP 사용자 원시 가격 차트에는 미사용)
@@ -158,12 +179,56 @@ Core                                  Compute
 ```
 
 - Compute는 인터넷에 직접 노출하지 않는다. Core만 호출 가능한 내부망 서비스로 배포한다.
-- Job Queue: Compute 내부에서 Redis + RQ(또는 Celery)를 사용한다. 이 큐는 Compute 레포 내부 구현 상세이며 Core는 알 필요가 없다.
+- Job Queue: Compute 소유 PostgreSQL 테이블의 durable job queue를 사용한다. Worker는 transaction으로
+  eligible job을 claim하고 lease/heartbeat로 장애 복구와 bounded retry를 관리한다. 이 큐는 Compute
+  내부 구현 상세이며 Core는 직접 읽거나 쓸 수 없다. Core는 자신의 durable dispatch record와 Compute
+  REST API만 사용한다(ADR-040~044, ADR-047).
 
 ---
 
 ## 7. 배포 단위
 
-4개 레포 = 4개 컨테이너(Core, Compute, Web, 그리고 Ingestion을 별도 스케줄 워커로 분리할지는 Compute 레포 내에서 결정). Postgres, Redis, Object Storage는 공용 인프라로 별도 관리한다.
+4개 레포 = 4개 컨테이너(Core, Compute, Web, 그리고 Ingestion을 별도 스케줄 워커로 분리할지는 Compute 레포 내에서 결정). Postgres와 Object Storage는 공용 인프라로 별도 관리한다. 현재 Compute의 durable job queue를 위한 별도 Redis는 사용하지 않는다.
 
-Backtest Engine의 컨테이너 이미지는 **버전 태깅**한다(예: `refinvest-compute:1.3.2`). `BacktestRun.engineVersion`에 이 태그를 기록해, 필요 시 과거 버전의 Engine 이미지로 특정 백테스트를 재현할 수 있게 한다(ADR-010 Determinism Contract).
+Backtest Engine의 컨테이너 이미지는 **버전 태깅**한다(예: `refinvest-compute:1.3.2`). `BacktestRun.engineVersion`에 이 태그를 기록해, 보관된 과거 Engine 이미지가 있으면 특정 백테스트 재현에 사용할 수 있게 한다(ADR-010 Determinism Contract). 태그가 과거 binary의 영구 보관이나 실제 가용성을 보장하지는 않는다.
+
+---
+
+## 8. Trading Review 실행 경계
+
+Trading Review는 기존 배포 단위를 재사용하지만 Backtest 도메인과 타입/테이블/API를 공유하지 않는다.
+
+```text
+Web → Core session + Trade/Position artifacts upload
+Core → Compute normalization/reconciliation job → canonical records + manifest
+Core atomic accept → LedgerRevision pins records/manifest/version
+Core → Compute analysis job (pinned revision payload/artifact)
+Compute → pinned manifest → ReviewUnit → metrics/findings
+Core → long-term result persistence → Web review/evidence
+
+Core TradingReprocessingRun(source/target VersionSet + deletion generation)
+  → Compute compatibility validation + requested stage execution
+  → Core hash/lineage/generation validation
+  → completed-only Revision/Result publication
+```
+
+- Web은 원본 CSV를 Compute에 직접 전송하지 않는다.
+- Web은 최대 50 MiB의 CSV를 multipart로 Core에 전송하고 Core가 encrypted private object write를 검증한 뒤
+  artifact를 등록한다. 두 role이 준비돼도 명시적 validation command 전에는 시작하지 않는다.
+- Core가 ownership, artifact retention, source evidence snapshot, deletion tombstone/generation, canonical ledger와
+  장기 result를 소유한다. lifecycle 상세는 [`TRADING_DATA_LIFECYCLE.md`](TRADING_DATA_LIFECYCLE.md)를 따른다.
+- Compute adapter는 두 Binance V1 dialect를 해석하고 reconciliation하지만 사용자 계정 도메인을 소유하지 않는다.
+- raw artifact는 private object storage에서 artifact별 envelope encryption하며 Compute에는 최대 5분의
+  job-bound read만 허용한다. terminal output은 opaque payload handle로 Core가 stream-copy하고 ack하며,
+  runtime/payload는 최대 24시간이다. deletion generation보다 오래된 결과는 Core가 저장하지 않는다.
+- Core는 `TradingReprocessingRun`, version registry snapshot, idempotency, lineage와 latest pointer를 소유한다.
+  Compute는 요청에 고정된 compatible version을 실행하고 immutable implementation digest를 반환한다. 과거
+  implementation을 영구 보관한다고 가정하지 않으며 versioning 상세는
+  [`TRADING_VERSIONING.md`](TRADING_VERSIONING.md)를 따른다.
+- 새 Revision/Analysis를 함께 만드는 재처리는 Compute 장기 transaction이 아니라 Core의 최종 publication
+  경계에서 result hash, lineage와 deletion generation을 함께 검증한다. partial output은 Review에 노출하지 않는다.
+- current backtest durable dispatch를 공통화할지는 실제 결합도를 확인한 후 결정한다. `BacktestRun`을
+  이름만 바꾸거나 Trading Analysis에 재사용하지 않는다.
+- 공개/내부 REST 경로와 schema는 두 OpenAPI, 의미는
+  [`TRADING_REVIEW_API.md`](TRADING_REVIEW_API.md), 논리 저장 경계는
+  [`TRADING_REVIEW_PERSISTENCE.md`](TRADING_REVIEW_PERSISTENCE.md)가 정본이다.
