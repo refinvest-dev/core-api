@@ -1,4 +1,6 @@
 refinvest:
+  trading-review:
+    deletion-enabled: false
   id:
     node-id: 0
   security:
@@ -8,6 +10,8 @@ refinvest:
     web-origin: http://localhost:3001
 
 spring:
+  flyway:
+    enabled: false
   security:
     oauth2:
       client:

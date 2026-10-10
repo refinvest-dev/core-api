@@ -158,7 +158,7 @@ class SecurityConfiguration {
         val configuration = CorsConfiguration().apply {
             allowedOrigins = listOf(properties.webOrigin)
             allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-            allowedHeaders = listOf("Content-Type", "X-XSRF-TOKEN")
+            allowedHeaders = listOf("Content-Type", "X-XSRF-TOKEN", "Idempotency-Key")
             allowCredentials = true
         }
         return UrlBasedCorsConfigurationSource().also { source -> source.registerCorsConfiguration("/**", configuration) }

@@ -285,17 +285,23 @@ deletion ledger는 backup 최대 기간보다 긴 180일을 보관하므로 모�
 ## 9. 동시 job 계약
 
 삭제 요청 transaction은 scope의 `deletionGeneration`을 증가시키고 tombstone을 기록한 뒤 신규 import,
-analysis와 retry admission을 차단한다. 모든 Core→Compute job과 callback은 제출 시 generation을 포함한다.
+analysis와 retry admission 및 normalization grant update를 차단한다. 모든 Core→Compute job,
+grant update와 terminal handoff는 해당 generation을 포함한다.
 Core는 terminal result 저장 transaction에서 현재 generation과 tombstone을 다시 검사한다.
+Core가 signed grant를 재발급하기 전에도 raw TTL, owner scope, tombstone과 current generation을
+검사한다. Compute는 자신의 pinned generation과 다른 update를 거절하지만 Core의 최신 tombstone을
+독자 조회하지 않으므로 Core publication 검사가 최종 방어선이다. 삭제 뒤 이미 완료된 payload는
+장기 저장하지 않고 final attempt/generation/hash를 확인한 `DISCARDED_STALE` acknowledgement로
+정리한다(ADR-064).
 
 | 경쟁 상황 | 결정론적 처리 |
 |---|---|
-| normalization 중 raw-only 삭제 | 신규 read를 막고 job 취소를 요청한다. 결과는 discard하고 session은 lifecycle reason `SOURCE_ARTIFACT_DELETED`로 `REJECTED`된다. object/runtime purge 후 삭제 완료 |
+| normalization 중 raw-only 삭제 | 신규 read·grant update를 막고 job 취소를 요청한다. 결과는 discard하고 session은 lifecycle reason `SOURCE_ARTIFACT_DELETED`로 `REJECTED`된다. object/runtime purge 후 삭제 완료 |
 | reconstruction 중 Book 삭제 | Book tombstone 후 job/queue retry 취소, callback discard, Book 전체 purge |
 | analysis result 저장 직전 Account 삭제 | 같은 transaction의 generation check가 저장을 거절하고 `STALE_RESULT_AFTER_DELETION` audit만 남김 |
-| retry queue에 job 존재 | tombstoned scope job은 claim/admission하지 않고 cancelled cleanup 대상으로 전환 |
+| retry/grant 대기열에 job 존재 | tombstoned scope job은 claim/admission/update하지 않고 cancelled cleanup 대상으로 전환 |
 | Compute가 payload를 이미 수신 | cancel marker를 확인하고 가능한 즉시 중단; 중단 불가 구간의 output도 Core가 저장하지 않으며 runtime은 24시간 안에 purge |
-| 삭제 완료 뒤 terminal callback | 성공 응답으로 장기 저장하지 않고 stale로 acknowledge/discard; callback 재시도를 멈춤 |
+| 삭제 완료 뒤 terminal polling 결과 | 성공 응답으로 장기 저장하지 않고 stale disposition으로 acknowledge/discard; 재조회 시 같은 결과를 다시 publish하지 않음 |
 | 삭제된 Revision 재분석 | Core에서 `410 Gone`; Compute job을 만들지 않음 |
 | raw TTL과 reparse job 경쟁 | `rawExpiresAt` 이전에 끝날 보장이 없는 job도 TTL을 연장하지 않음. 만료 시 cancel/discard하고 재업로드 요구 |
 

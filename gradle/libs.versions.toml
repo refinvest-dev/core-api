@@ -24,6 +24,8 @@ spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-star
 spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
 kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect" }
 postgresql = { module = "org.postgresql:postgresql" }
+flyway-core = { module = "org.flywaydb:flyway-core" }
+flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
 h2 = { module = "com.h2database:h2" }
 jackson-module-kotlin = { module = "tools.jackson.module:jackson-module-kotlin" }
 jackson-databind = { module = "tools.jackson.core:jackson-databind" }

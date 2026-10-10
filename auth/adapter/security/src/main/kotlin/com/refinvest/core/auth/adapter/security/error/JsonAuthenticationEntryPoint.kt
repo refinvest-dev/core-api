@@ -20,6 +20,8 @@ class JsonAuthenticationEntryPoint(
     ) {
         response.status = HttpStatus.UNAUTHORIZED.value()
         response.contentType = MediaType.APPLICATION_JSON_VALUE
-        objectMapper.writeValue(response.outputStream, SecurityErrorResponse("UNAUTHORIZED", "Authentication is required"))
+        val trading = request.requestURI.startsWith("/trading-")
+        objectMapper.writeValue(response.outputStream, SecurityErrorResponse(
+            if (trading) "AUTHENTICATION_REQUIRED" else "UNAUTHORIZED", "Authentication is required"))
     }
 }
