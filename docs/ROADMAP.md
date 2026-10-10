@@ -101,7 +101,7 @@ persistence, OpenAPI, queue, migration 실행 또는 UI를 구현하지 않는�
 ### TR-0G — Acceptance Scenarios & State Transition Contract
 
 [`TRADING_REVIEW_ACCEPTANCE.md`](TRADING_REVIEW_ACCEPTANCE.md)에서 Import, Reconstruction, Analysis, Evidence,
-Data Lifecycle, Reprocessing과 Authorization의 완료 조건을 96개 stable Scenario ID로 연결한다. 다섯 상태
+Data Lifecycle, Reprocessing, Authorization과 Normalization Job protocol의 완료 조건을 110개 stable Scenario ID로 연결한다. 다섯 상태
 모델의 command/event 전이와 terminal/duplicate/retry/deletion 경쟁을 정의하되 OpenAPI와 persistence는
 확정하지 않는다.
 
@@ -124,7 +124,7 @@ controller와 Integration E2E는 각 구현 저장소의 후속 작업이다.
 
 **TR-0H 종료 조건**:
 
-- 96개 Acceptance Scenario가 public/internal operation 또는 명시적 운영 control-plane assertion에 연결된다.
+- 110개 Acceptance Scenario가 public/internal operation 또는 명시적 운영 control-plane assertion에 연결된다.
 - Core/Compute가 같은 logical record를 동시에 소유하지 않고 terminal payload handoff/ack/purge가 정의된다.
 - accepted immutable data와 mutable latest pointer, Revision membership, deterministic uniqueness가 구분된다.
 - import/analysis/reprocessing/deletion의 local transaction과 distributed retry 경계가 구현 가능한 수준으로 닫힌다.

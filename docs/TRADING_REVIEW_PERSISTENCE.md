@@ -122,6 +122,17 @@ Member
 Compute는 Core의 `TradingRecord`, Revision, AnalysisResult를 자기 장기 record로 복제하지 않는다. terminal payload는
 Core가 검증·복사할 때까지의 transport/runtime artifact일 뿐 source of truth가 아니다.
 
+Normalization `ComputeJob`은 생성 시 계산 pin과 최초 attempt token,
+`grantRenewalCutoffAt`을 고정하고 `grantRevision=0`에서 시작한다.
+생성 요청의 URI/만료시각은 계산 fingerprint가 아니지만
+저장된 grant를 생성 replay로 교체하지 않는다. `grantRevision`, 현재 attempt token과 grant
+locator/expiry는 별도 grant-update transaction에서만 바뀐다. 필요 동작
+(`NONE | REPLACE_QUEUED_GRANTS | START_RETRY_ATTEMPT`)과
+`grantRefreshDeadlineAt`은 claim·expiry·grant-update transaction에서 상태에 따라 바뀐다. 이전 token과
+ArtifactLease 이력은 삭제 전까지 보존하며 한 revision에 role별 grant가 정확히 하나다.
+Compute job의 `PENDING/RUNNING`은 grant 대기에도 유지되고 active capacity를 소비한다.
+job terminal 뒤에는 grant revision·token을 수정하지 않는다.
+
 ## 4. Persistence ownership matrix
 
 | Logical data | Owner | Writer | Reader | Retention | Immutable |
@@ -169,13 +180,27 @@ reprocessingLogicalKey = SHA-256(canonical JSON {
 
 computeDispatchIdentity = SHA-256(canonical JSON {
   operationKind, coreLogicalAggregateId,
-  logicalRequestKey, attemptToken,
+  logicalRequestKey, initialAttemptToken,
   targetVersionSetHash, deletionGeneration
 })
+
+computeGrantUpdateIdentity = independent Idempotency-Key + canonical update fingerprint {
+  jobId, mode, expectedGrantRevision, expectedAttemptToken, nextAttemptToken,
+  expectedInputHash, versionSetHash, deletionGeneration,
+  artifactsByRole[{coreArtifactId, role, rawSha256, byteSize, contentType, accessUri, expiresAt}]
+}
 ```
 
-canonical ordering/serialization은 `TRADING_VERSIONING.md` §16을 그대로 사용한다. public transport
+각 identity/fingerprint의 필드 선택은 위 식과 API 계약을 따르고 canonical 정렬/스칼라 직렬화는
+`TRADING_VERSIONING.md` §16을 사용한다. public transport
 `Idempotency-Key`는 이 logical key와 별도로 보존하며 같은 key/different fingerprint를 거절한다.
+Compute 생성 fingerprint는 immutable 계산 입력과 **최초** `attemptToken`을 포함하지만 signed
+`accessUri`/`expiresAt`, header, runtime UUID/시각은 제외한다. 생성 key는 job lifetime 동안
+불변이고 이후 token 변경은 이 key를 다시 계산하지 않는다. Grant update fingerprint는
+URI/expiry까지 포함하되 idempotency record에는 fingerprint hash만 저장·비교한다.
+현재 grant locator는 실행에 필요한 기간 동안 별도 암호화된 runtime field에 보관하며
+원문을 log/metric에 남기지 않는다.
+같은 update key/body는 최초 receipt를 재반환하고 key 재사용·CAS 불일치는 `409`다.
 
 ### 5.2 Required uniqueness
 
@@ -189,6 +214,7 @@ canonical ordering/serialization은 `TRADING_VERSIONING.md` §16을 그대로 �
 | analysis | at most one active attempt per logical key; one successful deterministic result |
 | reprocessing | at most one active attempt per logical key; one successful output; retry lineage explicit |
 | Compute dispatch | one accepted Compute job per Compute idempotency key/fingerprint |
+| Compute grant update | one receipt per independent update key/fingerprint; `(jobId, grantRevision)` unique, revision 단조 증가 |
 | terminal payload | one `(jobId, attemptToken, resultHash)`; conflicting hash rejected |
 | deletion | unique scope/generation request; duplicate key returns same request |
 | deterministic publication | same canonical input/version/config cannot publish a second different hash |
@@ -220,8 +246,10 @@ state, idempotency, generation/hash 검증과 retry로 연결한다.
    transaction에서 empty role slot을 artifact metadata로 채운다. conflict/rollback 시 orphan cleanup을 enqueue한다.
 3. **Validation admission transaction**: owner, two roles, raw availability, version/policy/generation을 검증하고
    `RECEIVED→VALIDATING`, validation logical key와 `DurableDispatch`를 함께 commit한다.
-4. dispatcher는 transaction 밖에서 Compute를 호출한다. timeout/503은 같은 Compute key, 새 attempt policy로
-   retry한다.
+4. dispatcher는 transaction 밖에서 Compute를 호출한다. 생성 timeout/503은 같은 Compute key와
+   최초 token/body로 retry한다. 생성 응답 유실 replay는 grant/token을 바꾸지
+   않는다. Compute status의 `grantAction`을 보고 필요한 경우 별도 update key를 durable 기록한
+   뒤 transaction 밖에서 grant update를 전송한다.
 5. **Accepted publication transaction**: terminal payload의 attempt/input/version/generation/hash를 검증하고
    canonical records/provenance/snapshots, manifest, Revision/membership, session `ACCEPTED`, created Revision ID와
    Book latest Revision pointer를 함께 commit한다. 어느 일부만 저장된 accepted import도 허용하지 않는다.
@@ -265,6 +293,33 @@ state, idempotency, generation/hash 검증과 retry로 연결한다.
 4. 모든 live component absent verification 뒤에만 `COMPLETED`; partial/error는 access block을 유지한
    `FAILED`다. backup expiry는 별도 `backupPurgeDueAt`로 추적한다.
 5. 늦은 terminal result는 current generation/tombstone 검사에서 거절하고 payload cleanup을 acknowledge한다.
+
+### 7.5 Compute normalization grant/attempt
+
+1. **Create transaction**: Compute 생성 key/fingerprint와 Job, 최초 token,
+   `grantRevision=0`, `grantRenewalCutoffAt`, 두 role grant를 원자적으로 기록한다. 같은 key/fingerprint 조회는
+   fresh-grant validation보다 먼저 하며 저장된 grant를 갱신하지 않는다. 신규 job에만
+   Trading Review pool capacity를 원자적으로 예약한다.
+2. **Grant update transaction**: 독립 update key/fingerprint의 기존 receipt를 먼저 조회한다.
+   신규 update면 job row를 잠그고 current revision/token, pinned input/version/generation,
+   허용된 `grantAction`, live lease 부재, deadline와 retry budget을 검증한다. 두 grant를
+   함께 교체하고 이전 ArtifactLease를 닫으며 revision 증가·새 token/attempt 등록·receipt
+   저장을 하나의 transaction으로 commit한다. 원격 object read는 이 transaction 밖이다.
+3. **Claim/expiry transaction**: fresh한 미소비 grant 둘이 있을 때만 claim한다. claim
+   후 실패·부분 소비·crash/lease expiry는 이전 attempt/lease를 닫고
+   `START_RETRY_ATTEMPT`와 DB-clock deadline을 기록한다. 첫 claim 전 만료는
+   `REPLACE_QUEUED_GRANTS`다. worker가 없어도 expiry sweep 또는 status의 짧은 row-lock
+   transaction이 처음 관측한 DB 시각에 action/deadline을 한 번만 기록한다. deadline은
+   동작별 wait window와 생성 시 고정한 `grantRenewalCutoffAt` 중 이른 시각이다. 이후
+   polling은 저장된 deadline을 반환하며 연장하지 않는다. 기한·budget을 넘기면 safe terminal `FAILED`다.
+4. **Terminal transaction**: lease owner, 최종 token, revision, generation, input/version
+   hash와 취소 marker를 CAS로 확인한다. 완료 payload/descriptor와 `COMPLETED`를
+   원자적으로 publish한다. stale attempt는 아무 payload도 publish하지 못한다.
+   `FAILED`는 status의 structured failure만 저장한다.
+5. **Acknowledgement transaction**: job/payload/최종 token·generation 및 전송 bytes/result
+   hash를 함께 검증한다. `PERSISTED`와 deletion 이후 `DISCARDED_STALE`을 구별하고
+   동일 ack key/body는 no-op이다. Ack가 결과 hash를 수정하지 않으며 payload는
+   ack 이후 또는 terminal+24시간 중 먼저 오는 cleanup 대상이다.
 
 ## 8. Optimistic locking policy
 
@@ -313,7 +368,19 @@ scope type/opaque ID, generation, 상태, count와 시각만 180일 남기고 ve
 Compute 구현은 다음을 강제해야 한다.
 
 - job/idempotency row atomic create, one active attempt/lease
+- grant update key/receipt와 `expectedGrantRevision + expectedAttemptToken` CAS, 두 role grant의
+  atomic replacement, 이전 ArtifactLease 폐쇄; live lease/terminal/generation/input/version 변경 거절
+- claim 전 grant 만료는 `PENDING/REPLACE_QUEUED_GRANTS`, claim 후 부분 소비·crash/만료는
+  `RUNNING/START_RETRY_ATTEMPT`; 소비된 single-read grant 자동 재사용 금지
+- DB 시각으로 고정한 grant 대기 deadline을 status에 노출하고 기한/attempt budget 초과는
+  safe terminal `FAILED`; 대기 중 active capacity 유지
 - attempt token/generation/version/input hash를 terminal payload에 고정
+- completed descriptor와 FAILED status도 최종 attempt token/generation을 제공; `resultHash`는
+  runtime attempt metadata를 제외하고 `payloadSha256`은 전송 bytes를 검증
 - completed descriptor와 payload atomic visibility
+- ack는 job/payload/token/generation/hash와 disposition을 검증; 삭제 후 stale payload는
+  `DISCARDED_STALE`로만 acknowledge, 정상 장기 저장은 `PERSISTED`
+- terminal job 갱신 금지; 허용된 FAILED retry는 새 Compute job/key와 Core `retryOf` dispatch,
+  같은 ImportSession으로 연결
 - ack idempotency와 terminal `PT24H` hard ceiling cleanup
 - Core table write/read 금지와 payload/log redaction
