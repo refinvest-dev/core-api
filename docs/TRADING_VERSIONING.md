@@ -57,7 +57,7 @@ AnalysisRun을 생성한다는 뜻이다. 새 Revision만 만드는 `REBUILD_LED
 Binance Position timestamp를 기존 분 구간 의미에서 second-precision exact instant로 교정하고 physical dialect,
 artifact coverage와 lossless symbol identity를 확정한 변경은 단순 문구 수정이 아니다. 구현 registry에서는
 source dialect/adapter/normalizer/canonical schema/reconstruction/reconciliation의 새 compatible set을 명시하고
-기존 accepted Revision을 in-place 수정하지 않는다. OpenAPI `0.3.0`은 이 새 payload 의미를 표현한다.
+기존 accepted Revision을 in-place 수정하지 않는다. OpenAPI `0.3.0`에서 도입한 이 payload 의미는 `0.4.0`에서도 유지한다.
 
 ### 2.1 Version identifier
 
@@ -308,6 +308,15 @@ idempotencyKey = SHA-256(canonical JSON {
   active attempt만 허용한다.
 - target version 또는 config의 의미 있는 값이 달라지면 hash와 key가 달라진다.
 - 같은 key로 서로 다른 source pointer나 target payload가 제시되면 `REPROCESSING_CONFLICT`다.
+
+이 logical idempotency key와 Compute normalization **생성** key는 서로 다른 경계다.
+Normalization 생성 key/fingerprint에는 최초 `attemptToken`이 포함되지만,
+같은 active Compute job에서 grant를 교체하거나 실패한 worker attempt를 재개할 때는
+ADR-064의 독립 grant-update key와 CAS를 사용한다. 새 token은 기존 생성 key나
+deterministic engine `resultHash`를 바꾸지 않는다. terminal `FAILED` 뒤의 새
+Compute job은 새 생성 key/Core logical dispatch ID를 쓰고 같은 ImportSession의
+Core `retryOf` lineage에 연결한다. reprocessing logical key는 worker attempt와
+무관하게 그대로 유지한다.
 
 ## 11. Lineage
 

@@ -45,9 +45,16 @@ MVP는 **Web이 multipart로 Core에 업로드하는 방식(Option A)**을 사�
    `POST /trading-import-sessions/{importSessionId}/validation`을 명시적으로 호출한다.
 5. Core는 normalization dispatch 시 각 object에 대해 **최대 5분**, single-read, job-bound인 signed internal
    grant를 발급한다. public URL이나 영구 download URL은 만들지 않는다.
-6. grant가 소비 전 만료되면 Compute attempt는 retryable `ARTIFACT_REFERENCE_EXPIRED`로 끝난다. Core는 같은
-   logical dispatch와 Compute idempotency key를 유지하면서 새 attempt token/grant로 재시도한다. raw TTL이나
-   deletion generation이 이미 막으면 재발급하지 않는다.
+6. claim 전 대기 중 만료는 같은 Compute job의 `REPLACE_QUEUED_GRANTS`로, claim 후 만료·부분 소비·
+   worker crash는 `START_RETRY_ATTEMPT`로 처리한다(ADR-064). 생성 POST를 다시 보내 token/grant를
+   교체하지 않는다. Core는 raw TTL과 deletion generation을 확인한 뒤 별도 grant update key로
+   재발급하며 terminal job은 갱신하지 않는다.
+
+생성 전에도 grant의 job binding을 검증할 수 있도록 Core는 `coreLogicalJobId`,
+`coreImportSessionId`, `coreArtifactId`, role, raw SHA-256, `attemptToken`,
+`deletionGeneration`을 signed grant에 묶는다. Compute `jobId`는 발급 전 존재하지 않으므로
+필수 서명 claim이 아니다. Core는 redemption에서 claim/만료/단일 read/삭제를 검사하고 Compute는
+job의 pinned descriptor와 받은 bytes의 role·size·SHA-256을 검사한다.
 
 grant 발급·소비·거절은 actor class, opaque artifact/job ID, action과 시각만 audit한다. signed URI, filename,
 checksum 전체와 거래 payload는 audit/log에 복제하지 않는다.
@@ -220,7 +227,7 @@ CSV pair만으로 동일 account/sub-account를 검증했다고 표시하지 않
 `openedAt`/`closedAt`으로 교체하고 role별 `ArtifactCoverage`를 추가한 의도적 계약 변경이다. 기존 interval
 payload를 새 exact timestamp로 암묵 변환하지 않는다. 구현 시 `canonicalSchemaVersion`, adapter와
 reconstruction/reconciliation compatibility를 새 exact version으로 등록하고 기존 accepted Revision이 있다면
-ADR-062의 immutable reprocessing 경계를 적용한다. Backtest schema에는 영향이 없다.
+ADR-062의 immutable reprocessing 경계를 적용한다. 이 의미는 `0.4.0`에도 유지되며 Backtest schema에는 영향이 없다.
 
 ## 6. Analysis와 Review
 
@@ -326,6 +333,7 @@ generation 증가를 먼저 commit해 access/admission/retry를 즉시 차단한
 | Internal operation | Method and path |
 |---|---|
 | normalization/reconciliation create | `POST /trading-review/normalization-jobs` |
+| normalization grant update | `POST /trading-review/normalization-jobs/{jobId}/grant-updates` |
 | normalization status | `GET /trading-review/normalization-jobs/{jobId}` |
 | normalization terminal result | `GET /trading-review/normalization-jobs/{jobId}/result` |
 | normalization cancel | `POST /trading-review/normalization-jobs/{jobId}/cancellation` |
@@ -346,9 +354,10 @@ role/checksum와 job-bound signed grant, source/review timezone, dialect/Normali
 pinned instrument terms, expected input hash, deletion generation, attempt token을 포함한다. Member profile이나
 raw account identifier는 포함하지 않는다.
 
-Normalization terminal result는 job/logical ID, status/version, canonical records,
-`SourceEvidenceSnapshot`, manifest, capability, validation/quality report, input/content/manifest/result hash,
-structured failure와 timestamps를 가진다.
+Normalization `COMPLETED` terminal payload는 job/logical ID, 최종 attempt token과
+deletion generation, status/version, canonical records, `SourceEvidenceSnapshot`, manifest,
+capability, validation/quality report, input/content/manifest/result hash와 timestamps를 가진다.
+`FAILED`는 별도 payload가 아니라 status의 structured safe failure와 최종 token/generation이다.
 
 Analytics request는 Core AnalysisRun ID, LedgerRevision content handle와 hash, manifest handle/hash,
 Analytics VersionSet, AnalysisConfig/hash, capability, deletion generation, attempt token을 포함한다. 결과는
@@ -371,16 +380,71 @@ ack 뒤에는 cleanup 대상이며 24시간을 넘겨 보관하지 않는다. ac
 Compute job은 `PENDING → RUNNING → COMPLETED | FAILED | CANCELLED`만 허용한다. Core logical run 하나는 여러
 attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
 
-- create의 `Idempotency-Key`는 Core durable dispatch identity다. same key/payload는 같은 Compute job ID를,
-  different payload는 `409`를 반환한다.
-- worker attempt, lease owner와 heartbeat는 Compute 내부다. expired lease는 bounded retry attempt를 만들되 job
-  logical identity를 바꾸지 않는다.
+- create의 `Idempotency-Key`는 Core durable dispatch identity다. canonical fingerprint에는
+  모든 immutable 계산 입력·artifact descriptor/hash, Core IDs, 최초 attempt token과 deletion
+  generation을 포함한다. `accessUri`/`expiresAt`, 인증/멱등 header, runtime ID/시각은 제외한다.
+  object key/order 또는 header 표현 차이는 영향을 주지 않는다. same key/fingerprint는 최초
+  `202/jobId`를 돌려주고 **기존 grant/token을 바꾸지 않는다**. 최초 grant가 만료된 뒤의
+  응답 유실 replay도 기존 job을 반환한다. 같은 key와 다른 token/계산 입력은 `409`다.
+- Compute status는 normalization에 한해 현재 `attemptToken`, `deletionGeneration`,
+  `grantRevision`, `expectedInputHash`, `versionSetHash`, `grantAction`과 nullable
+  `grantRefreshDeadlineAt`을 반환한다. `grantAction=NONE`이면 갱신이 필요 없다.
+  `PENDING/REPLACE_QUEUED_GRANTS`는 claim 전 대기 grant가 만료됐음을,
+  `RUNNING/START_RETRY_ATTEMPT`는 이전 worker attempt가 실패·만료되고 lease가 닫혔음을 뜻한다.
+  status 조회는 worker가 멈춘 경우에도 DB 시각의 유효 만료/lease 상태를 반영한다.
+- Core는 별도 `grant-updates` operation에서 현재 revision/token을 CAS로 지정한다.
+  `REPLACE_QUEUED_GRANTS`는 같은 token과 두 fresh grant, `START_RETRY_ATTEMPT`는
+  이전에 사용하지 않은 새 token과 두 fresh grant를 요구한다. 독립 `Idempotency-Key`의
+  exact replay는 최초 update receipt를 반환하고 다른 body는 `409`다. 늦은 이전 update는
+  revision/token mismatch로 `409`이며 새 grant를 되돌리지 않는다. 두 artifact grant는
+  role별 정확히 하나이고 pinned ID/hash/size/content type이 변할 수 없다.
+- live lease, terminal/cancelled, deletion generation·input/version mismatch는 update
+  `409`다. 이전 attempt/ArtifactLease를 닫고 새 revision/grant를 원자적으로 기록한다.
+  소비 여부가 불명확한 single-read grant도 재사용하지 않는다. 첫 claim 전 교체는 같은
+  attempt token을 유지하지만 claim 뒤 실패/worker crash는 새 token이 필요하다.
+  Compute는 요청 generation을 job의 pin과 비교한다. Core tombstone 직후 cancel 전의
+  이전 generation 요청이 먼저 commit될 수 있으므로 Core는 grant 발급을 중단하고
+  completed publication에서도 현재 generation을 재검증한다.
+- worker lease owner/heartbeat는 Compute 내부다. expired lease는 기존 grant를 자동 재claim하지
+  않고 attempt를 닫아 `START_RETRY_ATTEMPT`로 관측한다. bounded budget이 남아 있는 동안
+  `RUNNING` 상태로 grant를 기다리며 같은 Compute job ID를 유지한다. 현재 대기 기한은
+  해당 동작이 처음 필요해진 DB 시각의 bounded window와 admission 시 고정한
+  `grantRenewalCutoffAt` 중 이른 시각이다. 같은 대기의 replay/중복 update로 연장하지
+  않으며 반복 갱신도 admission cutoff를 넘기지 못한다. `grantRefreshDeadlineAt` 경과나 budget 소진은 safe
+  `FAILED/GRANT_REFRESH_DEADLINE_EXCEEDED` 또는 원인별 terminal failure다. 새 grant가
+  기한 전에 접수돼도 유효기간·single-read 조건을 다시 검증한다.
 - Core는 status를 polling한다. `COMPLETED`인데 terminal descriptor/payload/hash가 없으면 acceptance하지 않는다.
-- Core publication은 logical run ID, attempt token, expected input/version/config hash, deletion generation과
-  result hash를 모두 비교한다. duplicate same payload는 `NO_OP`; old attempt/generation은 discard/ack하며,
-  conflicting hash는 `RESULT_HASH_MISMATCH`로 publish하지 않는다.
+- Core publication은 logical run ID, **completed descriptor와 payload의 최종 attempt token**,
+  expected input/version/config hash, deletion generation과 result hash를 모두 비교한다.
+  `resultHash`는 runtime token/revision/time을 제외한 deterministic engine hash이고,
+  `payloadSha256`은 전송된 terminal JSON bytes의 hash다. duplicate same payload는
+  `NO_OP`; old attempt/generation은 discard하며 conflicting hash는
+  `RESULT_HASH_MISMATCH`로 publish하지 않는다.
+- acknowledgement는 `jobId/payloadId`, payload SHA-256, result hash, 최종 token/generation을
+  함께 검사한다. 다른 attempt의 ack는 `409`다. 정상 장기 저장은 `PERSISTED`, 삭제
+  tombstone으로 폐기한 stale completed payload는 `DISCARDED_STALE` disposition으로
+  구분한다. 후자는 Core가 현재 generation이 payload보다 큼을 확인하고 장기 저장 없이
+  보낸다. 둘 다 exact duplicate ack는 no-op이며 ack 후 payload는 cleanup 대상이다.
 - cancellation은 best effort다. completed payload를 취소로 되돌리지 않으며 Core deletion tombstone이 항상
   publication보다 우선한다.
+- terminal `FAILED` 뒤 재시도가 허용되면 새 Compute key/job와 새 Core logical dispatch ID를
+  만들고 같은 `coreImportSessionId`의 Core durable dispatch `retryOf`로 연결한다.
+  이전 job은 terminal로 남으며 grant update로 되살리지 않는다.
+
+### 10.5 Capacity와 privacy
+
+ADR-044의 Backtest 20개 pool, `BACKTEST_CAPACITY_EXCEEDED`, 30초 `Retry-After`는
+그대로다. Trading Review normalization/analytics는 Backtest와 분리된 bounded pool을
+공유한다. positive 상한과 재시도 초는 배포 설정이며 `PENDING`/lease 없는
+`RUNNING` grant 대기까지 active로 센다. 신규 Trading Review job이 자기 pool에서
+거절되면 `503 TRADING_REVIEW_CAPACITY_EXCEEDED`와 필수 초 단위
+`Retry-After`를 반환하고 job/idempotency row를 만들지 않는다. Core는 같은 생성 key로
+재시도한다. 기존 생성 replay와 grant update는 새 capacity를 예약하지 않는다.
+
+인증된 암호화 terminal payload에는 정본 allowlist의 canonical/evidence 거래 필드를
+완전하게 보존한다. raw CSV 전체 행, UID, full Trade/Order ID, filename과 signed URI는
+operational log·metric·오류 응답에 넣지 않는다. `FAILED`는 status의 safe structured
+failure만 제공하며 별도 payload descriptor는 없다.
 
 ## 11. Status and error mapping
 
@@ -394,6 +458,9 @@ attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
 | deleted owner resource | `410 RESOURCE_DELETED` | stale generation은 terminal failure | 아니오 |
 | invalid idempotency key | `400 IDEMPOTENCY_KEY_INVALID` | `400 IDEMPOTENCY_KEY_INVALID` | 수정 후 |
 | same key/different payload | `409 IDEMPOTENCY_PAYLOAD_CONFLICT` | `409 IDEMPOTENCY_PAYLOAD_CONFLICT` | 아니오 |
+| stale grant revision/token 또는 live lease/terminal update | 해당 없음 | `409 GRANT_UPDATE_CONFLICT` 또는 `JOB_STATE_CONFLICT` | status 조회 후 |
+| grant refresh 대기 기한 경과 | Import `REJECTED` 또는 새 dispatch 정책 | job `FAILED/GRANT_REFRESH_DEADLINE_EXCEEDED` | 같은 job은 아니오 |
+| Trading Review pool full | public command는 durable 대기 | `503 TRADING_REVIEW_CAPACITY_EXCEEDED` + `Retry-After`, job 미생성 | 예 |
 | state/role conflict | `409 RESOURCE_STATE_CONFLICT` | `409 JOB_STATE_CONFLICT` | 상태 조회 후 |
 | file too large | `413 FILE_TOO_LARGE` | grant/object input도 같은 상한 검증 | 작은 파일 |
 | unsupported content type | `415 UNSUPPORTED_MEDIA_TYPE` | `415 UNSUPPORTED_MEDIA_TYPE` | 형식 수정 |
@@ -412,7 +479,7 @@ attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
 
 ## 12. Acceptance traceability
 
-아래 표는 96개 stable Scenario ID를 모두 하나 이상의 API operation에 연결한다. reconstruction/analytics
+아래 표는 110개 stable Scenario ID를 모두 하나 이상의 API operation에 연결한다. reconstruction/analytics
 expected calculation은 HTTP가 아니라 정본 문서의 terminal payload assertion으로 검증한다.
 
 | Scenario ID | Public operation | Internal operation | Aggregate | Expected API result |
@@ -426,6 +493,13 @@ expected calculation은 HTTP가 아니라 정본 문서의 terminal payload asse
 | `ACC-IMPORT-018`, `ACC-IMPORT-019`, `ACC-IMPORT-020` | validate, get revision/quality | normalization | Record, Revision | dedup/provenance 또는 conflict |
 | `ACC-IMPORT-021` | validate, get import | duplicate normalization create | ImportSession, Dispatch | 기존 상태/resource |
 | `ACC-IMPORT-022` | get import/revision | duplicate terminal result/ack | ImportSession, Revision | exact duplicate no-op |
+| `ACC-NORMJOB-001`, `ACC-NORMJOB-002` | validate/poll import | normalization create/status/grant update | ImportSession, Dispatch, ComputeJob | replay는 최초 job; 대기 만료는 CAS 갱신 |
+| `ACC-NORMJOB-003`, `ACC-NORMJOB-004` | poll import | normalization status/grant update | Dispatch, ComputeJobAttempt, ArtifactLease | 부분 소비/crash 뒤 새 token·두 grant |
+| `ACC-NORMJOB-005`, `ACC-NORMJOB-006`, `ACC-NORMJOB-007` | poll import | normalization grant update/status | ComputeJob | 중복 receipt 또는 stale/live lease `409` |
+| `ACC-NORMJOB-008`, `ACC-NORMJOB-009` | delete scope/poll import | normalization cancellation/grant update/status | DeletionRequest, ComputeJob | deletion 우선, terminal 갱신 거절 |
+| `ACC-NORMJOB-010` | get import/revision | normalization result/payload/ack | ImportSession, Revision | exact duplicate no-op; stale ack `409` |
+| `ACC-NORMJOB-011`, `ACC-NORMJOB-012` | poll import | normalization status/create | ComputeJob | deadline safe failure, 별도 pool `503` |
+| `ACC-NORMJOB-013`, `ACC-NORMJOB-014` | validate/poll import | normalization create/status; Core grant redemption | Dispatch, Artifact | terminal 새 job/lineage; pre-create binding 검증 |
 | `ACC-RECON-001`, `ACC-RECON-002`, `ACC-RECON-003`, `ACC-RECON-004`, `ACC-RECON-005` | get quality/revision; 이후 review unit | normalization result | Manifest, Revision | expected status/allocation |
 | `ACC-RECON-006`, `ACC-RECON-007`, `ACC-RECON-008`, `ACC-RECON-009`, `ACC-RECON-010`, `ACC-RECON-011`, `ACC-RECON-012` | get quality/revision; metric query | normalization result | Manifest, Revision | exclusion/tolerance/capability/coverage |
 | `ACC-ANALYSIS-001`, `ACC-ANALYSIS-002`, `ACC-ANALYSIS-003`, `ACC-ANALYSIS-004`, `ACC-ANALYSIS-005`, `ACC-ANALYSIS-006`, `ACC-ANALYSIS-007`, `ACC-ANALYSIS-008`, `ACC-ANALYSIS-009` | run/poll/get review/metric | create/poll/get analytics | AnalysisRun, Result | completed status/value-or-null |
@@ -473,13 +547,15 @@ endpoint는 public product API가 아니며 운영 control-plane assertion으로
 
 ### 확정된 계약
 
-public/internal 분리, Option A upload, 50 MiB와 media type, explicit validation, polling, job-bound 5분 grant,
+public/internal 분리, Option A upload, 50 MiB와 media type, explicit validation, polling, pre-create
+logical job binding의 5분 single-read grant, 독립 grant update/CAS와 final attempt metadata,
 opaque terminal payload, Core 장기 ownership, Compute 최대 24시간 runtime, immutable result/latest pointer 분리,
 idempotency semantics, evidence/deletion/reprocessing endpoint, Decimal/time/error 표현은 계약이다.
 
 ### Server configuration
 
-poll interval, bounded retry 횟수/backoff, worker lease/heartbeat, page default 이하의 client 선택, alert threshold와
+poll interval, bounded retry 횟수/backoff, worker lease/heartbeat, bounded grant 대기 기간과
+Trading Review pool 상한/Retry-After 초, page default 이하의 client 선택, alert threshold와
 cleanup 실행 주기는 configuration이다. 상태/retention/hash 의미를 바꿀 수 없다.
 
 ### Infrastructure limit
@@ -509,5 +585,5 @@ object cleanup latency를 Integration에서 측정한다. 측정 결과만으로
 13. 다른 사용자의 resource는 존재하지 않는 것과 같은 `404`다.
 14. 금융값은 Decimal string/exact rational, Trade/Position source time은 second-precision exact instant다.
 15. 삭제와 재처리는 각각 별도 async Run/Request 상태를 반환한다.
-16. §12가 모든 96개 Acceptance Scenario를 operation에 연결한다.
+16. §12가 모든 110개 Acceptance Scenario를 operation에 연결한다.
 17. Core는 장기 product/ledger/result를, Compute는 최대 24시간 runtime/terminal payload만 저장한다.

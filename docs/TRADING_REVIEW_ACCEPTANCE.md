@@ -7,8 +7,9 @@ harness는 이 문서의 Scenario ID, fixture 상태와 `Then`을 assertion 이�
 [`TRADING_DATA_LIFECYCLE.md`](TRADING_DATA_LIFECYCLE.md), version/reprocessing은
 [`TRADING_VERSIONING.md`](TRADING_VERSIONING.md)가 정본이며 여기서 다시 정의하지 않는다.
 
-이 문서는 Use Case와 도메인 상태 계약이다. HTTP method/path/status, JSON field, persistence schema, queue와
-worker 구현을 정하지 않는다. 현재 `openapi/`에는 Trading Review 계약이 없으므로 충돌도 없다.
+이 문서는 Use Case와 도메인 상태·비동기 handoff의 acceptance 계약이다. HTTP method/path/status와
+JSON field의 정본은 `openapi/`, 논리 저장 경계는 `TRADING_REVIEW_PERSISTENCE.md`다.
+Scenario는 그 계약을 검증하되 queue/worker 구현 방식을 정하지 않는다.
 
 ---
 
@@ -60,9 +61,10 @@ V1-default`는 period를 제외한 [`TRADING_ANALYTICS.md` §3](TRADING_ANALYTIC
   UID/row/value, fingerprint, Symbol, 거래 시각·수량·가격·fee·PnL, filename/path/URL은 log/metric에서
   금지한다. `ALERT`가 추가되면 정본의 alert 조건도 검증한다.
 
-### 1.4 공통 callback과 failure assertion
+### 1.4 공통 terminal handoff와 failure assertion
 
-모든 Compute dispatch/callback은 Core가 고정한 run/import ID, attempt token, target version hash와
+모든 Compute dispatch/polling/terminal publication은 Core가 고정한 run/import ID, 최종 attempt
+token, target version hash와
 `deletionGeneration`을 검증한다. 같은 terminal payload/hash의 중복 callback은 `NO_OP`; 다른 payload,
 hash, attempt 또는 generation은 conflict/stale failure로 discard한다. Failure scenario는 다음을 반드시
 assert한다.
@@ -452,16 +454,16 @@ Run, session 또는 remediation request다.
 - **Evidence / Applied Invariants:** idempotency key and attempt history; `TR-I05`, `TR-I06`, `TR-I11`.
 - **Service Ownership / Observability / Deferred HTTP Contract:** Core; `SAFE`; command accepted asynchronously.
 
-#### TR-ACC-IMPORT-022 — Duplicate normalization terminal callback
+#### TR-ACC-IMPORT-022 — Duplicate normalization terminal handoff
 
-- **Purpose / Use Case / Actors:** callback at-least-once 안전성; internal completion; Core, Compute.
-- **Preconditions / Pinned Versions / Input Fixture:** session already terminal from identical callback; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
-- **Given / When / Then:** same attempt/input/result hash / callback repeated / status, Revision, records, latest and audit business counts unchanged.
-- **Aggregate State Changes / Created or Updated Artifacts:** none; callback delivery count may increment.
+- **Purpose / Use Case / Actors:** terminal polling/download/ack 재시도 안전성; internal completion; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** session already terminal from identical payload; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** same attempt/input/result/payload hash / terminal handoff repeated / status, Revision, records, latest and audit business counts unchanged.
+- **Aggregate State Changes / Created or Updated Artifacts:** none; transport attempt count may increment.
 - **Expected Outcome / Expected Failure or Exclusion:** `SUCCEEDED`; conflicting hash is `RECORD_CONFLICT`/`FAILED_TERMINAL` and never overwrites.
 - **Idempotency Result:** exact duplicate `NO_OP`; conflicting payload `REJECT_CONFLICT`.
-- **Evidence / Applied Invariants:** callback hashes/generation; `TR-I05`, `TR-I06`, `TR-I11`, `TR-I16`.
-- **Service Ownership / Observability / Deferred HTTP Contract:** Core verifies; `SAFE`; internal callback, status query only.
+- **Evidence / Applied Invariants:** terminal hashes/generation; `TR-I05`, `TR-I06`, `TR-I11`, `TR-I16`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Core verifies; `SAFE`; internal polling/result/ack.
 
 ### B. Reconstruction and Reconciliation
 
@@ -1293,6 +1295,168 @@ Run, session 또는 remediation request다.
 
 ---
 
+### H. Normalization Job Grant and Attempt Protocol
+
+이 그룹은 CSV 계산 fixture 없이 합성 grant/job 상태로 검증한다. `attemptToken`은 Core가
+발급한 attempt identity, `grantRevision`은 Compute job 안에서 단조 증가하는 grant CAS 값이다.
+`PENDING/RUNNING` grant 대기는 terminal 성공으로 판정하지 않는다.
+
+#### TR-ACC-NORMJOB-001 — Lost creation response replay
+
+- **Purpose / Use Case / Actors:** 접수 응답 유실 뒤 중복 job 방지; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** 최초 생성은 commit됐고 응답 유실, 최초 grant는 이후 만료; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** 같은 생성 key와 최초 token/계산 입력으로 POST replay / 최초 `202/jobId` 반환; job/idempotency count 1, grant revision/token 불변. 다른 token 또는 계산 입력의 같은 key는 `409`.
+- **Aggregate State Changes / Created or Updated Artifacts:** 신규 Job/Revision 0.
+- **Expected Outcome / Expected Failure or Exclusion:** 기존 접수 `SUCCEEDED`; key 충돌은 `REJECTED`, safe `IDEMPOTENCY_PAYLOAD_CONFLICT`.
+- **Idempotency Result:** exact replay `RETURN_EXISTING`; grant URI/expiry 차이도 암묵 교체 없음.
+- **Evidence / Applied Invariants:** 생성 fingerprint/최초 receipt; `TR-I05`, `TR-I06`, `TR-I18`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Compute runtime; `SAFE`; create/status.
+
+#### TR-ACC-NORMJOB-002 — Five-minute queued grant expiry
+
+- **Purpose / Use Case / Actors:** worker claim 전 만료의 명시적 교체; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** `PENDING`, live lease 없음, grant 만료, raw active; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** status poll / `REPLACE_QUEUED_GRANTS`, 현재 token/revision/deadline 표시; Core가 같은 token과 두 fresh grant를 CAS update / revision +1, job ID·status `PENDING` 유지, 이전 grant 폐쇄.
+- **Aggregate State Changes / Created or Updated Artifacts:** Compute grant revision 1건; Core Import 상태 불변.
+- **Expected Outcome / Expected Failure or Exclusion:** 갱신 `SUCCEEDED`; deadline 초과 시 `FAILED/GRANT_REFRESH_DEADLINE_EXCEEDED`, safe failure만.
+- **Idempotency Result:** 생성 replay는 교체하지 않음; update는 독립 key.
+- **Evidence / Applied Invariants:** DB 시각 expiry, grant revision, role별 lease; `TR-I06`, `TR-I15`, `TR-I18`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Core 발급·Compute CAS; `SAFE`; status/grant update.
+
+#### TR-ACC-NORMJOB-003 — One artifact consumed before attempt failure
+
+- **Purpose / Use Case / Actors:** single-read 재사용 차단; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** worker가 한 role을 소비하고 다른 role에서 retryable 실패; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** attempt 실패 / 두 이전 ArtifactLease 폐쇄, `RUNNING/START_RETRY_ATTEMPT`와 deadline 노출; Core가 새 token·두 새 grant를 CAS 등록 / 이전 grant read 재시도 0건.
+- **Aggregate State Changes / Created or Updated Artifacts:** 같은 job의 새 attempt/revision; ledger publication 0.
+- **Expected Outcome / Expected Failure or Exclusion:** 실패 attempt `FAILED_RETRYABLE`; budget 내 재시도 가능, raw 값 노출 없음.
+- **Idempotency Result:** 새 grant update key; 생성 key 불변.
+- **Evidence / Applied Invariants:** role별 consume/close audit, token lineage; `TR-I06`, `TR-I18`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Compute attempt/lease, Core grant; `SAFE`; status/grant update.
+
+#### TR-ACC-NORMJOB-004 — Worker crash and expired lease
+
+- **Purpose / Use Case / Actors:** 불명확한 소비 상태에서 안전한 재시도; Compute, Core.
+- **Preconditions / Pinned Versions / Input Fixture:** live worker가 응답 없이 crash; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** lease 만료 / 이전 attempt·grant 폐쇄, status는 `RUNNING/START_RETRY_ATTEMPT`; old worker terminal write 거절, 새 token·grant 전 자동 재claim 없음.
+- **Aggregate State Changes / Created or Updated Artifacts:** 같은 job의 새 attempt만 가능; terminal payload 0.
+- **Expected Outcome / Expected Failure or Exclusion:** 이전 attempt `FAILED_RETRYABLE`; stale write `REJECTED`/safe conflict.
+- **Idempotency Result:** 새 token update만 적용; stale claim은 no-op.
+- **Evidence / Applied Invariants:** lease owner/expiry/token/revision; `TR-I06`, `TR-I16`, `TR-I18`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Compute runtime; `SAFE ALERT`; status/grant update.
+
+#### TR-ACC-NORMJOB-005 — Duplicate grant update
+
+- **Purpose / Use Case / Actors:** update 응답 유실 뒤 이중 revision 방지; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** 첫 update commit 뒤 응답 유실; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** 같은 update key/body 재전송 / 최초 receipt 재반환, revision·grant·attempt count 불변; 같은 key와 다른 URI/expiry/token은 `409`.
+- **Aggregate State Changes / Created or Updated Artifacts:** 추가 row/lease 0.
+- **Expected Outcome / Expected Failure or Exclusion:** exact replay `SUCCEEDED`; 다른 body `REJECTED/IDEMPOTENCY_PAYLOAD_CONFLICT`.
+- **Idempotency Result:** `RETURN_EXISTING` 또는 `REJECT_CONFLICT`.
+- **Evidence / Applied Invariants:** update fingerprint/receipt; `TR-I05`, `TR-I18`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Compute; `SAFE`; grant update.
+
+#### TR-ACC-NORMJOB-006 — Delayed old grant update
+
+- **Purpose / Use Case / Actors:** 이전 요청의 늦은 도착이 최신 grant를 되돌리지 않음; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** revision 2/token B 확정 후 revision 0/token A 조건 요청 도착; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** old CAS update / `409 GRANT_UPDATE_CONFLICT`; revision 2/token B 및 두 grant 불변, old grant read 불가.
+- **Aggregate State Changes / Created or Updated Artifacts:** 없음.
+- **Expected Outcome / Expected Failure or Exclusion:** `REJECTED`; `GRANT_UPDATE_CONFLICT`, false, false, result 없음, status 재조회, opaque ID/code만, 반복 시 alert.
+- **Idempotency Result:** 다른 old key는 conflict; 이미 성공한 같은 key replay는 과거 receipt만 반환.
+- **Evidence / Applied Invariants:** revision/token CAS; `TR-I06`, `TR-I16`, `TR-I18`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Compute; `SAFE ALERT`; grant update/status.
+
+#### TR-ACC-NORMJOB-007 — Live worker lease rejects update
+
+- **Purpose / Use Case / Actors:** 실행 중 grant/token 변경 차단; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** `RUNNING`과 유효 lease; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** grant update / `409 JOB_STATE_CONFLICT`, 현재 lease/attempt/grant 불변; worker의 원래 token 결과만 terminal CAS 대상.
+- **Aggregate State Changes / Created or Updated Artifacts:** 없음.
+- **Expected Outcome / Expected Failure or Exclusion:** `REJECTED`; `JOB_STATE_CONFLICT`, false, false, result 없음, status 재조회, safe code만, 반복 시 alert.
+- **Idempotency Result:** 거절은 성공 receipt를 만들지 않음.
+- **Evidence / Applied Invariants:** lease owner/expiry; `TR-I06`, `TR-I16`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Compute; `SAFE`; grant update/status.
+
+#### TR-ACC-NORMJOB-008 — Cancellation and deletion generation race
+
+- **Purpose / Use Case / Actors:** 삭제가 갱신/publication보다 우선; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** token A/generation 3의 active job, Core tombstone generation 4; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** Core tombstone commit 뒤 cancel/update가 경합 / cancel이 먼저면 update `409`; 이전 generation update가 먼저면 임시 갱신은 가능하지만 Core가 추가 grant 발급을 중단하고 현재 generation 검사로 old output 장기 저장 0. stale completed payload는 `DISCARDED_STALE` ack, 삭제 scope 접근 차단.
+- **Aggregate State Changes / Created or Updated Artifacts:** deletion checklist만 진행; Revision/latest 불변.
+- **Expected Outcome / Expected Failure or Exclusion:** `CANCELLED` 또는 terminal stale discard; `STALE_RESULT_AFTER_DELETION`, false, true, 기존 결과 불변, 삭제 상태 조회, opaque ID/code만, 지연 시 alert.
+- **Idempotency Result:** cancel/discard ack exact duplicate no-op; old update 재적용 없음.
+- **Evidence / Applied Invariants:** tombstone, payload/현재 generation, final token; `TR-I15`, `TR-I16`, `TR-I30`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Core deletion 우선, Compute cancel/ack; `SAFE ALERT`.
+
+#### TR-ACC-NORMJOB-009 — Terminal job rejects grant update
+
+- **Purpose / Use Case / Actors:** terminal 불변식; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** 각 `COMPLETED`, `FAILED`, `CANCELLED` job; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** fresh key/revision의 grant update / 모두 `409 JOB_STATE_CONFLICT`; status/result/terminal hash 불변.
+- **Aggregate State Changes / Created or Updated Artifacts:** 없음.
+- **Expected Outcome / Expected Failure or Exclusion:** `REJECTED`; `JOB_STATE_CONFLICT`, false, true, result 불변, terminal status 확인, safe code만, 불필요.
+- **Idempotency Result:** terminal resurrection 없음.
+- **Evidence / Applied Invariants:** terminal CAS, immutable payload; `TR-I06`, `TR-I36`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Compute; `SAFE`; grant update.
+
+#### TR-ACC-NORMJOB-010 — Duplicate terminal publication and acknowledgement
+
+- **Purpose / Use Case / Actors:** 결과 중복·stale ack 차단; Compute, Core.
+- **Preconditions / Pinned Versions / Input Fixture:** token B/generation 3의 completed payload 1건; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** 같은 hash 재publication/ack / payload·Core Revision 1건, exact ack no-op; 다른 hash 또는 token A/generation 2 ack / `409`, 원 결과 불변.
+- **Aggregate State Changes / Created or Updated Artifacts:** 정상 ack marker만 최초 1회.
+- **Expected Outcome / Expected Failure or Exclusion:** exact duplicate `SUCCEEDED`; mismatch `REJECTED/RESULT_HASH_MISMATCH`.
+- **Idempotency Result:** terminal/ack exact duplicate `NO_OP`; conflict 거절.
+- **Evidence / Applied Invariants:** descriptor/payload final token/generation, input/result/payload hash; `TR-I05`, `TR-I06`, `TR-I16`, `TR-I33`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Core publication, Compute immutable terminal; `SAFE`; result/download/ack.
+
+#### TR-ACC-NORMJOB-011 — Grant wait deadline and retry budget
+
+- **Purpose / Use Case / Actors:** 무기한 active 대기 방지; Compute, Core.
+- **Preconditions / Pinned Versions / Input Fixture:** `grantAction` 필요, 고정 deadline 또는 bounded attempt budget 도달; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** DB deadline 경과/예산 소진 / safe `FAILED`, capacity 해제, 별도 failure payload 없음; 중복 polling/update가 deadline을 연장하거나 terminal을 재개하지 않음.
+- **Aggregate State Changes / Created or Updated Artifacts:** terminal status/failure 1건, Core Revision 0.
+- **Expected Outcome / Expected Failure or Exclusion:** `FAILED_TERMINAL`; `GRANT_REFRESH_DEADLINE_EXCEEDED`, false, true, 기존 결과 불변, raw 재확인 후 새 dispatch 판단, code/stage만, alert.
+- **Idempotency Result:** 같은 생성 key는 terminal job replay; 새 job만 새 key.
+- **Evidence / Applied Invariants:** DB deadline/attempt budget, safe failure; `TR-I06`, `TR-I18`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Compute; `SAFE ALERT`; status.
+
+#### TR-ACC-NORMJOB-012 — Separate Trading Review capacity
+
+- **Purpose / Use Case / Actors:** grant 대기 capacity와 Backtest 경계; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** Trading Review pool full, Backtest pool 독립; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** 신규 normalization create / `503 TRADING_REVIEW_CAPACITY_EXCEEDED`와 초 단위 `Retry-After`, job/key row 0; 기존 job replay/grant update는 신규 예약 0; grant 대기 PENDING/RUNNING은 active로 계산.
+- **Aggregate State Changes / Created or Updated Artifacts:** 거절된 job 0, Backtest reservation 불변.
+- **Expected Outcome / Expected Failure or Exclusion:** `FAILED_RETRYABLE`; capacity, true, false, result 없음, 같은 key로 Retry-After 후 재시도, code/count만, alert.
+- **Idempotency Result:** 거절된 생성 key는 미소비; accepted replay는 기존 job.
+- **Evidence / Applied Invariants:** pool별 active count/reservation; `TR-I06`, `TR-I18`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Compute; `SAFE ALERT`; create.
+
+#### TR-ACC-NORMJOB-013 — New job after terminal failure
+
+- **Purpose / Use Case / Actors:** terminal 실패를 되살리지 않는 Core lineage; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** 첫 Compute job `FAILED`, Core raw/version/generation 재확인 통과; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** Core가 새 dispatch ID/key/최초 token으로 생성 / 새 Compute job ID, 같은 `coreImportSessionId`, Core `retryOf`가 old job을 가리킴; old job/실패 status 불변.
+- **Aggregate State Changes / Created or Updated Artifacts:** 새 Compute job 1, Core Import는 동일 logical validation 범위.
+- **Expected Outcome / Expected Failure or Exclusion:** 새 접수 `SUCCEEDED`; raw/deletion gate 실패면 `REJECTED`, 기존 결과 불변.
+- **Idempotency Result:** old key replay는 old FAILED job; new key는 new job.
+- **Evidence / Applied Invariants:** Core durable dispatch lineage, 두 job ID; `TR-I05`, `TR-I06`, `TR-I16`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Core lineage, Compute jobs; `SAFE`; create/status.
+
+#### TR-ACC-NORMJOB-014 — Pre-creation job-bound grant
+
+- **Purpose / Use Case / Actors:** Compute job ID 발급 전에도 정확한 raw scope 제한; Core, Compute.
+- **Preconditions / Pinned Versions / Input Fixture:** Core logical/import/artifact IDs, role, hash, token, generation 확정; Compute job ID 없음; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
+- **Given / When / Then:** Core signed grant 발급·Compute redeem / 서명 claim 전부 일치하고 한 번만 read 허용; 다른 role/token/generation 또는 두 번째 read는 거절, engine 실행 0.
+- **Aggregate State Changes / Created or Updated Artifacts:** Core grant consumption audit만.
+- **Expected Outcome / Expected Failure or Exclusion:** 정상 read `SUCCEEDED`; 불일치 `REJECTED/ARTIFACT_ACCESS_DENIED`, 금융값 없음.
+- **Idempotency Result:** 같은 grant는 single-read, 새 시도는 새 grant.
+- **Evidence / Applied Invariants:** signed claim/role/size/hash, opaque audit; `TR-I03`, `TR-I15`, `TR-I18`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Core signs/redeems, Compute verifies bytes; `SAFE`; internal artifact grant.
+
+---
+
 ## 5. Traceability and Completion
 
 ### 5.1 Scenario group index
@@ -1306,6 +1470,7 @@ Run, session 또는 remediation request다.
 | Lifecycle | `DELETE 001–014` | retention/delete/restore | not required | success or truthful failure |
 | Reprocessing | `REPROCESS 001–013` | reparse/rebuild/rerun/trend | planned or not required | success, failure, cancelled/rejected |
 | Authorization | `AUTH 001–010` | owner/auth/CSRF/operator | not required | success, unauthorized, hidden |
+| Normalization job protocol | `NORMJOB 001–014` | create replay/grant CAS/lease/terminal/ack/capacity | not required | success, retry wait, conflict, safe failure |
 
 ### 5.2 Invariant coverage matrix
 
@@ -1313,10 +1478,10 @@ Run, session 또는 remediation request다.
 |---|---|
 | `TR-I01` | AUTH-001~010, EVIDENCE-001~008 |
 | `TR-I02` | IMPORT-011~012 |
-| `TR-I03` | IMPORT-001~015; RECON-012 |
+| `TR-I03` | IMPORT-001~015; RECON-012; NORMJOB-014 |
 | `TR-I04` | IMPORT-001~002, 013, 018~020; RECON-001~012; EVIDENCE-001~009 |
-| `TR-I05` | IMPORT-018, 020~022; REPROCESS-001~006 |
-| `TR-I06` | IMPORT-001~004, 021~022; RECON-001~012 |
+| `TR-I05` | IMPORT-018, 020~022; REPROCESS-001~006; NORMJOB-001, 005, 010, 013 |
+| `TR-I06` | IMPORT-001~004, 021~022; RECON-001~012; NORMJOB-001~004, 006~007, 009~013 |
 | `TR-I07` | RECON-001~003; EVIDENCE-003~004 |
 | `TR-I08` | RECON-001~003, 007, 009~011; EVIDENCE-003~004 |
 | `TR-I09` | IMPORT-002, 010~014; RECON-004~012; EVIDENCE-009 |
@@ -1325,10 +1490,10 @@ Run, session 또는 remediation request다.
 | `TR-I12` | IMPORT-002, 010, 014; RECON-001~012; ANALYSIS-001~015; EVIDENCE-001~009 |
 | `TR-I13` | RECON-003; ANALYSIS-001, 004 |
 | `TR-I14` | DELETE-003, 006~008, 011, 014; AUTH-003 |
-| `TR-I15` | DELETE-003, 006~010, 013; REPROCESS-011; AUTH-008 |
-| `TR-I16` | DELETE-003, 006~010, 013; REPROCESS-011 |
+| `TR-I15` | DELETE-003, 006~010, 013; REPROCESS-011; AUTH-008; NORMJOB-002, 008, 014 |
+| `TR-I16` | DELETE-003, 006~010, 013; REPROCESS-011; NORMJOB-004, 006~008, 010 |
 | `TR-I17` | EVIDENCE-005~007; DELETE-001, 004 |
-| `TR-I18` | all failure/auth scenarios; EVIDENCE-005~008 |
+| `TR-I18` | all failure/auth scenarios; EVIDENCE-005~008; NORMJOB-001~014 |
 | `TR-I19` | DELETE-001~003, 006~014 |
 | `TR-I20` | DELETE-008, 013~014 |
 | `TR-I21` | IMPORT-001, 003~004, 016~017; DELETE-001~002 |
@@ -1340,13 +1505,13 @@ Run, session 또는 remediation request다.
 | `TR-I27` | REPROCESS-002~006, 009, 011, 013 |
 | `TR-I28` | EVIDENCE-007; DELETE-004~005; REPROCESS-002 |
 | `TR-I29` | REPROCESS-003, 006, 008 |
-| `TR-I30` | DELETE-006, 009~010, 013; REPROCESS-011 |
+| `TR-I30` | DELETE-006, 009~010, 013; REPROCESS-011; NORMJOB-008 |
 | `TR-I31` | EVIDENCE-010; REPROCESS-001, 003~006, 010, 013 |
 | `TR-I32` | REPROCESS-004~005, 012~013 |
-| `TR-I33` | ANALYSIS-001, 012~014; REPROCESS-001, 003~005, 007, 010, 013 |
+| `TR-I33` | ANALYSIS-001, 012~014; REPROCESS-001, 003~005, 007, 010, 013; NORMJOB-010 |
 | `TR-I34` | EVIDENCE-010; DELETE-004; REPROCESS-002, 004, 008, 012 |
 | `TR-I35` | IMPORT-018, 020 |
-| `TR-I36` | ANALYSIS-001, 010~015; REPROCESS-001, 003~011, 013 |
+| `TR-I36` | ANALYSIS-001, 010~015; REPROCESS-001, 003~011, 013; NORMJOB-009~010 |
 | `TR-I37` | IMPORT-018; REPROCESS-001, 003, 010 |
 | `TR-I38` | EVIDENCE-010; REPROCESS-001, 004~006, 008, 010, 012~013 |
 
@@ -1360,12 +1525,14 @@ Scenario reference에서 group prefix `TR-ACC-`는 생략했다. 모든 `TR-I01`
 | canonical row provenance | IMPORT-001, 019; EVIDENCE-003~007 |
 | reconciliation mismatch exclusion | IMPORT-014; RECON-004~010 |
 | deterministic result hash | IMPORT-021~022; ANALYSIS-012~014; REPROCESS-007, 010 |
+| normalization grant/attempt retry | NORMJOB-001~011, 013~014 |
+| normalization capacity | NORMJOB-002, 012 |
 | quantity/fee/PnL conservation | RECON-002~003; EVIDENCE-003~004 |
 | unavailable과 실제 0 구분 | RECON-011; ANALYSIS-006~009 |
 | Metric population/comparison | ANALYSIS-001~009; EVIDENCE-001~002 |
 | evidence drill-down | EVIDENCE-001~010 |
-| duplicate request/callback | IMPORT-016~022; ANALYSIS-012~014; DELETE-011; REPROCESS-007 |
-| retry | ANALYSIS-014~015; DELETE-012; REPROCESS-009 |
+| duplicate request/terminal handoff | IMPORT-016~022; ANALYSIS-012~014; DELETE-011; REPROCESS-007; NORMJOB-001, 005~006, 010 |
+| retry | ANALYSIS-014~015; DELETE-012; REPROCESS-009; NORMJOB-002~004, 011~013 |
 | deletion | DELETE-001~014 |
 | reprocessing/version/trend | REPROCESS-001~013 |
 | authorization/security | AUTH-001~010; EVIDENCE-008 |

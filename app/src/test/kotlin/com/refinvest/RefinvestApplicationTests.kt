@@ -61,6 +61,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.mock.web.MockHttpSession
@@ -112,6 +113,31 @@ class RefinvestApplicationTests(
     @LocalServerPort private val port: Int,
 ) {
     private val httpClient = HttpClient.newHttpClient()
+
+    @Test
+    fun `trading account endpoints require a valid access cookie and csrf on writes`() {
+        mockMvc.perform(get("/trading-accounts")).andExpect(status().isUnauthorized)
+        mockMvc.perform(get("/trading-accounts").cookie(Cookie("REFINVEST_ACCESS_TOKEN", "invalid")))
+            .andExpect(status().isUnauthorized)
+        mockMvc.perform(get("/trading-accounts").cookie(Cookie("REFINVEST_ACCESS_TOKEN", accessToken(memberId = 999_999_999))))
+            .andExpect(status().isUnauthorized)
+        mockMvc.perform(
+            post("/trading-accounts")
+                .cookie(Cookie("REFINVEST_ACCESS_TOKEN", accessToken()))
+                .header("Idempotency-Key", "security-test")
+                .contentType("application/json")
+                .content("""{"venue":"BINANCE","displayName":"Trading"}"""),
+        ).andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `trading account browser preflight permits idempotency header`() {
+        mockMvc.perform(options("/trading-accounts")
+            .header("Origin", "http://localhost:3001")
+            .header("Access-Control-Request-Method", "POST")
+            .header("Access-Control-Request-Headers", "Idempotency-Key,X-XSRF-TOKEN,Content-Type"))
+            .andExpect(status().isOk)
+    }
 
     @BeforeEach
     fun clearBacktestQuotaReservations() {

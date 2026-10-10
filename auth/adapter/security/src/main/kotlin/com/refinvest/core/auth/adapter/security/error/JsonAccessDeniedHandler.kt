@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletResponse
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.access.AccessDeniedException
+import org.springframework.security.web.csrf.CsrfException
 import org.springframework.security.web.access.AccessDeniedHandler
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
@@ -20,6 +21,8 @@ class JsonAccessDeniedHandler(
     ) {
         response.status = HttpStatus.FORBIDDEN.value()
         response.contentType = MediaType.APPLICATION_JSON_VALUE
-        objectMapper.writeValue(response.outputStream, SecurityErrorResponse("FORBIDDEN", "Access is denied"))
+        val csrf = request.requestURI.startsWith("/trading-") && accessDeniedException is CsrfException
+        objectMapper.writeValue(response.outputStream, SecurityErrorResponse(
+            if (csrf) "CSRF_VALIDATION_FAILED" else "FORBIDDEN", "Access is denied"))
     }
 }

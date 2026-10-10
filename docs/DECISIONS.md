@@ -332,13 +332,13 @@ deadline 초과 시 parent는 child를 종료하고 최대 30초 후 force-kill�
 
 ## ADR-044 — Backtest Admission Capacity
 
-**결정**: Compute는 전역적으로 최대 20개의 active job만 허용한다. active는 `PENDING` 또는 `RUNNING`이며 bounded transient retry 대기 중인 `RUNNING`도 포함한다. terminal job은 capacity를 소비하지 않는다.
+**결정**: Compute의 Backtest admission은 전역 Backtest pool에서 최대 20개의 active Backtest job만 허용한다. active는 `PENDING` 또는 `RUNNING`이며 bounded transient retry 대기 중인 `RUNNING`도 포함한다. terminal job은 capacity를 소비하지 않는다. Trading Review는 ADR-064의 별도 pool을 사용하며 이 20개 예약량을 차감하지 않는다.
 
 capacity가 가득 차면 새 제출은 `503 Service Unavailable`, `BACKTEST_CAPACITY_EXCEEDED`, `Retry-After: 30`으로 거절한다. 같은 `Idempotency-Key`와 canonical request의 replay는 capacity 검사보다 먼저 기존 `202/runId`를 반환한다. capacity 거절은 job과 idempotency record를 만들지 않으므로 Core는 안내된 시간 뒤 같은 key로 재시도할 수 있다.
 
 PostgreSQL transaction-scoped advisory lock이 idempotency lookup, active-job count, insert를 직렬화한다. Core는 member별 quota·rate limit·priority를 소유하고 Compute는 user-specific policy를 적용하지 않는다.
 
-**이유**: Compute overload를 durable runtime state 생성 전에 명시적으로 차단하면서도, Core의 product policy와 Compute의 global execution capacity를 분리한다. admission은 snapshot 선택이나 engine semantics를 변경하지 않는다.
+**이유**: Backtest overload를 durable runtime state 생성 전에 명시적으로 차단하면서도, Core의 product policy와 Compute의 Backtest execution capacity를 분리한다. admission은 snapshot 선택이나 engine semantics를 변경하지 않는다.
 
 ---
 
@@ -963,7 +963,8 @@ encrypted write/verification이 끝나야 role slot을 채우며 partial upload�
 
 Compute input은 public URL이나 영구 download URL이 아니라 최대 5분의 single-read, job-bound signed artifact
 grant다. 만료는 retryable attempt failure이며 Core가 raw TTL/deletion generation을 다시 확인해 새 grant로
-재시도한다. terminal 대용량 output은 response에 records를 inline하지 않고 opaque payload ID, media type,
+재시도한다. 생성 replay·pre-create binding·조건부 grant update·최종 attempt 검증은
+ADR-064를 따른다. terminal 대용량 output은 response에 records를 inline하지 않고 opaque payload ID, media type,
 size/hash/expiry로 전달한다. Core가 internal endpoint에서 stream-download해 장기 저장하고 ack한 뒤 Compute는
 cleanup할 수 있으며 terminal runtime/payload는 어떤 경우에도 24시간을 넘기지 않는다.
 
@@ -1026,3 +1027,76 @@ latency. 변경이 필요하면 OpenAPI/ADR version을 함께 갱신한다.
 
 **관련**: ADR-017, ADR-040~041, ADR-047, ADR-054~062,
 `docs/TRADING_REVIEW_API.md`, `docs/TRADING_REVIEW_PERSISTENCE.md`.
+
+---
+
+## ADR-064 — Trading Review Normalization Grant Renewal and Attempt Retry
+
+**상태**: 확정. ADR-063의 최대 5분 single-read grant와 polling/job 경계를 구체화한다.
+
+**결정**: normalization 생성 POST는 하나의 Compute job을 멱등 접수한다. 생성 fingerprint는
+계산 의미 입력, Core logical/import ID, `deletionGeneration`, **최초** `attemptToken`을 포함하고
+signed `accessUri`와 `expiresAt`은 제외한다. 같은 key/fingerprint의 응답 유실 replay는 최초
+`202/jobId`를 반환하며 저장된 grant/token을 바꾸지 않는다. 최초 grant가 이미 만료됐더라도 replay를
+거절하지 않는다. 같은 생성 key와 다른 token 또는 계산 입력은 `409`다.
+
+Core는 `POST /trading-review/normalization-jobs/{jobId}/grant-updates`에서 별도의
+`Idempotency-Key`, `expectedGrantRevision`, `expectedAttemptToken`으로 조건부 갱신한다.
+`REPLACE_QUEUED_GRANTS`는 worker가 아직 claim하지 않은 `PENDING` job의 같은 token과 두 새
+grant를 교체한다. `START_RETRY_ATTEMPT`는 실패·lease 만료로 닫힌 `RUNNING` attempt 다음에
+이전에 사용하지 않은 새 token과 두 새 grant를 등록한다. 두 경우 모두 revision을 단조 증가시키고
+기존 grant/ArtifactLease를 닫는 transaction을 사용한다. live worker lease, terminal/cancelled job,
+변경된 input/version/generation, 소모된 grant의 재사용, stale CAS를 거절한다. 동일 갱신 key/body는
+원래 receipt만 재반환하며 이전 요청의 지연 도착이 새 revision을 덮지 못한다.
+Compute의 generation 비교는 job에 pin한 값과 갱신 요청값의 비교다. Core deletion tombstone이
+Compute cancel보다 먼저 commit된 짧은 구간에 이전 generation 요청이 도착할 수 있다.
+그 경우 Compute 갱신이 먼저 성공해도 Core는 새 grant 발급을 중단하고 publication에서 현재
+generation을 다시 검사하므로 삭제된 결과를 장기 저장하지 않는다.
+
+Compute는 `PENDING`/lease 없는 `RUNNING` 상태를 유지하며 status에 현재 token/generation,
+grant revision, 필요한 갱신 동작과 `grantRefreshDeadlineAt`을 노출한다. 첫 claim 전 만료는
+`REPLACE_QUEUED_GRANTS`, claim 이후의 만료·부분 소비·worker crash는
+`START_RETRY_ATTEMPT`다. 만료된/소모된 single-read grant로 자동 재claim하지 않는다.
+Compute는 DB 시각으로 기한을 판정한다. admission 때 고정한 `grantRenewalCutoffAt`과
+대기 동작이 처음 필요해진 시각 + bounded wait window 중 이른 시각을 현재
+`grantRefreshDeadlineAt`으로 저장한다. 같은 대기 동작의 replay/중복 갱신은 기한을 연장하지
+않는다. 성공한 갱신 뒤 다시 대기가 필요하면 새 window를 시작하되 admission cutoff를
+넘을 수 없다. 기한을 넘기거나 bounded attempt budget을 소진하면 safe `FAILED`로 끝내고
+job을 되살리지 않는다. 대기 중에도 해당 job은 active capacity를 소비한다. window,
+admission cutoff와 retry budget은 bounded 운영 설정이고, 현재 deadline은 status에 반환한다.
+
+생성 전 `jobId`가 없으므로 grant의 job binding은 Core가 이미 아는
+`coreLogicalJobId + coreImportSessionId + coreArtifactId + artifactRole + rawSha256 +
+attemptToken + deletionGeneration`에 서명한다. Core는 단일 read와 만료/삭제를 redemption에서
+검증하고 Compute는 pinned descriptor 및 받은 bytes의 size/hash를 검증한다. Compute job ID를
+grant 발급의 선행 조건으로 삼지 않는다.
+
+`COMPLETED` descriptor/payload와 `FAILED` status는 최종 attempt token과 deletion generation을
+전달한다. Core는 long-term publication 전에 current generation, expected input/version,
+attempt token과 `resultHash`를 비교한다. `resultHash`는 결정론적 엔진 결과이며 runtime
+token/time을 포함하지 않는다. `payloadSha256`은 실제 전송 bytes의 hash다. Acknowledgement는
+payload의 token/generation/hash와 job 관계를 검증한다. 삭제 후 stale payload는 Core가
+publication 없이 명시적 discard acknowledgement를 보내고, Compute는 그 payload만 정리한다.
+`FAILED`에는 별도 terminal payload가 없고 status의 structured safe failure만 있다.
+
+terminal `FAILED` 이후 허용되는 재시도는 **새 Compute key/job와 새 Core logical dispatch ID**를
+만든다. 원래 `coreImportSessionId`와 계산 pin을 유지하고 Core durable dispatch의 `retryOf`
+lineage로 연결한다. terminal job은 갱신으로 재개하지 않는다.
+
+Backtest는 ADR-044의 20개 pool과 `BACKTEST_CAPACITY_EXCEEDED`/30초
+`Retry-After`를 유지한다. Trading Review normalization/analytics는 별도의 bounded active-job
+pool을 공유하며 그 수치는 배포 설정이다. `PENDING`, `RUNNING`, grant/retry 대기 중인 job은
+capacity를 소비한다. 새 Trading Review job이 자기 pool에서 거절되면 job/idempotency record를
+만들지 않고 `503 TRADING_REVIEW_CAPACITY_EXCEEDED`와 초 단위 `Retry-After`를 반환한다.
+기존 job replay와 grant update는 신규 admission이 아니다.
+
+**근거**: 응답 유실에는 원래 acceptance를 재사용하고, 대기열 만료와 부분 소비에는 명시적 CAS
+갱신이 필요하다. 매 실패마다 새 Compute job을 만드는 방식은 single-read 문제는 해결하지만
+활성 logical job의 중복 admission과 stale publication을 Core가 여러 job 사이에서 조정하게 한다.
+따라서 terminal 이전에는 동일 job의 명시적 갱신, terminal 뒤에는 새 job/lineage를 사용한다.
+원본 행·UID·full source ID·signed URI·거래값은 operational log/metric/error에 기록하지 않는다.
+인증된 암호화 terminal payload에는 정본의 allowlisted canonical/evidence 거래 필드를 유지한다.
+
+**관련**: ADR-044, ADR-061~063, `docs/TRADING_REVIEW_API.md`,
+`docs/TRADING_REVIEW_PERSISTENCE.md`, `docs/TRADING_REVIEW_ACCEPTANCE.md`,
+`openapi/compute-api.yaml`.
