@@ -87,11 +87,14 @@ Backtest 용어와 실제 거래 용어를 타입 수준에서 구분한다. 특
 | 분석 설정 | `AnalysisConfig` | analysis period, window, baseline/sample policy 등 한 AnalysisRun의 결정론적 계산 입력 | ADR-056, ADR-060 |
 | 거래 분석 실행 | `TradingAnalysisRun` | pinned revision/version/config를 사용한 비동기 분석 상태 | ADR-056 |
 | 거래 재처리 실행 | `TradingReprocessingRun` | 기존 Import/Run을 다시 열지 않고 source/target version, input availability, idempotency와 새 Revision/Run 생성을 추적하는 Aggregate | ADR-062 |
+| 거래 정규화 실행 | `NormalizationRun` | ImportSession 공개 상태와 분리된 Core 내부 실행·재시도·발행·obsolete 추적 모델 | ADR-065 |
+| 정규화 입력 집합 해시 | `inputSetHash` | Book, 명시적 source Session, role별 artifact ID/hash, timezone/product/mode와 exact VersionSet의 결정론적 hash | ADR-065 |
+| 원본 접근 권한 | `ArtifactReadGrant` | Compute wire의 ArtifactAccessGrant; 한 artifact만 읽는 단기 read-only `accessUri`와 size/hash descriptor | ADR-064, ADR-065 |
 | Revision record membership | `LedgerRevisionRecord` | immutable TradingRecord와 immutable LedgerRevision의 다대다 membership 및 canonical semantic order를 고정하는 relation | ADR-063 |
 | 내구성 dispatch | `DurableDispatch` | Core Aggregate와 같은 transaction에서 생성되고 Compute idempotency/job/attempt/ack를 추적하는 발송 record | ADR-047, ADR-063 |
 | Compute 종결 payload | `ComputeTerminalPayload` | Compute가 최대 24시간 보관하며 Core가 hash 검증·장기 저장 후 acknowledge하는 opaque runtime payload | ADR-063 |
 | artifact lease | `ArtifactLease` | normalization job 하나에 묶인 최대 5분 single-read raw access grant와 제한된 input reference | ADR-061, ADR-063 |
-| 최신 거래 장부 포인터 | `latestRevisionId` | 완전히 publish된 immutable LedgerRevision만 가리키는 TradingBook의 mutable pointer | ADR-062, ADR-063 |
+| 최신 거래 장부 포인터 | `latestRevisionId` | 완전히 publish된 범위 한정 immutable LedgerRevision을 가리키며 전체 계정 이력을 뜻하지 않는 TradingBook의 mutable pointer | ADR-062, ADR-065 |
 | 최신 거래 분석 포인터 | `latestAnalysisRunId` | 완전히 완료된 immutable AnalysisResult의 Run만 가리키는 TradingBook의 mutable pointer | ADR-062, ADR-063 |
 | 인수 결과 | `AcceptanceOutcome` | Acceptance Scenario의 사용자 관점 판정. 8개 outcome을 사용하며 Aggregate/Metric/HTTP status와 별도 | TR-0G |
 | 인수 시나리오 ID | `TradingReviewAcceptanceScenarioId` | Integration fixture/test와 PR evidence에서 재사용하는 `TR-ACC-{GROUP}-{NUMBER}` stable ID | TR-0G |

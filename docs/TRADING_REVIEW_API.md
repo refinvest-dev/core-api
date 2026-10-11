@@ -99,6 +99,7 @@ CSRF 경계를 그대로 적용할 수 있다. MVP의 두 CSV와 수동 upload �
 | `CreateTradingImportSession` | `POST /trading-books/{tradingBookId}/imports` | `201` |
 | `UploadTradingImportArtifact` | `POST /trading-import-sessions/{importSessionId}/artifacts` | `201` or replayed `200` |
 | `ValidateTradingImportSession` | `POST /trading-import-sessions/{importSessionId}/validation` | `202` |
+| `RetryTradingImportSession` | `POST /trading-import-sessions/{importSessionId}/retry` | `202` |
 | `GetTradingImportSession` | `GET /trading-import-sessions/{importSessionId}` | `200` |
 | `GetTradingImportQualityReport` | `GET /trading-import-sessions/{importSessionId}/quality-report` | `200` |
 | `ListTradingImports` | `GET /trading-books/{tradingBookId}/imports` | `200` page |
@@ -192,7 +193,7 @@ domain 성공이 아니다. 이후 terminal rejection/failure는 session/run sta
 
 Import status는 다음을 함께 반환한다.
 
-- `RECEIVED | VALIDATING | ACCEPTED | REJECTED`
+- `RECEIVED | VALIDATING | ACCEPTED | REJECTED | PROCESSING_FAILED`
 - 두 artifact의 role, safe filename metadata, content type, byte size, checksum, dialect candidate/detected,
   upload/retention 상태와 `rawExpiresAt`
 - role별 earliest/latest observed instant, row count, source timezone, `SECOND` precision,
@@ -203,6 +204,14 @@ Import status는 다음을 함께 반환한다.
 - pinned Normalizer/Reconstruction/Data Policy version sets와 implementation digest
 - structured failure, created/validation-started/completed timestamps
 
+`PROCESSING_FAILED`는 bounded 자동 재시도를 소진한 Compute/네트워크/storage 운영 실패다. 같은 Session의
+active raw와 exact VersionSet을 다시 확인한 명시적 retry만 `VALIDATING`으로 전이하고 새
+`NormalizationRun`/attempt/audit event를 만든다. 동일 logical input fingerprint를 유지한다. raw가
+만료됐으면 `410 SOURCE_ARTIFACT_EXPIRED`와 `REUPLOAD_REQUIRED`를 반환한다. 삭제 tombstone 이후에는
+retry를 받지 않는다. 공개 failure는 `code`, `retryable`, `userAction`, `occurredAt`을 포함하며
+`RETRY | REUPLOAD_REQUIRED | WAIT_FOR_RECOVERY`를 구분한다. 내부 exception, endpoint, object key,
+signed URI/query 및 stack trace는 반환하지 않는다.
+
 `RECEIVED`에서 두 role이 모두 `UPLOADED`인지 artifact 목록으로 확인한다. 누락 상태에서 validation command는
 동기 `422 MISSING_REQUIRED_ARTIFACT`; session은 `RECEIVED`에 남는다. Compute가 schema/product/conflict를
 발견한 경우 command 자체는 `202`, 이후 session은 `REJECTED`다. 일부 episode만 부적격이면 session과
@@ -210,10 +219,17 @@ Revision은 accepted되고 quality/exclusion을 명시한다.
 
 ### 5.2 LedgerRevision response
 
-Revision은 ID, Book ID, Book별 revision number, content hash, source ImportSession IDs, coverage, canonical
-record count, pinned `InstrumentDescriptor`/terms version, Normalizer/Reconstruction version sets,
-reconciliation manifest hash, capability/quality, parent Revision IDs, reprocessing lineage와 `createdAt`을
+Revision은 ID, Book ID, Book별 revision number, inputSetHash, role별 artifact ID/SHA-256,
+source/review timezone와 선언된 position mode/product,
+content hash, source ImportSession IDs(MVP 정확히 하나), coverage start/end/completeness,
+canonical record/episode count, pinned `InstrumentDescriptor`/terms version, Normalizer/Reconstruction
+version sets, reconciliation manifest hash, capability/quality, parent Revision IDs, reprocessing lineage와
+`createdAt`/`publishedAt`을
 반환한다. full canonical record나 full manifest를 기본 response에 inline하지 않는다.
+
+두 번째 Import는 첫 Revision에 누적되지 않는다. latestRevisionId는 전체 계정 이력이 아니다.
+분석은 명시적으로 고정된 Revision 또는 AnalysisDatasetSnapshot만 사용한다. 복수 Revision 통합은 후속
+Dataset composition 책임이다. 불완전 coverage는 그 자체로 거부가 아니며 Capability를 제한할 수 있다.
 
 Import/quality response는 사용자 선언과 same-session upload, reconciliation evidence를 actual account identity
 proof와 구분한다. Trade UID는 public response/evidence/log에 반환하지 않으며 Position artifact에 UID가 없으므로
@@ -221,7 +237,9 @@ CSV pair만으로 동일 account/sub-account를 검증했다고 표시하지 않
 
 하나의 accepted Revision과 record membership은 불변이다. canonical record 자체의 content identity가 같은
 경우 한 owner/Book 안에서 여러 Revision이 같은 immutable record를 참조할 수 있지만 membership은 별도
-`LedgerRevisionRecord` 관계로 고정한다. cross-owner deduplication은 금지한다.
+`LedgerRevisionRecord` 관계로 고정한다. 같은 source identity에 다른 content가 서로 다른 Session에서
+나오면 별도 record/Revision으로 보존하며 이 API의 import validation에서 두 Revision을 합치거나
+충돌 해소하지 않는다. 같은 Session 내부 충돌만 `RECORD_CONFLICT`다. cross-owner deduplication은 금지한다.
 
 이번 source correction은 OpenAPI `0.3.0`에서 Position summary의 `openedInterval`/`closedInterval`을 exact
 `openedAt`/`closedAt`으로 교체하고 role별 `ArtifactCoverage`를 추가한 의도적 계약 변경이다. 기존 interval
@@ -349,15 +367,20 @@ generation 증가를 먼저 commit해 access/admission/retry를 즉시 차단한
 
 ### 10.2 Request/result content
 
-Normalization request는 Core logical import/dispatch ID, Book product/mode, 두 artifact의 Core opaque ID,
+Normalization request는 Core logical import/dispatch ID와 NormalizationRun ID, Book product/mode, 두 artifact의 Core opaque ID,
 role/checksum와 job-bound signed grant, source/review timezone, dialect/Normalizer/Reconstruction target,
-pinned instrument terms, expected input hash, deletion generation, attempt token을 포함한다. Member profile이나
+pinned instrument terms, inputSetHash/expected input hash, retryPolicyVersion, deletion generation, attempt token을 포함한다. Member profile이나
 raw account identifier는 포함하지 않는다.
 
 Normalization `COMPLETED` terminal payload는 job/logical ID, 최종 attempt token과
 deletion generation, status/version, canonical records, `SourceEvidenceSnapshot`, manifest,
 capability, validation/quality report, input/content/manifest/result hash와 timestamps를 가진다.
 `FAILED`는 별도 payload가 아니라 status의 structured safe failure와 최종 token/generation이다.
+Compute는 받은 bytes의 content length/SHA-256을 모두 검증한 뒤에만 계산한다. `accessUri`/`expiresAt`은
+logical inputSetHash에 포함하지 않고, 다운로드를 완료한 staging도 grant 갱신으로 변경되지 않는다.
+Compute staging은 완료/취소 뒤 삭제하고 늦어도 runtime TTL에 purge한다. grant는 단일 Artifact,
+read-only, 최대 5분이며 Core Artifact Storage port에서 발급한다. 영구 object key/credential은 전달하지
+않는다. 내부 서비스 인증은 하나의 `REFINVEST_INTERNAL_API_KEY`를 `X-Internal-Api-Key`로 보낸다.
 
 Analytics request는 Core AnalysisRun ID, LedgerRevision content handle와 hash, manifest handle/hash,
 Analytics VersionSet, AnalysisConfig/hash, capability, deletion generation, attempt token을 포함한다. 결과는
@@ -383,7 +406,7 @@ attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
 - create의 `Idempotency-Key`는 Core durable dispatch identity다. canonical fingerprint에는
   모든 immutable 계산 입력·artifact descriptor/hash, Core IDs, 최초 attempt token과 deletion
   generation을 포함한다. `accessUri`/`expiresAt`, 인증/멱등 header, runtime ID/시각은 제외한다.
-  object key/order 또는 header 표현 차이는 영향을 주지 않는다. same key/fingerprint는 최초
+  JSON object의 key/order 또는 header 표현 차이는 영향을 주지 않는다. same key/fingerprint는 최초
   `202/jobId`를 돌려주고 **기존 grant/token을 바꾸지 않는다**. 최초 grant가 만료된 뒤의
   응답 유실 replay도 기존 job을 반환한다. 같은 key와 다른 token/계산 입력은 `409`다.
 - Compute status는 normalization에 한해 현재 `attemptToken`, `deletionGeneration`,
@@ -459,7 +482,11 @@ failure만 제공하며 별도 payload descriptor는 없다.
 | invalid idempotency key | `400 IDEMPOTENCY_KEY_INVALID` | `400 IDEMPOTENCY_KEY_INVALID` | 수정 후 |
 | same key/different payload | `409 IDEMPOTENCY_PAYLOAD_CONFLICT` | `409 IDEMPOTENCY_PAYLOAD_CONFLICT` | 아니오 |
 | stale grant revision/token 또는 live lease/terminal update | 해당 없음 | `409 GRANT_UPDATE_CONFLICT` 또는 `JOB_STATE_CONFLICT` | status 조회 후 |
-| grant refresh 대기 기한 경과 | Import `REJECTED` 또는 새 dispatch 정책 | job `FAILED/GRANT_REFRESH_DEADLINE_EXCEEDED` | 같은 job은 아니오 |
+| grant refresh 대기 기한 경과 | 자동 budget 내 `VALIDATING`, 소진 시 `PROCESSING_FAILED` | job `FAILED/GRANT_REFRESH_DEADLINE_EXCEEDED` | 새 attempt 또는 명시적 retry |
+| raw TTL 만료 | `PROCESSING_FAILED/SOURCE_ARTIFACT_EXPIRED`, retry command `410` | 신규 job 없음 | 재업로드 |
+| grant 만료 | `VALIDATING` 유지 | `ARTIFACT_REFERENCE_EXPIRED` | 자동 재시도 |
+| source byte size/hash 불일치 | 검증 완료 전 발행 없음; 원인별 `PROCESSING_FAILED` | `SOURCE_CONTENT_LENGTH_MISMATCH` / `SOURCE_CONTENT_HASH_MISMATCH` | 원인 조사 뒤 |
+| 같은 artifact ID와 다른 SHA-256 | `409 ARTIFACT_IDENTITY_CONFLICT` | `409 ARTIFACT_IDENTITY_CONFLICT` | 아니오 |
 | Trading Review pool full | public command는 durable 대기 | `503 TRADING_REVIEW_CAPACITY_EXCEEDED` + `Retry-After`, job 미생성 | 예 |
 | state/role conflict | `409 RESOURCE_STATE_CONFLICT` | `409 JOB_STATE_CONFLICT` | 상태 조회 후 |
 | file too large | `413 FILE_TOO_LARGE` | grant/object input도 같은 상한 검증 | 작은 파일 |

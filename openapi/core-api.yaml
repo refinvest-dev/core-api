@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: core-api Public API
-  version: "0.3.0"
+  version: "0.4.0"
   description: |
     Web(`web`) → Core(`core-api`) 계약. Web은 이 스펙만 보고 구현하며,
     Compute(`compute-api`)를 직접 호출하지 않는다(`AGENTS.md` §3, `AI_AGENT.md` §4).
@@ -624,6 +624,34 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '410': { $ref: '#/components/responses/Gone' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /trading-import-sessions/{importSessionId}/retry:
+    post:
+      operationId: retryTradingImportSession
+      tags: [trading-imports]
+      summary: PROCESSING_FAILED Import의 명시적 재시도 (`RetryTradingImportSession`)
+      description: |
+        retained ACTIVE raw와 원래 inputSetHash/VersionSet/deletion generation을 재검증한다.
+        새 NormalizationRun과 execution attempt를 만들고 session을 VALIDATING으로 전이한다.
+        같은 Idempotency-Key 재전송은 기존 Run/Session을 반환한다. raw TTL 만료는
+        410 SOURCE_ARTIFACT_EXPIRED, 삭제된 Session은 410 RESOURCE_DELETED다.
+      parameters:
+        - $ref: '#/components/parameters/ImportSessionId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/PublicIdempotencyKey'
+      responses:
+        '202':
+          description: 새 Run이 접수되어 Session이 VALIDATING.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingImportSession' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410':
+          description: raw TTL 만료면 SOURCE_ARTIFACT_EXPIRED/REUPLOAD_REQUIRED; 삭제면 RESOURCE_DELETED.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TradingImportRetryError' } } }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /trading-import-sessions/{importSessionId}/quality-report:
@@ -1389,6 +1417,40 @@ components:
           type: array
           items: { $ref: '#/components/schemas/ErrorDetail' }
       description: safe failure only; raw value/identifier/filename/path/URL 금지.
+    TradingImportFailure:
+      type: object
+      required: [code, retryable, userAction, occurredAt]
+      additionalProperties: false
+      example:
+        code: TEMPORARY_DEPENDENCY_FAILURE
+        retryable: true
+        userAction: RETRY
+        occurredAt: '2026-01-01T00:00:00Z'
+      properties:
+        code: { $ref: '#/components/schemas/TradingReviewFailureCode' }
+        retryable: { type: boolean, description: 같은 Session의 현재 active raw와 generation에서 retry 가능한 경우만 true. }
+        userAction: { type: string, enum: [RETRY, REUPLOAD_REQUIRED, WAIT_FOR_RECOVERY, NONE] }
+        occurredAt: { type: string, format: date-time }
+      description: 내부 exception, object key, signed URI/query, Compute endpoint, stack trace 금지.
+    TradingImportRetryError:
+      type: object
+      required: [code, message, traceId, retryable, userAction, occurredAt]
+      additionalProperties: false
+      example:
+        code: SOURCE_ARTIFACT_EXPIRED
+        message: Source artifact is no longer available. Upload the export again.
+        traceId: trace-synthetic-import-retry
+        retryable: false
+        userAction: REUPLOAD_REQUIRED
+        occurredAt: '2026-01-01T00:00:00Z'
+      properties:
+        code: { type: string, enum: [SOURCE_ARTIFACT_EXPIRED, RESOURCE_DELETED] }
+        message: { type: string, description: 민감 정보 없는 안전한 설명. }
+        traceId: { type: string }
+        retryable: { type: boolean, enum: [false] }
+        userAction: { type: string, enum: [REUPLOAD_REQUIRED, NONE] }
+        occurredAt: { type: string, format: date-time }
+      description: SOURCE_ARTIFACT_EXPIRED는 REUPLOAD_REQUIRED, RESOURCE_DELETED는 NONE.
     TradingReviewFailureCode:
       type: string
       enum:
@@ -1402,6 +1464,10 @@ components:
         - CHECKSUM_MISMATCH
         - SOURCE_ARTIFACT_DELETED
         - ARTIFACT_REFERENCE_EXPIRED
+        - SOURCE_ARTIFACT_EXPIRED
+        - SOURCE_CONTENT_LENGTH_MISMATCH
+        - SOURCE_CONTENT_HASH_MISMATCH
+        - ARTIFACT_IDENTITY_CONFLICT
         - MISSING_CAPABILITY
         - INVALID_ANALYSIS_CONFIG
         - INCOMPLETE_ANALYSIS_RESULT
@@ -1713,13 +1779,24 @@ components:
           properties:
             status: { type: string, enum: [REJECTED] }
             qualitySummary: { $ref: '#/components/schemas/TradingQualityReport' }
-            failure: { $ref: '#/components/schemas/StructuredFailure' }
+            failure: { $ref: '#/components/schemas/TradingImportFailure' }
             completedAt: { type: string, format: date-time }
+    TradingImportSessionProcessingFailed:
+      allOf:
+        - $ref: '#/components/schemas/TradingImportSessionBase'
+        - type: object
+          required: [status, failure, completedAt]
+          properties:
+            status: { type: string, enum: [PROCESSING_FAILED] }
+            failure: { $ref: '#/components/schemas/TradingImportFailure' }
+            completedAt: { type: string, format: date-time }
+      description: 재시도 예산 소진 또는 raw 만료; createdLedgerRevisionId 없음.
     TradingImportSession:
       oneOf:
         - $ref: '#/components/schemas/TradingImportSessionNonTerminal'
         - $ref: '#/components/schemas/TradingImportSessionAccepted'
         - $ref: '#/components/schemas/TradingImportSessionRejected'
+        - $ref: '#/components/schemas/TradingImportSessionProcessingFailed'
       discriminator:
         propertyName: status
         mapping:
@@ -1727,6 +1804,7 @@ components:
           VALIDATING: '#/components/schemas/TradingImportSessionNonTerminal'
           ACCEPTED: '#/components/schemas/TradingImportSessionAccepted'
           REJECTED: '#/components/schemas/TradingImportSessionRejected'
+          PROCESSING_FAILED: '#/components/schemas/TradingImportSessionProcessingFailed'
     TradingImportSessionPage:
       allOf:
         - $ref: '#/components/schemas/PageMetadata'
@@ -1753,9 +1831,33 @@ components:
     Coverage:
       type: object
       required: [startInclusive, endExclusive]
+      description: Ledger coverageStart= startInclusive, coverageEnd= endExclusive인 pinned half-open 관측 범위; 계정 전체 이력 보장 아님.
       properties:
         startInclusive: { type: string, format: date-time }
         endExclusive: { type: string, format: date-time }
+    LedgerCoverageCompleteness:
+      type: string
+      enum: [COMPLETE, LEFT_CENSORED, RIGHT_CENSORED, BOTH_CENSORED, INDETERMINATE]
+      description: |
+        Pinned input 범위의 복원 경계. Source export의 전체 계정 이력 완전성 증명이 아니다.
+        ArtifactCoverage의 NOT_PROVEN과 별개이며 불완전해도 ACCEPTED 가능하다.
+    LedgerSourceArtifact:
+      type: object
+      required: [artifactId, role, sha256]
+      additionalProperties: false
+      properties:
+        artifactId: { type: string }
+        role: { $ref: '#/components/schemas/TradingArtifactRole' }
+        sha256: { $ref: '#/components/schemas/Sha256' }
+    LedgerProductDeclaration:
+      type: object
+      required: [venue, productFamily, positionMode, settlementAsset]
+      additionalProperties: false
+      properties:
+        venue: { $ref: '#/components/schemas/TradingVenue' }
+        productFamily: { $ref: '#/components/schemas/TradingProductFamily' }
+        positionMode: { $ref: '#/components/schemas/TradingPositionMode' }
+        settlementAsset: { type: string, enum: [USDT] }
     InstrumentDescriptor:
       type: object
       required: [instrumentId, venue, venueSymbol, productFamily, baseAsset, quoteAsset, settlementAsset, quantityUnit, priceUnit, instrumentTermsVersion]
@@ -1789,15 +1891,28 @@ components:
         createdAt: { type: string, format: date-time }
     LedgerRevision:
       type: object
-      required: [id, tradingBookId, revisionNumber, contentHash, sourceImportSessionIds, coverage, canonicalRecordCount, instrumentDescriptors, normalizerVersionSet, reconstructionVersionSet, reconciliationManifestHash, capability, qualitySummary, parentLedgerRevisionIds, createdAt]
+      required: [id, tradingBookId, revisionNumber, inputSetHash, sourceArtifacts, sourceTimezone, reviewTimezone, declaredPositionMode, productDeclaration, contentHash, sourceImportSessionIds, coverage, coverageCompleteness, canonicalRecordCount, episodeCount, instrumentDescriptors, normalizerVersionSet, reconstructionVersionSet, reconciliationManifestHash, capability, qualitySummary, parentLedgerRevisionIds, createdAt, publishedAt]
       properties:
         id: { type: string }
         tradingBookId: { type: string }
         revisionNumber: { type: integer, format: int64, minimum: 1 }
+        inputSetHash: { $ref: '#/components/schemas/Sha256' }
+        sourceArtifacts:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: '#/components/schemas/LedgerSourceArtifact' }
+          description: MVP role별 정확히 하나; 영구 object key와 signed URI는 포함하지 않는다.
+        sourceTimezone: { type: string, description: 원본 second-precision local timestamp에 적용한 pinned IANA timezone. }
+        reviewTimezone: { type: string, description: pinned IANA review timezone. }
+        declaredPositionMode: { $ref: '#/components/schemas/TradingPositionMode' }
+        productDeclaration: { $ref: '#/components/schemas/LedgerProductDeclaration' }
         contentHash: { $ref: '#/components/schemas/Sha256' }
-        sourceImportSessionIds: { type: array, minItems: 1, items: { type: string } }
+        sourceImportSessionIds: { type: array, minItems: 1, maxItems: 1, items: { type: string }, description: MVP에서 정확히 하나. }
         coverage: { $ref: '#/components/schemas/Coverage' }
-        canonicalRecordCount: { type: integer, format: int64, minimum: 0 }
+        coverageCompleteness: { $ref: '#/components/schemas/LedgerCoverageCompleteness' }
+        canonicalRecordCount: { type: integer, format: int64, minimum: 0, description: 해당 Revision membership의 canonical TradingRecord 수. }
+        episodeCount: { type: integer, format: int64, minimum: 0, description: 제외된 것까지 포함한 복원 ReviewUnit/FuturesPositionEpisode 수. }
         instrumentDescriptors: { type: array, items: { $ref: '#/components/schemas/InstrumentDescriptor' } }
         normalizerVersionSet: { $ref: '#/components/schemas/NormalizerVersionSet' }
         reconstructionVersionSet: { $ref: '#/components/schemas/ReconstructionVersionSet' }
@@ -1811,6 +1926,7 @@ components:
           type: object
           nullable: true
         createdAt: { type: string, format: date-time }
+        publishedAt: { type: string, format: date-time }
     LedgerRevisionPage:
       allOf:
         - $ref: '#/components/schemas/PageMetadata'

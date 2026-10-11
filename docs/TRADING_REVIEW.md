@@ -132,7 +132,7 @@ Pinned LedgerRevision/Manifest → ReviewUnit → Metrics/Findings
 
 ### 3.1 도메인 불변식 적용
 
-`docs/DOMAIN.md`의 `TR-I01`~`TR-I38`이 요약 정본이다. 구현과 harness는 다음 경계에서 이를 강제한다.
+`docs/DOMAIN.md`의 `TR-I01`~`TR-I41`이 요약 정본이다. 구현과 harness는 다음 경계에서 이를 강제한다.
 
 | 경계 | 적용 불변식 | 정상 증거 | 위반 시 결과 |
 |---|---|---|---|
@@ -234,7 +234,7 @@ TradingImportSession
 ├── artifacts
 │   ├── TRADE_HISTORY
 │   └── POSITION_HISTORY
-├── status: RECEIVED | VALIDATING | ACCEPTED | REJECTED
+├── status: RECEIVED | VALIDATING | ACCEPTED | REJECTED | PROCESSING_FAILED
 ├── validationReport
 ├── reconciliationSummary
 ├── createdLedgerRevisionId?
@@ -443,9 +443,12 @@ LedgerRevision
 ├── id
 ├── tradingBookId
 ├── revisionNumber
-├── includedImportSessionIds
+├── sourceImportSessionIds (MVP 정확히 하나)
+├── inputSetHash
+├── sourceArtifacts (role, artifactId, sha256)
 ├── recordCount
-├── coverage
+├── episodeCount
+├── coverage (coverageStart, coverageEnd, coverageCompleteness)
 ├── contentHash
 ├── instrumentDescriptors
 ├── sourceDialectVersions
@@ -462,15 +465,27 @@ LedgerRevision
 ├── reconciliationManifestHash
 ├── capabilities
 ├── qualitySummary
+├── publishedAt
 └── createdAt
 ```
 
-Revision은 생성 후 수정하지 않는다. accepted Import가 장부에 반영될 때 새 Revision을 만든다. Import
+Revision은 생성 후 수정하지 않는다. MVP의 Revision은 한 ImportSession의 두 Artifact와 exact VersionSet만
+포함한다. 새 Import는 이전 Revision에 암묵적으로 누적되지 않는다. `latestRevisionId`는 범위 한정
+최신 결과 pointer이지 계정 전체 이력이 아니다. 여러 Revision의 합집합, 중복 기간·identity 충돌은 후속
+Dataset composition에서 명시적으로 처리한다. 분석은 pinned Revision 또는 명시적
+AnalysisDatasetSnapshot을 입력으로 고정한다. accepted Import가 장부에 반영될 때 새 Revision을 만든다. Import
 compute job은 canonical record와 함께 versioned `ReconciliationManifest`를 만들고 Core는 manifest hash와
 사용한 source/adapter/normalization/schema/terms/reconstruction/reconciliation/ReviewUnit/evidence version과
 implementation digest를 Revision에 고정한다. Analysis는 같은 source를 독립적으로 다시
 매칭하지 않고 pinned manifest의 allocation과 status로 ReviewUnit을 구성한다. manifest를 다시 생성하는 검증을
 수행한다면 hash가 다를 때 run을 실패시킨다.
+
+Revision의 `coverageCompleteness`는 `COMPLETE | LEFT_CENSORED | RIGHT_CENSORED |
+BOTH_CENSORED | INDETERMINATE`다. 이는 pinned 입력 범위 안의 복원 결과 요약이며 거래소 export가
+계정 전체 이력임을 증명하지 않는다. 시작 전에 열린 포지션은 `LEFT_CENSORED`, 끝까지 닫히지 않은
+포지션은 `RIGHT_CENSORED`, 양쪽이면 `BOTH_CENSORED`, 누락·복원 모호성으로 경계를 판정할 수 없으면
+`INDETERMINATE`다. 이 판정은 role별 `ArtifactCoverage.coverageCompleteness=NOT_PROVEN`과 별개다.
+불완전한 coverage만으로 Import를 거부하지 않으며 quality/exclusion과 Capability 제한을 보존한다.
 
 Revision의 content hash는 record 저장 순서와 실행별 ID/생성 시각에 영향받지 않는 canonical ordering과
 serialization으로 계산한다. 기존 Revision을 재처리하거나 보정할 때도 결과를 덮어쓰지 않는다.

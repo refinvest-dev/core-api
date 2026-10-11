@@ -53,11 +53,12 @@ Member
 |---|---|---|---|---|---|---|---|---|
 | `TradingAccount` | Core / self | account ID / Member | display name, `ACTIVE/ARCHIVED`, deletion generation | owner, venue, createdAt | active/archive/deleting | `(owner, accountId)`; optional external alias는 owner scope | raw account ID 저장/노출 금지 | account lifecycle; optimistic lock 필요; create 단일 tx |
 | `TradingBook` | Core / self | Book ID / Account | display name, latest pointers, deletion generation | owner/account, venue/product/mode/settlement, createdAt | active/deleting | `(accountId, bookId)` | lineage owner scope | Book lifecycle; pointer CAS/optimistic lock; publication tx |
-| `TradingImportSession` | Core / self | session ID / Book | status, validation timestamps, failure, created Revision pointer | timezone/mode, pinned policy/version/generation, artifact role inputs after validation start | `RECEIVED→VALIDATING→ACCEPTED/REJECTED` | public idempotency key in owner+operation scope; one active validation logical key | validation logical key; source session provenance | accepted: Book lifecycle, rejected: 30d; optimistic lock; validate transition+dispatch tx |
+| `TradingImportSession` | Core / self | session ID / Book | status, validation timestamps, failure, created Revision pointer | timezone/mode, pinned policy/version/generation, artifact role inputs after validation start | `RECEIVED→VALIDATING→ACCEPTED/REJECTED/PROCESSING_FAILED` | public idempotency key in owner+operation scope; one active validation logical key | inputSetHash; source session provenance | accepted: Book lifecycle, rejected/processing failed: 30d; optimistic lock; validate transition+dispatch tx |
+| `NormalizationRun` | Core / ImportSession | run ID / Session | status, current attempt, terminal failure, timestamps, retryOf | inputFingerprint, target VersionSet, retryPolicyVersion, deletionGeneration, logical key | DISPATCH_PENDING/SUBMITTED/RUNNING/RESULT_READY/PUBLISHING/PUBLISHED/RETRY_WAIT/TERMINAL_FAILURE/OBSOLETE | at most one active Run per Session; one published Revision per logical success | inputSetHash + VersionSet, attempt/dispatch lineage | Session lifecycle; CAS and publication tx |
 | `TradingSourceArtifact` | Core / ImportSession | artifact ID / session | upload/retention state, detected dialect, raw locator/key availability until purge | role, byte size, raw SHA-256, content type, independent observed coverage `{earliest?,latest?,rowCount,sourceTimezone,SECOND,NOT_PROVEN}` after validation | upload status + artifact retention state | exactly one artifact per `(sessionId, role)`; same role/hash replay | raw content hash; upload idempotency key; source of snapshots | metadata session lifecycle; raw ADR-061 TTL; CAS retention; object+DB saga |
 | `SourceEvidenceSnapshot` | Core / ImportSession | snapshot ID / artifact+row | only raw availability projection; snapshot payload never rewritten | role,row,canonical row hash, allowlist, masked IDs, schema/masking version | available/deleted raw marker | `(artifactId, sourceRowNumber, evidenceSchemaVersion)` | source row hash; artifact provenance | accepted Book lifecycle; immutable, no optimistic lock; import publication tx |
-| `TradingRecord` | Core / TradingBook ledger | record ID / Book | none | canonical typed content, source scale, source execution identity, provenance, schema/version | accepted or purge only | Book-scoped source identity; same identity/content reuse; same identity/different content conflict | canonical record hash; one-to-many provenance | Book/revision dependency lifecycle; immutable; import publication tx |
-| `LedgerRevision` | Core / self | revision ID / Book | none; latest pointer는 Book에 있음 | revision number, membership, hashes, role별 artifact coverage와 derived ledger coverage, versions, terms, capability, quality, lineage | staged then published immutable | `(bookId, revisionNumber)`; deterministic success uniqueness `(bookId, contentHash, reconstructionVersionSetHash, manifestHash)` | content/manifest/version hashes; import/reprocessing provenance | Book lifecycle; immutable; final publication tx |
+| `TradingRecord` | Core / TradingBook ledger | record ID / Book | none | canonical typed content, source scale, source execution identity, schema/version; provenance link는 새 Revision 발행 때 append-only | accepted or purge only | unique `(bookId, sourceIdentity, canonicalContentHash)`; same identity/content reuse, 다른 content는 별도 Session record | canonical record hash; one-to-many provenance | Book/revision dependency lifecycle; immutable; import publication tx |
+| `LedgerRevision` | Core / self | revision ID / Book | none; latest pointer는 Book에 있음 | revision number, source import set, role별 artifact ID/hash, inputSetHash, membership, coverage/completeness, record/episode count, versions, terms, manifest, capability, quality, lineage, publishedAt | staged then published immutable | `(bookId, revisionNumber)`; one success per `(bookId, inputSetHash, targetVersionSetHash)` | content/manifest/version/input hashes; import/reprocessing provenance | Book lifecycle; immutable; final publication tx |
 | `LedgerRevisionRecord` | Core / LedgerRevision | `(revisionId, recordId)` / Revision | none | membership and semantic order key | Revision과 동일 | pair unique; order key may repeat only where semantic set ordering permits | record content hash referenced | Revision lifecycle; immutable; same publication tx |
 | `ReconciliationManifest` | Core / LedgerRevision | manifest ID / Revision | none | complete allocation/status/tolerance/capability/provenance payload | staged/published then purge | exactly one per Revision; hash unique only within owner/Book deterministic input | manifest hash + input/version hash | Revision lifecycle; immutable object + descriptor; publication tx |
 | `TradingAnalysisRun` | Core / self | run ID / Book+Revision | status/progress/failure/timestamps; no completed payload mutation | pinned Revision/manifest, versions/config/hash, logical key, generation | `PENDING→RUNNING→COMPLETED/FAILED` | at most one active attempt per analysis logical key; one successful deterministic result | analysis logical key, config/input/version hash | Book/revision lifecycle; optimistic lock; create+dispatch and terminal tx |
@@ -76,11 +77,12 @@ Member
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---:|---|
 | TradingAccount | Core | self | account ID | Member ID | name,status,generation | owner,venue,createdAt | ACTIVE/ARCHIVED/deleting | owner+ID | — | create transport key | authenticated principal | Account lifecycle/cascade | 예 | create/update local tx |
 | TradingBook | Core | self | Book ID | Account ID | name,latest pointers,generation | product/mode/settlement/owner | active/deleting | Account+ID | latest target hashes referenced | create key | Account chain | Book lifecycle/cascade | 예 | create; final publication pointer tx |
-| TradingImportSession | Core | self | session ID | Book ID | status,failure,timestamps,created Revision ID | timezone/mode/policy/version/generation after validation | RECEIVED/VALIDATING/ACCEPTED/REJECTED | public key; validation logical key | input/version set hash | create+validation keys | artifact/session/Book | accepted Book lifecycle; rejected P30D | 예 | validation transition+dispatch; terminal tx |
+| TradingImportSession | Core | self | session ID | Book ID | status,failure,timestamps,created Revision ID | timezone/mode/policy/version/generation after validation | RECEIVED/VALIDATING/ACCEPTED/REJECTED/PROCESSING_FAILED | public key; validation logical key | inputSetHash/version set hash | create+validation+retry keys | artifact/session/Book | accepted Book lifecycle; rejected/failed P30D | 예 | validation transition+dispatch; terminal tx |
+| NormalizationRun | Core | ImportSession | run ID | Session ID | status,attempt,failure,timestamps | inputFingerprint,target VersionSet,retryPolicyVersion,generation,logical key | DISPATCH_PENDING/SUBMITTED/RUNNING/RESULT_READY/PUBLISHING/PUBLISHED/RETRY_WAIT/TERMINAL_FAILURE/OBSOLETE | one active per session; one published success per logical key | input/version/result hashes | validation/retry logical key | retryOf/dispatch/Session | Session lifecycle | 예(CAS) | dispatch admission; atomic publication |
 | TradingSourceArtifact | Core | ImportSession | artifact ID | session ID | upload/retention state,raw locator until purge | role,size,SHA-256,content type,validated independent observed coverage | upload + retention states | session+role | raw SHA-256,dialect/schema fingerprint | upload key | source object/session | metadata session lifecycle; raw TTL/raw-only delete | 예(CAS) | object saga then slot-fill tx |
 | SourceEvidenceSnapshot | Core | ImportSession | snapshot ID | artifact+row | raw availability projection only | row hash,allowlist,masked IDs,versions | retained/purged | artifact+row+schema version | canonical row hash,mask version | validation key inherited | artifact/row/source key | Book lifecycle; session cascade | 아니오 | accepted import publication tx |
 | TradingRecord | Core | TradingBook | record ID | Book ID | none | typed content,scale,identity,provenance,schema | accepted/purged | Book source identity+content guard | canonical record/schema hash | validation logical key inherited | one-or-more snapshots | Book/session dependency purge | 아니오 | accepted import publication tx |
-| LedgerRevision | Core | self | Revision ID | Book ID | none | number,membership,terms,versions,hashes,artifact/ledger coverage,quality,lineage | staged/published/purged | Book+revision number; deterministic success | content/manifest/version hashes | validation/reprocessing logical key | imports,parent DAG | Book/session dependency purge | 아니오 | final publication tx |
+| LedgerRevision | Core | self | Revision ID | Book ID | none | number,source imports/artifact role+hash,inputSetHash,membership,terms,versions,coverage/completeness,record/episode count,quality,lineage,publishedAt | staged/published/purged | Book+revision number; Book+inputSetHash+target VersionSet successful uniqueness | content/manifest/version/input hashes | validation/reprocessing logical key | imports,parent DAG | Book/session dependency purge | 아니오 | final publication tx |
 | LedgerRevisionRecord | Core | LedgerRevision | Revision ID+record ID | Revision and record IDs | none | membership,semantic order | Revision lifecycle | pair unique | referenced record content hash | parent logical key | record→snapshot | Revision cascade | 아니오 | Revision publication tx |
 | ReconciliationManifest | Core | LedgerRevision | manifest ID | Revision ID | none | allocations,status,tolerance,capability,provenance | staged/published/purged | exactly one per Revision | input/version/manifest hash | parent logical key | record/allocation/snapshot | Revision cascade | 아니오 | object staging + Revision publication tx |
 | TradingAnalysisRun | Core | self | analysis Run ID | Book+Revision | status,progress,failure,timestamps | pinned input/version/config/logical key/generation | PENDING/RUNNING/COMPLETED/FAILED | one active + one success per logical key | input/version/config/result hash | public key + analysis logical key | Revision/manifest | Book/Revision cascade | 예(CAS) | create+dispatch; terminal publication tx |
@@ -94,14 +96,21 @@ Member
 
 1. `revisionNumber`는 Book 안에서 1부터 증가하며 unique다. number allocation과 Revision insert는 같은
    transaction에서 Book-level serialization 또는 equivalent atomic allocator를 사용한다.
-2. `TradingRecord`의 Book-scoped `sourceExecutionIdentity`가 같고 canonical content hash가 같으면 기존 record를
-   참조하고 provenance relation을 추가할 수 있다.
-3. 같은 identity에서 content hash가 다르면 `RECORD_CONFLICT`; 기존 record를 update하지 않는다.
+2. Book 안의 `sourceExecutionIdentity`와 canonical content hash가 모두 같으면 기존 immutable record를
+   참조하고 별도 provenance relation을 추가할 수 있다. 새 Revision membership은 새 Session 입력만 고정한다.
+3. 같은 Session 입력에서 identity는 같고 content hash가 다르면 `RECORD_CONFLICT`; 기존 record를 update하지
+   않는다. 서로 다른 Session의 같은 identity/다른 content는 별도 record/Revision으로 보존하고 후속
+   Dataset composition 이전에는 암묵적으로 병합하거나 새 Import를 거부하지 않는다.
 4. Position History row identity는 `(artifactId, sourceRowNumber)`이며 value-based deduplication을 하지 않는다.
 5. artifact raw SHA-256는 owner/Book/session scope에서만 duplicate 판정에 사용한다. 같은 hash의 다른 owner
    object를 공유하지 않는다.
 6. Revision content hash는 sorted record content identities/membership, terms와 canonical schema를 고정한다.
    DB-generated record/Revision ID, insert order와 createdAt은 hash에서 제외한다.
+7. MVP Revision의 source import set은 한 Session이며 membership은 해당 두 artifact에서 파생된 record만이다.
+   같은 Book의 다른 Session에서 참조된 canonical record를 재사용해도 이전 Revision 전체를 복사하지 않는다.
+8. Compute 결과의 inputSetHash/VersionSet/attempt/generation과 complete manifest/quality/capability를 검증한
+   후 Revision 발행, Session ACCEPTED, latest pointer를 한 transaction에 commit한다. ACK는 commit 뒤에만
+   보낸다. ACK 재시도는 이 transaction을 반복하지 않는다.
 
 ## 3. Compute runtime matrix
 
@@ -209,7 +218,7 @@ URI/expiry까지 포함하되 idempotency record에는 fingerprint hash만 저�
 | revision number | unique `(bookId, revisionNumber)` |
 | artifact role | unique `(importSessionId, artifactRole)` |
 | artifact hash | raw SHA-256 fixed after upload; duplicate scope에 owner/Book/session 포함 |
-| execution identity | unique Book-scoped source identity with content conflict guard |
+| execution identity | unique `(bookId, source identity, canonical content hash)` record; 동일 Session 내부 identity/content 충돌 guard |
 | validation | one logical dispatch/result per validation key; terminal session cannot reopen |
 | analysis | at most one active attempt per logical key; one successful deterministic result |
 | reprocessing | at most one active attempt per logical key; one successful output; retry lineage explicit |
@@ -253,8 +262,11 @@ state, idempotency, generation/hash 검증과 retry로 연결한다.
 5. **Accepted publication transaction**: terminal payload의 attempt/input/version/generation/hash를 검증하고
    canonical records/provenance/snapshots, manifest, Revision/membership, session `ACCEPTED`, created Revision ID와
    Book latest Revision pointer를 함께 commit한다. 어느 일부만 저장된 accepted import도 허용하지 않는다.
-6. rejection은 complete quality/failure를 저장하며 `REJECTED`로 한 transaction에서 전이하고 Revision을 만들지
-   않는다.
+6. 결정적인 입력 거부만 complete quality/failure와 `REJECTED`로 한 transaction에서 전이한다.
+   운영 장애는 bounded retry 중 `VALIDATING`, 예산 소진 후 `PROCESSING_FAILED`로 기록한다. 둘 다
+   Revision을 만들지 않는다. 새 explicit retry는 원 Run을 되살리지 않고 새 NormalizationRun과 audit를 남긴다.
+7. `PERSISTED` ACK는 accepted publication commit 뒤에만 전송한다. 전송 실패는 ACK만 멱등 재시도하고
+   Revision insert나 Session 상태 전이를 반복하지 않는다.
 
 대형 manifest/record payload는 Core-owned immutable object에 먼저 staged할 수 있다. DB publication 전에는
 정상 query에 보이지 않으며 transaction rollback 시 orphan cleanup 대상이다.

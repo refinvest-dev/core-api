@@ -270,7 +270,11 @@ TradingBook
 
 TradingImportSession
 ├── TRADE_HISTORY + POSITION_HISTORY source artifacts
-└── RECEIVED → VALIDATING → ACCEPTED | REJECTED
+└── RECEIVED → VALIDATING → ACCEPTED | REJECTED | PROCESSING_FAILED
+
+NormalizationRun (Core internal; Session과 별도 상태)
+└── DISPATCH_PENDING → SUBMITTED → RUNNING → RESULT_READY → PUBLISHING → PUBLISHED
+    또는 RETRY_WAIT → TERMINAL_FAILURE | OBSOLETE
 
 LedgerRevision (Immutable)
 └── accepted canonical TradingRecord, versioned ReconciliationManifest, contentHash, capability, provenance
@@ -298,17 +302,22 @@ DeletionRequest
   일치하며 다른 사용자의 Aggregate나 evidence와 결합하지 않는다.
 - `TR-I02 Homogeneous Book`: 하나의 Book에는 같은 venue/product family/position mode/settlement와
   ReconstructionPolicy를 적용할 수 있는 record만 포함한다.
-- `TR-I03 Atomic Import`: TradingImportSession은 두 필수 artifact를 함께 검증해 전체가 `ACCEPTED` 또는
-  `REJECTED`된다. 분석 의미가 있는 미해석
+- `TR-I03 Atomic Import`: TradingImportSession은 두 필수 artifact를 함께 검증해 입력이 유효하면
+  `ACCEPTED`, 결정적 입력 위반이면 `REJECTED`, 재시도 예산을 소진한 운영 실패면
+  `PROCESSING_FAILED`가 된다. 분석 의미가 있는 미해석
   행을 버리고 성공시키지 않으며, 알려진 비거래 행을 무시했다면 종류와 개수를 기록한다. 두 artifact의
   coverage는 독립 계산하며 min/max만으로 source completeness를 단정하지 않는다.
 - `TR-I04 Source Provenance`: 모든 canonical record와 derived result는 artifact/source row/source record
   key로 이어지는 provenance를 보존한다.
 - `TR-I05 Immutable Accepted Data`: accepted `TradingRecord`, `LedgerRevision`, pinned instrument terms와
   완료된 AnalysisResult를 수정하지 않는다. 보정과 재처리는 새 Revision/Run을 만든다.
-- `TR-I06 Pinned Ledger Input`: LedgerRevision은 record 집합, content hash, import, instrument terms,
-  normalization/reconstruction version, role별 artifact coverage, ReconciliationManifest, capability와 quality를
-  완전히 고정한다.
+- `TR-I06 Pinned Ledger Input`: LedgerRevision은 한 Book의 명시적 source import set(MVP는 한 Session),
+  role별 artifact ID/SHA-256, inputSetHash, source/review timezone, 선언된 product/position mode,
+  exact normalization/adapter/reconstruction/instrument terms VersionSet, record membership/content hash,
+  role별 artifact coverage와 ledger coverage, ReconciliationManifest, capability, quality, publishedAt을
+  완전히 고정한다. 새 Import를 기존 Revision에 암묵적으로 누적하지 않는다. latestRevisionId도
+  전체 계정 이력을 뜻하지 않는다. 분석은 pinned Revision 또는 명시적 AnalysisDatasetSnapshot을 사용한다.
+  복수 Revision 결합·중복·충돌 해소는 후속 Dataset composition 책임이다.
 - `TR-I07 Quantity Conservation`: 각 Execution 수량은 PositionAllocation에 누락·중복 없이 보존된다.
   Reversal은 하나의 execution을 서로 겹치지 않는 close/open quantity로 분할할 수 있다.
 - `TR-I08 Cash-flow Conservation`: 배분된 fee와 venue-reported PnL의 합은 연결된 canonical record와
@@ -370,6 +379,25 @@ DeletionRequest
   단일 parent로 축소하지 않는다.
 - `TR-I38 Version Metadata Retention`: 실행 implementation이 unavailable이어도 lifecycle상 보존되는 결과에는
   당시 source/target VersionSet, config와 lineage metadata가 남는다.
+- `TR-I39 Normalization Identity`: 동일 inputSetHash와 VersionSet은 동일 canonical result를 내며 locator,
+  만료 시각, attempt/token은 logical fingerprint에 포함하지 않는다. 같은 artifact ID의 다른 SHA-256은
+  `ARTIFACT_IDENTITY_CONFLICT`다. 같은 성공 입력의 retry는 Revision을 중복 발행하지 않는다.
+- `TR-I40 Atomic Import Publication`: 검증된 Compute 완료 결과만 발행한다. Revision membership, manifest,
+  quality, capability와 Session `ACCEPTED` 및 latest pointer는 한 publication transaction에서 commit한다.
+  staging은 조회 불가하다. 현재 deletion generation, 실행 identity, inputSetHash 또는 VersionSet이 다르면
+  결과를 `OBSOLETE`로 폐기한다. `PERSISTED` ACK는 commit 뒤에만 보내며 ACK 실패는 ACK만 재시도한다.
+- `TR-I41 Processing Failure Isolation`: 자동 재시도 중 Session은 `VALIDATING`; RetryPolicy 예산 소진은
+  `PROCESSING_FAILED`이고 Revision은 없다. `REJECTED`는 결정적인 source/지원 정책 위반에만 쓴다.
+  명시적 retry는 active raw와 삭제되지 않은 Session에서 새 Run/attempt 및 audit event로 시작한다.
+
+`NormalizationRun`은 Core 내부 모델이다. `runId`, `importSessionId`, `inputFingerprint`(inputSetHash),
+target VersionSet, `retryPolicyVersion`, `deletionGeneration`, logical idempotency key, current execution
+attempt, run status, terminal failure, `createdAt`/`startedAt`/`completedAt`을 보존한다.
+`startedAt`은 첫 execution 시작 전, `completedAt`은 terminal 전에는 null이고 terminal failure도 안전한 code를 보존한다. `RETRY_WAIT`는
+dispatch 또는 Compute 재시도 대기, `TERMINAL_FAILURE`는 입력 거부 또는 소진된 운영 실패,
+`OBSOLETE`는 이전 attempt·generation·input/version의 폐기 결과다. 새로운 명시적 retry는 terminal Run을
+되살리지 않고 새 Run을 `retryOf`로 연결한다. Session 삭제는 tombstone과 generation 증가를 우선하며
+정상 공개 조회를 막는다. 자세한 전이는 Acceptance §3을 따른다.
 
 ### 4.2 Canonical Record와 Analysis Result
 
