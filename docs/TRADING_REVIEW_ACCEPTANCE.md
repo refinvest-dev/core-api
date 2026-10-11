@@ -95,7 +95,8 @@ Acceptance orchestration이 정본 failure taxonomy에 추가로 사용하는 sa
 | Command | Logical key input | 진행 중 중복 | 성공 후 중복 | 실패 후 retry | 불일치 payload |
 |---|---|---|---|---|---|
 | `UploadTradingImportArtifact` | owner, session, role, raw SHA-256 | `RETURN_EXISTING` | `RETURN_EXISTING` | 저장 실패는 `CREATE_NEW_ATTEMPT` | 같은 key/role에 다른 hash는 `REJECT_CONFLICT` |
-| `ValidateTradingImportSession` | owner, session, 두 role/hash, normalization/reconstruction VersionSet, data policy, generation | `RETURN_EXISTING` | terminal이면 `NO_OP` | `VALIDATING` 내부 compute attempt만 `CREATE_NEW_ATTEMPT`; terminal session은 새 session 필요 | `REJECT_CONFLICT` |
+| `ValidateTradingImportSession` | owner, session, 두 role/hash, normalization/reconstruction VersionSet, data policy, generation | `RETURN_EXISTING` | terminal이면 `NO_OP` | `VALIDATING` 내부 compute attempt만 `CREATE_NEW_ATTEMPT`; `PROCESSING_FAILED`는 별도 retry command | `REJECT_CONFLICT` |
+| `RetryTradingImportSession` | owner, session, original inputSetHash/VersionSet, generation | 기존 active Run 반환 | 성공 Revision 반환 | `PROCESSING_FAILED`와 active raw면 새 Run/attempt, 같은 logical fingerprint | `REJECT_CONFLICT` |
 | `RunTradingAnalysis` | owner, Book, Ledger content/manifest hash, Analytics VersionSet, config hash, generation | `RETURN_EXISTING` | completed logical result `RETURN_EXISTING` | failed Run은 immutable; 같은 key의 새 Run/attempt `CREATE_NEW_ATTEMPT` | `REJECT_CONFLICT` |
 | `RequestTradingReprocessing` | ADR-062 canonical key | `RETURN_EXISTING` | completed run/result `RETURN_EXISTING` | 같은 key, 새 run/attempt와 `retryOf`로 `CREATE_NEW_ATTEMPT` | `REJECT_CONFLICT` |
 | delete commands | owner, scope type, opaque scope ID, deletion generation | 같은 request `RETURN_EXISTING` | 같은 terminal request `RETURN_EXISTING` | non-terminal 미완료 checklist만 `CREATE_NEW_ATTEMPT`; failed remediation은 새 request | 다른 scope/generation은 `REJECT_CONFLICT` |
@@ -104,9 +105,8 @@ Acceptance orchestration이 정본 failure taxonomy에 추가로 사용하는 sa
 같은 raw bytes와 다른 filename은 filename이 logical identity가 아니므로 같은 session/role에서
 `RETURN_EXISTING`이다. 새 artifact/object/LedgerRevision을 만들지 않으며 upload-attempt audit에 filename을
 남기지 않는다. 다른 ImportSession에서의 재업로드는 새 session이지만 canonical execution identity와 content가
-같으면 record를 중복 생성하지 않고 provenance를 합친다. 그 accepted session이 Book history에 기여하므로
-새 immutable Revision은 만들 수 있으나 record/content set이 같으면 content hash는 같고 latest publication
-정책을 명시해야 한다.
+같으면 Book-scoped record를 재사용할 수 있다. 새 Revision membership은 새 Session 입력만 포함하고 이전
+Revision 전체와 병합하지 않는다. content hash가 같아도 inputSetHash/provenance는 다르다.
 
 ---
 
@@ -123,15 +123,37 @@ Acceptance orchestration이 정본 failure taxonomy에 추가로 사용하는 sa
 | `RECEIVED` | different content for occupied role | role already occupied | `RECEIVED` | 없음 | `REJECT_CONFLICT`; 새 session 사용 |
 | `RECEIVED` | `ValidateTradingImportSession` | 정확히 두 role, timezone/mode/policy/version/generation 고정 | `VALIDATING` | exactly one logical dispatch | 준비 전 command `REJECTED`, 상태 불변 |
 | `VALIDATING` | artifact upload/replace | any | `VALIDATING` | 없음 | `REJECT_CONFLICT`; validation input 불변 |
-| `VALIDATING` | retryable Compute failure | retry budget/generation valid | `VALIDATING` | 새 attempt, 같은 logical input | budget 소진 시 `REJECTED` |
+| `VALIDATING` | retryable Compute failure | retry budget/generation valid | `VALIDATING` | 새 attempt, 같은 logical input | budget 소진 시 `PROCESSING_FAILED` |
+| `VALIDATING` | retry budget exhausted | versioned policy 소진 | `PROCESSING_FAILED` | Run `TERMINAL_FAILURE`, Revision 없음 | raw TTL 별도 검증 |
 | `VALIDATING` | accepted callback | input/hash/generation 일치, complete records/manifest/quality/policy | `ACCEPTED` | 정확히 한 새 Revision publication | 불완전 callback discard/fail |
 | `VALIDATING` | input rejection callback | safe failure/report complete | `REJECTED` | LedgerRevision 없음 | — |
+| `PROCESSING_FAILED` | `RetryTradingImportSession` | active raw, same input/VersionSet/generation | `VALIDATING` | 새 Run/attempt와 audit, 기존 failure 보존 | raw expired면 `SOURCE_ARTIFACT_EXPIRED`; 삭제면 410 |
 | `ACCEPTED`/`REJECTED` | validate/retry | terminal | 동일 | 동일 callback은 `NO_OP` | 다른 payload `REJECT_CONFLICT`; 재검증은 새 session |
-| any non-deleted | raw-only delete | owner, scope/generation | session 상태는 유지; validating이면 `REJECTED` | artifact retention→pending, output discard | `SOURCE_ARTIFACT_DELETED` |
+| any non-deleted | raw-only delete | owner, scope/generation | session 상태는 유지; validating이면 `PROCESSING_FAILED` | artifact retention→pending, output discard | `SOURCE_ARTIFACT_DELETED` |
 | any | session/상위 delete | owner, scope commit | 정상 상태 조회 차단 | deletion request와 tombstone; cascade purge | callback discard |
 
 Trade History만 또는 Position History만 있는 동안 validation은 시작하지 않는다. 두 artifact가 준비돼도
 명시적 validation command 전에는 자동 시작하지 않는다.
+
+### 3.1a `NormalizationRun` (Core 내부)
+
+| Current | Event / gate | Next | Publication / audit |
+|---|---|---|---|
+| — | validation admission 또는 명시적 retry, pinned input/VersionSet/policy/generation | `DISPATCH_PENDING` | Session `VALIDATING`, durable dispatch와 Run을 같은 transaction에 생성 |
+| `DISPATCH_PENDING` | Compute create accepted 또는 replay | `SUBMITTED` | Compute job ID/dispatch 기록 |
+| `SUBMITTED` | worker claim | `RUNNING` | current attempt와 token 기록 |
+| `DISPATCH_PENDING`/`SUBMITTED`/`RUNNING` | retryable timeout, 5xx, grant expiry, storage failure; policy 잔여 | `RETRY_WAIT` | Session `VALIDATING`, 실패 attempt/audit 기록 |
+| `RETRY_WAIT` | 재제출 또는 fresh grant/attempt CAS | `SUBMITTED` 또는 `RUNNING` | logical input fingerprint 유지, attempt 증가 |
+| non-terminal | policy 소진 또는 결정적 source rejection | `TERMINAL_FAILURE` | 운영 실패면 `PROCESSING_FAILED`, 입력 거부면 `REJECTED`; Revision 없음 |
+| `RUNNING` | Compute completed descriptor와 payload size/hash 확인 | `RESULT_READY` | staging만 저장, 공개 조회 금지 |
+| `RESULT_READY` | current Run/attempt/input/VersionSet/generation 및 manifest/quality/capability 검증 | `PUBLISHING` | publication transaction 시작 |
+| `PUBLISHING` | Revision/membership/Session/latest atomic commit | `PUBLISHED` | Session `ACCEPTED`; commit 뒤 `PERSISTED` ACK |
+| non-published | 더 최신 attempt, input/version 불일치 또는 deletion generation 변경 | `OBSOLETE` | staging 폐기; 삭제면 `DISCARDED_STALE` ACK, 그 외 ACK 없음 |
+| `PUBLISHED` | ACK 전송 실패 | `PUBLISHED` | ACK만 멱등 재시도, Revision insert 금지 |
+
+terminal Run은 다시 열지 않는다. `PROCESSING_FAILED`의 명시적 retry는 새 Run을 `retryOf`로 연결한다.
+RetryPolicy는 versioned configuration이며 숫자·delay는 배포 설정이다. 운영 자동 재개도 동일한 전이와
+audit event를 기록한다. 삭제 tombstone 뒤에는 새 Run/attempt를 admit하지 않는다.
 
 ### 3.2 `TradingAnalysisRun`
 
@@ -202,8 +224,12 @@ Run, session 또는 remediation request다.
 | `UNSUPPORTED_SOURCE_SCHEMA` | 지원 export로 예 | 예 | 무변경 | supported dialect 사용 | dialect/fingerprint/count/code | 반복 시 |
 | `UNSUPPORTED_PRODUCT` / `UNSUPPORTED_POSITION_MODE` | 지원 입력으로 예 | 예 | 무변경 | MVP 범위 입력 사용 | product/mode/code | 반복 시 |
 | `RECORD_CONFLICT` | source 수정 뒤 예 | 예 | 기존 Revision/latest 무변경 | export/identity 확인 | opaque row/hash ref, code | 반복 시 예 |
+| `ARTIFACT_REFERENCE_EXPIRED` | fresh grant로 예 | 아니오 | 무변경 | 없음 | opaque artifact/attempt/code | threshold |
+| `SOURCE_ARTIFACT_EXPIRED` | 같은 Session은 아니오 | 예 | 무변경 | 새 Session에 재업로드 | artifact retention/code | 아니오 |
+| `SOURCE_CONTENT_LENGTH_MISMATCH` / `SOURCE_CONTENT_HASH_MISMATCH` | 원인 조사 뒤 새 attempt | 현재 attempt 예 | 무변경 | 운영 복구 대기 | opaque artifact/expected-actual hash prefix/code | 예 |
+| `ARTIFACT_IDENTITY_CONFLICT` | 동일 ID로 불가 | command terminal | 무변경 | 운영 복구 대기 | opaque artifact ID/code | 예 |
 | `INCOMPLETE_ANALYSIS_RESULT` | 새 corrected attempt | 예 | 기존 Run/result/latest 무변경 | 상태 확인 또는 재실행 | run/version/missing component/code | 예 |
-| bounded transient Compute/storage code | 자동 bounded retry | budget 소진 전 아니오 | 무변경 | 보통 없음 | opaque job/attempt/code/duration | threshold |
+| bounded transient Compute/storage code | 자동 bounded retry | budget 소진 전 아니오 | 무변경 | 소진 뒤 명시적 retry 또는 운영 복구 | opaque job/attempt/code/duration | threshold |
 | `REPROCESSING_SOURCE_UNAVAILABLE` | verified reupload 뒤 | 예 | 기존 Review/latest 유지 | 재업로드 또는 가능한 type 선택 | availability/type/version | 아니오 |
 | `VERSION_UNAVAILABLE` / `VERSION_INCOMPATIBLE` | target/input 변경 뒤 | 예 | 기존 결과 유지 | ACTIVE compatible target 선택 | version IDs/code | registry 이상 시 |
 | `NOT_COMPARABLE_VERSION` | 전 기간 동일 key 재계산 뒤 | query terminal | 각 결과 유지 | comparable rerun | version/config hash | 아니오 |
@@ -217,6 +243,38 @@ Run, session 또는 remediation request다.
 ---
 
 ## 4. Acceptance Scenarios
+
+### 4.0 Import normalization orchestration (ADR-065)
+
+아래 ID는 후속 Integration fixture/assertion의 stable ID다. `BASE-V1` synthetic 두 Artifact를 쓰며 실제 CSV
+fixture는 모두 `FIXTURE_PLANNED`, 장애·경쟁 시나리오는 `FIXTURE_NOT_REQUIRED`다. `—`는 공개 failure 없음,
+`N/A`는 ACK할 terminal payload 없음이다. 모든 행은 owner/Book/Session, role별 artifact ID/hash,
+inputSetHash, VersionSet, attempt, deletion generation을 audit/evidence로 대조한다. 성공 Revision의
+provenance는 source Session, 두 artifact ID/role/SHA-256, pinned versions, coverage, manifest hash,
+quality/capability, publishedAt을 포함한다. 실패는 raw/URI/credential을 노출하지 않는다.
+
+| Scenario / Given → When → Then | 최종 Session / Run | Revision / retryable / 공개 failure·userAction | Evidence·stale / ACK |
+|---|---|---|---|
+| `TR-ACC-IMPORT-ORCH-001` 두 정상 Artifact → validation 완료 → 완전 검증·원자적 publication | ACCEPTED / PUBLISHED | 정확히 1 / false / — | role별 hash, inputSetHash, manifest·quality·capability 고정; stale 없음 / commit 뒤 PERSISTED |
+| `TR-ACC-IMPORT-ORCH-002` 같은 입력·VersionSet의 retry 또는 terminal replay → 동일 성공 조회 → 중복 발행 없음 | ACCEPTED / PUBLISHED | 기존 1 / false / — | 같은 logical key·result hash, 추가 membership 없음; stale replay NO_OP / 기존 ACK 재전송만 |
+| `TR-ACC-IMPORT-ORCH-003` 첫 Revision 뒤 두 번째 Session 업로드 → 검증 → 첫 membership 미합산 | 두 Session ACCEPTED / 각 PUBLISHED | 각 1 / false / — | 서로 다른 inputSetHash/source Session, 공유 record 허용, latest는 둘째 범위만; stale 없음 / 각 commit 뒤 ACK |
+| `TR-ACC-IMPORT-ORCH-004` 시작·끝 경계 불완전 입력 → 검증 → exclusion과 제한된 Capability로 발행 | ACCEPTED / PUBLISHED | 1 / false / — | LEFT/RIGHT/BOTH_CENSORED 또는 INDETERMINATE, role별 NOT_PROVEN, quality reason; stale 없음 / PERSISTED |
+| `TR-ACC-IMPORT-ORCH-005` staging 전 grant 만료 → Core fresh grant CAS → 같은 job 재시도 성공 | ACCEPTED / PUBLISHED | 1 / false / — | ARTIFACT_REFERENCE_EXPIRED attempt audit, bytes size/hash 검증; 이전 grant 폐기 / PERSISTED |
+| `TR-ACC-IMPORT-ORCH-006` 새 grant의 URI/expiry 변경 → fingerprint 계산 → inputSetHash·logical key 불변 | ACCEPTED / PUBLISHED | 1 / false / — | 원 artifact ID/role/hash/VersionSet 동일, grant URI 저장 금지; stale 없음 / PERSISTED |
+| `TR-ACC-IMPORT-ORCH-007` 같은 artifactId에 다른 SHA-256 → grant/update 시도 → 409 conflict | RECEIVED 또는 VALIDATING 불변 / 기존 Run 불변 | 0 / false / ARTIFACT_IDENTITY_CONFLICT·WAIT_FOR_RECOVERY | 두 hash의 불일치 audit만, 원본 무변경; 결과 폐기 / N/A |
+| `TR-ACC-IMPORT-ORCH-008` Compute 5xx·timeout → policy budget 내 자동 재시도 → 계속 대기 | VALIDATING / RETRY_WAIT | 0 / true / TEMPORARY_DEPENDENCY_FAILURE·WAIT_FOR_RECOVERY | 동일 inputSetHash, attempt 증가, raw 무변경; stale 없음 / N/A |
+| `TR-ACC-IMPORT-ORCH-009` 자동 재시도 예산 소진 → terminal 전이 → 데이터 거부 없음 | PROCESSING_FAILED / TERMINAL_FAILURE | 0 / true(active raw) / TEMPORARY_DEPENDENCY_FAILURE·RETRY | policyVersion·attempt·elapsed audit; partial staging 비공개 / N/A |
+| `TR-ACC-IMPORT-ORCH-010` 실패 Session과 active raw → 명시적 retry → 새 Run 성공 | ACCEPTED / 이전 TERMINAL_FAILURE, 새 PUBLISHED | 1 / false / — | retryOf, 같은 inputSetHash·VersionSet, 새 attempt/audit; 이전 결과 OBSOLETE / commit 뒤 PERSISTED |
+| `TR-ACC-IMPORT-ORCH-011` raw TTL 만료된 실패 Session → retry command → 410 재업로드 안내 | PROCESSING_FAILED / TERMINAL_FAILURE 불변 | 0 / false / SOURCE_ARTIFACT_EXPIRED·REUPLOAD_REQUIRED | retention status/expiry만 공개, grant 없음; 늦은 결과 폐기 / N/A |
+| `TR-ACC-IMPORT-ORCH-012` 필수 컬럼 누락 등 결정적 입력 위반 → validation → 데이터 거부 | REJECTED / TERMINAL_FAILURE | 0 / false / REQUIRED_COLUMN_MISSING·REUPLOAD_REQUIRED | safe field/row/role와 quality, 원본 값 없음; stale 없음 / N/A |
+| `TR-ACC-IMPORT-ORCH-013` Compute 실행 중 Session 삭제 tombstone commit → 늦은 결과 도착 → 발행 금지 | 정상 Session 조회 차단 / OBSOLETE | 0 / false / 공개 resource 410 RESOURCE_DELETED | generation 증가·payload discard, artifact/Run purge; stale 기록 / DISCARDED_STALE |
+| `TR-ACC-IMPORT-ORCH-014` retry의 새 execution 뒤 이전 결과 도착 → attempt 비교 → 이전 결과 폐기 | VALIDATING 또는 ACCEPTED / 이전 OBSOLETE, 현 Run active/PUBLISHED | 현 성공 전 0 또는 후 1 / 상황별 / 이전 failure 비공개 | attemptToken·run ID mismatch audit, 이전 payload 불가시화 / 이전 결과 ACK 금지(삭제면 DISCARDED_STALE) |
+| `TR-ACC-IMPORT-ORCH-015` Core publication commit 뒤 ACK 전송 실패 → ACK 재시도 → 중복 Revision 없음 | ACCEPTED / PUBLISHED | 1 / false / — | commit ID·result/payload hash 동일, latest 불변; stale 없음 / 같은 PERSISTED ACK 재전송 |
+| `TR-ACC-IMPORT-ORCH-016` terminal input hash 또는 VersionSet 불일치 → publication 시 검증 → 발행 금지 | VALIDATING(재시도 예산 내) 또는 PROCESSING_FAILED / OBSOLETE 또는 TERMINAL_FAILURE | 0 / 예산 내 true / RESULT_HASH_MISMATCH·WAIT_FOR_RECOVERY | expected/received hash·version ID만 audit, staging 비공개; stale 폐기 / PERSISTED 금지 |
+
+`TR-ACC-IMPORT-ORCH-014`의 이전 payload는 Compute cleanup TTL 또는 명시적 cancellation으로 정리한다.
+`DISCARDED_STALE` ACK는 삭제 generation이 증가한 경우에만 사용한다. `TR-ACC-IMPORT-ORCH-016`의
+VersionSet 불일치도 safe `RESULT_HASH_MISMATCH`로 매핑하고 원본 데이터 `REJECTED`로 만들지 않는다.
 
 각 scenario는 아래 18개 필드를 모두 가진다. `Evidence`는 assertion에 필요한 chain 또는 state evidence이고,
 `Deferred HTTP Contract`는 transport 의미만 분류한다.
@@ -410,13 +468,13 @@ Run, session 또는 remediation request다.
 - **Evidence / Applied Invariants:** hash equality; `TR-I04`, `TR-I18`, `TR-I21`.
 - **Service Ownership / Observability / Deferred HTTP Contract:** Core; `SAFE`; command accepted.
 
-#### TR-ACC-IMPORT-018 — Overlapping period export repeats an execution
+#### TR-ACC-IMPORT-018 — Overlapping new Import remains a separate Revision
 
-- **Purpose / Use Case / Actors:** overlap dedupe와 provenance 보존; import; Core, Compute.
+- **Purpose / Use Case / Actors:** 같은 Book의 immutable record 재사용과 Revision 입력 집합 분리; import; Core, Compute.
 - **Preconditions / Pinned Versions / Input Fixture:** existing accepted Revision and new session with overlapping same-identity/same-content execution plus new rows; `BASE-V1`; `FIXTURE_PLANNED .../overlapping-export`.
-- **Given / When / Then:** owner/Book match / validate / accepted new Revision, repeated canonical execution once, provenance includes both sessions, new rows included, no double allocation.
+- **Given / When / Then:** owner/Book match / validate / 새 Session의 중복 행과 새 행만 가진 Revision이 ACCEPTED된다. 같은 내용 record는 재사용할 수 있지만 첫 Revision의 다른 행을 새 Revision에 복사하지 않고, 각 Revision 안에서만 한 번 배분한다.
 - **Aggregate State Changes / Created or Updated Artifacts:** old Revision immutable; new Revision/manifest/quality created and optionally latest updated.
-- **Expected Outcome / Expected Failure or Exclusion:** `SUCCEEDED` or explicit exclusions dictated by reconstruction; duplicate itself is not exclusion.
+- **Expected Outcome / Expected Failure or Exclusion:** `SUCCEEDED` or 새 입력의 명시적 exclusion. Session 사이 기간 병합·중복 제거는 수행하지 않는다.
 - **Idempotency Result:** same new session validation `RETURN_EXISTING`.
 - **Evidence / Applied Invariants:** execution→both artifacts/source rows; `TR-I04`~`TR-I08`, `TR-I35`, `TR-I37`.
 - **Service Ownership / Observability / Deferred HTTP Contract:** common; `SAFE`; async accepted.
@@ -432,16 +490,16 @@ Run, session 또는 remediation request다.
 - **Evidence / Applied Invariants:** one record→multiple row refs; `TR-I04`, `TR-I07`, `TR-I11`.
 - **Service Ownership / Observability / Deferred HTTP Contract:** common; `SAFE`; async accepted.
 
-#### TR-ACC-IMPORT-020 — Same identity and different content across overlap
+#### TR-ACC-IMPORT-020 — Different content across Sessions stays separate
 
-- **Purpose / Use Case / Actors:** cross-session conflict 보호; import; Core, Compute.
+- **Purpose / Use Case / Actors:** cross-session conflict 해소를 Dataset composition으로 유보; import; Core, Compute.
 - **Preconditions / Pinned Versions / Input Fixture:** Book already contains identity with different content in new session; `BASE-V1`; `FIXTURE_PLANNED .../overlap-conflict`.
-- **Given / When / Then:** identity collision / validate / new session `REJECTED`, old Revision/latest unchanged, new Revision 0.
-- **Aggregate State Changes / Created or Updated Artifacts:** only rejection report.
-- **Expected Outcome / Expected Failure or Exclusion:** `REJECTED`; `RECORD_CONFLICT`, false, true, old result unchanged, inspect/re-export, hashes/opaque IDs only, `ALERT` if repeated.
-- **Idempotency Result:** terminal `NO_OP`.
-- **Evidence / Applied Invariants:** both hashed provenance refs; `TR-I03`~`TR-I05`, `TR-I35`.
-- **Service Ownership / Observability / Deferred HTTP Contract:** common; `SAFE ALERT`; terminal failure query.
+- **Given / When / Then:** 다른 Session의 identity collision / validate / 새 Session 범위만 가진 Revision `ACCEPTED`; 기존 Revision 불변. 같은 Session 내부의 다른 내용 충돌이면 `REJECTED/RECORD_CONFLICT`다.
+- **Aggregate State Changes / Created or Updated Artifacts:** 다른 내용은 별도 immutable record/Revision; cross-session resolution 없음.
+- **Expected Outcome / Expected Failure or Exclusion:** cross-session `SUCCEEDED`; 같은 Session 내부 충돌은 `REJECTED/RECORD_CONFLICT`.
+- **Idempotency Result:** 같은 Session 재검증은 기존 결과 `NO_OP`; 서로 다른 Session은 별도 inputSetHash.
+- **Evidence / Applied Invariants:** 두 Session의 분리된 artifact/row/content hash refs; `TR-I03`~`TR-I06`, `TR-I39`.
+- **Service Ownership / Observability / Deferred HTTP Contract:** Core record/Revision, Compute 한 Session 정규화; `SAFE`; terminal query.
 
 #### TR-ACC-IMPORT-021 — Repeated validation command
 
@@ -976,7 +1034,7 @@ Run, session 또는 remediation request다.
 - **Preconditions / Pinned Versions / Input Fixture:** session `VALIDATING`; generation g; `FIXTURE_NOT_REQUIRED`.
 - **Given / When / Then:** raw/scope deletion commits g+1 / cancel / output discarded, session lifecycle reason `SOURCE_ARTIFACT_DELETED` when retained, no Revision, runtime/raw purged.
 - **Aggregate State Changes / Created or Updated Artifacts:** DeletionRequest proceeds; import cannot accept.
-- **Expected Outcome / Expected Failure or Exclusion:** deletion `SUCCEEDED`; import `REJECTED`.
+- **Expected Outcome / Expected Failure or Exclusion:** deletion `SUCCEEDED`; raw-only 삭제에서 남는 import는 `PROCESSING_FAILED`, Session scope 삭제면 정상 조회 차단.
 - **Idempotency Result:** callback `NO_OP` stale; delete `RETURN_EXISTING`.
 - **Evidence / Applied Invariants:** old/current generation; `TR-I15`, `TR-I16`, `TR-I19`, `TR-I30`.
 - **Service Ownership / Observability / Deferred HTTP Contract:** common; `SAFE`; deletion status.
@@ -1439,7 +1497,7 @@ Run, session 또는 remediation request다.
 - **Preconditions / Pinned Versions / Input Fixture:** 첫 Compute job `FAILED`, Core raw/version/generation 재확인 통과; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
 - **Given / When / Then:** Core가 새 dispatch ID/key/최초 token으로 생성 / 새 Compute job ID, 같은 `coreImportSessionId`, Core `retryOf`가 old job을 가리킴; old job/실패 status 불변.
 - **Aggregate State Changes / Created or Updated Artifacts:** 새 Compute job 1, Core Import는 동일 logical validation 범위.
-- **Expected Outcome / Expected Failure or Exclusion:** 새 접수 `SUCCEEDED`; raw/deletion gate 실패면 `REJECTED`, 기존 결과 불변.
+- **Expected Outcome / Expected Failure or Exclusion:** 새 접수 `SUCCEEDED`; raw 만료면 `SOURCE_ARTIFACT_EXPIRED`, deletion gate 실패면 접수 금지; 기존 결과 불변.
 - **Idempotency Result:** old key replay는 old FAILED job; new key는 new job.
 - **Evidence / Applied Invariants:** Core durable dispatch lineage, 두 job ID; `TR-I05`, `TR-I06`, `TR-I16`.
 - **Service Ownership / Observability / Deferred HTTP Contract:** Core lineage, Compute jobs; `SAFE`; create/status.
@@ -1514,8 +1572,11 @@ Run, session 또는 remediation request다.
 | `TR-I36` | ANALYSIS-001, 010~015; REPROCESS-001, 003~011, 013; NORMJOB-009~010 |
 | `TR-I37` | IMPORT-018; REPROCESS-001, 003, 010 |
 | `TR-I38` | EVIDENCE-010; REPROCESS-001, 004~006, 008, 010, 012~013 |
+| `TR-I39` | IMPORT-ORCH-001~003, 005~007, 010 |
+| `TR-I40` | IMPORT-ORCH-001, 013~016 |
+| `TR-I41` | IMPORT-ORCH-008~012 |
 
-Scenario reference에서 group prefix `TR-ACC-`는 생략했다. 모든 `TR-I01`~`TR-I38`은 최소 하나의 정상 또는
+Scenario reference에서 group prefix `TR-ACC-`는 생략했다. 모든 `TR-I01`~`TR-I41`은 최소 하나의 정상 또는
 위반 acceptance에 연결된다.
 
 ### 5.3 TR-0 acceptance completion matrix

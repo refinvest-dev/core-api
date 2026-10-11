@@ -251,7 +251,9 @@ ReprocessingInputAvailability
   `CANONICAL_SCHEMA_INCOMPATIBLE`이다.
 - 재업로드는 새 `TradingImportSession`이다. owner와 Book ownership을 다시 검증하고 artifact content hash,
   canonical source identity와 overlap/conflict 검사를 통과한 경우에만 `reuploadOfImportSessionId`와 parent
-  Revision edge를 기록한다. hash 유사성만으로 자동 연결하지 않는다.
+  Revision edge를 기록한다. 이 검사는 선택적인 reupload lineage 연결만 위한 것이며 독립된 새 Import의
+  한-Session Revision을 기존 Revision에 합치거나 cross-session 충돌 때문에 거부하는 단계가 아니다.
+  hash 유사성만으로 자동 연결하지 않는다.
 - 삭제된 artifact나 key를 backup에서 재처리 목적으로 복원하지 않는다.
 
 ## 9. Trigger와 Automatic Policy
@@ -421,6 +423,33 @@ reviewUnitSchemaVersion
 않는다.
 
 ## 14. Failure Taxonomy
+
+Import normalization의 logical input은 한 Book, MVP 한 source ImportSession, role별 artifact ID/SHA-256,
+source/review timezone, product/mode 및 exact target VersionSet의 `inputSetHash`다(ADR-065). 기존 Revision은
+새 Import에 누적되지 않는다. retry attempt, grant locator/expiry와 Compute dispatch ID는 inputSetHash에서
+제외한다. 서로 다른 source import set의 Revision을 합치는 Dataset composition은 이 정책의 범위 밖이다.
+
+| Import failure | 발생 조건 | 공개 Session / userAction | retry |
+|---|---|---|---|
+| `ARTIFACT_REFERENCE_EXPIRED` | signed grant가 staging 전에 만료 | 자동 retry 중 `VALIDATING` / `WAIT_FOR_RECOVERY` | 새 grant, 같은 logical input |
+| `SOURCE_ARTIFACT_EXPIRED` | Core raw TTL 만료 | `PROCESSING_FAILED` / `REUPLOAD_REQUIRED` | 같은 Session 재시도 불가 |
+| `SOURCE_CONTENT_LENGTH_MISMATCH` | 받은 bytes 길이 불일치 | publication 금지 / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 attempt |
+| `SOURCE_CONTENT_HASH_MISMATCH` | 받은 bytes SHA-256 불일치 | publication 금지 / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 attempt |
+| `ARTIFACT_IDENTITY_CONFLICT` | 같은 artifact ID에 다른 SHA-256 | `409`, 기존 Session 불변 / `WAIT_FOR_RECOVERY` | 동일 identity로 재시도 금지 |
+| `TEMPORARY_DEPENDENCY_FAILURE` | Compute/network/storage 일시 장애 | budget 내 `VALIDATING`, 소진 후 `PROCESSING_FAILED` / `RETRY` | active raw에서 명시적 retry |
+
+`RetryPolicy`는 `policyVersion`, `maxAttempts`, `maxElapsedTime`, `initialDelay`, `maxDelay`, `jitter`를
+admission에 pin한 설정이다. 값은 배포별 설정이며 fingerprint에 정책 version을 기록하되 계산 결과 hash에는
+attempt timing을 넣지 않는다. 공개 `retryable=true`는 현재 raw/generation으로 retry command가 가능한
+경우에만 준다. grant 만료는 raw 만료와 구분한다.
+
+`maxAttempts`는 최초 execution을 포함한 양의 정수다. `maxElapsedTime`, `initialDelay`, `maxDelay`는
+양의 ISO 8601 duration이며 elapsed budget은 최초 validation admission부터 계산한다. 다음 대기 상한은
+`min(maxDelay, initialDelay × 2^(이미 실패한 attempt 수 − 1))`이고 `jitter`는 versioned policy의
+`NONE | FULL_JITTER` 선택이다. `FULL_JITTER`는 0부터 해당 상한까지 균등 분포의 대기를 선택한다.
+attempt 수 또는 elapsed budget 중 먼저 소진된 쪽에서 자동 재시도를 멈춘다. 무작위 대기는 실행 일정에만
+영향을 주며 normalization inputSetHash/결과 hash에는 포함하지 않는다. 정책의 실제 수치와 jitter 선택은
+운영 설정으로 배포 전에 version과 함께 pin한다.
 
 | Failure | 발생 조건 | 사용자 의미 | retry | 기존 결과 영향 | 새 Revision/Run | alert | audit / masking |
 |---|---|---|---|---|---|---|---|

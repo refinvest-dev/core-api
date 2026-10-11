@@ -25,7 +25,7 @@ Trading Review `TR-0 → TR-1`을 먼저 검증한다. 기존 Backtest 계약과
 - `COMPLETE/LEFT_CENSORED/RIGHT_CENSORED/INCONSISTENT/UNSUPPORTED` 분류
 - 초기 3개 Metric을 실제 sample로 계산
 - raw artifact retention/deletion과 민감정보 logging 정책 적용
-- `TR-I01`~`TR-I38` 중 실행 가능한 불변식의 정상/위반 fixture와 expected result 정의
+- `TR-I01`~`TR-I41` 중 실행 가능한 불변식의 정상/위반 fixture와 expected result 정의
 - Import/Analysis OpenAPI 및 persistence schema 초안
 
 **초기 Metric**:
@@ -109,7 +109,7 @@ Data Lifecycle, Reprocessing, Authorization과 Normalization Job protocol의 완
 
 - 모든 scenario가 precondition, pinned version/config, fixture 상태, state/artifact 변화, outcome,
   failure/exclusion, idempotency, evidence, invariant, service ownership와 deferred transport assertion을 가진다.
-- `TR-I01`~`TR-I38`이 최소 하나의 Acceptance Scenario에 연결된다.
+- `TR-I01`~`TR-I41`이 최소 하나의 Acceptance Scenario에 연결된다.
 - 실제 0과 unavailable, import rejection과 episode exclusion, retry와 duplicate, raw deletion과 evidence,
   reprocessing failure와 기존 Review 보호가 별도 assertion이다.
 - Integration harness가 Scenario ID와 Then 조건을 별도 의미 해석 없이 fixture/E2E assertion으로 옮길 수 있다.

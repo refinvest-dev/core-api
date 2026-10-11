@@ -95,7 +95,7 @@ locale digit를 허용하지 않는다. source symbol을 exact pinned instrument
 64-bit 변환이나 lexical ordering을 사용해서는 안 된다. 같은 account/symbol에서 서로 다른 원문 ID가 같은
 정수값(예: leading zero 차이)을 만들면 identity가 모호하므로 timestamp와 관계없이 `RECORD_CONFLICT`로
 session을 거절한다. 같은 source identity와 같은 content는 provenance를 합쳐 먼저 deduplicate하고, 같은
-identity와 다른 content도 `RECORD_CONFLICT`다. 그 다음 정렬하며 서로 다른 symbol에는 전역 tie-break를
+ImportSession 입력 안에서 identity와 다른 content도 `RECORD_CONFLICT`다. 그 다음 정렬하며 서로 다른 symbol에는 전역 tie-break를
 만들지 않는다. 이 identity guard 때문에 instrument/time/numeric Trade ID 뒤에 source row 순서나 `Order ID`
 tie-breaker는 필요하지 않다. derived canonical record의 serialization만 같은 fill 안에서 고정된 `recordType`
 순서를 마지막 key로 사용한다. 동일 Order ID의 여러 row는 각각 독립 fill이며 하나의 주문이나 execution으로

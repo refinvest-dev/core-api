@@ -631,9 +631,11 @@ normalization 또는 ASCII-only validation으로 identity를 바꾸지 않으며
 Trade identity는 `HMAC(stableIdentityKey, canonicalTuple(venue, Uid))`로 만든 account fingerprint와 exact
 Symbol, raw Trade ID의 length-prefixed canonical tuple이며 ID field는 문자열로 보존한다. opaque symbol을
 separator string concatenation으로 조합하지 않는다. identity key는 별도 version을 기록하고 회전 시 기존
-fingerprint를 연결하는 migration이 필요하다. 같은 identity와
-같은 내용은 provenance를 합쳐 deduplicate하며 내용이 다르면 conflict로 거절한다. Position row는 stable
-venue ID가 확인되지 않았으므로 `artifactId + sourceRowNumber`로 식별하고 값 기반 deduplication을 하지 않는다.
+fingerprint를 연결하는 migration이 필요하다. 같은 ImportSession 입력 안에서 같은 identity와
+같은 내용은 provenance를 합쳐 deduplicate하며 내용이 다르면 conflict로 거절한다. 서로 다른 Session의
+동일 identity/다른 내용은 각각의 고정 입력 Revision을 만들 수 있고 통합 때의 충돌 해소는 ADR-065의
+Dataset composition 책임이다. Position row는 stable venue ID가 확인되지 않았으므로
+`artifactId + sourceRowNumber`로 식별하고 값 기반 deduplication을 하지 않는다.
 원본 UID는 log, public API와 AI context에 노출하지 않는다.
 
 Trade row는 Execution/Fee/VenueReportedPnl record, Position row는 `VenuePositionSummaryRecord`로 정규화한다.
@@ -1100,3 +1102,23 @@ capacity를 소비한다. 새 Trading Review job이 자기 pool에서 거절되�
 **관련**: ADR-044, ADR-061~063, `docs/TRADING_REVIEW_API.md`,
 `docs/TRADING_REVIEW_PERSISTENCE.md`, `docs/TRADING_REVIEW_ACCEPTANCE.md`,
 `openapi/compute-api.yaml`.
+
+---
+
+## ADR-065 — Trading Import normalization orchestration and bounded failure
+
+**상태**: 확정. ADR-058/061~064의 Import 범위와 실행·발행 의미를 구체화한다.
+
+**LedgerRevision 범위**: Revision은 하나의 TradingBook과 명시적으로 고정한 source import set, role별 Artifact ID/SHA-256, inputSetHash 및 target VersionSet으로 만든 불변 거래 원장이다. MVP source import set은 정확히 하나의 TradingImportSession이며 Trade/Position History artifact 각 하나다. 두 번째 Import는 첫 Revision의 record를 암묵적으로 누적하거나 기존 Revision을 덮어쓰지 않는다. 같은 Book의 canonical TradingRecord를 재사용할 수 있어도 Revision membership은 해당 입력 집합에 한정된다. 재처리는 원 입력 집합을 명시적으로 고정한 새 Revision을 만들며, 같은 logical input/VersionSet의 retry는 성공 Revision 하나를 반환한다. latestRevisionId는 가장 최근에 발행한 범위 한정 Revision pointer이며 전체 계정 이력의 합집합이 아니다. 분석은 한 pinned Revision 또는 명시적 AnalysisDatasetSnapshot을 사용한다. 여러 Revision의 통합, 기간 중복과 충돌 해소는 후속 Dataset composition 계약이다. 같은 입력/VersionSet의 canonical normalization result hash는 결정적으로 같다.
+
+**입력 identity**: inputSetHash는 Book ID, 정렬된 sourceImportSessionIds, role별 artifact ID/SHA-256, source/review timezone, 선언된 position mode/product 및 exact target VersionSet(artifact별 dialect, adapter, normalizer, schema, instrument terms, reconstruction, reconciliation, ReviewUnit, evidence, implementation digest)을 canonical JSON으로 직렬화해 SHA-256으로 계산한다. 배열은 role 및 opaque ID 순, map key는 Unicode code point 순으로 정렬하며 문자열을 trim/case/Unicode 정규화하지 않는다. content length/media type도 검증 descriptor로 pin한다. logical normalization idempotency key는 owner ID + inputSetHash + deletionGeneration이다. 실행 attempt/token, dispatch/job ID, signed accessUri, expiresAt, grant revision, 시각은 inputSetHash와 logical key에서 제외한다. Compute 생성 key는 ADR-064대로 별도이며 최초 attempt token을 포함한다. 동일 artifact ID에 다른 SHA-256이 제시되면 `ARTIFACT_IDENTITY_CONFLICT`(409)이고 새 결과를 만들지 않는다.
+
+**Artifact access**: Core Artifact Storage port가 artifact 하나만 읽는 read-only, 최대 5분 single-read ArtifactReadGrant를 발급한다. Compute에는 영구 object key나 storage credential을 전달하지 않는다. URI path/query에는 filename, Binance UID, Symbol 및 거래값을 넣지 않고 URI/query를 application log·metric·error에 기록하지 않는다. URI/만료 시각을 Revision/결과에도 저장하지 않는다. Compute는 staging 다운로드의 byte size와 SHA-256이 pinned descriptor와 일치함을 검증한 뒤에만 normalize한다. staging은 terminal/취소 시 즉시 정리 대상이고 늦어도 runtime TTL에 purge한다. 만료는 동일 원본의 새 grant로 갱신할 수 있다. claim 전에는 queued grant 교체, claim 후 실패는 새 attempt token으로 ADR-064 CAS를 사용한다. staging 완료 뒤 새 URI는 계산 입력을 바꾸지 않는다. raw TTL/삭제 후에는 grant를 발급하지 않고 reupload를 요구한다. Core↔Compute는 `REFINVEST_INTERNAL_API_KEY` 하나를 `X-Internal-Api-Key` 헤더로 사용한다.
+
+**실행과 공개 상태**: `REJECTED`는 CSV/schema/product/mode/identity 충돌 같은 결정적인 입력·지원 정책 거부에만 사용한다. transient Compute/네트워크/storage 실패는 자동 재시도 중 `VALIDATING`을 유지한다. versioned RetryPolicy(policyVersion, maxAttempts, maxElapsedTime, initialDelay, maxDelay, jitter)를 admission에 pin하며 수치는 배포 설정이다. 소진 시 `PROCESSING_FAILED`로 끝나고 Revision은 없다. retained active raw와 같은 입력/VersionSet으로 명시적 `RetryTradingImportSession`을 실행하면 새 NormalizationRun/execution attempt와 audit event를 남기되 logical input fingerprint는 유지한다. raw TTL 만료면 `SOURCE_ARTIFACT_EXPIRED`와 `REUPLOAD_REQUIRED`를 반환한다. 삭제 요청 후 retry는 금지한다. 운영 자동 재개도 합법 상태 전이와 audit event를 남긴다.
+
+**Publication**: Core는 validated `COMPLETED` Compute payload의 current run/attempt, inputSetHash, target VersionSet, deletion generation, content/result/manifest hash를 검증한다. Revision membership·manifest·quality·capability를 staging에서 전부 검증한 다음 LedgerRevision insert와 Session `ACCEPTED`, latest pointer 갱신을 한 publication transaction에서 commit한다. 부분 결과는 조회되지 않는다. stale generation/attempt 또는 input/version 불일치는 `OBSOLETE` 처리하고 publish하지 않는다. Compute payload `PERSISTED` ACK는 Core commit 뒤에만 보낸다. ACK 실패는 ACK만 멱등 재시도하며 Revision을 다시 만들지 않는다. 삭제된 결과는 ADR-064의 `DISCARDED_STALE` ACK를 사용한다.
+
+**오류 분류**: `ARTIFACT_REFERENCE_EXPIRED`는 grant 만료로 자동 retry 대상, `SOURCE_ARTIFACT_EXPIRED`는 raw TTL로 재업로드 필요, `SOURCE_CONTENT_LENGTH_MISMATCH`/`SOURCE_CONTENT_HASH_MISMATCH`는 검증 실패로 publication 금지, `ARTIFACT_IDENTITY_CONFLICT`는 같은 artifact ID에 다른 hash가 제시된 409다. 불일치가 전송 손상인지 원본 변경인지 불확실하면 원본을 거부하지 않고 재검증 후 원인별 처리한다. 공개 failure는 code/retryable/userAction/occurredAt만 안전하게 노출하며 `RETRY`, `REUPLOAD_REQUIRED`, `WAIT_FOR_RECOVERY`를 구분한다.
+
+**관련**: `docs/DOMAIN.md`, `docs/TRADING_REVIEW_API.md`, `docs/TRADING_REVIEW_PERSISTENCE.md`, `docs/TRADING_REVIEW_ACCEPTANCE.md`, 두 OpenAPI.

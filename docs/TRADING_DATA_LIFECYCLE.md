@@ -63,9 +63,10 @@ hash도 동일 파일의 재등장을 연결할 수 있어 `OPERATIONAL_METADATA
 |---|---|---|---|---|---|---|---|---|---|
 | `TradingAccount` | Core/Postgres | owner 연결, venue; pseudonymized | venue account container | 전송·저장 | account lifecycle | account/member 삭제 시 row purge | 예 | 예 | 아니오 |
 | `TradingBook` | Core/Postgres | 상품·mode·settlement; pseudonymized | 독립 복원 경계 | 전송·저장 | Book lifecycle | Book/account/member 삭제 시 purge | 예 | 예 | 아니오 |
-| `TradingImportSession` | Core/Postgres | owner, timezone, 상태; pseudonymized | 원자적 import/audit | 전송·저장 | accepted: Book lifecycle; rejected: `rejectedAt + P30D` | session/상위 삭제 또는 rejected TTL에 purge | 예 | 예 | 아니오 |
+| `TradingImportSession` | Core/Postgres | owner, timezone, 상태; pseudonymized | 원자적 import/audit | 전송·저장 | accepted: Book lifecycle; rejected: `rejectedAt + P30D`; processing failed: `processingFailedAt + P30D` | session/상위 삭제 또는 terminal TTL에 purge | 예 | 예 | 아니오 |
+| `NormalizationRun` | Core/Postgres | 입력 fingerprint, attempt, 상태; operational | durable normalization/publication 감사 | 전송·저장 | Session lifecycle | Session/상위 삭제 또는 terminal TTL에 purge | 예 | 일반 조회 아님 | 금지 |
 | `TradingSourceArtifact` | Core/Postgres | role, hash, 크기, 정책; operational | raw locator, 중복·retention 상태 | 전송·저장 | accepted: Book lifecycle; rejected: `rejectedAt + P30D` | session/상위 삭제; raw-only 삭제 시 최소 metadata 유지 | 예 | 예, filename 제외 | 아니오 |
-| Raw CSV Object | Core 소유/object storage | raw bytes, UID, IDs, 거래값; restricted | 최초 normalize와 제한된 재파싱 | TLS + artifact별 envelope encryption | accepted `acceptedAt + P7D`; rejected `rejectedAt + PT24H`; non-terminal `uploadedAt + PT24H` | TTL/즉시 삭제로 object와 temporary copy purge, key access 제거 | application backup 제외 | inline 조회 없음; 만료와 재파싱 가능 여부만 표시 | 금지 |
+| Raw CSV Object | Core 소유/object storage | raw bytes, UID, IDs, 거래값; restricted | 최초 normalize와 제한된 재파싱 | TLS + artifact별 envelope encryption | accepted `acceptedAt + P7D`; rejected `rejectedAt + PT24H`; processing failed/non-terminal `uploadedAt + PT24H` | TTL/즉시 삭제로 object와 temporary copy purge, key access 제거 | application backup 제외 | inline 조회 없음; 만료와 재파싱 가능 여부만 표시 | 금지 |
 | Artifact Metadata | Core/Postgres | hash, role, dialect, size, role별 observed coverage/timezone/precision/completeness; operational | provenance, duplicate 판정, lifecycle·coverage 증거 | 전송·저장 | 위 `TradingSourceArtifact`와 동일 | scope purge; filename은 raw와 함께 먼저 purge | 예 | 예 | 아니오 |
 | `SourceEvidenceSnapshot` | Core/Postgres | allowlisted 거래값; pseudonymized | raw 삭제 후 evidence drill-down | 전송·저장, field encryption | accepted: Book lifecycle | session/Book/account/member 삭제 시 purge | 예 | 예 | 금지 |
 | Canonical `TradingRecord` | Core/Postgres | fingerprint, IDs, symbol, 수량·가격·손익·시각; pseudonymized | ledger와 재분석 | 전송·저장, identifier field encryption | Book lifecycle | session 종속 revision 또는 상위 scope purge | 예 | 예, public 응답은 masking | 금지 |
@@ -76,7 +77,7 @@ hash도 동일 파일의 재등장을 연결할 수 있어 `OPERATIONAL_METADATA
 | `BehaviorObservation` | Core `TradingAnalysisResult` object | episode 관계·시각; derived | 관찰 사실 | 전송·저장 | result lifecycle | result와 함께 purge | 예 | 예 | 금지 |
 | `BehaviorMetric` | Core `TradingAnalysisResult` object | 집계·표본·금액 비율; derived | 결정론적 지표 | 전송·저장 | result lifecycle | result와 함께 purge | 예 | 예 | 금지 |
 | `BehaviorFinding` | Core `TradingAnalysisResult` object | 선택 결과·evidence; derived | 검토 대상 노출 | 전송·저장 | result lifecycle | result와 함께 purge | 예 | 예 | 금지 |
-| Compute Runtime | Compute durable queue/encrypted scratch | 최소 job payload; 원 분류 상속 | 제한된 계산·retry | TLS + 저장 암호화 | terminal 후 최대 `PT24H`; 삭제 tombstone 수신 시 즉시 purge queue에 등록 | job cleanup/deletion cancellation | 장기 backup 금지 | 아니오 | 금지 |
+| Compute Runtime | Compute durable queue/encrypted scratch | 최소 job payload 및 검증된 staging bytes; 원 분류 상속 | 제한된 계산·retry | TLS + 저장 암호화 | terminal 후 최대 `PT24H`; 완료/취소 시 staging 삭제 대상, 삭제 tombstone 수신 시 즉시 purge queue에 등록 | job cleanup/deletion cancellation | 장기 backup 금지 | 아니오 | 금지 |
 | Operational Log | 중앙 log store | allowlisted metadata만; operational | 상태·성능·장애 진단 | 전송·저장 | event time `+ P30D` | 자동 TTL | 별도 backup 금지 | 아니오 | 금지 |
 | Audit Event | append-only audit store | actor, scope ID, action; operational | 접근·정책·삭제 증거 | 전송·저장 | event time `+ P180D` | TTL purge; financial payload 금지 | 예, backup copy는 최대 `P30D` | 일반 조회 아님; 삭제 상태는 별도 노출 | 금지 |
 | Deletion Request/ledger | primary control table + restore control plane | opaque scope ID, generation, 상태; operational | idempotency, restore suppression | 전송·저장 | 완료/복구 `+ P180D`; failed는 복구 전 만료 금지 | audit TTL 후 purge | restore control copy 예 | request 상태 예 | 금지 |
@@ -296,7 +297,7 @@ Core가 signed grant를 재발급하기 전에도 raw TTL, owner scope, tombston
 
 | 경쟁 상황 | 결정론적 처리 |
 |---|---|
-| normalization 중 raw-only 삭제 | 신규 read·grant update를 막고 job 취소를 요청한다. 결과는 discard하고 session은 lifecycle reason `SOURCE_ARTIFACT_DELETED`로 `REJECTED`된다. object/runtime purge 후 삭제 완료 |
+| normalization 중 raw-only 삭제 | 신규 read·grant update를 막고 job 취소를 요청한다. 결과는 discard하고 실행 중 session은 lifecycle reason `SOURCE_ARTIFACT_DELETED`로 `PROCESSING_FAILED`가 된다. object/runtime purge 후 삭제 완료 |
 | reconstruction 중 Book 삭제 | Book tombstone 후 job/queue retry 취소, callback discard, Book 전체 purge |
 | analysis result 저장 직전 Account 삭제 | 같은 transaction의 generation check가 저장을 거절하고 `STALE_RESULT_AFTER_DELETION` audit만 남김 |
 | retry/grant 대기열에 job 존재 | tombstoned scope job은 claim/admission/update하지 않고 cancelled cleanup 대상으로 전환 |

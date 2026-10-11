@@ -64,7 +64,7 @@
 ## 7. Trading Review 현재 작업 규칙
 
 - 현재 우선순위는 `docs/ROADMAP.md`의 TR-0이며 실제 Binance Trade/Position History fixture package로 ADR-058의 입력 계약과 reconciliation을 먼저 검증한다.
-- 구현과 harness fixture는 `docs/DOMAIN.md`의 `TR-I01`~`TR-I38` 중 적용되는 불변식과 expected result를 명시한다.
+- 구현과 harness fixture는 `docs/DOMAIN.md`의 `TR-I01`~`TR-I41` 중 적용되는 불변식과 expected result를 명시한다.
 - provider row를 조용히 버리거나 불완전한 position episode를 완성했다고 추정하지 않는다.
 - 같은 `LedgerRevision + Reconstruction/Metric/Finding versions + AnalysisConfig`는 같은 결과를 내야 한다.
 - Finding은 source row까지 provenance를 제공하고, 행동과 결과 사이의 인과관계나 심리 상태를 단정하지 않는다.
