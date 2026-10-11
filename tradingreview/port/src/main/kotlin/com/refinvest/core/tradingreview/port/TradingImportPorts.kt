@@ -32,6 +32,7 @@ data class StagedRawArtifact(val stagingKey: String, val sha256: String, val byt
 interface RawArtifactStorage {
     fun putStaging(source: InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId): StagedRawArtifact
     fun promote(staged: StagedRawArtifact, finalKey: String)
+    fun completePublication(finalKey: String)
     fun open(key: String, wrappedDek: ByteArray, keyVersion: String, artifactId: TradingSourceArtifactId): InputStream
     fun delete(key: String)
     fun exists(key: String): Boolean

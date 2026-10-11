@@ -68,6 +68,8 @@ class LocalEncryptedRawArtifactStorageTest {
         assertFailsWith<Exception> { storage.open(key, staged.wrappedDek, staged.keyVersion, artifactId).use { it.readAllBytes() } }
         Files.setLastModifiedTime(path, java.nio.file.attribute.FileTime.from(Instant.EPOCH))
         assertEquals(0, storage.cleanupOrphans(Instant.now(), 10) { it == key })
+        assertEquals(0, storage.cleanupOrphans(Instant.now(), 10) { false })
+        storage.completePublication(key)
         assertEquals(1, storage.cleanupOrphans(Instant.now(), 10) { false })
         assertFalse(storage.exists(key))
         assertFailsWith<IllegalArgumentException> { storage.exists("objects/../unsafe") }
@@ -101,5 +103,16 @@ class LocalEncryptedRawArtifactStorageTest {
         val second = storage.putStaging(ByteArrayInputStream("second".toByteArray()), 10, artifactId)
         assertFailsWith<java.nio.file.FileAlreadyExistsException> { storage.promote(second, objectKey) }
         assertContentEquals(existing, Files.readAllBytes(root.resolve(objectKey)))
+    }
+
+    @Test
+    fun orphanCleanupSkipsAnActiveStagedUpload() {
+        val storage = storage()
+        val staged = storage.putStaging(ByteArrayInputStream("pending".toByteArray()), 10, artifactId)
+        Files.setLastModifiedTime(root.resolve(staged.stagingKey),
+            java.nio.file.attribute.FileTime.from(Instant.EPOCH))
+        assertEquals(0, storage.cleanupOrphans(Instant.now(), 10) { false })
+        storage.delete(staged.stagingKey)
+        assertFalse(storage.exists(staged.stagingKey))
     }
 }

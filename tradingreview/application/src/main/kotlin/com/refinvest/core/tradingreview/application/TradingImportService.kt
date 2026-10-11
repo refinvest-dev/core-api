@@ -175,6 +175,8 @@ open class TradingImportService(
             } catch (_: Exception) { /* orphan worker retries after grace period */ }
             if (failure is TradingFailure) throw failure
             throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
+        } finally {
+            storage.completePublication(finalKey)
         }
     }
 

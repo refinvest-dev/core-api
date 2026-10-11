@@ -38,6 +38,7 @@ class LocalEncryptedRawArtifactStorage(
     private val objects = Files.createDirectories(root.resolve("objects"))
     private val random = SecureRandom()
     private val activeStaging = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val activePublications = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     override fun putStaging(source: InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId): StagedRawArtifact {
         val key = "staging/" + UUID.randomUUID()
@@ -48,6 +49,7 @@ class LocalEncryptedRawArtifactStorage(
         val wrapped = wrap(dek, artifactId)
         val sha = MessageDigest.getInstance("SHA-256")
         var size = 0L
+        var completed = false
         try {
             Files.newOutputStream(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { file ->
                 file.write(MAGIC)
@@ -84,13 +86,14 @@ class LocalEncryptedRawArtifactStorage(
                 }
             }
             if (verifiedSize != size || verified.digest().toHex() != hash) throw IllegalStateException("Storage verification failed")
+            completed = true
             return staged
         } catch (failure: Exception) {
             Files.deleteIfExists(path)
             throw failure
         } finally {
             dek.fill(0)
-            activeStaging.remove(key)
+            if (!completed) activeStaging.remove(key)
         }
     }
 
@@ -104,12 +107,16 @@ class LocalEncryptedRawArtifactStorage(
             if (Files.size(source) != Files.size(publishing) || digest(source) != digest(publishing))
                 throw IllegalStateException("Encrypted object copy failed verification")
             Files.move(publishing, target)
+            activePublications.add(finalKey)
             Files.delete(source)
+            activeStaging.remove(staged.stagingKey)
         } catch (failure: Exception) {
             Files.deleteIfExists(publishing)
             throw failure
         }
     }
+
+    override fun completePublication(finalKey: String) { activePublications.remove(finalKey) }
 
     private fun digest(path: Path): String {
         val hash = MessageDigest.getInstance("SHA-256")
@@ -147,7 +154,11 @@ class LocalEncryptedRawArtifactStorage(
         }
     }
 
-    override fun delete(key: String) { Files.deleteIfExists(resolve(key)) }
+    override fun delete(key: String) {
+        Files.deleteIfExists(resolve(key))
+        activeStaging.remove(key)
+        activePublications.remove(key)
+    }
     override fun exists(key: String) = Files.isRegularFile(resolve(key))
 
     override fun cleanupOrphans(olderThan: Instant, limit: Int, isReferenced: (String) -> Boolean): Int {
@@ -158,7 +169,8 @@ class LocalEncryptedRawArtifactStorage(
                     if (removed >= limit) break
                     if (!Files.isRegularFile(path) || !Files.getLastModifiedTime(path).toInstant().isBefore(olderThan)) continue
                     val key = name + "/" + path.fileName.toString()
-                    if (activeStaging.contains(key) || (name == "objects" && isReferenced(key))) continue
+                    if (activeStaging.contains(key) || activePublications.contains(key) ||
+                        (name == "objects" && isReferenced(key))) continue
                     Files.deleteIfExists(path)
                     removed++
                 }
@@ -227,6 +239,7 @@ class RawArtifactStorageConfiguration {
         private fun unavailable(): Nothing = throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
         override fun putStaging(source: InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId): StagedRawArtifact = unavailable()
         override fun promote(staged: StagedRawArtifact, finalKey: String) = unavailable()
+        override fun completePublication(finalKey: String) = unavailable()
         override fun open(key: String, wrappedDek: ByteArray, keyVersion: String, artifactId: TradingSourceArtifactId): InputStream = unavailable()
         override fun delete(key: String) = unavailable()
         override fun exists(key: String): Boolean = unavailable()

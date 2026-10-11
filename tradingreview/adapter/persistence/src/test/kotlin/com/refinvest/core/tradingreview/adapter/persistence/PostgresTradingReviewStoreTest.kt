@@ -336,12 +336,156 @@ class PostgresTradingReviewStoreTest {
         assertEquals("ARTIFACT_ROLE_CONFLICT", (different.single { it.isFailure }.exceptionOrNull() as TradingFailure).code)
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts WHERE artifact_role = 'POSITION_HISTORY'", Long::class.java))
         assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
+        java.nio.file.Files.list(root.resolve("staging")).use { assertEquals(0L, it.count()) }
+        java.nio.file.Files.list(root.resolve("objects")).use { assertEquals(2L, it.count()) }
+    }
+
+    @Test
+    fun deletionDuringStreamingUploadBlocksPublicationAndRemovesTheObject(
+        @org.junit.jupiter.api.io.TempDir root: java.nio.file.Path,
+    ) = withDatabase { setup ->
+        val dataSource = SingleConnectionDataSource(setup, true)
+        val jdbc = JdbcTemplate(dataSource)
+        members(jdbc)
+        val reviewStore = JdbcTradingReviewStore(jdbc)
+        val importStore = JdbcTradingImportStore(jdbc)
+        val account = TradingAccount.create(TradingAccountId(801), MemberId(1), TradingVenue.BINANCE, "A", now)
+        reviewStore.insert(account)
+        val book = TradingBook.create(TradingBookId(802), account, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", now)
+        reviewStore.insert(book)
+        val session = TradingImportSession.create(TradingImportSessionId(803), book, "UTC", "UTC",
+            TradingPositionMode.ONE_WAY, TradingDataPolicy(), "{}", now)
+        importStore.insert(session)
+        val storage = com.refinvest.core.tradingreview.adapter.storage.LocalEncryptedRawArtifactStorage(root,
+            javax.crypto.spec.SecretKeySpec(ByteArray(32) { it.toByte() }, "AES"), "test-v1")
+        val nextId = java.util.concurrent.atomic.AtomicLong(804)
+        fun service(connection: Connection): com.refinvest.core.tradingreview.application.TradingImportService {
+            val source = SingleConnectionDataSource(connection, true)
+            val connectionJdbc = JdbcTemplate(source)
+            val reviews = JdbcTradingReviewStore(connectionJdbc)
+            val imports = JdbcTradingImportStore(connectionJdbc)
+            val ids = object : TradingIdGenerator {
+                override fun accountId() = TradingAccountId(nextId.getAndIncrement())
+                override fun bookId() = TradingBookId(nextId.getAndIncrement())
+                override fun sourceArtifactId() = TradingSourceArtifactId(nextId.getAndIncrement())
+                override fun deletionId() = nextId.getAndIncrement()
+            }
+            return com.refinvest.core.tradingreview.application.TradingImportService(
+                object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) }, ids,
+                reviews, reviews, imports, imports, reviews, reviews, storage,
+                object : com.refinvest.core.tradingreview.port.TradingVersionPins { override fun currentJson() = "{}" },
+                TransactionTemplate(DataSourceTransactionManager(source)), Clock.fixed(now, ZoneOffset.UTC))
+        }
+        val reading = java.util.concurrent.CountDownLatch(1)
+        val resume = java.util.concurrent.CountDownLatch(1)
+        val raw = "synthetic\n".toByteArray()
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(raw)
+            .joinToString("") { "%02x".format(it) }
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val upload = executor.submit<Result<com.refinvest.core.tradingreview.port.UploadArtifactResult>> {
+                DriverManager.getConnection(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"),
+                    System.getenv("TRADING_REVIEW_TEST_DB_USER"), System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD")).use { connection ->
+                    connection.schema = setup.schema
+                    val stream = object : java.io.ByteArrayInputStream(raw) {
+                        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                            reading.countDown()
+                            check(resume.await(10, TimeUnit.SECONDS))
+                            return super.read(buffer, offset, length)
+                        }
+                    }
+                    runCatching { service(connection).upload(session.id, TradingArtifactRole.TRADE_HISTORY,
+                        "synthetic.csv", "text/csv", raw.size.toLong(), hash, "AUTO", stream, "upload-race") }
+                }
+            }
+            assertTrue(reading.await(10, TimeUnit.SECONDS))
+            val deletion = TransactionTemplate(DataSourceTransactionManager(dataSource)).execute {
+                service(setup).delete(session.id, "delete-race")
+            }
+            assertNotNull(deletion)
+            resume.countDown()
+            val outcome = upload.get(20, TimeUnit.SECONDS)
+            assertTrue(outcome.isFailure)
+            assertEquals("RESOURCE_STATE_CONFLICT", (outcome.exceptionOrNull() as TradingFailure).code)
+            assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
+            java.nio.file.Files.list(root.resolve("staging")).use { assertEquals(0L, it.count()) }
+            java.nio.file.Files.list(root.resolve("objects")).use { assertEquals(0L, it.count()) }
+            TradingDeletionWorker(jdbc, TransactionTemplate(DataSourceTransactionManager(dataSource)), storage,
+                Clock.fixed(now, ZoneOffset.UTC)).purgePending()
+            assertEquals("COMPLETED", reviewStore.find(deletion.id, MemberId(1))?.state)
+        } finally { resume.countDown(); executor.shutdownNow() }
+    }
+
+    @Test
+    fun parentDeletionWinsAgainstSessionCreation() = withDatabase { setup ->
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(setup, true))
+        members(jdbc)
+        val store = JdbcTradingReviewStore(jdbc)
+        for ((index, target) in listOf("account", "book").withIndex()) {
+            val accountId = TradingAccountId(901 + index * 10L)
+            val bookId = TradingBookId(902 + index * 10L)
+            val account = TradingAccount.create(accountId, MemberId(1), TradingVenue.BINANCE, "A", now)
+            store.insert(account)
+            val book = TradingBook.create(bookId, account, "B", TradingProductFamily.LINEAR_PERPETUAL,
+                TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", now)
+            store.insert(book)
+            setup.autoCommit = false
+            val table = if (target == "account") "trading_accounts" else "trading_books"
+            val targetId = if (target == "account") accountId.value else bookId.value
+            jdbc.update("UPDATE $table SET status='DELETION_PENDING', deletion_generation=deletion_generation+1 WHERE id=?",
+                targetId)
+            val started = java.util.concurrent.CountDownLatch(1)
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val creation = executor.submit<Result<TradingImportSession>> {
+                    DriverManager.getConnection(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"),
+                        System.getenv("TRADING_REVIEW_TEST_DB_USER"), System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD")).use { connection ->
+                        connection.schema = setup.schema
+                        val dataSource = SingleConnectionDataSource(connection, true)
+                        val workerJdbc = JdbcTemplate(dataSource)
+                        val reviews = JdbcTradingReviewStore(workerJdbc)
+                        val imports = JdbcTradingImportStore(workerJdbc)
+                        val ids = object : TradingIdGenerator {
+                            override fun accountId() = TradingAccountId(9999)
+                            override fun bookId() = TradingBookId(9999)
+                            override fun importSessionId() = TradingImportSessionId(903 + index * 10L)
+                            override fun deletionId() = 9999L
+                        }
+                        val storage = emptyStorage()
+                        val service = com.refinvest.core.tradingreview.application.TradingImportService(
+                            object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
+                            ids, reviews, reviews, imports, imports, reviews, reviews, storage,
+                            object : com.refinvest.core.tradingreview.port.TradingVersionPins {
+                                override fun currentJson() = "{}"
+                            }, TransactionTemplate(DataSourceTransactionManager(dataSource)), Clock.fixed(now, ZoneOffset.UTC))
+                        started.countDown()
+                        runCatching { TransactionTemplate(DataSourceTransactionManager(dataSource)).execute {
+                            service.create(bookId, "UTC", "UTC", TradingPositionMode.ONE_WAY, null, null,
+                                "create-$target")
+                        } }
+                    }
+                }
+                assertTrue(started.await(10, TimeUnit.SECONDS))
+                Thread.sleep(150)
+                assertFalse(creation.isDone)
+                setup.commit()
+                val failure = creation.get(10, TimeUnit.SECONDS).exceptionOrNull() as TradingFailure
+                assertEquals("RESOURCE_DELETED", failure.code)
+                assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_import_sessions", Long::class.java))
+            } finally {
+                setup.rollback()
+                setup.autoCommit = true
+                executor.shutdownNow()
+            }
+        }
     }
 
     private fun emptyStorage() = object : com.refinvest.core.tradingreview.port.RawArtifactStorage {
         override fun putStaging(source: java.io.InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId):
             com.refinvest.core.tradingreview.port.StagedRawArtifact = error("Unused")
         override fun promote(staged: com.refinvest.core.tradingreview.port.StagedRawArtifact, finalKey: String) = Unit
+        override fun completePublication(finalKey: String) = Unit
         override fun open(key: String, wrappedDek: ByteArray, keyVersion: String,
                           artifactId: TradingSourceArtifactId): java.io.InputStream = error("Unused")
         override fun delete(key: String) = Unit
