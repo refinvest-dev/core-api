@@ -59,8 +59,11 @@ data class TradingDeletionResponse(val id: String, val targetType: String, val t
     companion object {
         fun from(value: TradingDeletion) = TradingDeletionResponse(value.id.toString(), value.targetType,
             value.targetId.toString(), value.requestedScope, value.state,
-            AffectedResourceSummary(value.accountCount, value.bookCount), value.revokedAt,
-            when (value.state) { "COMPLETED" -> "COMPLETED"; "FAILED" -> "FAILED"; else -> "NOT_STARTED" }, "NOT_APPLICABLE",
+            AffectedResourceSummary(value.accountCount, value.bookCount, value.importSessionCount, value.artifactCount), value.revokedAt,
+            if (value.targetType == "TRADING_SOURCE_ARTIFACT") "NOT_APPLICABLE" else when (value.state) {
+                "COMPLETED" -> "COMPLETED"; "FAILED" -> "FAILED"; else -> "IN_PROGRESS" },
+            if (value.artifactCount == 0L) "NOT_APPLICABLE" else when (value.state) {
+                "COMPLETED" -> "COMPLETED"; "FAILED" -> "FAILED"; else -> "IN_PROGRESS" },
             "NOT_APPLICABLE", "IN_PROGRESS", value.backupPurgeDueAt,
             value.state != "COMPLETED" && value.state != "FAILED", value.requestedAt, value.updatedAt,
             value.completedAt, value.failureCode?.let { TradingDeletionFailure(it, "Deletion could not be completed", false) })
