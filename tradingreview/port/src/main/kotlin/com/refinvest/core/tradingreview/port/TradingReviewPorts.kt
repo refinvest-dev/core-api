@@ -8,6 +8,8 @@ interface TradingMemberProvider { fun currentMemberId(): MemberId }
 interface TradingIdGenerator {
     fun accountId(): TradingAccountId
     fun bookId(): TradingBookId
+    fun importSessionId(): TradingImportSessionId = error("Import ID generator is not configured")
+    fun sourceArtifactId(): TradingSourceArtifactId = error("Artifact ID generator is not configured")
     fun deletionId(): Long
 }
 
@@ -38,11 +40,13 @@ data class TradingDeletion(
     val backupPurgeDueAt: Instant,
     val completedAt: Instant? = null,
     val failureCode: String? = null,
+    val importSessionCount: Long = 0, val artifactCount: Long = 0,
 )
 
 interface TradingDeletionStore {
     fun insert(deletion: TradingDeletion)
     fun find(id: Long, owner: MemberId): TradingDeletion?
+    fun findByTarget(owner: MemberId, targetType: String, targetId: Long): TradingDeletion? = null
 }
 
 sealed interface IdempotencyClaim {

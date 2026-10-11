@@ -93,6 +93,7 @@ import kotlin.test.assertTrue
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.jpa.hibernate.ddl-auto=create-drop",
+        "refinvest.trading-review.retention-enabled=false",
     ],
 )
 class RefinvestApplicationTests(
@@ -128,6 +129,19 @@ class RefinvestApplicationTests(
                 .contentType("application/json")
                 .content("""{"venue":"BINANCE","displayName":"Trading"}"""),
         ).andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `trading import endpoints require a valid access cookie and csrf on writes`() {
+        mockMvc.perform(get("/trading-import-sessions/1")).andExpect(status().isUnauthorized)
+        mockMvc.perform(get("/trading-import-sessions/1")
+            .cookie(Cookie("REFINVEST_ACCESS_TOKEN", "invalid"))).andExpect(status().isUnauthorized)
+        mockMvc.perform(post("/trading-import-sessions/1/artifacts")
+            .cookie(Cookie("REFINVEST_ACCESS_TOKEN", accessToken()))
+            .header("Idempotency-Key", "upload-security-test")
+            .contentType("multipart/form-data; boundary=security-boundary")
+            .content("--security-boundary--\r\n"))
+            .andExpect(status().isForbidden)
     }
 
     @Test

@@ -168,7 +168,7 @@ class PostgresTradingReviewStoreTest {
             transactions.execute { service.create(account.id, "Blocked", TradingProductFamily.LINEAR_PERPETUAL,
                 TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "new-book") }
         }.httpStatus)
-        TradingDeletionWorker(jdbc, transactions, clock).purgePending()
+        TradingDeletionWorker(jdbc, transactions, emptyStorage(), clock).purgePending()
         assertEquals("COMPLETED", service.get(deletion.id).state)
         assertEquals(410, assertFailsWith<TradingFailure> { service.get(book.id) }.httpStatus)
         member.id = MemberId(2)
@@ -192,12 +192,161 @@ class PostgresTradingReviewStoreTest {
         jdbc.execute("CREATE TABLE blocking_child (id BIGINT PRIMARY KEY, book_id BIGINT NOT NULL REFERENCES trading_books(id))")
         jdbc.update("INSERT INTO blocking_child(id, book_id) VALUES (1, 302)")
         val worker = TradingDeletionWorker(jdbc, TransactionTemplate(DataSourceTransactionManager(dataSource)),
-            Clock.fixed(now, ZoneOffset.UTC))
+            emptyStorage(), Clock.fixed(now, ZoneOffset.UTC))
         repeat(5) { worker.purgePending() }
         val result = store.find(303L, MemberId(1))!!
         assertEquals("FAILED", result.state)
-        assertEquals("DERIVED_DATA_DELETION_FAILED", result.failureCode)
+        assertEquals("DELETION_PARTIALLY_COMPLETED", result.failureCode)
         assertNotNull(store.find(book.id, MemberId(1)))
+    }
+
+    @Test
+    fun importUploadReplayConflictAndDeletionUseRealPostgres(@org.junit.jupiter.api.io.TempDir root: java.nio.file.Path) = withDatabase { connection ->
+        val dataSource = SingleConnectionDataSource(connection, true)
+        val jdbc = JdbcTemplate(dataSource)
+        val accountStore = JdbcTradingReviewStore(jdbc)
+        val importStore = JdbcTradingImportStore(jdbc)
+        val transactions = TransactionTemplate(DataSourceTransactionManager(dataSource))
+        members(jdbc)
+        val account = TradingAccount.create(TradingAccountId(601), MemberId(1), TradingVenue.BINANCE, "A", now)
+        accountStore.insert(account)
+        val book = TradingBook.create(TradingBookId(602), account, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", now)
+        accountStore.insert(book)
+        val ids = object : TradingIdGenerator {
+            var next = 603L
+            override fun accountId() = TradingAccountId(next++)
+            override fun bookId() = TradingBookId(next++)
+            override fun importSessionId() = TradingImportSessionId(next++)
+            override fun sourceArtifactId() = TradingSourceArtifactId(next++)
+            override fun deletionId() = next++
+        }
+        val storage = com.refinvest.core.tradingreview.adapter.storage.LocalEncryptedRawArtifactStorage(root,
+            javax.crypto.spec.SecretKeySpec(ByteArray(32) { it.toByte() }, "AES"), "test-v1")
+        val service = com.refinvest.core.tradingreview.application.TradingImportService(
+            object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) }, ids, accountStore, accountStore, importStore, importStore,
+            accountStore, accountStore, storage, object : com.refinvest.core.tradingreview.port.TradingVersionPins {
+                override fun currentJson() = "{\"versionSetHash\":\"exact\"}"
+            }, transactions, Clock.fixed(now, ZoneOffset.UTC))
+        val session = transactions.execute { service.create(book.id, "UTC", "UTC", TradingPositionMode.ONE_WAY,
+            null, null, "create-import") }
+        assertEquals(session.id, transactions.execute { service.create(book.id, "UTC", "UTC", TradingPositionMode.ONE_WAY,
+            null, null, "create-import") }.id)
+        assertEquals("IDEMPOTENCY_PAYLOAD_CONFLICT", assertFailsWith<TradingFailure> {
+            transactions.execute { service.create(book.id, "Asia/Seoul", "UTC", TradingPositionMode.ONE_WAY,
+                null, null, "create-import") }
+        }.code)
+        val tradeBytes = "synthetic,one\n".toByteArray()
+        val positionBytes = "synthetic,two\n".toByteArray()
+        fun sha(bytes: ByteArray) = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        fun upload(role: TradingArtifactRole, bytes: ByteArray, key: String) = service.upload(session.id, role,
+            "sample.csv", "text/csv", bytes.size.toLong(), sha(bytes), "AUTO",
+            java.io.ByteArrayInputStream(bytes), key)
+        val trade = upload(TradingArtifactRole.TRADE_HISTORY, tradeBytes, "trade-first")
+        assertTrue(trade.created)
+        assertEquals(null, importStore.find(trade.artifact.id, MemberId(1))?.filename)
+        assertFalse(service.get(session.id).session.canValidate(importStore.list(session.id)))
+        val replay = upload(TradingArtifactRole.TRADE_HISTORY, tradeBytes, "trade-second")
+        assertFalse(replay.created)
+        assertEquals(trade.artifact.id, replay.artifact.id)
+        assertEquals("ARTIFACT_ROLE_CONFLICT", assertFailsWith<TradingFailure> {
+            upload(TradingArtifactRole.TRADE_HISTORY, "other\n".toByteArray(), "trade-conflict")
+        }.code)
+        val position = upload(TradingArtifactRole.POSITION_HISTORY, positionBytes, "position-first")
+        assertTrue(position.created)
+        assertTrue(service.get(session.id).session.canValidate(importStore.list(session.id)))
+        assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
+        val rawDelete = transactions.execute { service.deleteArtifact(position.artifact.id, "delete-raw") }
+        assertEquals(rawDelete.id, transactions.execute { service.deleteArtifact(position.artifact.id, "delete-raw-again") }.id)
+        TradingDeletionWorker(jdbc, transactions, storage, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
+        assertEquals("COMPLETED", accountStore.find(rawDelete.id, MemberId(1))?.state)
+        assertFalse(storage.exists(position.artifact.objectKey!!))
+        assertFalse(service.get(session.id).session.canValidate(importStore.list(session.id)))
+        assertEquals(null, jdbc.queryForObject("SELECT wrapped_dek FROM trading_source_artifacts WHERE id=?",
+            ByteArray::class.java, position.artifact.id.value))
+        val deletion = transactions.execute { service.delete(session.id, "delete-import") }
+        assertEquals(deletion.id, transactions.execute { service.delete(session.id, "delete-import-again") }.id)
+        assertEquals(410, assertFailsWith<TradingFailure> { service.get(session.id) }.httpStatus)
+        TradingDeletionWorker(jdbc, transactions, storage, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
+        assertEquals("COMPLETED", accountStore.find(deletion.id, MemberId(1))?.state)
+        assertFalse(storage.exists(trade.artifact.objectKey!!))
+        assertFalse(storage.exists(position.artifact.objectKey!!))
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
+    }
+
+    @Test
+    fun concurrentUploadsPublishOneArtifactPerRole(@org.junit.jupiter.api.io.TempDir root: java.nio.file.Path) = withDatabase { setup ->
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(setup, true))
+        members(jdbc)
+        val baseStore = JdbcTradingReviewStore(jdbc)
+        val account = TradingAccount.create(TradingAccountId(701), MemberId(1), TradingVenue.BINANCE, "A", now)
+        baseStore.insert(account)
+        val book = TradingBook.create(TradingBookId(702), account, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", now)
+        baseStore.insert(book)
+        val session = TradingImportSession.create(TradingImportSessionId(703), book, "UTC", "UTC",
+            TradingPositionMode.ONE_WAY, TradingDataPolicy(), "{}", now)
+        JdbcTradingImportStore(jdbc).insert(session)
+        val storage = com.refinvest.core.tradingreview.adapter.storage.LocalEncryptedRawArtifactStorage(root,
+            javax.crypto.spec.SecretKeySpec(ByteArray(32) { it.toByte() }, "AES"), "test-v1")
+        val nextId = java.util.concurrent.atomic.AtomicLong(704)
+        fun runPair(firstBytes: ByteArray, secondBytes: ByteArray, role: TradingArtifactRole): List<Result<com.refinvest.core.tradingreview.port.UploadArtifactResult>> {
+            val start = java.util.concurrent.CountDownLatch(1)
+            val executor = Executors.newFixedThreadPool(2)
+            try {
+                val inputs = listOf(firstBytes, secondBytes)
+                val futures = inputs.mapIndexed { index, bytes -> executor.submit<Result<com.refinvest.core.tradingreview.port.UploadArtifactResult>> {
+                    DriverManager.getConnection(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"),
+                        System.getenv("TRADING_REVIEW_TEST_DB_USER"), System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD")).use { connection ->
+                        connection.schema = setup.schema
+                        val dataSource = SingleConnectionDataSource(connection, true)
+                        val workerJdbc = JdbcTemplate(dataSource)
+                        val reviewStore = JdbcTradingReviewStore(workerJdbc)
+                        val importStore = JdbcTradingImportStore(workerJdbc)
+                        val ids = object : TradingIdGenerator {
+                            override fun accountId() = TradingAccountId(nextId.getAndIncrement())
+                            override fun bookId() = TradingBookId(nextId.getAndIncrement())
+                            override fun sourceArtifactId() = TradingSourceArtifactId(nextId.getAndIncrement())
+                            override fun deletionId() = nextId.getAndIncrement()
+                        }
+                        val service = com.refinvest.core.tradingreview.application.TradingImportService(
+                            object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
+                            ids, reviewStore, reviewStore, importStore, importStore, reviewStore, reviewStore,
+                            storage, object : com.refinvest.core.tradingreview.port.TradingVersionPins {
+                                override fun currentJson() = "{}"
+                            }, TransactionTemplate(DataSourceTransactionManager(dataSource)), Clock.fixed(now, ZoneOffset.UTC))
+                        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+                            .joinToString("") { "%02x".format(it) }
+                        start.await(10, TimeUnit.SECONDS)
+                        runCatching { service.upload(session.id, role, "synthetic.csv", "text/csv",
+                            bytes.size.toLong(), hash, "AUTO", java.io.ByteArrayInputStream(bytes), "race-$role-$index") }
+                    }
+                } }
+                start.countDown()
+                return futures.map { it.get(20, TimeUnit.SECONDS) }
+            } finally { executor.shutdownNow() }
+        }
+        val same = runPair("same\n".toByteArray(), "same\n".toByteArray(), TradingArtifactRole.TRADE_HISTORY)
+        assertTrue(same.all { it.isSuccess })
+        assertEquals(1, same.count { it.getOrThrow().created })
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts WHERE artifact_role = 'TRADE_HISTORY'", Long::class.java))
+        val different = runPair("first\n".toByteArray(), "second\n".toByteArray(), TradingArtifactRole.POSITION_HISTORY)
+        assertEquals(1, different.count { it.isSuccess })
+        assertEquals("ARTIFACT_ROLE_CONFLICT", (different.single { it.isFailure }.exceptionOrNull() as TradingFailure).code)
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts WHERE artifact_role = 'POSITION_HISTORY'", Long::class.java))
+        assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
+    }
+
+    private fun emptyStorage() = object : com.refinvest.core.tradingreview.port.RawArtifactStorage {
+        override fun putStaging(source: java.io.InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId):
+            com.refinvest.core.tradingreview.port.StagedRawArtifact = error("Unused")
+        override fun promote(staged: com.refinvest.core.tradingreview.port.StagedRawArtifact, finalKey: String) = Unit
+        override fun open(key: String, wrappedDek: ByteArray, keyVersion: String,
+                          artifactId: TradingSourceArtifactId): java.io.InputStream = error("Unused")
+        override fun delete(key: String) = Unit
+        override fun exists(key: String) = false
+        override fun cleanupOrphans(olderThan: Instant, limit: Int, isReferenced: (String) -> Boolean) = 0
     }
 
     private fun members(jdbc: JdbcTemplate) {
@@ -218,6 +367,11 @@ class PostgresTradingReviewStoreTest {
                     .bufferedReader().use { it.readText() }
                 connection.createStatement().use { statement ->
                     migration.split(';').map(String::trim).filter(String::isNotEmpty).forEach(statement::execute)
+                }
+                val migration2 = javaClass.getResourceAsStream("/db/migration/V2__trading_import_artifacts.sql")!!
+                    .bufferedReader().use { it.readText() }
+                connection.createStatement().use { statement ->
+                    migration2.split(';').map(String::trim).filter(String::isNotEmpty).forEach(statement::execute)
                 }
                 test(connection)
             } finally {

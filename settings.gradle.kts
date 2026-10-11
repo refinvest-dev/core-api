@@ -49,6 +49,7 @@ include(
     ":tradingreview:adapter:web",
     ":tradingreview:adapter:snowflake",
     ":tradingreview:adapter:security",
+    ":tradingreview:adapter:storage",
     ":shared:kernel",
     ":shared:infrastructure",
     ":app",

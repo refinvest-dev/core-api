@@ -17,11 +17,11 @@ data class TradingErrorResponse(val code: String, val message: String, val trace
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = [TradingAccountController::class, TradingBookController::class,
-    TradingDeletionController::class])
+    TradingDeletionController::class, TradingBookImportController::class, TradingImportSessionController::class, TradingSourceArtifactController::class])
 class TradingReviewExceptionHandler {
     @ExceptionHandler(TradingFailure::class)
     fun failure(error: TradingFailure): ResponseEntity<TradingErrorResponse> =
-        response(HttpStatus.valueOf(error.httpStatus), error.code, error.code == "CONCURRENT_MODIFICATION")
+        response(HttpStatus.valueOf(error.httpStatus), error.code, error.code == "CONCURRENT_MODIFICATION" || error.httpStatus == 503)
 
     @ExceptionHandler(IllegalArgumentException::class, HttpMessageNotReadableException::class,
         MethodArgumentNotValidException::class, MissingRequestHeaderException::class,
