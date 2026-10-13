@@ -50,6 +50,7 @@ include(
     ":tradingreview:adapter:snowflake",
     ":tradingreview:adapter:security",
     ":tradingreview:adapter:storage",
+    ":tradingreview:adapter:compute",
     ":shared:kernel",
     ":shared:infrastructure",
     ":app",

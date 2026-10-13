@@ -1,0 +1,190 @@
+package com.refinvest.core.tradingreview.adapter.compute
+
+import com.refinvest.core.tradingreview.domain.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.NormalizationRun
+import com.refinvest.core.tradingreview.port.*
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.http.MediaType
+import org.springframework.http.client.JdkClientHttpRequestFactory
+import org.springframework.stereotype.Component
+import org.springframework.web.client.RestClient
+import tools.jackson.databind.ObjectMapper
+import java.net.http.HttpClient
+import java.time.Duration
+
+@Component
+class RestClientTradingNormalizationClient private constructor(
+    private val apiKey: String,
+    private val mapper: ObjectMapper,
+    private val client: RestClient,
+) : TradingNormalizationComputeClient {
+    @Autowired
+    constructor(@Value("\${refinvest.compute.base-url:http://localhost:8000}") baseUrl: String,
+                @Value("\${REFINVEST_INTERNAL_API_KEY:}") apiKey: String,
+                mapper: ObjectMapper) : this(apiKey, mapper, RestClient.builder().baseUrl(baseUrl)
+        .requestFactory(JdkClientHttpRequestFactory(HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1).build()).apply {
+            setReadTimeout(Duration.ofSeconds(20))
+        }).build())
+
+    companion object {
+        internal fun withClient(apiKey: String, mapper: ObjectMapper, client: RestClient) =
+            RestClientTradingNormalizationClient(apiKey, mapper, client)
+    }
+
+    override fun submit(run: NormalizationRun, dispatch: NormalizationDispatch,
+                        grants: List<ArtifactReadGrant>): NormalizationSubmission {
+        if (apiKey.isBlank()) return NormalizationSubmission.Rejected("INTERNAL_AUTHENTICATION_FAILED")
+        val body = try { body(run, dispatch, grants) }
+            catch (_: Exception) { return NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID") }
+        return try {
+            client.post().uri("/trading-review/normalization-jobs")
+                .header("X-Internal-Api-Key", apiKey)
+                .header("Idempotency-Key", dispatch.computeKey)
+                .contentType(MediaType.APPLICATION_JSON).body(body)
+                .exchange { _, response ->
+                    when (response.statusCode.value()) {
+                        202 -> {
+                            val accepted = response.bodyTo(String::class.java)?.let(mapper::readTree)
+                            val jobId = accepted?.path("jobId")?.asText()
+                            if (jobId.isNullOrBlank() || accepted.path("coreLogicalJobId").asText() != dispatch.id)
+                                NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID")
+                            else NormalizationSubmission.Accepted(jobId)
+                        }
+                        503, 429 -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE",
+                            response.headers.getFirst("Retry-After")?.toLongOrNull()?.let(Duration::ofSeconds))
+                        409 -> NormalizationSubmission.Rejected(
+                            response.bodyTo(String::class.java)?.let { safeCode(it) }
+                                ?: "IDEMPOTENCY_PAYLOAD_CONFLICT")
+                        401, 403 -> NormalizationSubmission.Rejected("INTERNAL_AUTHENTICATION_FAILED")
+                        400, 422 -> NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID")
+                        in 500..599 -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+                        else -> NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID")
+                    }
+                }
+        } catch (_: Exception) {
+            // Never log the request or an exception: transport errors can contain a signed URI.
+            NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+        }
+    }
+
+    override fun status(run: NormalizationRun, dispatch: NormalizationDispatch): NormalizationStatusLookup {
+        val jobId = run.computeJobId ?: return NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
+        if (apiKey.isBlank()) return NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
+        return try {
+            client.get().uri("/trading-review/normalization-jobs/{jobId}", jobId)
+                .header("X-Internal-Api-Key", apiKey).exchange { _, response ->
+                    when (response.statusCode.value()) {
+                        200 -> {
+                            val body = response.bodyTo(String::class.java)?.let(mapper::readTree)
+                                ?: return@exchange NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
+                            if (body.path("jobId").asText() != jobId ||
+                                body.path("coreLogicalJobId").asText() != dispatch.id)
+                                return@exchange NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
+                            NormalizationStatusLookup.Found(NormalizationJobStatus(jobId,
+                                body.path("status").asText(), body.path("attemptToken").asText(),
+                                body.path("deletionGeneration").asLong(), body.path("grantRevision").asLong(),
+                                body.path("expectedInputHash").asText(), body.path("versionSetHash").asText(),
+                                body.path("grantAction").asText("NONE"),
+                                body.path("grantRefreshDeadlineAt").takeIf { !it.isNull && !it.isMissingNode }
+                                    ?.asText()?.let(java.time.Instant::parse),
+                                body.path("failure").path("code").takeIf { !it.isMissingNode }?.asText()))
+                        }
+                        401, 403 -> NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
+                        400, 422 -> NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
+                        else -> NormalizationStatusLookup.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+                    }
+                }
+        } catch (_: Exception) { NormalizationStatusLookup.Retry("TEMPORARY_DEPENDENCY_FAILURE") }
+    }
+
+    override fun updateGrants(run: NormalizationRun, dispatch: NormalizationDispatch,
+                              current: NormalizationJobStatus, nextAttemptToken: String,
+                              grants: List<ArtifactReadGrant>, updateKey: String): NormalizationGrantUpdate {
+        if (apiKey.isBlank()) return NormalizationGrantUpdate.Rejected("INTERNAL_ERROR")
+        val body = mapOf(
+            "mode" to current.grantAction,
+            "expectedGrantRevision" to current.grantRevision,
+            "expectedAttemptToken" to current.attemptToken,
+            "nextAttemptToken" to nextAttemptToken,
+            "expectedInputHash" to run.inputFingerprint,
+            "versionSetHash" to current.versionSetHash,
+            "deletionGeneration" to run.input.deletionGeneration,
+            "artifacts" to grants.sortedBy { if (it.role == "TRADE_HISTORY") 0 else 1 }.map { mapOf(
+                "coreArtifactId" to it.coreArtifactId, "role" to it.role,
+                "rawSha256" to it.rawSha256, "byteSize" to it.byteSize,
+                "contentType" to it.contentType, "accessUri" to it.accessUri,
+                "expiresAt" to it.expiresAt.toString()) })
+        return try {
+            client.post().uri("/trading-review/normalization-jobs/{jobId}/grant-updates", current.jobId)
+                .header("X-Internal-Api-Key", apiKey).header("Idempotency-Key", updateKey)
+                .contentType(MediaType.APPLICATION_JSON).body(body).exchange { _, response ->
+                    when (response.statusCode.value()) {
+                        200 -> NormalizationGrantUpdate.Accepted
+                        409 -> NormalizationGrantUpdate.Conflict
+                        401, 403, 400, 422 -> NormalizationGrantUpdate.Rejected("INTERNAL_ERROR")
+                        else -> NormalizationGrantUpdate.Retry
+                    }
+                }
+        } catch (_: Exception) { NormalizationGrantUpdate.Retry }
+    }
+
+    private fun safeCode(body: String): String? = try {
+        mapper.readTree(body).path("code").asText().takeIf {
+            it in setOf("IDEMPOTENCY_PAYLOAD_CONFLICT", "ARTIFACT_IDENTITY_CONFLICT")
+        }
+    } catch (_: Exception) { null }
+
+    private fun body(run: NormalizationRun, dispatch: NormalizationDispatch,
+                     grants: List<ArtifactReadGrant>): Map<String, Any> {
+        val input = run.input
+        val version = mapper.readTree(input.versionSetJson)
+        val normalizer = version.path("normalizer")
+        val reconstruction = version.path("reconstruction")
+        val dialects = normalizer.path("sourceDialectVersionsByArtifactRole")
+        val internalVersions = mapOf(
+            "sourceDialectVersionsByArtifactRole" to mapOf(
+                "TRADE_HISTORY" to dialects.path("TRADE_HISTORY").asText(),
+                "POSITION_HISTORY" to dialects.path("POSITION_HISTORY").asText()),
+            "adapterVersion" to normalizer.path("adapterVersion").asText(),
+            "normalizerVersion" to normalizer.path("normalizerVersion").asText(),
+            "canonicalSchemaVersion" to normalizer.path("canonicalSchemaVersion").asText(),
+            "reconstructionPolicyVersion" to reconstruction.path("reconstructionPolicyVersion").asText(),
+            "reconciliationVersion" to reconstruction.path("reconciliationVersion").asText(),
+            "reviewUnitSchemaVersion" to reconstruction.path("reviewUnitSchemaVersion").asText(),
+            "evidenceSchemaVersion" to reconstruction.path("evidenceSchemaVersion").asText(),
+            "implementationDigest" to normalizer.path("implementationDigest").asText(),
+            "versionSetHash" to version.path("versionSetHash").asText())
+        require(normalizer.path("implementationDigest").asText() ==
+            reconstruction.path("implementationDigest").asText())
+        val terms = mapper.readValue(input.instrumentTermsJson, List::class.java)
+            .sortedBy { (it as Map<*, *>)["instrumentId"].toString() }
+        require(grants.size == 2 && terms.isNotEmpty())
+        val termVersions = reconstruction.path("instrumentTermsVersionByInstrument")
+        require(terms.all { term ->
+            val data = term as Map<*, *>
+            val id = data["instrumentId"] as? String ?: return@all false
+            termVersions.path(id).asText() == data["instrumentTermsVersion"]
+        })
+        return mapOf(
+            "coreLogicalJobId" to dispatch.id,
+            "coreNormalizationRunId" to run.id,
+            "coreImportSessionId" to input.importSessionId.value.toString(),
+            "bookProduct" to mapOf("venue" to input.venue, "productFamily" to input.productFamily,
+                "positionMode" to input.positionMode, "settlementAsset" to input.settlementAsset),
+            "artifacts" to grants.sortedBy { if (it.role == "TRADE_HISTORY") 0 else 1 }.map { mapOf(
+                "coreArtifactId" to it.coreArtifactId, "role" to it.role,
+                "rawSha256" to it.rawSha256, "byteSize" to it.byteSize,
+                "contentType" to it.contentType, "accessUri" to it.accessUri,
+                "expiresAt" to it.expiresAt.toString()) },
+            "sourceTimezone" to input.sourceTimezone,
+            "reviewTimezone" to input.reviewTimezone,
+            "targetVersionSet" to internalVersions,
+            "pinnedInstrumentTerms" to terms,
+            "expectedInputHash" to run.inputFingerprint,
+            "retryPolicyVersion" to input.retryPolicyVersion,
+            "deletionGeneration" to input.deletionGeneration,
+            "attemptToken" to run.attemptToken)
+    }
+}
