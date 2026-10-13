@@ -60,7 +60,10 @@ class TradingImportControllerTest {
     }
     private val mvc = MockMvcBuilders.standaloneSetup(
         TradingBookImportController(imports, mapper, Clock.fixed(now, ZoneOffset.UTC)),
-        TradingImportSessionController(imports, mapper, Clock.fixed(now, ZoneOffset.UTC)),
+        TradingImportSessionController(imports, object : TradingNormalizationUseCase {
+            override fun validate(id: TradingImportSessionId, targetVersionSetJson: String?, key: String) = session
+            override fun retry(id: TradingImportSessionId, key: String) = session
+        }, mapper, Clock.fixed(now, ZoneOffset.UTC)),
         TradingSourceArtifactController(imports),
     ).setControllerAdvice(TradingReviewExceptionHandler()).build()
 

@@ -1,0 +1,70 @@
+package com.refinvest.core.tradingreview.domain
+
+import java.time.Instant
+
+enum class NormalizationRunStatus {
+    DISPATCH_PENDING, SUBMITTED, RUNNING, RESULT_READY, PUBLISHING, PUBLISHED,
+    RETRY_WAIT, TERMINAL_FAILURE, OBSOLETE
+}
+enum class NormalizationDispatchStatus { PENDING, SUBMITTED, RESULT_READY, TERMINAL_FAILURE, OBSOLETE }
+
+data class NormalizationArtifactInput(
+    val artifactId: TradingSourceArtifactId,
+    val role: TradingArtifactRole,
+    val sha256: String,
+    val contentLength: Long,
+    val mediaType: String,
+    val dialect: String,
+)
+
+data class NormalizationInput(
+    val tradingBookId: TradingBookId,
+    val importSessionId: TradingImportSessionId,
+    val ownerId: Long,
+    val artifacts: List<NormalizationArtifactInput>,
+    val venue: String,
+    val productFamily: String,
+    val positionMode: String,
+    val settlementAsset: String,
+    val sourceTimezone: String,
+    val reviewTimezone: String,
+    val versionSetJson: String,
+    val instrumentTermsJson: String,
+    val dataPolicyVersion: String,
+    val retryPolicyVersion: String,
+    val retryPolicyJson: String,
+    val deletionGeneration: Long,
+)
+
+data class NormalizationRun(
+    val id: String,
+    val input: NormalizationInput,
+    val inputFingerprint: String,
+    val logicalKey: String,
+    val status: NormalizationRunStatus,
+    val currentAttempt: Int,
+    val attemptToken: String,
+    val computeJobId: String?,
+    val lastFailureCode: String?,
+    val nextAttemptAt: Instant,
+    val createdAt: Instant,
+    val startedAt: Instant?,
+    val updatedAt: Instant,
+    val completedAt: Instant?,
+    val version: Long,
+    val retryOfRunId: String? = null,
+)
+
+data class NormalizationDispatch(
+    val id: String,
+    val runId: String,
+    val computeKey: String,
+    val status: NormalizationDispatchStatus,
+    val attemptCount: Int,
+    val nextAttemptAt: Instant,
+    val leaseOwner: String?,
+    val leaseExpiresAt: Instant?,
+    val lastFailureCode: String?,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+)

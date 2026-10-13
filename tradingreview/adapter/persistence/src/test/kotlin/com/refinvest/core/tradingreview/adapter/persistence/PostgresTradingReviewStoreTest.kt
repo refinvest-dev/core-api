@@ -7,6 +7,7 @@ import com.refinvest.core.tradingreview.port.TradingFailure
 import com.refinvest.core.tradingreview.port.TradingDeletion
 import com.refinvest.core.tradingreview.port.TradingIdGenerator
 import com.refinvest.core.tradingreview.port.TradingMemberProvider
+import com.refinvest.core.tradingreview.port.*
 import com.refinvest.core.tradingreview.application.TradingReviewService
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.jdbc.core.JdbcTemplate
@@ -32,6 +33,211 @@ import kotlin.test.assertFailsWith
 @EnabledIfEnvironmentVariable(named = "TRADING_REVIEW_TEST_JDBC_URL", matches = ".+")
 class PostgresTradingReviewStoreTest {
     private val now = Instant.parse("2026-01-01T00:00:00Z")
+
+    @Test
+    fun normalizationDispatchPersistsSnapshotAndRecoversExpiredLease() = withDatabase { connection ->
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        members(jdbc)
+        val review = JdbcTradingReviewStore(jdbc)
+        val account = TradingAccount.create(TradingAccountId(901), MemberId(1), TradingVenue.BINANCE, "A", now)
+        review.insert(account)
+        val book = TradingBook.create(TradingBookId(902), account, "B",
+            TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY,
+            TradingSettlementAsset.USDT, "UTC", now)
+        review.insert(book)
+        val session = TradingImportSession.create(TradingImportSessionId(903), book, "UTC", "UTC",
+            TradingPositionMode.ONE_WAY, TradingDataPolicy(), "{}", now)
+        JdbcTradingImportStore(jdbc).insert(session)
+        val store = JdbcTradingNormalizationStore(jdbc, tools.jackson.databind.json.JsonMapper.builder().build())
+        val runId = UUID.randomUUID().toString()
+        val token = UUID.randomUUID().toString()
+        val input = NormalizationInput(book.id, session.id, 1, emptyList(), "BINANCE",
+            "LINEAR_PERPETUAL", "ONE_WAY", "USDT", "UTC", "UTC", "{}", "[]",
+            "TRADING_DATA_POLICY_V1", "retry-v1",
+            "{\"policyVersion\":\"retry-v1\",\"maxAttempts\":3,\"maxElapsedTime\":\"PT1M\",\"initialDelay\":\"PT1S\",\"maxDelay\":\"PT10S\",\"jitter\":\"NONE\"}", 0)
+        val run = NormalizationRun(runId, input, "a".repeat(64), "b".repeat(64),
+            NormalizationRunStatus.DISPATCH_PENDING, 1, token, null, null,
+            now, now, null, now, null, 0)
+        val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
+            NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
+        store.insert(run, dispatch)
+        val restored = assertNotNull(store.findRun(runId)?.input)
+        assertEquals(input.copy(retryPolicyJson = restored.retryPolicyJson), restored)
+        assertEquals(tools.jackson.databind.json.JsonMapper.builder().build().readTree(input.retryPolicyJson),
+            tools.jackson.databind.json.JsonMapper.builder().build().readTree(restored.retryPolicyJson))
+        assertFailsWith<Exception> { store.insert(run.copy(id = UUID.randomUUID().toString()),
+            dispatch.copy(id = UUID.randomUUID().toString(), runId = runId)) }
+        val first = store.claimNext(now, java.time.Duration.ofSeconds(45), UUID.randomUUID().toString())
+        assertEquals(dispatch.id, first?.id)
+        assertEquals(null, store.claimNext(now, java.time.Duration.ofSeconds(45), UUID.randomUUID().toString()))
+        val recovered = store.claimNext(now.plusSeconds(46), java.time.Duration.ofSeconds(45),
+            UUID.randomUUID().toString())
+        assertEquals(dispatch.id, recovered?.id)
+        assertEquals(2, recovered?.attemptCount)
+    }
+
+    @Test
+    fun validationAdmissionCommitsSessionRunAndDispatchTogether() = withDatabase { connection ->
+        val source = SingleConnectionDataSource(connection, true)
+        val jdbc = JdbcTemplate(source)
+        val transactions = TransactionTemplate(DataSourceTransactionManager(source))
+        val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
+        members(jdbc)
+        val review = JdbcTradingReviewStore(jdbc)
+        val imports = JdbcTradingImportStore(jdbc)
+        val runs = JdbcTradingNormalizationStore(jdbc, mapper)
+        val account = TradingAccount.create(TradingAccountId(911), MemberId(1), TradingVenue.BINANCE, "A", now)
+        review.insert(account)
+        val book = TradingBook.create(TradingBookId(912), account, "B",
+            TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY,
+            TradingSettlementAsset.USDT, "UTC", now)
+        review.insert(book)
+        val versions = """{"versionSetHash":"${"f".repeat(64)}"}"""
+        val session = TradingImportSession.create(TradingImportSessionId(913), book, "UTC", "UTC",
+            TradingPositionMode.ONE_WAY, TradingDataPolicy(), versions, now)
+        imports.insert(session)
+        val service = com.refinvest.core.tradingreview.application.TradingNormalizationService(
+            object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
+            review, review, imports, imports, review, runs,
+            object : com.refinvest.core.tradingreview.port.TradingVersionPins {
+                override fun currentJson() = versions
+            }, object : com.refinvest.core.tradingreview.port.TradingNormalizationSettings {
+                override fun retryPolicy() = com.refinvest.core.tradingreview.port.TradingNormalizationRetryPolicy(
+                    "retry-v1", 3, java.time.Duration.ofMinutes(1), java.time.Duration.ofSeconds(1),
+                    java.time.Duration.ofSeconds(10), "NONE")
+                override fun instrumentTermsJson() = "[]"
+            }, mapper, Clock.fixed(now, ZoneOffset.UTC))
+        assertEquals("MISSING_REQUIRED_ARTIFACT", assertFailsWith<TradingFailure> {
+            transactions.execute { service.validate(session.id, null, "missing-position") }
+        }.code)
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
+        assertEquals(TradingImportStatus.RECEIVED, imports.find(session.id, MemberId(1))?.status)
+        for ((index, role) in TradingArtifactRole.entries.withIndex()) {
+            imports.insert(TradingSourceArtifact(TradingSourceArtifactId(914L + index), session.id,
+                role, null, "text/csv", 20, (if (index == 0) "a" else "b").repeat(64),
+                "AUTO", "objects/${UUID.randomUUID()}", byteArrayOf(1), "test-v1",
+                TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(3600), null, null, 0))
+        }
+        val started = transactions.execute { service.validate(session.id, null, "validate-first") }!!
+        assertEquals(TradingImportStatus.VALIDATING, started.status)
+        assertNotNull(started.activeNormalizationRunId)
+        val replay = transactions.execute { service.validate(session.id, null, "validate-again") }!!
+        assertEquals(started.activeNormalizationRunId, replay.activeNormalizationRunId)
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_dispatches", Long::class.java))
+        assertEquals(started.activeNormalizationRunId, imports.find(session.id, MemberId(1))?.activeNormalizationRunId)
+        val active = assertNotNull(runs.findRun(started.activeNormalizationRunId!!))
+        val workerTime = java.util.concurrent.atomic.AtomicReference(now)
+        val workerClock = object : Clock() {
+            override fun instant() = workerTime.get()
+            override fun getZone() = ZoneOffset.UTC
+            override fun withZone(zone: java.time.ZoneId) = this
+        }
+        var grantNumber = 0
+        val submittedKeys = mutableListOf<String>()
+        val submittedLocators = mutableListOf<List<String>>()
+        val issuer = object : ArtifactAccessGrantIssuer {
+            override fun issueReadGrant(artifact: NormalizationArtifactInput, logicalJobId: String,
+                                        sessionId: TradingImportSessionId, attemptToken: String,
+                                        deletionGeneration: Long): ArtifactReadGrant = ArtifactReadGrant(
+                artifact.artifactId.value.toString(), artifact.role.name, artifact.sha256,
+                artifact.contentLength, artifact.mediaType, "https://grant.test/${++grantNumber}",
+                workerTime.get().plusSeconds(60))
+        }
+        val compute = object : TradingNormalizationComputeClient {
+            override fun submit(run: NormalizationRun, dispatch: NormalizationDispatch,
+                                grants: List<ArtifactReadGrant>): NormalizationSubmission {
+                submittedKeys.add(dispatch.computeKey)
+                submittedLocators.add(grants.map { it.accessUri })
+                assertEquals(active.inputFingerprint, run.inputFingerprint)
+                return if (submittedKeys.size == 1)
+                    NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+                else NormalizationSubmission.Accepted("job-1")
+            }
+            override fun status(run: NormalizationRun, dispatch: NormalizationDispatch): NormalizationStatusLookup =
+                error("No status poll in this test")
+            override fun updateGrants(run: NormalizationRun, dispatch: NormalizationDispatch,
+                                      current: NormalizationJobStatus, nextAttemptToken: String,
+                                      grants: List<ArtifactReadGrant>, updateKey: String): NormalizationGrantUpdate =
+                error("No grant update in this test")
+        }
+        val dispatcher = com.refinvest.core.tradingreview.application.TradingNormalizationDispatcher(
+            runs, imports, imports, issuer, compute, object : TradingRetryJitter {
+                override fun factor() = 0.5
+            }, transactions, workerClock, mapper)
+        assertTrue(dispatcher.dispatchOne())
+        assertEquals(TradingImportStatus.VALIDATING, imports.find(session.id, MemberId(1))?.status)
+        workerTime.set(now.plusSeconds(1))
+        assertTrue(dispatcher.dispatchOne())
+        assertEquals(2, submittedKeys.size)
+        assertEquals(submittedKeys[0], submittedKeys[1])
+        assertTrue(submittedLocators[0] != submittedLocators[1])
+        assertFalse(jdbc.queryForObject("SELECT input_json::text FROM trading_normalization_runs WHERE id=?::uuid",
+            String::class.java, active.id)!!.contains("https://grant.test"))
+        assertEquals("job-1", runs.findRun(active.id)?.computeJobId)
+        val polling = assertNotNull(runs.claimSubmitted(now.plusSeconds(1), java.time.Duration.ofSeconds(45),
+            UUID.randomUUID().toString()))
+        transactions.execute {
+            val locked = assertNotNull(imports.find(session.id, MemberId(1), true))
+            assertTrue(runs.markTerminal(polling.id, polling.leaseOwner!!,
+                "TEMPORARY_DEPENDENCY_FAILURE", now))
+            val failed = assertNotNull(locked.failValidation(active.id, active.input.deletionGeneration,
+                TradingImportFailure("TEMPORARY_DEPENDENCY_FAILURE", true, "RETRY", now), now))
+            assertTrue(imports.update(failed))
+        }
+        assertEquals(TradingImportStatus.PROCESSING_FAILED, imports.find(session.id, MemberId(1))?.status)
+        assertEquals("TEMPORARY_DEPENDENCY_FAILURE", runs.findRun(active.id)?.lastFailureCode)
+        val retried = transactions.execute { service.retry(session.id, "retry-once") }!!
+        assertEquals(TradingImportStatus.VALIDATING, retried.status)
+        assertTrue(retried.activeNormalizationRunId != active.id)
+        assertEquals(active.id, runs.findRun(retried.activeNormalizationRunId!!)?.retryOfRunId)
+        assertEquals(retried.activeNormalizationRunId,
+            transactions.execute { service.retry(session.id, "retry-once") }!!.activeNormalizationRunId)
+        assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
+        val alwaysRetry = object : TradingNormalizationComputeClient {
+            override fun submit(run: NormalizationRun, dispatch: NormalizationDispatch,
+                                grants: List<ArtifactReadGrant>): NormalizationSubmission =
+                NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+            override fun status(run: NormalizationRun, dispatch: NormalizationDispatch): NormalizationStatusLookup =
+                error("No status poll in this test")
+            override fun updateGrants(run: NormalizationRun, dispatch: NormalizationDispatch,
+                                      current: NormalizationJobStatus, nextAttemptToken: String,
+                                      grants: List<ArtifactReadGrant>, updateKey: String): NormalizationGrantUpdate =
+                error("No grant update in this test")
+        }
+        val exhausting = com.refinvest.core.tradingreview.application.TradingNormalizationDispatcher(
+            runs, imports, imports, issuer, alwaysRetry, object : TradingRetryJitter {
+                override fun factor() = 0.5
+            }, transactions, workerClock, mapper)
+        for (seconds in listOf(1L, 2L, 4L)) {
+            workerTime.set(now.plusSeconds(seconds))
+            assertTrue(exhausting.dispatchOne())
+        }
+        val exhausted = assertNotNull(imports.find(session.id, MemberId(1)))
+        assertEquals(TradingImportStatus.PROCESSING_FAILED, exhausted.status)
+        assertEquals("TEMPORARY_DEPENDENCY_FAILURE", exhausted.failure?.code)
+        assertTrue(exhausted.failure?.retryable == true)
+        assertEquals(NormalizationRunStatus.TERMINAL_FAILURE,
+            runs.findRun(retried.activeNormalizationRunId!!)?.status)
+        jdbc.update("UPDATE trading_source_artifacts SET raw_expires_at=? WHERE import_session_id=?",
+            java.sql.Timestamp.from(now.minusSeconds(1)), session.id.value)
+        assertEquals("SOURCE_ARTIFACT_EXPIRED", assertFailsWith<TradingFailure> {
+            transactions.execute { service.retry(session.id, "retry-expired") }
+        }.code)
+        assertEquals(TradingImportStatus.PROCESSING_FAILED, imports.find(session.id, MemberId(1))?.status)
+        assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_dispatches", Long::class.java))
+        jdbc.update("UPDATE trading_source_artifacts SET raw_expires_at=? WHERE import_session_id=?",
+            java.sql.Timestamp.from(now.plusSeconds(3600)), session.id.value)
+        val again = transactions.execute { service.retry(session.id, "retry-after-exhaustion") }!!
+        assertEquals(retried.activeNormalizationRunId, runs.findRun(again.activeNormalizationRunId!!)?.retryOfRunId)
+        val staleDispatch = assertNotNull(runs.claimNext(now, java.time.Duration.ofSeconds(45),
+            UUID.randomUUID().toString()))
+        val staleRun = assertNotNull(runs.findRun(again.activeNormalizationRunId!!))
+        jdbc.update("UPDATE trading_import_sessions SET deletion_generation=deletion_generation+1 WHERE id=?",
+            session.id.value)
+        assertFalse(runs.markSubmitted(staleDispatch.id, staleDispatch.leaseOwner!!, staleRun.id,
+            staleRun.input.deletionGeneration, staleRun.attemptToken, "late-job", now))
+    }
 
     @Test
     fun `migration and JDBC adapter preserve ownership and optimistic version`() = withDatabase { connection ->
@@ -516,6 +722,11 @@ class PostgresTradingReviewStoreTest {
                     .bufferedReader().use { it.readText() }
                 connection.createStatement().use { statement ->
                     migration2.split(';').map(String::trim).filter(String::isNotEmpty).forEach(statement::execute)
+                }
+                val migration3 = javaClass.getResourceAsStream("/db/migration/V3__trading_normalization_dispatch.sql")!!
+                    .bufferedReader().use { it.readText() }
+                connection.createStatement().use { statement ->
+                    migration3.split(';').map(String::trim).filter(String::isNotEmpty).forEach(statement::execute)
                 }
                 test(connection)
             } finally {

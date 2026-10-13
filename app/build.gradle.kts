@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":tradingreview:adapter:snowflake"))
     implementation(project(":tradingreview:adapter:security"))
     implementation(project(":tradingreview:adapter:storage"))
+    implementation(project(":tradingreview:adapter:compute"))
     implementation(project(":shared:infrastructure"))
     implementation(libs.spring.boot.starter.actuator)
     implementation(libs.spring.boot.starter.jdbc)

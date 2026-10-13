@@ -29,7 +29,7 @@
 
 ## 3. 브랜치/커밋 컨벤션
 
-**브랜치명**: `<type>/<repo-scope>-<짧은-설명>` — 예: `feature/strategy-crud`, `fix/backtest-lag-offby-one`
+**브랜치명**: `<type>/<work-scope>-<짧은-설명>` — 예: `feature/strategy-crud`, `fix/backtest-lag-offby-one`
 
 - `type`: `feature`, `fix`, `chore`, `refactor`, `docs` 중 하나
 
@@ -49,6 +49,21 @@ feat(strategy): StrategyVersion 생성/조회 API 구현
 docs/USECASES.md의 DefineStrategyVersion, GetStrategyVersion 구현.
 docs/DOMAIN.md §1.2 불변식(executionAsset은 VIX 제외) 검증 포함.
 ```
+
+### 커밋 scope
+
+- `<scope>`에는 변경한 **제품 도메인, 기능 또는 작업 범위**를 쓴다. 저장소 이름은 scope가 아니다.
+  예: `trading-import`, `normalization-dispatch`, `strategy`, `git-workflow`.
+- `core`, `core-api`, `compute-api`, `web`, `refinvest`처럼 저장소나 제품 전체를 가리키는 이름은
+  커밋 scope로 쓰지 않는다. 어느 저장소의 커밋인지는 Git 이력에서 이미 알 수 있다.
+- 가능한 한 변경 목적을 식별할 수 있는 가장 좁은 scope를 소문자 kebab-case로 쓴다.
+  한 커밋이 여러 계층을 함께 바꿔도 같은 기능을 구현한다면 기능 scope를 사용한다.
+- 커밋 전 제목의 `<scope>`가 실제 변경 범위를 설명하는지 확인한다. 여러 도메인의 독립된
+  변경이라면 커밋을 나누고 각각의 scope를 붙인다.
+
+예: `feat(trading-import): persist normalization runs`,
+`test(trading-import): cover dispatch retries`,
+`docs(git-workflow): clarify commit scopes`.
 
 ### 커밋 구성 기준
 
