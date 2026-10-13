@@ -15,14 +15,17 @@ class JdbcTradingImportStore(private val jdbc: JdbcTemplate) : TradingImportSess
         jdbc.update("""INSERT INTO trading_import_sessions (id, trading_book_id, owner_member_id,
             source_timezone, review_timezone, declared_position_mode, data_policy_version, retention_policy,
             masking_policy_version, evidence_retention, deletion_policy_version, version_set_json, status,
-            deletion_generation, deletion_pending, created_at, updated_at, version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            deletion_generation, deletion_pending, created_at, updated_at, version, validation_started_at,
+            active_normalization_run_id, failure_code, failure_retryable, failure_user_action, failure_occurred_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?, ?, ?, ?)""",
             session.id.value, session.bookId.value, session.owner.value, session.sourceTimezone,
             session.reviewTimezone, session.declaredPositionMode.name, session.dataPolicyVersion,
             session.retentionPolicy, session.maskingPolicyVersion, session.evidenceRetention,
             session.deletionPolicyVersion, session.versionSetJson, session.status.name,
             session.deletionGeneration, session.deletionPending, Timestamp.from(session.createdAt),
-            Timestamp.from(session.updatedAt), session.version)
+            Timestamp.from(session.updatedAt), session.version, session.validationStartedAt?.let(Timestamp::from),
+            session.activeNormalizationRunId, session.failure?.code, session.failure?.retryable,
+            session.failure?.userAction, session.failure?.occurredAt?.let(Timestamp::from))
     }
 
     override fun find(id: TradingImportSessionId, owner: MemberId, forUpdate: Boolean): TradingImportSession? =
@@ -40,9 +43,14 @@ class JdbcTradingImportStore(private val jdbc: JdbcTemplate) : TradingImportSess
     }
 
     override fun update(session: TradingImportSession): Boolean = jdbc.update("""UPDATE trading_import_sessions
-        SET status=?, deletion_generation=?, deletion_pending=?, updated_at=?, version=version+1
+        SET status=?, deletion_generation=?, deletion_pending=?, updated_at=?,
+        validation_started_at=?, active_normalization_run_id=?::uuid, failure_code=?,
+        failure_retryable=?, failure_user_action=?, failure_occurred_at=?, version=version+1
         WHERE id=? AND owner_member_id=? AND version=?""", session.status.name, session.deletionGeneration,
-        session.deletionPending, Timestamp.from(session.updatedAt), session.id.value,
+        session.deletionPending, Timestamp.from(session.updatedAt),
+        session.validationStartedAt?.let(Timestamp::from), session.activeNormalizationRunId,
+        session.failure?.code, session.failure?.retryable, session.failure?.userAction,
+        session.failure?.occurredAt?.let(Timestamp::from), session.id.value,
         session.owner.value, session.version) == 1
 
     override fun deleted(id: TradingImportSessionId, owner: MemberId): Boolean = jdbc.queryForObject(
@@ -115,7 +123,11 @@ class JdbcTradingImportStore(private val jdbc: JdbcTemplate) : TradingImportSess
         rs.getString("evidence_retention"), rs.getString("deletion_policy_version"), rs.getString("version_set_json"),
         TradingImportStatus.valueOf(rs.getString("status")), rs.getLong("deletion_generation"),
         rs.getBoolean("deletion_pending"), rs.getTimestamp("created_at").toInstant(),
-        rs.getTimestamp("updated_at").toInstant(), rs.getLong("version"))
+        rs.getTimestamp("updated_at").toInstant(), rs.getLong("version"),
+        rs.getTimestamp("validation_started_at")?.toInstant(), rs.getString("active_normalization_run_id"),
+        rs.getString("failure_code")?.let { code -> TradingImportFailure(code,
+            rs.getBoolean("failure_retryable"), rs.getString("failure_user_action"),
+            rs.getTimestamp("failure_occurred_at").toInstant()) })
 
     private fun artifact(rs: ResultSet) = TradingSourceArtifact(TradingSourceArtifactId(rs.getLong("id")),
         TradingImportSessionId(rs.getLong("import_session_id")), TradingArtifactRole.valueOf(rs.getString("artifact_role")),

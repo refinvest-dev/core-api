@@ -7,7 +7,7 @@ import java.time.ZoneId
 @JvmInline value class TradingImportSessionId(val value: Long)
 @JvmInline value class TradingSourceArtifactId(val value: Long)
 
-enum class TradingImportStatus { RECEIVED, VALIDATING, ACCEPTED, REJECTED }
+enum class TradingImportStatus { RECEIVED, VALIDATING, ACCEPTED, REJECTED, PROCESSING_FAILED }
 enum class TradingArtifactRole { TRADE_HISTORY, POSITION_HISTORY }
 enum class TradingArtifactRetentionStatus { ACTIVE, RETENTION_SCHEDULED, DELETION_PENDING, DELETED, DELETION_FAILED }
 
@@ -30,6 +30,9 @@ data class TradingImportSession(
     val createdAt: Instant,
     val updatedAt: Instant,
     val version: Long,
+    val validationStartedAt: Instant? = null,
+    val activeNormalizationRunId: String? = null,
+    val failure: TradingImportFailure? = null,
 ) {
     fun canUpload() = status == TradingImportStatus.RECEIVED && !deletionPending
 
@@ -38,6 +41,18 @@ data class TradingImportSession(
             .map { it.role }.toSet()
 
     fun canValidate(artifacts: List<TradingSourceArtifact>) = canUpload() && missingArtifactRoles(artifacts).isEmpty()
+
+    fun beginValidation(runId: String, now: Instant): TradingImportSession {
+        require(status == TradingImportStatus.RECEIVED || status == TradingImportStatus.PROCESSING_FAILED)
+        require(!deletionPending)
+        return copy(status = TradingImportStatus.VALIDATING, activeNormalizationRunId = runId,
+            validationStartedAt = now, failure = null, updatedAt = now)
+    }
+
+    fun failValidation(runId: String, generation: Long, cause: TradingImportFailure, now: Instant): TradingImportSession? =
+        if (status == TradingImportStatus.VALIDATING && activeNormalizationRunId == runId &&
+            deletionGeneration == generation && !deletionPending)
+            copy(status = TradingImportStatus.PROCESSING_FAILED, failure = cause, updatedAt = now) else null
 
     fun requestRawDeletion(now: Instant): TradingImportSession {
         require(!deletionPending) { "Session deletion already requested" }
@@ -65,6 +80,9 @@ data class TradingImportSession(
         }
     }
 }
+
+data class TradingImportFailure(val code: String, val retryable: Boolean, val userAction: String,
+                                val occurredAt: Instant)
 
 data class TradingDataPolicy(
     val dataPolicyVersion: String = "TRADING_DATA_POLICY_V1",
