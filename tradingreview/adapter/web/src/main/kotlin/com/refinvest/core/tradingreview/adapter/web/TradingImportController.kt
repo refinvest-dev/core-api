@@ -46,6 +46,7 @@ data class TradingImportSessionResponse(
     val deletionPolicyVersion: String, val versions: JsonNode, val createdAt: Instant,
     val validationStartedAt: Instant?, val uploadedArtifactRoles: List<TradingArtifactRole>,
     val missingArtifactRoles: List<TradingArtifactRole>, val canValidate: Boolean,
+    val failure: TradingImportFailure?, val completedAt: Instant?,
 ) {
     companion object {
         fun from(view: TradingImportSessionView, now: Instant, mapper: ObjectMapper): TradingImportSessionResponse {
@@ -57,8 +58,10 @@ data class TradingImportSessionResponse(
                 session.sourceTimezone, session.reviewTimezone, session.declaredPositionMode, session.status,
                 view.artifacts.map { TradingSourceArtifactResponse.from(it, now) }, session.dataPolicyVersion,
                 session.retentionPolicy, session.maskingPolicyVersion, session.evidenceRetention,
-                session.deletionPolicyVersion, mapper.readTree(session.versionSetJson), session.createdAt, null,
-                uploaded, missing, session.canValidate(view.artifacts))
+                session.deletionPolicyVersion, mapper.readTree(session.versionSetJson), session.createdAt,
+                session.validationStartedAt,
+                uploaded, missing, session.canValidate(view.artifacts), session.failure,
+                session.failure?.occurredAt)
         }
     }
 }
@@ -87,11 +90,35 @@ class TradingBookImportController(private val imports: TradingImportUseCase, pri
 
 @RestController
 @RequestMapping("/trading-import-sessions")
-class TradingImportSessionController(private val imports: TradingImportUseCase, private val mapper: ObjectMapper,
+class TradingImportSessionController(private val imports: TradingImportUseCase,
+                                     private val normalization: TradingNormalizationUseCase,
+                                     private val mapper: ObjectMapper,
                                      private val clock: Clock) {
     @GetMapping("/{importSessionId}")
     fun get(@PathVariable importSessionId: Long) = TradingImportSessionResponse.from(
         imports.get(TradingImportSessionId(importSessionId)), clock.instant(), mapper)
+
+    @PostMapping("/{importSessionId}/validation")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    fun validate(@PathVariable importSessionId: Long, @RequestHeader("Idempotency-Key") key: String,
+                 @RequestBody request: JsonNode): TradingImportSessionResponse {
+        if (!request.isObject || request.size() > 1 ||
+            (request.size() == 1 && !request.has("targetVersionSet")))
+            throw TradingFailure("REQUEST_INVALID", 400)
+        normalization.validate(TradingImportSessionId(importSessionId),
+            request.path("targetVersionSet").takeIf { !it.isMissingNode && !it.isNull }?.toString(), key)
+        return TradingImportSessionResponse.from(imports.get(TradingImportSessionId(importSessionId)),
+            clock.instant(), mapper)
+    }
+
+    @PostMapping("/{importSessionId}/retry")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    fun retry(@PathVariable importSessionId: Long, @RequestHeader("Idempotency-Key") key: String):
+        TradingImportSessionResponse {
+        normalization.retry(TradingImportSessionId(importSessionId), key)
+        return TradingImportSessionResponse.from(imports.get(TradingImportSessionId(importSessionId)),
+            clock.instant(), mapper)
+    }
 
     @DeleteMapping("/{importSessionId}")
     @ResponseStatus(HttpStatus.ACCEPTED)

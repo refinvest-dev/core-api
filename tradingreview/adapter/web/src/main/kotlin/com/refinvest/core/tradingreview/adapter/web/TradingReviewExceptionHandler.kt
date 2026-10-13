@@ -12,16 +12,24 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import java.util.UUID
+import java.time.Instant
 
-data class TradingErrorResponse(val code: String, val message: String, val traceId: String, val retryable: Boolean)
+data class TradingErrorResponse(val code: String, val message: String, val traceId: String, val retryable: Boolean,
+                                val userAction: String? = null, val occurredAt: Instant? = null)
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = [TradingAccountController::class, TradingBookController::class,
-    TradingDeletionController::class, TradingBookImportController::class, TradingImportSessionController::class, TradingSourceArtifactController::class])
+    TradingDeletionController::class, TradingBookImportController::class, TradingImportSessionController::class, TradingSourceArtifactController::class, TradingArtifactGrantController::class])
 class TradingReviewExceptionHandler {
     @ExceptionHandler(TradingFailure::class)
     fun failure(error: TradingFailure): ResponseEntity<TradingErrorResponse> =
-        response(HttpStatus.valueOf(error.httpStatus), error.code, error.code == "CONCURRENT_MODIFICATION" || error.httpStatus == 503)
+        response(HttpStatus.valueOf(error.httpStatus), error.code,
+            error.code == "CONCURRENT_MODIFICATION" || error.httpStatus == 503,
+            when (error.code) {
+                "SOURCE_ARTIFACT_EXPIRED" -> "REUPLOAD_REQUIRED"
+                "RESOURCE_DELETED" -> "NONE"
+                else -> null
+            })
 
     @ExceptionHandler(IllegalArgumentException::class, HttpMessageNotReadableException::class,
         MethodArgumentNotValidException::class, MissingRequestHeaderException::class,
@@ -29,6 +37,7 @@ class TradingReviewExceptionHandler {
     fun invalid(@Suppress("UNUSED_PARAMETER") error: Exception): ResponseEntity<TradingErrorResponse> =
         response(HttpStatus.BAD_REQUEST, "REQUEST_INVALID", false)
 
-    private fun response(status: HttpStatus, code: String, retryable: Boolean) =
-        ResponseEntity.status(status).body(TradingErrorResponse(code, code, UUID.randomUUID().toString(), retryable))
+    private fun response(status: HttpStatus, code: String, retryable: Boolean, userAction: String? = null) =
+        ResponseEntity.status(status).body(TradingErrorResponse(code, code, UUID.randomUUID().toString(),
+            retryable, userAction, if (userAction != null) Instant.now() else null))
 }
