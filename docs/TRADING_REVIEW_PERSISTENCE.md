@@ -195,14 +195,17 @@ computeDispatchIdentity = SHA-256(canonical JSON {
 
 computeGrantUpdateIdentity = independent Idempotency-Key + canonical update fingerprint {
   jobId, mode, expectedGrantRevision, expectedAttemptToken, nextAttemptToken,
-  expectedInputHash, versionSetHash, deletionGeneration,
-  artifactsByRole[{coreArtifactId, role, rawSha256, byteSize, contentType, accessUri, expiresAt}]
+   expectedInputSetHash, versionSetHash, deletionGeneration,
+   artifactAccessGrants[{coreArtifactId, role, rawSha256, byteSize, contentType, accessUri, expiresAt}]
 }
 ```
 
 각 identity/fingerprint의 필드 선택은 위 식과 API 계약을 따르고 canonical 정렬/스칼라 직렬화는
 `TRADING_VERSIONING.md` §16을 사용한다. public transport
 `Idempotency-Key`는 이 logical key와 별도로 보존하며 같은 key/different fingerprint를 거절한다.
+`importValidationLogicalKey`는 public validation command의 별도 idempotency key다.
+`computeGrantUpdateIdentity`는 grant 전송 fingerprint이며 ADR-065 `inputSetHash`가 아니다.
+`inputSetHash`만 `TRADING_NORMALIZATION_IDENTITY.md`의 RFC 8785 V1 byte 규칙을 사용한다.
 Compute 생성 fingerprint는 immutable 계산 입력과 **최초** `attemptToken`을 포함하지만 signed
 `accessUri`/`expiresAt`, header, runtime UUID/시각은 제외한다. 생성 key는 job lifetime 동안
 불변이고 이후 token 변경은 이 key를 다시 계산하지 않는다. Grant update fingerprint는

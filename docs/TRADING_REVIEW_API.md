@@ -367,15 +367,26 @@ generation 증가를 먼저 commit해 access/admission/retry를 즉시 차단한
 
 ### 10.2 Request/result content
 
-Normalization request는 Core logical import/dispatch ID와 NormalizationRun ID, Book product/mode, 두 artifact의 Core opaque ID,
-role/checksum와 job-bound signed grant, source/review timezone, dialect/Normalizer/Reconstruction target,
-pinned instrument terms, inputSetHash/expected input hash, retryPolicyVersion, deletion generation, attempt token을 포함한다. Member profile이나
-raw account identifier는 포함하지 않는다.
+Normalization request는 Core logical import/dispatch ID와 `coreNormalizationRunId`,
+`expectedInputSetHash`, `NormalizationInputIdentity`(Book ID, source Session set, role별
+Artifact ID/SHA-256, source/review timezone, product/mode, hash specification version,
+**exact nested** normalizer+reconstruction target VersionSet), 두 job-bound
+`artifactAccessGrants`, pinned instrument terms, `retryPolicyVersion`, deletion generation,
+attempt token을 포함한다. `inputIdentity`만 RFC 8785 V1 `inputSetHash` 대상이다.
+Compute는 독립 재계산과 grant/identity 일치를 검증한다. grant locator/expiry,
+execution/attempt/Run ID, retry policy와 generation은 hash 대상이 아니다. Member profile이나
+raw account identifier는 포함하지 않는다. OpenAPI required field를 runtime `extra=forbid`
+DTO가 거부하면 계약 위반이다(`TR-ACC-IMPORT-ORCH-017`).
 
-Normalization `COMPLETED` terminal payload는 job/logical ID, 최종 attempt token과
-deletion generation, status/version, canonical records, `SourceEvidenceSnapshot`, manifest,
-capability, validation/quality report, input/content/manifest/result hash와 timestamps를 가진다.
-`FAILED`는 별도 payload가 아니라 status의 structured safe failure와 최종 token/generation이다.
+Normalization `COMPLETED` descriptor/payload는 요청의 `coreNormalizationRunId`를 그대로
+반환하고 job/logical ID, 최종 attempt token과 deletion generation, status, 독립 재계산한
+`inputSetHash`, hash specification version, exact nested target VersionSet,
+canonical records, `SourceEvidenceSnapshot`, manifest/manifestHash, capability,
+validation/quality report, 별도 ledger content/result/payload hash와 timestamps를 가진다.
+Run ID는 job 저장·worker 재시작·terminal 재조회에서 유지한다. `FAILED`는 별도 payload가
+아니라 status에 같은 correlation identity/VersionSet/`expectedInputSetHash`와 structured
+safe failure가 있다. 지원 규격에서 재계산한 경우에만 `inputSetHash`를 추가하고,
+`COMPLETED`에는 반드시 검증된 `inputSetHash`가 있다.
 Compute는 받은 bytes의 content length/SHA-256을 모두 검증한 뒤에만 계산한다. `accessUri`/`expiresAt`은
 logical inputSetHash에 포함하지 않고, 다운로드를 완료한 staging도 grant 갱신으로 변경되지 않는다.
 Compute staging은 완료/취소 뒤 삭제하고 늦어도 runtime TTL에 purge한다. grant는 단일 Artifact,
@@ -410,7 +421,9 @@ attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
   `202/jobId`를 돌려주고 **기존 grant/token을 바꾸지 않는다**. 최초 grant가 만료된 뒤의
   응답 유실 replay도 기존 job을 반환한다. 같은 key와 다른 token/계산 입력은 `409`다.
 - Compute status는 normalization에 한해 현재 `attemptToken`, `deletionGeneration`,
-  `grantRevision`, `expectedInputHash`, `versionSetHash`, `grantAction`과 nullable
+  `grantRevision`, `expectedInputSetHash`, optional 재계산 `inputSetHash`,
+  `hashSpecificationVersion`, exact `targetVersionSet`,
+  `grantAction`과 nullable
   `grantRefreshDeadlineAt`을 반환한다. `grantAction=NONE`이면 갱신이 필요 없다.
   `PENDING/REPLACE_QUEUED_GRANTS`는 claim 전 대기 grant가 만료됐음을,
   `RUNNING/START_RETRY_ATTEMPT`는 이전 worker attempt가 실패·만료되고 lease가 닫혔음을 뜻한다.
@@ -438,11 +451,14 @@ attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
   기한 전에 접수돼도 유효기간·single-read 조건을 다시 검증한다.
 - Core는 status를 polling한다. `COMPLETED`인데 terminal descriptor/payload/hash가 없으면 acceptance하지 않는다.
 - Core publication은 logical run ID, **completed descriptor와 payload의 최종 attempt token**,
-  expected input/version/config hash, deletion generation과 result hash를 모두 비교한다.
+  recomputed input set hash/exact nested VersionSet/config hash, deletion generation과
+  별도 result hash를 모두 비교한다.
   `resultHash`는 runtime token/revision/time을 제외한 deterministic engine hash이고,
   `payloadSha256`은 전송된 terminal JSON bytes의 hash다. duplicate same payload는
   `NO_OP`; old attempt/generation은 discard하며 conflicting hash는
-  `RESULT_HASH_MISMATCH`로 publish하지 않는다.
+  `RESULT_HASH_MISMATCH`로 publish하지 않는다. input identity mismatch는
+  `INPUT_SET_HASH_MISMATCH`, 미지원 규격은 `INPUT_HASH_SPECIFICATION_UNSUPPORTED`,
+  다운로드 source SHA-256 mismatch는 `SOURCE_CONTENT_HASH_MISMATCH`로 구분한다.
 - acknowledgement는 `jobId/payloadId`, payload SHA-256, result hash, 최종 token/generation을
   함께 검사한다. 다른 attempt의 ack는 `409`다. 정상 장기 저장은 `PERSISTED`, 삭제
   tombstone으로 폐기한 stale completed payload는 `DISCARDED_STALE` disposition으로
@@ -506,7 +522,7 @@ failure만 제공하며 별도 payload descriptor는 없다.
 
 ## 12. Acceptance traceability
 
-아래 표는 110개 stable Scenario ID를 모두 하나 이상의 API operation에 연결한다. reconstruction/analytics
+아래 표는 stable Scenario ID를 하나 이상의 API operation에 연결한다. reconstruction/analytics
 expected calculation은 HTTP가 아니라 정본 문서의 terminal payload assertion으로 검증한다.
 
 | Scenario ID | Public operation | Internal operation | Aggregate | Expected API result |
@@ -527,6 +543,7 @@ expected calculation은 HTTP가 아니라 정본 문서의 terminal payload asse
 | `ACC-NORMJOB-010` | get import/revision | normalization result/payload/ack | ImportSession, Revision | exact duplicate no-op; stale ack `409` |
 | `ACC-NORMJOB-011`, `ACC-NORMJOB-012` | poll import | normalization status/create | ComputeJob | deadline safe failure, 별도 pool `503` |
 | `ACC-NORMJOB-013`, `ACC-NORMJOB-014` | validate/poll import | normalization create/status; Core grant redemption | Dispatch, Artifact | terminal 새 job/lineage; pre-create binding 검증 |
+| `ACC-IMPORT-ORCH-017`~`ACC-IMPORT-ORCH-022` | validate/poll/get import/revision | normalization create/status/result/payload/ack | NormalizationRun, ComputeJob, Revision | runtime DTO, V1 hash, grant refresh, failure 분리, Core Run ID 왕복 |
 | `ACC-RECON-001`, `ACC-RECON-002`, `ACC-RECON-003`, `ACC-RECON-004`, `ACC-RECON-005` | get quality/revision; 이후 review unit | normalization result | Manifest, Revision | expected status/allocation |
 | `ACC-RECON-006`, `ACC-RECON-007`, `ACC-RECON-008`, `ACC-RECON-009`, `ACC-RECON-010`, `ACC-RECON-011`, `ACC-RECON-012` | get quality/revision; metric query | normalization result | Manifest, Revision | exclusion/tolerance/capability/coverage |
 | `ACC-ANALYSIS-001`, `ACC-ANALYSIS-002`, `ACC-ANALYSIS-003`, `ACC-ANALYSIS-004`, `ACC-ANALYSIS-005`, `ACC-ANALYSIS-006`, `ACC-ANALYSIS-007`, `ACC-ANALYSIS-008`, `ACC-ANALYSIS-009` | run/poll/get review/metric | create/poll/get analytics | AnalysisRun, Result | completed status/value-or-null |

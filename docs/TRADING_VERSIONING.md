@@ -428,6 +428,10 @@ Import normalization의 logical input은 한 Book, MVP 한 source ImportSession,
 source/review timezone, product/mode 및 exact target VersionSet의 `inputSetHash`다(ADR-065). 기존 Revision은
 새 Import에 누적되지 않는다. retry attempt, grant locator/expiry와 Compute dispatch ID는 inputSetHash에서
 제외한다. 서로 다른 source import set의 Revision을 합치는 Dataset composition은 이 정책의 범위 밖이다.
+`NormalizationInputIdentity`의 정확한 구조와 RFC 8785 V1 bytes는
+`TRADING_NORMALIZATION_IDENTITY.md`를 따른다. `retryPolicyVersion`과 deletion generation은
+실행/삭제 gate에 pin하지만 `inputSetHash`에서 제외한다. Compute의 사후 dialect/terms/
+output manifest hash도 입력 identity에 합치지 않는다.
 
 | Import failure | 발생 조건 | 공개 Session / userAction | retry |
 |---|---|---|---|
@@ -435,8 +439,30 @@ source/review timezone, product/mode 및 exact target VersionSet의 `inputSetHas
 | `SOURCE_ARTIFACT_EXPIRED` | Core raw TTL 만료 | `PROCESSING_FAILED` / `REUPLOAD_REQUIRED` | 같은 Session 재시도 불가 |
 | `SOURCE_CONTENT_LENGTH_MISMATCH` | 받은 bytes 길이 불일치 | publication 금지 / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 attempt |
 | `SOURCE_CONTENT_HASH_MISMATCH` | 받은 bytes SHA-256 불일치 | publication 금지 / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 attempt |
+| `INPUT_SET_HASH_MISMATCH` | Compute 재계산 `inputSetHash`와 Core `expectedInputSetHash` 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 동일 요청 자동 retry 금지; 계약 정합성 복구 후 새 Run |
+| `INPUT_HASH_SPECIFICATION_UNSUPPORTED` | Compute가 요청 hash 규격을 지원하지 않음 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 배포 호환성 복구 후 새 Run |
+| `RESULT_HASH_MISMATCH` | terminal bytes/page/chunk/manifest 또는 결과 hash 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
 | `ARTIFACT_IDENTITY_CONFLICT` | 같은 artifact ID에 다른 SHA-256 | `409`, 기존 Session 불변 / `WAIT_FOR_RECOVERY` | 동일 identity로 재시도 금지 |
 | `TEMPORARY_DEPENDENCY_FAILURE` | Compute/network/storage 일시 장애 | budget 내 `VALIDATING`, 소진 후 `PROCESSING_FAILED` / `RETRY` | active raw에서 명시적 retry |
+
+위 네 무결성 실패(`INPUT_SET_HASH_MISMATCH`, `INPUT_HASH_SPECIFICATION_UNSUPPORTED`,
+`SOURCE_CONTENT_HASH_MISMATCH`, `RESULT_HASH_MISMATCH`)는 CSV/지원 정책 거부가 아니므로
+Session을 `REJECTED`로 만들지 않는다. 공개 failure의 `retryable=false`와
+`userAction=WAIT_FOR_RECOVERY`를 사용한다. 원인 제거 뒤 active raw와 현재 generation에서
+새 Run을 명시적으로 시작할 수 있는지는 Core가 다시 판단한다. 개별 처리 경계는 다음과 같다.
+
+| Failure | Compute terminal outcome | Core 저장·ACK/cleanup | 운영 audit와 공개 경계 |
+|---|---|---|---|
+| `INPUT_SET_HASH_MISMATCH` | job `FAILED`, 성공 payload 없음 | safe code·Run/Session 실패만 저장; Revision 없음, ACK 없음; Compute runtime TTL cleanup | 규격/양쪽 계산 구현 조사. opaque Run ID·hash prefix 최대 12자만; identity JSON/원본 값 금지 |
+| `INPUT_HASH_SPECIFICATION_UNSUPPORTED` | job `FAILED`, 성공 payload 없음 | safe code·Run/Session 실패만 저장; Revision 없음, ACK 없음; runtime TTL cleanup | 지원 규격 버전 ID만; 요청 본문/URL 금지 |
+| `SOURCE_CONTENT_HASH_MISMATCH` | 다운로드 검증 뒤 job `FAILED`, normalization 시작 금지 | safe code·Run/Session 실패만 저장; Revision 없음, ACK 없음; staging 즉시 cleanup | 원본 보관/전송 조사. role과 hash prefix 최대 12자만; bytes·locator·filename 금지 |
+| `RESULT_HASH_MISMATCH` | Compute 자체 검증에서 발견하면 `FAILED`; Core가 완료 payload 검증에서 발견하면 Compute는 `COMPLETED`, Core Run은 `TERMINAL_FAILURE` | staging 폐기, Revision/latest 불변, `PERSISTED` ACK 금지; Compute payload는 TTL cleanup. 삭제 generation만 stale이면 `DISCARDED_STALE` 별도 규칙 | manifest/result/payload hash prefix 최대 12자와 opaque Run ID만; records/거래값/URL 금지 |
+
+네 failure 모두 공개에는 safe `code`, `retryable=false`, `userAction=WAIT_FOR_RECOVERY`,
+`occurredAt`만 기록하고 원본 행·UID·symbol·거래값·signed URL·credential은 로그에도 쓰지
+않는다. `RESULT_HASH_MISMATCH`는 **결과** 무결성에만 사용한다. terminal의 input identity나
+VersionSet 불일치는 `INPUT_SET_HASH_MISMATCH` 또는 `VERSION_INCOMPATIBLE`로 분류하고
+stale attempt/generation은 `OBSOLETE`/`STALE_RESULT_AFTER_DELETION` 경계를 따른다.
 
 `RetryPolicy`는 `policyVersion`, `maxAttempts`, `maxElapsedTime`, `initialDelay`, `maxDelay`, `jitter`를
 admission에 pin한 설정이다. 값은 배포별 설정이며 fingerprint에 정책 version을 기록하되 계산 결과 hash에는
@@ -462,7 +488,7 @@ attempt 수 또는 elapsed budget 중 먼저 소진된 쪽에서 자동 재시�
 | `TARGET_VERSION_RETIRED` | target이 READ_ONLY/retired | 신규 실행할 수 없는 버전 | ACTIVE target 선택 | 없음 | 없음 | stale client 반복 시 | version ID |
 | `REPROCESSING_CONFLICT` | active duplicate 불일치, stale attempt, publication 경쟁 | 다른 재처리와 충돌 | 상태 확인 후 가능 | 없음 | publish 없음 | 반복 시 | opaque run/attempt |
 | `REPROCESSING_CANCELLED` | 사용자/삭제/migration plan 취소 | 결과가 게시되지 않음 | 삭제가 아니면 새 요청 | 없음 | publish 없음 | 아니오 | actor/reason code |
-| `RESULT_HASH_MISMATCH` | 같은 결정 입력의 hash 불일치 | 결과 검증 실패, 게시 안 됨 | 원인 조사 뒤 | 없음 | publish 없음 | 즉시 | hash prefix 최대 12자, 값 금지 |
+| `RESULT_HASH_MISMATCH` | terminal payload/page/chunk/manifest 또는 결정적 결과 hash 불일치 | 결과 검증 실패, 게시 안 됨 | 원인 조사 뒤 | 없음 | publish 없음 | 즉시 | hash prefix 최대 12자, 값 금지 |
 | `STALE_RESULT_AFTER_DELETION` | 낮은 deletion generation callback | 삭제 뒤 결과를 저장하지 않음 | 금지 | 삭제 정책 따름 | 없음 | rate threshold | run/generation만 |
 | `LINEAGE_INCONSISTENT` | parent/owner/Book/version/provenance 불일치 또는 cycle | 결과 연결을 검증하지 못함 | 입력 수정 뒤 | 없음 | publish 없음 | 즉시 | opaque IDs/version만 |
 | `NOT_COMPARABLE_VERSION` | `TrendComparisonKey` 불일치 | 같은 추세로 비교할 수 없음 | 동일 VersionSet/config로 전 기간 재계산 시 | 없음 | 없음 | 아니오 | version/config hash만 |
@@ -496,7 +522,8 @@ CanonicalSourceSet
 ```
 
 단계별로 `LedgerContentHash`, `ReconciliationManifestHash`, `AnalysisResultHash`를 만들고 최종 result가 해당
-input hash를 참조한다. canonical serialization은 ADR-059/060을 재사용한다.
+execution input hash를 참조한다. 이 hash는 ADR-065 `inputSetHash`와 별개다. 아래 result
+canonical serialization은 ADR-059/060을 재사용하며 `inputSetHash`는 RFC 8785 V1을 따른다.
 
 - UTF-8 canonical JSON, object key Unicode code point 순, semantic array ordering, whitespace 없음.
 - Decimal은 `{"unscaled":"...","scale":n}`, rational은 기약분수/양수 denominator, timestamp는 UTC RFC

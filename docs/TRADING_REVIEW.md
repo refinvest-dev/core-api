@@ -445,6 +445,7 @@ LedgerRevision
 ├── revisionNumber
 ├── sourceImportSessionIds (MVP 정확히 하나)
 ├── inputSetHash
+├── hashSpecificationVersion
 ├── sourceArtifacts (role, artifactId, sha256)
 ├── recordCount
 ├── episodeCount
@@ -473,8 +474,10 @@ Revision은 생성 후 수정하지 않는다. MVP의 Revision은 한 ImportSess
 포함한다. 새 Import는 이전 Revision에 암묵적으로 누적되지 않는다. `latestRevisionId`는 범위 한정
 최신 결과 pointer이지 계정 전체 이력이 아니다. 여러 Revision의 합집합, 중복 기간·identity 충돌은 후속
 Dataset composition에서 명시적으로 처리한다. 분석은 pinned Revision 또는 명시적
-AnalysisDatasetSnapshot을 입력으로 고정한다. accepted Import가 장부에 반영될 때 새 Revision을 만든다. Import
-compute job은 canonical record와 함께 versioned `ReconciliationManifest`를 만들고 Core는 manifest hash와
+AnalysisDatasetSnapshot을 입력으로 고정한다. accepted Import가 장부에 반영될 때 새 Revision을 만든다.
+`inputSetHash`는 `TRADING_NORMALIZATION_IDENTITY.md`의 V1 logical identity hash이며
+source bytes SHA-256, manifest hash, result hash와 별개다. Import compute job은 canonical
+record와 함께 versioned `ReconciliationManifest`를 만들고 Core는 manifest hash와
 사용한 source/adapter/normalization/schema/terms/reconstruction/reconciliation/ReviewUnit/evidence version과
 implementation digest를 Revision에 고정한다. Analysis는 같은 source를 독립적으로 다시
 매칭하지 않고 pinned manifest의 allocation과 status로 ReviewUnit을 구성한다. manifest를 다시 생성하는 검증을

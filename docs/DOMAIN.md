@@ -380,19 +380,26 @@ DeletionRequest
 - `TR-I38 Version Metadata Retention`: 실행 implementation이 unavailable이어도 lifecycle상 보존되는 결과에는
   당시 source/target VersionSet, config와 lineage metadata가 남는다.
 - `TR-I39 Normalization Identity`: 동일 inputSetHash와 VersionSet은 동일 canonical result를 내며 locator,
-  만료 시각, attempt/token은 logical fingerprint에 포함하지 않는다. 같은 artifact ID의 다른 SHA-256은
-  `ARTIFACT_IDENTITY_CONFLICT`다. 같은 성공 입력의 retry는 Revision을 중복 발행하지 않는다.
+  만료 시각, attempt/token은 logical fingerprint에 포함하지 않는다. hash 대상은
+  `TRADING_NORMALIZATION_IDENTITY.md`의 V1 `NormalizationInputIdentity`만이며 Compute가
+  독립 재계산한다. 같은 artifact ID의 다른 SHA-256은 `ARTIFACT_IDENTITY_CONFLICT`다.
+  같은 성공 입력의 retry는 Revision을 중복 발행하지 않는다.
 - `TR-I40 Atomic Import Publication`: 검증된 Compute 완료 결과만 발행한다. Revision membership, manifest,
   quality, capability와 Session `ACCEPTED` 및 latest pointer는 한 publication transaction에서 commit한다.
   staging은 조회 불가하다. 현재 deletion generation, 실행 identity, inputSetHash 또는 VersionSet이 다르면
   결과를 `OBSOLETE`로 폐기한다. `PERSISTED` ACK는 commit 뒤에만 보내며 ACK 실패는 ACK만 재시도한다.
 - `TR-I41 Processing Failure Isolation`: 자동 재시도 중 Session은 `VALIDATING`; RetryPolicy 예산 소진은
   `PROCESSING_FAILED`이고 Revision은 없다. `REJECTED`는 결정적인 source/지원 정책 위반에만 쓴다.
-  명시적 retry는 active raw와 삭제되지 않은 Session에서 새 Run/attempt 및 audit event로 시작한다.
+  입력 identity/specification, source content, result hash의 무결성 실패는 CSV 거부가
+  아닌 `PROCESSING_FAILED`이며 세 hash failure를 혼용하지 않는다. 명시적 retry는 active
+  raw와 삭제되지 않은 Session에서 새 Run/attempt 및 audit event로 시작한다.
 
 `NormalizationRun`은 Core 내부 모델이다. `runId`, `importSessionId`, `inputFingerprint`(inputSetHash),
 target VersionSet, `retryPolicyVersion`, `deletionGeneration`, logical idempotency key, current execution
 attempt, run status, terminal failure, `createdAt`/`startedAt`/`completedAt`을 보존한다.
+`runId`는 Compute create/status/terminal descriptor/성공 payload에서 같은
+`coreNormalizationRunId`로 왕복한다. identity의 exact nested VersionSet과
+`hashSpecificationVersion`도 함께 pin하고 조회·publication에서 비교한다.
 `startedAt`은 첫 execution 시작 전, `completedAt`은 terminal 전에는 null이고 terminal failure도 안전한 code를 보존한다. `RETRY_WAIT`는
 dispatch 또는 Compute 재시도 대기, `TERMINAL_FAILURE`는 입력 거부 또는 소진된 운영 실패,
 `OBSOLETE`는 이전 attempt·generation·input/version의 폐기 결과다. 새로운 명시적 retry는 terminal Run을
