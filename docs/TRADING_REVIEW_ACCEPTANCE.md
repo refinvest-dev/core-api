@@ -270,11 +270,21 @@ quality/capability, publishedAt을 포함한다. 실패는 raw/URI/credential을
 | `TR-ACC-IMPORT-ORCH-013` Compute 실행 중 Session 삭제 tombstone commit → 늦은 결과 도착 → 발행 금지 | 정상 Session 조회 차단 / OBSOLETE | 0 / false / 공개 resource 410 RESOURCE_DELETED | generation 증가·payload discard, artifact/Run purge; stale 기록 / DISCARDED_STALE |
 | `TR-ACC-IMPORT-ORCH-014` retry의 새 execution 뒤 이전 결과 도착 → attempt 비교 → 이전 결과 폐기 | VALIDATING 또는 ACCEPTED / 이전 OBSOLETE, 현 Run active/PUBLISHED | 현 성공 전 0 또는 후 1 / 상황별 / 이전 failure 비공개 | attemptToken·run ID mismatch audit, 이전 payload 불가시화 / 이전 결과 ACK 금지(삭제면 DISCARDED_STALE) |
 | `TR-ACC-IMPORT-ORCH-015` Core publication commit 뒤 ACK 전송 실패 → ACK 재시도 → 중복 Revision 없음 | ACCEPTED / PUBLISHED | 1 / false / — | commit ID·result/payload hash 동일, latest 불변; stale 없음 / 같은 PERSISTED ACK 재전송 |
-| `TR-ACC-IMPORT-ORCH-016` terminal input hash 또는 VersionSet 불일치 → publication 시 검증 → 발행 금지 | VALIDATING(재시도 예산 내) 또는 PROCESSING_FAILED / OBSOLETE 또는 TERMINAL_FAILURE | 0 / 예산 내 true / RESULT_HASH_MISMATCH·WAIT_FOR_RECOVERY | expected/received hash·version ID만 audit, staging 비공개; stale 폐기 / PERSISTED 금지 |
+| `TR-ACC-IMPORT-ORCH-016` terminal input hash 또는 VersionSet 불일치 → publication 시 검증 → 발행 금지 | PROCESSING_FAILED / OBSOLETE 또는 TERMINAL_FAILURE | 0 / false / INPUT_SET_HASH_MISMATCH 또는 VERSION_INCOMPATIBLE·WAIT_FOR_RECOVERY | hash prefix·version ID만 audit, staging 비공개; stale 폐기 / PERSISTED 금지 |
+| `TR-ACC-IMPORT-ORCH-017` Context OpenAPI의 Core serializer 요청 → 실제 Compute runtime DTO 역직렬화 → 모든 required field 수용 | VALIDATING / SUBMITTED | 0 / N/A / — | `coreNormalizationRunId`, `retryPolicyVersion`, nested identity·VersionSet 유지; extra-field 거부 없음 / N/A |
+| `TR-ACC-IMPORT-ORCH-018` Context V1 고정 vector → Core·Compute 각각 canonicalize/hash → oracle 일치 | VALIDATING / DISPATCH_PENDING | 0 / N/A / — | canonical bytes와 `1122481b2c208afc1cae751f952f1b9a670f446f404d42c1e581a3b83f25552e` 일치 / N/A |
+| `TR-ACC-IMPORT-ORCH-019` 같은 logical identity, 다른 locator/expiry → create replay/refresh → 같은 job/hash | VALIDATING / SUBMITTED | 0 / N/A / — | idempotency conflict 없음; 최초 create replay는 저장된 grant 유지, 변경은 CAS update / N/A |
+| `TR-ACC-IMPORT-ORCH-020` expectedInputSetHash와 Compute 재계산값 불일치 → safe FAILED | PROCESSING_FAILED / TERMINAL_FAILURE | 0 / false / INPUT_SET_HASH_MISMATCH·WAIT_FOR_RECOVERY | 성공 payload 없음, LedgerRevision 없음, source CSV rejection 아님 / N/A |
+| `TR-ACC-IMPORT-ORCH-021` Core Run ID 전송 → job 저장·worker restart·terminal 생성·재조회 | ACCEPTED / PUBLISHED | 1 / false / — | 같은 `coreNormalizationRunId`가 status/descriptor/payload까지 보존; exact input/VersionSet/generation 확인 / commit 뒤 PERSISTED |
+| `TR-ACC-IMPORT-ORCH-022` source bytes SHA-256 불일치와 terminal result hash 불일치 각각 주입 | PROCESSING_FAILED / TERMINAL_FAILURE | 0 / false / SOURCE_CONTENT_HASH_MISMATCH 또는 RESULT_HASH_MISMATCH·WAIT_FOR_RECOVERY | source mismatch는 normalize 시작 전 Compute FAILED; result mismatch는 Core publication 차단; 어느 쪽도 input mismatch code로 대체 금지 / N/A |
 
 `TR-ACC-IMPORT-ORCH-014`의 이전 payload는 Compute cleanup TTL 또는 명시적 cancellation으로 정리한다.
 `DISCARDED_STALE` ACK는 삭제 generation이 증가한 경우에만 사용한다. `TR-ACC-IMPORT-ORCH-016`의
-VersionSet 불일치도 safe `RESULT_HASH_MISMATCH`로 매핑하고 원본 데이터 `REJECTED`로 만들지 않는다.
+VersionSet 불일치는 `VERSION_INCOMPATIBLE`이며 원본 데이터 `REJECTED`로 만들지 않는다.
+`017`~`022`는 runtime contract 요구사항이다. V1 hash vector는 Context에 고정돼 있으나
+실제 Core→Compute HTTP/DTO→terminal→Core 경계 fixture/E2E는 후속 Integration 작업이므로
+`FIXTURE_PLANNED`다. 특히 OpenAPI가 required로 선언한 값을 `extra=forbid` DTO가 거부하면
+snapshot sync가 통과해도 `017` 실패다.
 
 각 scenario는 아래 18개 필드를 모두 가진다. `Evidence`는 assertion에 필요한 chain 또는 state evidence이고,
 `Deferred HTTP Contract`는 transport 의미만 분류한다.
@@ -1464,7 +1474,7 @@ VersionSet 불일치도 safe `RESULT_HASH_MISMATCH`로 매핑하고 원본 데�
 - **Preconditions / Pinned Versions / Input Fixture:** token B/generation 3의 completed payload 1건; `BASE-V1`; `FIXTURE_NOT_REQUIRED`.
 - **Given / When / Then:** 같은 hash 재publication/ack / payload·Core Revision 1건, exact ack no-op; 다른 hash 또는 token A/generation 2 ack / `409`, 원 결과 불변.
 - **Aggregate State Changes / Created or Updated Artifacts:** 정상 ack marker만 최초 1회.
-- **Expected Outcome / Expected Failure or Exclusion:** exact duplicate `SUCCEEDED`; mismatch `REJECTED/RESULT_HASH_MISMATCH`.
+- **Expected Outcome / Expected Failure or Exclusion:** exact duplicate `SUCCEEDED`; 다른 result hash는 `RESULT_HASH_MISMATCH`로 publication 금지·Session `PROCESSING_FAILED`, stale token/generation ACK는 `409` conflict이며 Session 상태를 `REJECTED`로 바꾸지 않음.
 - **Idempotency Result:** terminal/ack exact duplicate `NO_OP`; conflict 거절.
 - **Evidence / Applied Invariants:** descriptor/payload final token/generation, input/result/payload hash; `TR-I05`, `TR-I06`, `TR-I16`, `TR-I33`.
 - **Service Ownership / Observability / Deferred HTTP Contract:** Core publication, Compute immutable terminal; `SAFE`; result/download/ack.
@@ -1572,9 +1582,9 @@ VersionSet 불일치도 safe `RESULT_HASH_MISMATCH`로 매핑하고 원본 데�
 | `TR-I36` | ANALYSIS-001, 010~015; REPROCESS-001, 003~011, 013; NORMJOB-009~010 |
 | `TR-I37` | IMPORT-018; REPROCESS-001, 003, 010 |
 | `TR-I38` | EVIDENCE-010; REPROCESS-001, 004~006, 008, 010, 012~013 |
-| `TR-I39` | IMPORT-ORCH-001~003, 005~007, 010 |
-| `TR-I40` | IMPORT-ORCH-001, 013~016 |
-| `TR-I41` | IMPORT-ORCH-008~012 |
+| `TR-I39` | IMPORT-ORCH-001~003, 005~007, 010, 017~020 |
+| `TR-I40` | IMPORT-ORCH-001, 013~016, 021~022 |
+| `TR-I41` | IMPORT-ORCH-008~012, 020, 022 |
 
 Scenario reference에서 group prefix `TR-ACC-`는 생략했다. 모든 `TR-I01`~`TR-I41`은 최소 하나의 정상 또는
 위반 acceptance에 연결된다.
@@ -1586,7 +1596,8 @@ Scenario reference에서 group prefix `TR-ACC-`는 생략했다. 모든 `TR-I01`
 | canonical row provenance | IMPORT-001, 019; EVIDENCE-003~007 |
 | reconciliation mismatch exclusion | IMPORT-014; RECON-004~010 |
 | deterministic result hash | IMPORT-021~022; ANALYSIS-012~014; REPROCESS-007, 010 |
-| normalization grant/attempt retry | NORMJOB-001~011, 013~014 |
+| normalization grant/attempt retry | NORMJOB-001~011, 013~014; IMPORT-ORCH-019 |
+| normalization runtime identity/hash agreement | IMPORT-ORCH-017~022 |
 | normalization capacity | NORMJOB-002, 012 |
 | quantity/fee/PnL conservation | RECON-002~003; EVIDENCE-003~004 |
 | unavailable과 실제 0 구분 | RECON-011; ANALYSIS-006~009 |
@@ -1616,6 +1627,10 @@ Scenario reference에서 group prefix `TR-ACC-`는 생략했다. 모든 `TR-I01`
    값이 없는지도 검사한다.
 7. OpenAPI E2E는 후속 작업에서 이 contract를 transport assertion으로 매핑한다. 이 문서의
    `Deferred HTTP Contract`를 endpoint/status/schema로 역추론해 고정하지 않는다.
+8. `verify-contract-sync.ps1`은 Context와 sibling OpenAPI snapshot의 텍스트 일치만 확인한다.
+   runtime DTO/serializer 적합성은 보증하지 않는다. 후속 Integration suite는 실제
+   Core serializer → HTTP request → Compute DTO → Compute input hasher → terminal payload
+   serializer → Core DTO를 `IMPORT-ORCH-017`~`022`로 검증한다.
 
 ## 7. Review Answers
 

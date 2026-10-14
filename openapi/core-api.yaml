@@ -1467,6 +1467,8 @@ components:
         - SOURCE_ARTIFACT_EXPIRED
         - SOURCE_CONTENT_LENGTH_MISMATCH
         - SOURCE_CONTENT_HASH_MISMATCH
+        - INPUT_SET_HASH_MISMATCH
+        - INPUT_HASH_SPECIFICATION_UNSUPPORTED
         - ARTIFACT_IDENTITY_CONFLICT
         - MISSING_CAPABILITY
         - INVALID_ANALYSIS_CONFIG
@@ -1495,11 +1497,13 @@ components:
 
     NormalizerVersionSet:
       type: object
+      additionalProperties: false
       required: [sourceDialectVersionsByArtifactRole, adapterVersion, normalizerVersion, canonicalSchemaVersion, implementationDigest, versionSetHash]
       properties:
         sourceDialectVersionsByArtifactRole:
           type: object
           required: [TRADE_HISTORY, POSITION_HISTORY]
+          additionalProperties: false
           properties:
             TRADE_HISTORY: { $ref: '#/components/schemas/VersionIdentifier' }
             POSITION_HISTORY: { $ref: '#/components/schemas/VersionIdentifier' }
@@ -1510,6 +1514,7 @@ components:
         versionSetHash: { $ref: '#/components/schemas/Sha256' }
     ReconstructionVersionSet:
       type: object
+      additionalProperties: false
       required: [instrumentTermsVersionByInstrument, reconstructionPolicyVersion, reconciliationVersion, reviewUnitSchemaVersion, evidenceSchemaVersion, implementationDigest, versionSetHash]
       properties:
         instrumentTermsVersionByInstrument:
@@ -1554,6 +1559,60 @@ components:
           type: object
           nullable: true
         versionSetHash: { $ref: '#/components/schemas/Sha256' }
+
+    NormalizationTargetVersionSet:
+      type: object
+      additionalProperties: false
+      required: [normalizer, reconstruction, versionSetHash]
+      description: TargetTradingVersionSet의 normalization 적용 부분 전체. analytics는 이 단계의 입력이 아니므로 생략한다.
+      properties:
+        normalizer: { $ref: '#/components/schemas/NormalizerVersionSet' }
+        reconstruction: { $ref: '#/components/schemas/ReconstructionVersionSet' }
+        versionSetHash: { $ref: '#/components/schemas/Sha256' }
+    NormalizationDeclaredProduct:
+      type: object
+      additionalProperties: false
+      required: [venue, productFamily, settlementAsset]
+      properties:
+        venue: { $ref: '#/components/schemas/TradingVenue' }
+        productFamily: { $ref: '#/components/schemas/TradingProductFamily' }
+        settlementAsset: { type: string, enum: [USDT] }
+    NormalizationInputArtifactIdentity:
+      type: object
+      additionalProperties: false
+      required: [artifactId, sha256]
+      properties:
+        artifactId: { type: string, minLength: 1 }
+        sha256: { $ref: '#/components/schemas/Sha256' }
+    NormalizationInputIdentity:
+      type: object
+      additionalProperties: false
+      required: [hashSpecificationVersion, tradingBookId, sourceImportSessionIds, artifactsByRole, sourceTimezone, reviewTimezone, declaredProduct, declaredPositionMode, targetVersionSet]
+      description: |
+        ADR-065 및 docs/TRADING_NORMALIZATION_IDENTITY.md의 RFC 8785 V1 canonical root.
+        이 object만 inputSetHash 대상이다. null/unknown property/duplicate key 금지.
+      properties:
+        hashSpecificationVersion: { type: string, enum: [TRADING_INPUT_SET_HASH_V1] }
+        tradingBookId: { type: string, minLength: 1 }
+        sourceImportSessionIds:
+          type: array
+          minItems: 1
+          maxItems: 1
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+          description: V1은 한 Session. 향후 복수 Session을 위한 plural 구조이며 UTF-16 code unit 순 정렬.
+        artifactsByRole:
+          type: object
+          additionalProperties: false
+          required: [TRADE_HISTORY, POSITION_HISTORY]
+          properties:
+            TRADE_HISTORY: { $ref: '#/components/schemas/NormalizationInputArtifactIdentity' }
+            POSITION_HISTORY: { $ref: '#/components/schemas/NormalizationInputArtifactIdentity' }
+        sourceTimezone: { type: string, minLength: 1, description: Core가 pin한 IANA timezone ID 원문. }
+        reviewTimezone: { type: string, minLength: 1, description: Core가 pin한 IANA timezone ID 원문. }
+        declaredProduct: { $ref: '#/components/schemas/NormalizationDeclaredProduct' }
+        declaredPositionMode: { $ref: '#/components/schemas/TradingPositionMode' }
+        targetVersionSet: { $ref: '#/components/schemas/NormalizationTargetVersionSet' }
 
     # ---- Trading Account / Book ----
     TradingVenue:
@@ -1891,12 +1950,13 @@ components:
         createdAt: { type: string, format: date-time }
     LedgerRevision:
       type: object
-      required: [id, tradingBookId, revisionNumber, inputSetHash, sourceArtifacts, sourceTimezone, reviewTimezone, declaredPositionMode, productDeclaration, contentHash, sourceImportSessionIds, coverage, coverageCompleteness, canonicalRecordCount, episodeCount, instrumentDescriptors, normalizerVersionSet, reconstructionVersionSet, reconciliationManifestHash, capability, qualitySummary, parentLedgerRevisionIds, createdAt, publishedAt]
+      required: [id, tradingBookId, revisionNumber, inputSetHash, hashSpecificationVersion, sourceArtifacts, sourceTimezone, reviewTimezone, declaredPositionMode, productDeclaration, contentHash, sourceImportSessionIds, coverage, coverageCompleteness, canonicalRecordCount, episodeCount, instrumentDescriptors, normalizerVersionSet, reconstructionVersionSet, reconciliationManifestHash, capability, qualitySummary, parentLedgerRevisionIds, createdAt, publishedAt]
       properties:
         id: { type: string }
         tradingBookId: { type: string }
         revisionNumber: { type: integer, format: int64, minimum: 1 }
         inputSetHash: { $ref: '#/components/schemas/Sha256' }
+        hashSpecificationVersion: { type: string, enum: [TRADING_INPUT_SET_HASH_V1], description: 이 Revision의 inputSetHash canonical byte 규격. }
         sourceArtifacts:
           type: array
           minItems: 2
