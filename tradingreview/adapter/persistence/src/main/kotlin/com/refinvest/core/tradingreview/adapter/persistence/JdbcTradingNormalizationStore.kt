@@ -15,6 +15,10 @@ import java.util.UUID
 class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val mapper: ObjectMapper) : TradingNormalizationStore {
     override fun insert(run: NormalizationRun, dispatch: NormalizationDispatch) {
         val input = run.input
+        val identityJson = run.inputIdentity?.let { identity ->
+            verifyIdentity(input, identity, run.inputFingerprint)
+            String(NormalizationInputCanonicalizer.canonicalize(identity), Charsets.UTF_8)
+        }
         val descriptors = input.artifacts.map { mapOf("artifactId" to it.artifactId.value,
             "role" to it.role.name, "sha256" to it.sha256, "contentLength" to it.contentLength,
             "mediaType" to it.mediaType, "dialect" to it.dialect) }
@@ -24,13 +28,13 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
             "reviewTimezone" to input.reviewTimezone))
         jdbc.update("""INSERT INTO trading_normalization_runs
             (id, retry_of_run_id, import_session_id, trading_book_id, owner_member_id, input_fingerprint, logical_key,
-            input_json, target_version_set_json, instrument_terms_json, data_policy_version,
+            input_json, input_identity_json, target_version_set_json, instrument_terms_json, data_policy_version,
             retry_policy_version, retry_policy_json,
             deletion_generation, status, current_attempt, attempt_token, compute_job_id,
             last_failure_code, next_attempt_at, created_at, started_at, updated_at, completed_at, version)
-            VALUES (?::uuid,?::uuid,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?,?,?::jsonb,?,?,?,?::uuid,?,?,?,?,?,?,?,?)""",
+            VALUES (?::uuid,?::uuid,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,?,?::jsonb,?,?,?,?::uuid,?,?,?,?,?,?,?,?)""",
             run.id, run.retryOfRunId, input.importSessionId.value, input.tradingBookId.value, input.ownerId,
-            run.inputFingerprint, run.logicalKey, inputJson, input.versionSetJson,
+            run.inputFingerprint, run.logicalKey, inputJson, identityJson, input.versionSetJson,
             input.instrumentTermsJson, input.dataPolicyVersion, input.retryPolicyVersion,
             input.retryPolicyJson, input.deletionGeneration,
             run.status.name, run.currentAttempt, run.attemptToken, run.computeJobId, run.lastFailureCode,
@@ -219,6 +223,10 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
             rs.getString("data_policy_version"),
             rs.getString("retry_policy_version"), rs.getString("retry_policy_json"),
             rs.getLong("deletion_generation"))
+        val identity = rs.getString("input_identity_json")?.let {
+            NormalizationInputIdentity.fromWireValue(mapper.readValue(it, Map::class.java))
+        }
+        if (identity != null) verifyIdentity(input, identity, rs.getString("input_fingerprint"))
         return NormalizationRun(rs.getString("id"), input, rs.getString("input_fingerprint"),
             rs.getString("logical_key"), NormalizationRunStatus.valueOf(rs.getString("status")),
             rs.getInt("current_attempt"), rs.getString("attempt_token"),
@@ -226,7 +234,20 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
             rs.getTimestamp("next_attempt_at").toInstant(), rs.getTimestamp("created_at").toInstant(),
             rs.getTimestamp("started_at")?.toInstant(), rs.getTimestamp("updated_at").toInstant(),
             rs.getTimestamp("completed_at")?.toInstant(), rs.getLong("version"),
-            rs.getString("retry_of_run_id"))
+            rs.getString("retry_of_run_id"), identity)
+    }
+
+    private fun verifyIdentity(input: NormalizationInput, identity: NormalizationInputIdentity,
+                               inputFingerprint: String) {
+        require(NormalizationInputCanonicalizer.hash(identity) == inputFingerprint) {
+            "Persisted normalization identity/hash mismatch"
+        }
+        val pinnedVersions = mapper.readValue(input.versionSetJson, Map::class.java)
+        val expected = NormalizationInputIdentity.fromPinnedInput(input, pinnedVersions)
+        require(NormalizationInputCanonicalizer.canonicalize(identity).contentEquals(
+            NormalizationInputCanonicalizer.canonicalize(expected))) {
+            "Persisted normalization identity/input mismatch"
+        }
     }
 
     private fun dispatch(rs: ResultSet) = NormalizationDispatch(rs.getString("id"), rs.getString("run_id"),

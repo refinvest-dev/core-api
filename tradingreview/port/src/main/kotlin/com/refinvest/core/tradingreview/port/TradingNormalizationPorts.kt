@@ -55,7 +55,7 @@ sealed interface NormalizationSubmission {
 data class NormalizationJobStatus(
     val jobId: String, val state: String, val attemptToken: String,
     val deletionGeneration: Long, val grantRevision: Long,
-    val expectedInputHash: String, val versionSetHash: String,
+    val expectedInputSetHash: String, val versionSetHash: String,
     val grantAction: String, val grantRefreshDeadlineAt: Instant?,
     val failureCode: String?,
 )
