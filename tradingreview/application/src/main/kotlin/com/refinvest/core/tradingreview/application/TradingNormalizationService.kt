@@ -6,6 +6,8 @@ import com.refinvest.core.tradingreview.port.*
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.core.StreamReadFeature
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
@@ -25,6 +27,8 @@ open class TradingNormalizationService(
     private val mapper: ObjectMapper,
     private val clock: Clock,
 ) : TradingNormalizationUseCase {
+    private val strictMapper = JsonMapper.builder()
+        .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build()
     @Transactional
     override fun validate(id: TradingImportSessionId, targetVersionSetJson: String?, key: String): TradingImportSession =
         admit(id, targetVersionSetJson, key, false)
@@ -110,11 +114,19 @@ open class TradingNormalizationService(
             book.productFamily.name, book.positionMode.name, book.settlementAsset.name,
             session.sourceTimezone, session.reviewTimezone, pinnedVersions, terms,
             session.dataPolicyVersion, policy.version, policyJson, session.deletionGeneration)
-        val hash = NormalizationInputFingerprint.hash(input, mapper)
+        val identity = try {
+            NormalizationInputIdentity.fromPinnedInput(input, mapper.readValue(pinnedVersions, Map::class.java))
+        } catch (_: Exception) { throw TradingFailure("VERSION_UNAVAILABLE", 422) }
+        val hash = NormalizationInputCanonicalizer.hash(identity)
         val previous = if (retry) {
             val previous = session.activeNormalizationRunId?.let(runs::findRun)
                 ?: throw TradingFailure("RESOURCE_STATE_CONFLICT", 409)
-            if (previous.inputFingerprint != hash || previous.input.artifacts != prepared ||
+            val previousIdentity = previous.inputIdentity
+                ?: throw TradingFailure("VERSION_UNAVAILABLE", 422)
+            if (previous.inputFingerprint != hash ||
+                !NormalizationInputCanonicalizer.canonicalize(previousIdentity).contentEquals(
+                    NormalizationInputCanonicalizer.canonicalize(identity)) ||
+                previous.input.artifacts != prepared ||
                 previous.input.deletionGeneration != session.deletionGeneration)
                 throw TradingFailure("ARTIFACT_IDENTITY_CONFLICT", 409)
             previous
@@ -122,10 +134,11 @@ open class TradingNormalizationService(
         val runId = UUID.randomUUID().toString()
         val dispatchId = UUID.randomUUID().toString()
         val attemptToken = UUID.randomUUID().toString()
-        val logicalKey = NormalizationInputFingerprint.logicalKey(input, mapper)
+        val logicalKey = NormalizationInputFingerprint.logicalKey(owner.value, hash,
+            input.deletionGeneration, mapper)
         val run = NormalizationRun(runId, input, hash, logicalKey,
             NormalizationRunStatus.DISPATCH_PENDING, 1, attemptToken, null, null,
-            now, now, null, now, null, 0, previous?.id)
+            now, now, null, now, null, 0, previous?.id, identity)
         val dispatch = NormalizationDispatch(dispatchId, runId,
             NormalizationInputFingerprint.dispatchKey(runId, logicalKey, attemptToken,
                 input.versionSetJson, input.deletionGeneration, mapper),
@@ -138,34 +151,15 @@ open class TradingNormalizationService(
     }
 
     private fun canonical(raw: String): String = try {
-        NormalizationInputFingerprint.canonical(mapper.readValue(raw, Any::class.java), mapper)
+        NormalizationInputFingerprint.canonical(strictMapper.readValue(raw, Any::class.java), mapper)
     } catch (_: Exception) { throw TradingFailure("VERSION_UNAVAILABLE", 422) }
 }
 
 object NormalizationInputFingerprint {
-    fun hash(input: NormalizationInput, mapper: ObjectMapper): String {
-        // ADR-065: sorted JSON keys, sorted artifact roles, UTF-8, exact string values.
-        // Runtime IDs, generation, locators, expiry, retry policy, and attempt token are absent.
-        val body = mapOf(
-            "tradingBookId" to input.tradingBookId.value.toString(),
-            "sourceImportSessionIds" to listOf(input.importSessionId.value.toString()),
-            "artifactsByRole" to input.artifacts.sortedWith(compareBy({ it.role.ordinal }, { it.artifactId.value }))
-                .map { mapOf("role" to it.role.name, "artifactId" to it.artifactId.value.toString(),
-                    "rawSha256" to it.sha256) },
-            "productDeclaration" to mapOf("venue" to input.venue, "productFamily" to input.productFamily,
-                "settlementAsset" to input.settlementAsset),
-            "declaredPositionMode" to input.positionMode,
-            "sourceTimezone" to input.sourceTimezone,
-            "reviewTimezone" to input.reviewTimezone,
-            "targetVersionSet" to mapper.readValue(input.versionSetJson, Any::class.java),
-        )
-        return sha256(canonical(body, mapper))
-    }
-
     fun canonical(value: Any?, mapper: ObjectMapper): String = when (value) {
         null -> "null"
         is Map<*, *> -> value.entries.sortedWith { left, right ->
-            compareCodePoints(left.key.toString(), right.key.toString())
+            left.key.toString().compareTo(right.key.toString())
         }.joinToString(",", "{", "}") {
             mapper.writeValueAsString(it.key.toString()) + ":" + canonical(it.value, mapper)
         }
@@ -173,17 +167,12 @@ object NormalizationInputFingerprint {
         else -> mapper.writeValueAsString(value)
     }
 
-    fun logicalKey(input: NormalizationInput, mapper: ObjectMapper): String {
-        val versions = mapper.readValue(input.versionSetJson, Map::class.java)
+    fun logicalKey(ownerId: Long, inputSetHash: String, deletionGeneration: Long,
+                   mapper: ObjectMapper): String {
         val body = mapOf(
-            "ownerScope" to input.ownerId.toString(),
-            "importSessionId" to input.importSessionId.value.toString(),
-            "artifactsByRole" to input.artifacts.sortedBy { it.role.ordinal }.map {
-                mapOf("role" to it.role.name, "rawSha256" to it.sha256)
-            },
-            "normalizationReconstructionVersionSetHash" to versions["versionSetHash"],
-            "dataPolicyVersion" to input.dataPolicyVersion,
-            "deletionGeneration" to input.deletionGeneration,
+            "ownerScope" to ownerId.toString(),
+            "inputSetHash" to inputSetHash,
+            "deletionGeneration" to deletionGeneration,
         )
         return sha256(canonical(body, mapper))
     }
@@ -205,19 +194,6 @@ object NormalizationInputFingerprint {
         val bytes = it.toByteArray(StandardCharsets.UTF_8)
         bytes.size.toString() + ":" + it
     })
-
-    private fun compareCodePoints(left: String, right: String): Int {
-        var i = 0
-        var j = 0
-        while (i < left.length && j < right.length) {
-            val a = left.codePointAt(i)
-            val b = right.codePointAt(j)
-            if (a != b) return a.compareTo(b)
-            i += Character.charCount(a)
-            j += Character.charCount(b)
-        }
-        return (left.length - i).compareTo(right.length - j)
-    }
 
     private fun sha256(text: String): String = MessageDigest.getInstance("SHA-256")
         .digest(text.toByteArray(StandardCharsets.UTF_8))

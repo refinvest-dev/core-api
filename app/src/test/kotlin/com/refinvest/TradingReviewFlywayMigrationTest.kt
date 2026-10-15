@@ -24,13 +24,15 @@ class TradingReviewFlywayMigrationTest {
                 val flyway = Flyway.configure().dataSource(url, user, password).schemas(schema)
                     .baselineOnMigrate(true).baselineVersion("0")
                     .locations("classpath:db/migration").load()
-                assertEquals(3, flyway.migrate().migrationsExecuted)
+                assertEquals(4, flyway.migrate().migrationsExecuted)
                 connection.schema = schema
                 connection.createStatement().use { statement ->
                     statement.executeQuery("SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name IN ('trading_accounts','trading_books','trading_idempotency','trading_deletion_requests','trading_import_sessions','trading_source_artifacts')")
                         .use { result -> result.next(); assertEquals(6, result.getInt(1)) }
                     statement.executeQuery("SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name IN ('trading_normalization_runs','trading_normalization_attempts','trading_normalization_dispatches','trading_normalization_audit','trading_artifact_read_grants')")
                         .use { result -> result.next(); assertEquals(5, result.getInt(1)) }
+                    statement.executeQuery("SELECT count(*) FROM information_schema.columns WHERE table_schema='$schema' AND table_name='trading_normalization_runs' AND column_name='input_identity_json'")
+                        .use { result -> result.next(); assertEquals(1, result.getInt(1)) }
                 }
             } finally {
                 connection.schema = "public"

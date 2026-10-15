@@ -53,6 +53,8 @@ data class NormalizationRun(
     val completedAt: Instant?,
     val version: Long,
     val retryOfRunId: String? = null,
+    // Null only for pre-ADR-065 runs. Such a run must never be submitted or replayed as V1.
+    val inputIdentity: NormalizationInputIdentity? = null,
 )
 
 data class NormalizationDispatch(

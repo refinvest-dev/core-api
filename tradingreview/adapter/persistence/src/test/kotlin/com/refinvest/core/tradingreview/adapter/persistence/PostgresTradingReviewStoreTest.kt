@@ -33,6 +33,7 @@ import kotlin.test.assertFailsWith
 @EnabledIfEnvironmentVariable(named = "TRADING_REVIEW_TEST_JDBC_URL", matches = ".+")
 class PostgresTradingReviewStoreTest {
     private val now = Instant.parse("2026-01-01T00:00:00Z")
+    private val normalizationVersions = """{"versionSetHash":"${"f".repeat(64)}","normalizer":{"sourceDialectVersionsByArtifactRole":{"TRADE_HISTORY":"TRADE_V1","POSITION_HISTORY":"POSITION_V1"},"adapterVersion":"ADAPTER_V1","normalizerVersion":"NORMALIZER_V1","canonicalSchemaVersion":"CANONICAL_V1","implementationDigest":"normalizer-digest","versionSetHash":"${"d".repeat(64)}"},"reconstruction":{"instrumentTermsVersionByInstrument":{},"reconstructionPolicyVersion":"RECONSTRUCTION_V1","reconciliationVersion":"RECONCILIATION_V1","reviewUnitSchemaVersion":"REVIEW_UNIT_V1","evidenceSchemaVersion":"EVIDENCE_V1","implementationDigest":"reconstruction-digest","versionSetHash":"${"e".repeat(64)}"}}"""
 
     @Test
     fun normalizationDispatchPersistsSnapshotAndRecoversExpiredLease() = withDatabase { connection ->
@@ -51,18 +52,37 @@ class PostgresTradingReviewStoreTest {
         val store = JdbcTradingNormalizationStore(jdbc, tools.jackson.databind.json.JsonMapper.builder().build())
         val runId = UUID.randomUUID().toString()
         val token = UUID.randomUUID().toString()
-        val input = NormalizationInput(book.id, session.id, 1, emptyList(), "BINANCE",
-            "LINEAR_PERPETUAL", "ONE_WAY", "USDT", "UTC", "UTC", "{}", "[]",
+        val pinnedArtifacts = TradingArtifactRole.entries.mapIndexed { index, role ->
+            NormalizationArtifactInput(TradingSourceArtifactId(904L + index), role,
+                (if (index == 0) "a" else "b").repeat(64), 100, "text/csv", "AUTO")
+        }
+        val input = NormalizationInput(book.id, session.id, 1, pinnedArtifacts, "BINANCE",
+            "LINEAR_PERPETUAL", "ONE_WAY", "USDT", "UTC", "UTC", normalizationVersions, "[]",
             "TRADING_DATA_POLICY_V1", "retry-v1",
             "{\"policyVersion\":\"retry-v1\",\"maxAttempts\":3,\"maxElapsedTime\":\"PT1M\",\"initialDelay\":\"PT1S\",\"maxDelay\":\"PT10S\",\"jitter\":\"NONE\"}", 0)
-        val run = NormalizationRun(runId, input, "a".repeat(64), "b".repeat(64),
+        val identity = NormalizationInputIdentity.fromPinnedInput(input,
+            tools.jackson.databind.json.JsonMapper.builder().build().readValue(
+                normalizationVersions, Map::class.java))
+        val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity), "b".repeat(64),
             NormalizationRunStatus.DISPATCH_PENDING, 1, token, null, null,
-            now, now, null, now, null, 0)
+            now, now, null, now, null, 0, inputIdentity = identity)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
         store.insert(run, dispatch)
         val restored = assertNotNull(store.findRun(runId)?.input)
-        assertEquals(input.copy(retryPolicyJson = restored.retryPolicyJson), restored)
+        assertEquals(input.copy(retryPolicyJson = restored.retryPolicyJson,
+            versionSetJson = restored.versionSetJson), restored)
+        assertEquals(NormalizationInputCanonicalizer.hash(identity),
+            NormalizationInputCanonicalizer.hash(assertNotNull(store.findRun(runId)?.inputIdentity)))
+        assertFalse(jdbc.queryForObject("SELECT input_identity_json::text FROM trading_normalization_runs WHERE id=?::uuid",
+            String::class.java, runId)!!.contains("accessUri"))
+        jdbc.update("UPDATE trading_import_sessions SET source_timezone='Asia/Seoul' WHERE id=?", session.id.value)
+        assertEquals("UTC", assertNotNull(store.findRun(runId)?.inputIdentity).sourceTimezone)
+        jdbc.update("UPDATE trading_normalization_runs SET input_fingerprint=? WHERE id=?::uuid",
+            "0".repeat(64), runId)
+        assertFailsWith<IllegalArgumentException> { store.findRun(runId) }
+        jdbc.update("UPDATE trading_normalization_runs SET input_fingerprint=? WHERE id=?::uuid",
+            run.inputFingerprint, runId)
         assertEquals(tools.jackson.databind.json.JsonMapper.builder().build().readTree(input.retryPolicyJson),
             tools.jackson.databind.json.JsonMapper.builder().build().readTree(restored.retryPolicyJson))
         assertFailsWith<Exception> { store.insert(run.copy(id = UUID.randomUUID().toString()),
@@ -92,7 +112,7 @@ class PostgresTradingReviewStoreTest {
             TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY,
             TradingSettlementAsset.USDT, "UTC", now)
         review.insert(book)
-        val versions = """{"versionSetHash":"${"f".repeat(64)}"}"""
+        val versions = normalizationVersions
         val session = TradingImportSession.create(TradingImportSessionId(913), book, "UTC", "UTC",
             TradingPositionMode.ONE_WAY, TradingDataPolicy(), versions, now)
         imports.insert(session)
@@ -727,6 +747,11 @@ class PostgresTradingReviewStoreTest {
                     .bufferedReader().use { it.readText() }
                 connection.createStatement().use { statement ->
                     migration3.split(';').map(String::trim).filter(String::isNotEmpty).forEach(statement::execute)
+                }
+                val migration4 = javaClass.getResourceAsStream("/db/migration/V4__trading_normalization_input_identity.sql")!!
+                    .bufferedReader().use { it.readText() }
+                connection.createStatement().use { statement ->
+                    migration4.split(';').map(String::trim).filter(String::isNotEmpty).forEach(statement::execute)
                 }
                 test(connection)
             } finally {
