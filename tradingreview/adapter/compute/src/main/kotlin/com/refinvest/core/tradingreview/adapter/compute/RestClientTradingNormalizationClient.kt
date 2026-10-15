@@ -1,6 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
 import com.refinvest.core.tradingreview.domain.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.NormalizationInputCanonicalizer
 import com.refinvest.core.tradingreview.domain.NormalizationRun
 import com.refinvest.core.tradingreview.port.*
 import org.springframework.beans.factory.annotation.Value
@@ -79,13 +80,21 @@ class RestClientTradingNormalizationClient private constructor(
                         200 -> {
                             val body = response.bodyTo(String::class.java)?.let(mapper::readTree)
                                 ?: return@exchange NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
+                            val identity = run.inputIdentity
+                                ?: return@exchange NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
+                            val versions = mapper.valueToTree<tools.jackson.databind.JsonNode>(
+                                identity.targetVersionSet.toWireValue())
                             if (body.path("jobId").asText() != jobId ||
-                                body.path("coreLogicalJobId").asText() != dispatch.id)
+                                body.path("coreLogicalJobId").asText() != dispatch.id ||
+                                body.path("coreNormalizationRunId").asText() != run.id ||
+                                body.path("hashSpecificationVersion").asText() != identity.hashSpecificationVersion ||
+                                body.path("targetVersionSet") != versions)
                                 return@exchange NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
                             NormalizationStatusLookup.Found(NormalizationJobStatus(jobId,
                                 body.path("status").asText(), body.path("attemptToken").asText(),
                                 body.path("deletionGeneration").asLong(), body.path("grantRevision").asLong(),
-                                body.path("expectedInputHash").asText(), body.path("versionSetHash").asText(),
+                                body.path("expectedInputSetHash").asText(),
+                                body.path("targetVersionSet").path("versionSetHash").asText(),
                                 body.path("grantAction").asText("NONE"),
                                 body.path("grantRefreshDeadlineAt").takeIf { !it.isNull && !it.isMissingNode }
                                     ?.asText()?.let(java.time.Instant::parse),
@@ -103,19 +112,17 @@ class RestClientTradingNormalizationClient private constructor(
                               current: NormalizationJobStatus, nextAttemptToken: String,
                               grants: List<ArtifactReadGrant>, updateKey: String): NormalizationGrantUpdate {
         if (apiKey.isBlank()) return NormalizationGrantUpdate.Rejected("INTERNAL_ERROR")
+        val grantValues = try { grantBody(run, grants) }
+            catch (_: Exception) { return NormalizationGrantUpdate.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID") }
         val body = mapOf(
             "mode" to current.grantAction,
             "expectedGrantRevision" to current.grantRevision,
             "expectedAttemptToken" to current.attemptToken,
             "nextAttemptToken" to nextAttemptToken,
-            "expectedInputHash" to run.inputFingerprint,
+            "expectedInputSetHash" to run.inputFingerprint,
             "versionSetHash" to current.versionSetHash,
             "deletionGeneration" to run.input.deletionGeneration,
-            "artifacts" to grants.sortedBy { if (it.role == "TRADE_HISTORY") 0 else 1 }.map { mapOf(
-                "coreArtifactId" to it.coreArtifactId, "role" to it.role,
-                "rawSha256" to it.rawSha256, "byteSize" to it.byteSize,
-                "contentType" to it.contentType, "accessUri" to it.accessUri,
-                "expiresAt" to it.expiresAt.toString()) })
+            "artifactAccessGrants" to grantValues)
         return try {
             client.post().uri("/trading-review/normalization-jobs/{jobId}/grant-updates", current.jobId)
                 .header("X-Internal-Api-Key", apiKey).header("Idempotency-Key", updateKey)
@@ -139,52 +146,60 @@ class RestClientTradingNormalizationClient private constructor(
     private fun body(run: NormalizationRun, dispatch: NormalizationDispatch,
                      grants: List<ArtifactReadGrant>): Map<String, Any> {
         val input = run.input
-        val version = mapper.readTree(input.versionSetJson)
-        val normalizer = version.path("normalizer")
-        val reconstruction = version.path("reconstruction")
-        val dialects = normalizer.path("sourceDialectVersionsByArtifactRole")
-        val internalVersions = mapOf(
-            "sourceDialectVersionsByArtifactRole" to mapOf(
-                "TRADE_HISTORY" to dialects.path("TRADE_HISTORY").asText(),
-                "POSITION_HISTORY" to dialects.path("POSITION_HISTORY").asText()),
-            "adapterVersion" to normalizer.path("adapterVersion").asText(),
-            "normalizerVersion" to normalizer.path("normalizerVersion").asText(),
-            "canonicalSchemaVersion" to normalizer.path("canonicalSchemaVersion").asText(),
-            "reconstructionPolicyVersion" to reconstruction.path("reconstructionPolicyVersion").asText(),
-            "reconciliationVersion" to reconstruction.path("reconciliationVersion").asText(),
-            "reviewUnitSchemaVersion" to reconstruction.path("reviewUnitSchemaVersion").asText(),
-            "evidenceSchemaVersion" to reconstruction.path("evidenceSchemaVersion").asText(),
-            "implementationDigest" to normalizer.path("implementationDigest").asText(),
-            "versionSetHash" to version.path("versionSetHash").asText())
-        require(normalizer.path("implementationDigest").asText() ==
-            reconstruction.path("implementationDigest").asText())
+        val identity = requireNotNull(run.inputIdentity) { "Missing normalization identity snapshot" }
+        require(NormalizationInputCanonicalizer.hash(identity) == run.inputFingerprint) {
+            "Normalization identity/hash mismatch"
+        }
+        require(identity.tradingBookId == input.tradingBookId.value.toString() &&
+            identity.sourceImportSessionIds == listOf(input.importSessionId.value.toString())) {
+            "Normalization identity/run mismatch"
+        }
+        val grantValues = grantBody(run, grants)
         val terms = mapper.readValue(input.instrumentTermsJson, List::class.java)
             .sortedBy { (it as Map<*, *>)["instrumentId"].toString() }
-        require(grants.size == 2 && terms.isNotEmpty())
-        val termVersions = reconstruction.path("instrumentTermsVersionByInstrument")
+        val termVersions = identity.targetVersionSet.reconstruction.instrumentTermsVersionByInstrument
         require(terms.all { term ->
             val data = term as Map<*, *>
             val id = data["instrumentId"] as? String ?: return@all false
-            termVersions.path(id).asText() == data["instrumentTermsVersion"]
+            termVersions[id] == data["instrumentTermsVersion"]
         })
         return mapOf(
             "coreLogicalJobId" to dispatch.id,
             "coreNormalizationRunId" to run.id,
             "coreImportSessionId" to input.importSessionId.value.toString(),
-            "bookProduct" to mapOf("venue" to input.venue, "productFamily" to input.productFamily,
-                "positionMode" to input.positionMode, "settlementAsset" to input.settlementAsset),
-            "artifacts" to grants.sortedBy { if (it.role == "TRADE_HISTORY") 0 else 1 }.map { mapOf(
-                "coreArtifactId" to it.coreArtifactId, "role" to it.role,
-                "rawSha256" to it.rawSha256, "byteSize" to it.byteSize,
-                "contentType" to it.contentType, "accessUri" to it.accessUri,
-                "expiresAt" to it.expiresAt.toString()) },
-            "sourceTimezone" to input.sourceTimezone,
-            "reviewTimezone" to input.reviewTimezone,
-            "targetVersionSet" to internalVersions,
+            "inputIdentity" to identity.toWireValue(),
+            "artifactAccessGrants" to grantValues,
             "pinnedInstrumentTerms" to terms,
-            "expectedInputHash" to run.inputFingerprint,
+            "expectedInputSetHash" to run.inputFingerprint,
             "retryPolicyVersion" to input.retryPolicyVersion,
             "deletionGeneration" to input.deletionGeneration,
             "attemptToken" to run.attemptToken)
+    }
+
+    private fun grantBody(run: NormalizationRun, grants: List<ArtifactReadGrant>): List<Map<String, Any>> {
+        val identity = requireNotNull(run.inputIdentity) { "Missing normalization identity snapshot" }
+        require(NormalizationInputCanonicalizer.hash(identity) == run.inputFingerprint) {
+            "Normalization identity/hash mismatch"
+        }
+        val input = run.input
+        val pinned = input.artifacts.associateBy { it.role.name }
+        require(pinned.keys == identity.artifactsByRole.keys && grants.size == 2 &&
+            grants.map { it.role }.toSet() == identity.artifactsByRole.keys) {
+            "Artifact grant role mismatch"
+        }
+        require(grants.all { grant ->
+            val artifact = pinned[grant.role]
+            val declared = identity.artifactsByRole[grant.role]
+            artifact != null && declared != null &&
+                grant.coreArtifactId == declared.artifactId && grant.rawSha256 == declared.sha256 &&
+                artifact.artifactId.value.toString() == declared.artifactId &&
+                artifact.sha256 == declared.sha256 && artifact.contentLength == grant.byteSize &&
+                artifact.mediaType == grant.contentType
+        }) { "Artifact grant identity mismatch" }
+        return grants.sortedBy { if (it.role == "TRADE_HISTORY") 0 else 1 }.map { mapOf(
+                "coreArtifactId" to it.coreArtifactId, "role" to it.role,
+                "rawSha256" to it.rawSha256, "byteSize" to it.byteSize,
+                "contentType" to it.contentType, "accessUri" to it.accessUri,
+                "expiresAt" to it.expiresAt.toString()) }
     }
 }

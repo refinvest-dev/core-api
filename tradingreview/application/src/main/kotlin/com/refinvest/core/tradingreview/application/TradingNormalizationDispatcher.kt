@@ -43,6 +43,7 @@ class TradingNormalizationDispatcher(
             return true
         }
         val submission = try {
+            if (run.inputIdentity == null) throw TradingFailure("INTERNAL_REQUEST_CONTRACT_INVALID", 422)
             val current = artifacts.list(run.input.importSessionId)
             for (pinned in run.input.artifacts) {
                 val live = current.singleOrNull { it.id == pinned.artifactId && it.role == pinned.role }
@@ -57,7 +58,8 @@ class TradingNormalizationDispatcher(
             compute.submit(run, dispatch, issued)
         } catch (error: TradingFailure) {
             when (error.code) {
-                "SOURCE_ARTIFACT_EXPIRED", "ARTIFACT_IDENTITY_CONFLICT" -> NormalizationSubmission.Rejected(error.code)
+                "SOURCE_ARTIFACT_EXPIRED", "ARTIFACT_IDENTITY_CONFLICT",
+                "INTERNAL_REQUEST_CONTRACT_INVALID" -> NormalizationSubmission.Rejected(error.code)
                 else -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE")
             }
         } catch (_: Exception) {
@@ -132,7 +134,7 @@ class TradingNormalizationDispatcher(
         val versionHash = try { mapper.readTree(run.input.versionSetJson).path("versionSetHash").asText() }
             catch (_: Exception) { "" }
         if (status.jobId != run.computeJobId || status.deletionGeneration != run.input.deletionGeneration ||
-            status.expectedInputHash != run.inputFingerprint || status.versionSetHash != versionHash) {
+            status.expectedInputSetHash != run.inputFingerprint || status.versionSetHash != versionHash) {
             transactions.execute {
                 val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
                 if (locked != null && isCurrent(run, locked))
