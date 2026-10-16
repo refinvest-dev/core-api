@@ -384,14 +384,16 @@ DeletionRequest
   `TRADING_NORMALIZATION_IDENTITY.md`의 V1 `NormalizationInputIdentity`만이며 Compute가
   독립 재계산한다. 같은 artifact ID의 다른 SHA-256은 `ARTIFACT_IDENTITY_CONFLICT`다.
   같은 성공 입력의 retry는 Revision을 중복 발행하지 않는다.
-- `TR-I40 Atomic Import Publication`: 검증된 Compute 완료 결과만 발행한다. Revision membership, manifest,
+- `TR-I40 Atomic Import Publication`: 검증된 Compute 완료 결과만 발행한다. 수신 resource bytes,
+  모든 declared count와 staging actual count, section semantic hash, 공개 manifestHash, 전체 resultHash,
+  Evidence 참조 무결성을 ADR-066의 공개 DTO로 독립 검증한다. Revision membership, manifest,
   quality, capability와 Session `ACCEPTED` 및 latest pointer는 한 publication transaction에서 commit한다.
   staging은 조회 불가하다. 현재 deletion generation, 실행 identity, inputSetHash 또는 VersionSet이 다르면
   결과를 `OBSOLETE`로 폐기한다. `PERSISTED` ACK는 commit 뒤에만 보내며 ACK 실패는 ACK만 재시도한다.
 - `TR-I41 Processing Failure Isolation`: 자동 재시도 중 Session은 `VALIDATING`; RetryPolicy 예산 소진은
   `PROCESSING_FAILED`이고 Revision은 없다. `REJECTED`는 결정적인 source/지원 정책 위반에만 쓴다.
-  입력 identity/specification, source content, result hash의 무결성 실패는 CSV 거부가
-  아닌 `PROCESSING_FAILED`이며 세 hash failure를 혼용하지 않는다. 명시적 retry는 active
+  입력 identity/specification, source content, 결과 count/hash/reference의 무결성 실패는 CSV 거부가
+  아닌 `PROCESSING_FAILED`이며 각 failure를 혼용하지 않는다. 명시적 retry는 active
   raw와 삭제되지 않은 Session에서 새 Run/attempt 및 audit event로 시작한다.
 
 `NormalizationRun`은 Core 내부 모델이다. `runId`, `importSessionId`, `inputFingerprint`(inputSetHash),

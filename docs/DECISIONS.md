@@ -1075,8 +1075,9 @@ grant 발급의 선행 조건으로 삼지 않는다.
 
 `COMPLETED` descriptor/payload와 `FAILED` status는 최종 attempt token과 deletion generation을
 전달한다. Core는 long-term publication 전에 current generation, expected input/version,
-attempt token과 `resultHash`를 비교한다. `resultHash`는 결정론적 엔진 결과이며 runtime
-token/time을 포함하지 않는다. `payloadSha256`은 실제 전송 bytes의 hash다. Acknowledgement는
+attempt token과 `resultHash`를 비교한다. normalization `resultHash`는 ADR-066의 공개
+digest manifest hash이며 runtime token/time을 포함하지 않는다. `payloadSha256`은
+응답 entity body exact bytes의 hash다. Acknowledgement는
 payload의 token/generation/hash와 job 관계를 검증한다. 삭제 후 stale payload는 Core가
 publication 없이 명시적 discard acknowledgement를 보내고, Compute는 그 payload만 정리한다.
 `FAILED`에는 별도 terminal payload가 없고 status의 structured safe failure만 있다.
@@ -1117,8 +1118,18 @@ capacity를 소비한다. 새 Trading Review job이 자기 pool에서 거절되�
 
 **실행과 공개 상태**: `REJECTED`는 CSV/schema/product/mode/identity 충돌 같은 결정적인 입력·지원 정책 거부에만 사용한다. transient Compute/네트워크/storage 실패는 자동 재시도 중 `VALIDATING`을 유지한다. versioned RetryPolicy(policyVersion, maxAttempts, maxElapsedTime, initialDelay, maxDelay, jitter)를 admission에 pin하며 수치는 배포 설정이다. 소진 시 `PROCESSING_FAILED`로 끝나고 Revision은 없다. retained active raw와 같은 입력/VersionSet으로 명시적 `RetryTradingImportSession`을 실행하면 새 NormalizationRun/execution attempt와 audit event를 남기되 logical input fingerprint는 유지한다. raw TTL 만료면 `SOURCE_ARTIFACT_EXPIRED`와 `REUPLOAD_REQUIRED`를 반환한다. 삭제 요청 후 retry는 금지한다. 운영 자동 재개도 합법 상태 전이와 audit event를 남긴다.
 
-**Publication**: Core는 validated `COMPLETED` Compute payload의 current run/attempt, inputSetHash, target VersionSet, deletion generation, content/result/manifest hash를 검증한다. Revision membership·manifest·quality·capability를 staging에서 전부 검증한 다음 LedgerRevision insert와 Session `ACCEPTED`, latest pointer 갱신을 한 publication transaction에서 commit한다. 부분 결과는 조회되지 않는다. stale generation/attempt 또는 input/version 불일치는 `OBSOLETE` 처리하고 publish하지 않는다. Compute payload `PERSISTED` ACK는 Core commit 뒤에만 보낸다. ACK 실패는 ACK만 멱등 재시도하며 Revision을 다시 만들지 않는다. 삭제된 결과는 ADR-064의 `DISCARDED_STALE` ACK를 사용한다.
+**Publication**: Core는 validated `COMPLETED` Compute payload의 current run/attempt, inputSetHash, target VersionSet, deletion generation, transport bytes hash와 ADR-066의 count/section/manifest/result hash를 검증한다. Revision membership·manifest·quality·capability를 staging에서 전부 검증한 다음 LedgerRevision insert와 Session `ACCEPTED`, latest pointer 갱신을 한 publication transaction에서 commit한다. 부분 결과는 조회되지 않는다. stale generation/attempt 또는 input/version 불일치는 `OBSOLETE` 처리하고 publish하지 않는다. Compute payload `PERSISTED` ACK는 Core commit 뒤에만 보낸다. ACK 실패는 ACK만 멱등 재시도하며 Revision을 다시 만들지 않는다. 삭제된 결과는 ADR-064의 `DISCARDED_STALE` ACK를 사용한다.
 
-**오류 분류**: `INPUT_SET_HASH_MISMATCH`는 expected 값과 Compute의 identity 재계산값 불일치, `INPUT_HASH_SPECIFICATION_UNSUPPORTED`는 미지원 규격이다. 둘 다 계약/배포 무결성 실패이며 CSV `REJECTED`가 아닌 `PROCESSING_FAILED`, 자동 동일 요청 retry 금지다. `SOURCE_CONTENT_HASH_MISMATCH`는 grant 다운로드 bytes와 선언된 Artifact SHA-256 불일치, `RESULT_HASH_MISMATCH`는 terminal payload/page/chunk/manifest 또는 결정적 결과 hash 불일치다. 세 hash는 서로 다른 필드·failure다. `ARTIFACT_REFERENCE_EXPIRED`는 grant 만료로 자동 retry 대상, `SOURCE_ARTIFACT_EXPIRED`는 raw TTL로 재업로드 필요, `SOURCE_CONTENT_LENGTH_MISMATCH`는 bytes 길이 불일치, `ARTIFACT_IDENTITY_CONFLICT`는 같은 artifact ID에 다른 hash가 제시된 409다. 모두 publication 금지이며 상세 retry/terminal/ACK/공개·마스킹 규칙은 `docs/TRADING_VERSIONING.md` §14를 따른다. 공개 failure는 code/retryable/userAction/occurredAt만 안전하게 노출한다.
+**오류 분류**: `INPUT_SET_HASH_MISMATCH`는 expected 값과 Compute의 identity 재계산값 불일치, `INPUT_HASH_SPECIFICATION_UNSUPPORTED`는 미지원 규격이다. 둘 다 계약/배포 무결성 실패이며 CSV `REJECTED`가 아닌 `PROCESSING_FAILED`, 자동 동일 요청 retry 금지다. `SOURCE_CONTENT_HASH_MISMATCH`는 grant 다운로드 bytes와 선언된 Artifact SHA-256 불일치다. 결과 transport/count/section/manifest/overall 불일치는 ADR-066의 개별 failure code로 구분한다. `ARTIFACT_REFERENCE_EXPIRED`는 grant 만료로 자동 retry 대상, `SOURCE_ARTIFACT_EXPIRED`는 raw TTL로 재업로드 필요, `SOURCE_CONTENT_LENGTH_MISMATCH`는 bytes 길이 불일치, `ARTIFACT_IDENTITY_CONFLICT`는 같은 artifact ID에 다른 hash가 제시된 409다. 모두 publication 금지이며 상세 retry/terminal/ACK/공개·마스킹 규칙은 `docs/TRADING_VERSIONING.md` §14를 따른다. 공개 failure는 code/retryable/userAction/occurredAt만 안전하게 노출한다.
 
 **관련**: `docs/DOMAIN.md`, `docs/TRADING_NORMALIZATION_IDENTITY.md`, `docs/TRADING_REVIEW_API.md`, `docs/TRADING_REVIEW_PERSISTENCE.md`, `docs/TRADING_REVIEW_ACCEPTANCE.md`, 두 OpenAPI.
+
+---
+
+## ADR-066 — Trading Normalization public result integrity
+
+**상태**: 확정. ADR-065의 결과 무결성 의미를 구체화한다. 정본은 [`TRADING_NORMALIZATION_RESULT_INTEGRITY.md`](TRADING_NORMALIZATION_RESULT_INTEGRITY.md)다.
+
+Compute 내부 `ReconciliationManifest`/`NormalizationResult` 전체 필드를 공개 `manifestHash`/`resultHash` 입력으로 쓰지 않는다. publication에 필요한 내부 필드는 공개 DTO에 추가하고, 필요 없는 내부 필드는 계약 hash에서 제외한다. 별도 내부 audit hash는 허용하지만 공개 계약 이름으로 보내지 않는다. Core는 Compute 계산 자체를 재실행하지 않고 수신 DTO와 staging의 완전성, count, 참조 및 공개 의미 hash를 독립 검증한다.
+
+`payloadSha256`은 단일 resource의 정확한 응답 entity body bytes, `manifestHash`는 공개 manifest projection, `sectionHash`는 정렬된 공개 section, `resultHash`는 공개 digest manifest의 RFC 8785 JCS/SHA-256이다. 공개 결과 hash 규격 `TRADING_NORMALIZATION_RESULT_HASH_V1`은 input hash 규격과 별도다. 실행 시각/locator/attempt/deletion generation은 semantic hash에서 제외하되 publication gate에서 별도 검증한다. V1 hash 입력을 변경하지 않는다. 새 규격은 V2, 새 vector, Core/Compute 호환성 pin 및 새 LedgerRevision으로만 도입한다. 미지원 schema/spec은 발행하지 않고 `PROCESSING_FAILED`로 종료한다.

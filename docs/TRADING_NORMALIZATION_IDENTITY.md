@@ -10,9 +10,10 @@ ADR-065의 `inputSetHash` 바이트 계약이다. Core와 Compute는 이 문서�
 |---|---|---|
 | `inputSetHash` | 아래 `inputIdentity`만 | Core admission 및 Compute job 접수 시 독립 재계산 |
 | source content SHA-256 | 각 grant에서 실제로 받은 원본 bytes | normalize 이전; identity의 role별 `sha256`과 비교 |
-| `resultHash` | 결정적 normalization 결과/manifest | terminal 생성과 Core staging/publication |
+| `resultHash` | ADR-066의 공개 result digest manifest | terminal 생성과 Core staging/publication |
 
-`payloadSha256`은 terminal JSON 전송 bytes의 별도 무결성 hash다. dialect 탐지 결과,
+`payloadSha256`은 terminal JSON 응답 entity body exact bytes의 별도 무결성 hash다. 결과의
+count/section/manifest/overall 의미 hash는 [result integrity V1](TRADING_NORMALIZATION_RESULT_INTEGRITY.md)을 따른다. dialect 탐지 결과,
 timezone database version, instrument terms의 실제 계산 입력/출력과 manifest hash는
 result provenance 또는 별도 execution/result hash에 기록한다. 이를 `inputSetHash`에
 사후 혼합하지 않는다. `inputSetHash`는 결과가 올바르다는 증명이 아니다.
@@ -109,5 +110,5 @@ status의 correlation identity, input hash specification version, 요청
 Core는 current Run·attempt·generation·identity·VersionSet과 source/result/payload
 hash를 각각 확인한 뒤에만 발행한다. descriptor의 `reconciliationManifestHash`는
 payload `reconciliationManifest.manifestHash`와 일치해야 한다. `payloadSha256`은 받은
-terminal JSON bytes, `resultHash`는 선언된 결정적 결과, role별 `sha256`은 다운로드한
+terminal JSON bytes, `resultHash`는 공개 digest manifest의 JCS hash, role별 `sha256`은 다운로드한
 원본 bytes에 각각 적용한다.

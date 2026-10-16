@@ -382,7 +382,8 @@ Normalization `COMPLETED` descriptor/payload는 요청의 `coreNormalizationRunI
 반환하고 job/logical ID, 최종 attempt token과 deletion generation, status, 독립 재계산한
 `inputSetHash`, hash specification version, exact nested target VersionSet,
 canonical records, `SourceEvidenceSnapshot`, manifest/manifestHash, capability,
-validation/quality report, 별도 ledger content/result/payload hash와 timestamps를 가진다.
+validation/quality report, result schema/hash specification version, 모든 declared count,
+section digest, 공개 result digest manifest, 별도 ledger content/result/payload hash와 timestamps를 가진다.
 Run ID는 job 저장·worker 재시작·terminal 재조회에서 유지한다. `FAILED`는 별도 payload가
 아니라 status에 같은 correlation identity/VersionSet/`expectedInputSetHash`와 structured
 safe failure가 있다. 지원 규격에서 재계산한 경우에만 `inputSetHash`를 추가하고,
@@ -453,10 +454,11 @@ attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
 - Core publication은 logical run ID, **completed descriptor와 payload의 최종 attempt token**,
   recomputed input set hash/exact nested VersionSet/config hash, deletion generation과
   별도 result hash를 모두 비교한다.
-  `resultHash`는 runtime token/revision/time을 제외한 deterministic engine hash이고,
-  `payloadSha256`은 전송된 terminal JSON bytes의 hash다. duplicate same payload는
+  `resultHash`는 [결과 무결성 정본](TRADING_NORMALIZATION_RESULT_INTEGRITY.md)의 공개 digest
+  manifest hash이고, `payloadSha256`은 identity content-encoding의 응답 entity body exact bytes hash다.
+  Core는 count/section/manifest/result/reference를 staging에서 각각 재계산한다. duplicate same payload는
   `NO_OP`; old attempt/generation은 discard하며 conflicting hash는
-  `RESULT_HASH_MISMATCH`로 publish하지 않는다. input identity mismatch는
+  `RESULT_ITEM_CONFLICT` 또는 해당 digest failure로 publish하지 않는다. input identity mismatch는
   `INPUT_SET_HASH_MISMATCH`, 미지원 규격은 `INPUT_HASH_SPECIFICATION_UNSUPPORTED`,
   다운로드 source SHA-256 mismatch는 `SOURCE_CONTENT_HASH_MISMATCH`로 구분한다.
 - acknowledgement는 `jobId/payloadId`, payload SHA-256, result hash, 최종 token/generation을

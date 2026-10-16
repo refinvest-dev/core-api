@@ -390,8 +390,10 @@ Compute 구현은 다음을 강제해야 한다.
 - DB 시각으로 고정한 grant 대기 deadline을 status에 노출하고 기한/attempt budget 초과는
   safe terminal `FAILED`; 대기 중 active capacity 유지
 - attempt token/generation/version/input hash를 terminal payload에 고정
-- completed descriptor와 FAILED status도 최종 attempt token/generation을 제공; `resultHash`는
-  runtime attempt metadata를 제외하고 `payloadSha256`은 전송 bytes를 검증
+- completed descriptor와 FAILED status도 최종 attempt token/generation을 제공;
+  normalization `resultHash`는 ADR-066의 공개 digest manifest를 JCS로 검증하고
+  `payloadSha256`은 응답 entity body exact bytes를 검증. Core staging은 declared count,
+  실제 행/관계 count, section/manifest/result hash와 Evidence 참조를 모두 확인한 뒤 발행
 - completed descriptor와 payload atomic visibility
 - ack는 job/payload/token/generation/hash와 disposition을 검증; 삭제 후 stale payload는
   `DISCARDED_STALE`로만 acknowledge, 정상 장기 저장은 `PERSISTED`
