@@ -424,6 +424,13 @@ reviewUnitSchemaVersion
 
 ## 14. Failure Taxonomy
 
+Normalization 결과의 `resultSchemaVersion`과 `resultHashSpecificationVersion`은 Compute algorithm/
+implementation version 및 입력 `hashSpecificationVersion`과 별개다. Core는 정확히 지원하는
+schema/spec 조합만 발행하고 LedgerRevision provenance에 두 version, counts, section digests,
+manifestHash와 resultHash를 보존한다. 기존 terminal/revision을 새 규칙으로 재해석하거나
+published hash를 덮어쓰지 않는다. 규칙 변경은 새 spec/V2 vector와 새 LedgerRevision을 요구한다.
+정본은 [`TRADING_NORMALIZATION_RESULT_INTEGRITY.md`](TRADING_NORMALIZATION_RESULT_INTEGRITY.md)다.
+
 Import normalization의 logical input은 한 Book, MVP 한 source ImportSession, role별 artifact ID/SHA-256,
 source/review timezone, product/mode 및 exact target VersionSet의 `inputSetHash`다(ADR-065). 기존 Revision은
 새 Import에 누적되지 않는다. retry attempt, grant locator/expiry와 Compute dispatch ID는 inputSetHash에서
@@ -441,12 +448,18 @@ output manifest hash도 입력 identity에 합치지 않는다.
 | `SOURCE_CONTENT_HASH_MISMATCH` | 받은 bytes SHA-256 불일치 | publication 금지 / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 attempt |
 | `INPUT_SET_HASH_MISMATCH` | Compute 재계산 `inputSetHash`와 Core `expectedInputSetHash` 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 동일 요청 자동 retry 금지; 계약 정합성 복구 후 새 Run |
 | `INPUT_HASH_SPECIFICATION_UNSUPPORTED` | Compute가 요청 hash 규격을 지원하지 않음 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 배포 호환성 복구 후 새 Run |
-| `RESULT_HASH_MISMATCH` | terminal bytes/page/chunk/manifest 또는 결과 hash 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
+| `RESULT_TRANSPORT_HASH_MISMATCH` | terminal resource bytes/size와 descriptor 불일치; 동일 payloadId 한 번 재조회 후 확정 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
+| `RESULT_COUNT_MISMATCH` | declared/수신 unique/staging/section itemCount 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
+| `RESULT_SECTION_HASH_MISMATCH` | staging의 공개 section hash 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
+| `RECONCILIATION_MANIFEST_HASH_MISMATCH` | 공개 manifest 재계산 hash 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
+| `RESULT_HASH_MISMATCH` | 공개 digest manifest 재계산 hash 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
+| `RESULT_SCHEMA_UNSUPPORTED` | Core 미지원 결과 schema/hash specification | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 호환 배포 후 새 Run |
+| `EVIDENCE_REFERENCE_INVALID` | Evidence→record/unit/artifact/source row 참조 부재 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
+| `RESULT_ITEM_CONFLICT` | 동일 result item identity에 다른 공개 payload | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
 | `ARTIFACT_IDENTITY_CONFLICT` | 같은 artifact ID에 다른 SHA-256 | `409`, 기존 Session 불변 / `WAIT_FOR_RECOVERY` | 동일 identity로 재시도 금지 |
 | `TEMPORARY_DEPENDENCY_FAILURE` | Compute/network/storage 일시 장애 | budget 내 `VALIDATING`, 소진 후 `PROCESSING_FAILED` / `RETRY` | active raw에서 명시적 retry |
 
-위 네 무결성 실패(`INPUT_SET_HASH_MISMATCH`, `INPUT_HASH_SPECIFICATION_UNSUPPORTED`,
-`SOURCE_CONTENT_HASH_MISMATCH`, `RESULT_HASH_MISMATCH`)는 CSV/지원 정책 거부가 아니므로
+위 입력·source·결과 무결성 실패는 CSV/지원 정책 거부가 아니므로
 Session을 `REJECTED`로 만들지 않는다. 공개 failure의 `retryable=false`와
 `userAction=WAIT_FOR_RECOVERY`를 사용한다. 원인 제거 뒤 active raw와 현재 generation에서
 새 Run을 명시적으로 시작할 수 있는지는 Core가 다시 판단한다. 개별 처리 경계는 다음과 같다.
@@ -456,11 +469,11 @@ Session을 `REJECTED`로 만들지 않는다. 공개 failure의 `retryable=false
 | `INPUT_SET_HASH_MISMATCH` | job `FAILED`, 성공 payload 없음 | safe code·Run/Session 실패만 저장; Revision 없음, ACK 없음; Compute runtime TTL cleanup | 규격/양쪽 계산 구현 조사. opaque Run ID·hash prefix 최대 12자만; identity JSON/원본 값 금지 |
 | `INPUT_HASH_SPECIFICATION_UNSUPPORTED` | job `FAILED`, 성공 payload 없음 | safe code·Run/Session 실패만 저장; Revision 없음, ACK 없음; runtime TTL cleanup | 지원 규격 버전 ID만; 요청 본문/URL 금지 |
 | `SOURCE_CONTENT_HASH_MISMATCH` | 다운로드 검증 뒤 job `FAILED`, normalization 시작 금지 | safe code·Run/Session 실패만 저장; Revision 없음, ACK 없음; staging 즉시 cleanup | 원본 보관/전송 조사. role과 hash prefix 최대 12자만; bytes·locator·filename 금지 |
-| `RESULT_HASH_MISMATCH` | Compute 자체 검증에서 발견하면 `FAILED`; Core가 완료 payload 검증에서 발견하면 Compute는 `COMPLETED`, Core Run은 `TERMINAL_FAILURE` | staging 폐기, Revision/latest 불변, `PERSISTED` ACK 금지; Compute payload는 TTL cleanup. 삭제 generation만 stale이면 `DISCARDED_STALE` 별도 규칙 | manifest/result/payload hash prefix 최대 12자와 opaque Run ID만; records/거래값/URL 금지 |
+| 결과 무결성 code (위 8개) | Compute 자체 검증에서 발견하면 `FAILED`; Core가 완료 payload 검증에서 발견하면 Compute는 `COMPLETED`, Core Run은 `TERMINAL_FAILURE` | staging 폐기, Revision/latest 불변, `PERSISTED` ACK 금지; Compute payload는 TTL cleanup. 삭제 generation만 stale이면 `DISCARDED_STALE` 별도 규칙 | section/code, hash prefix 최대 12자와 opaque Run ID만; records/거래값/URL 금지. `RESULT_TRANSPORT_HASH_MISMATCH`만 동일 resource 한 번 재조회 가능 |
 
-네 failure 모두 공개에는 safe `code`, `retryable=false`, `userAction=WAIT_FOR_RECOVERY`,
+위 failure 모두 공개에는 safe `code`, `retryable=false`, `userAction=WAIT_FOR_RECOVERY`,
 `occurredAt`만 기록하고 원본 행·UID·symbol·거래값·signed URL·credential은 로그에도 쓰지
-않는다. `RESULT_HASH_MISMATCH`는 **결과** 무결성에만 사용한다. terminal의 input identity나
+않는다. normalization `RESULT_HASH_MISMATCH`는 **전체 공개 digest manifest** 불일치에만 사용한다. terminal의 input identity나
 VersionSet 불일치는 `INPUT_SET_HASH_MISMATCH` 또는 `VERSION_INCOMPATIBLE`로 분류하고
 stale attempt/generation은 `OBSOLETE`/`STALE_RESULT_AFTER_DELETION` 경계를 따른다.
 
@@ -488,7 +501,7 @@ attempt 수 또는 elapsed budget 중 먼저 소진된 쪽에서 자동 재시�
 | `TARGET_VERSION_RETIRED` | target이 READ_ONLY/retired | 신규 실행할 수 없는 버전 | ACTIVE target 선택 | 없음 | 없음 | stale client 반복 시 | version ID |
 | `REPROCESSING_CONFLICT` | active duplicate 불일치, stale attempt, publication 경쟁 | 다른 재처리와 충돌 | 상태 확인 후 가능 | 없음 | publish 없음 | 반복 시 | opaque run/attempt |
 | `REPROCESSING_CANCELLED` | 사용자/삭제/migration plan 취소 | 결과가 게시되지 않음 | 삭제가 아니면 새 요청 | 없음 | publish 없음 | 아니오 | actor/reason code |
-| `RESULT_HASH_MISMATCH` | terminal payload/page/chunk/manifest 또는 결정적 결과 hash 불일치 | 결과 검증 실패, 게시 안 됨 | 원인 조사 뒤 | 없음 | publish 없음 | 즉시 | hash prefix 최대 12자, 값 금지 |
+| 결과 무결성 code (위 8개) | transport/count/section/manifest/overall/schema/evidence/item conflict | 결과 검증 실패, 게시 안 됨 | 원인 조사 뒤 | 없음 | publish 없음 | 즉시 | section/code/hash prefix 최대 12자, 값 금지 |
 | `STALE_RESULT_AFTER_DELETION` | 낮은 deletion generation callback | 삭제 뒤 결과를 저장하지 않음 | 금지 | 삭제 정책 따름 | 없음 | rate threshold | run/generation만 |
 | `LINEAGE_INCONSISTENT` | parent/owner/Book/version/provenance 불일치 또는 cycle | 결과 연결을 검증하지 못함 | 입력 수정 뒤 | 없음 | publish 없음 | 즉시 | opaque IDs/version만 |
 | `NOT_COMPARABLE_VERSION` | `TrendComparisonKey` 불일치 | 같은 추세로 비교할 수 없음 | 동일 VersionSet/config로 전 기간 재계산 시 | 없음 | 없음 | 아니오 | version/config hash만 |

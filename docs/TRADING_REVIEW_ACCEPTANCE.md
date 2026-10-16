@@ -278,6 +278,36 @@ quality/capability, publishedAt을 포함한다. 실패는 raw/URI/credential을
 | `TR-ACC-IMPORT-ORCH-021` Core Run ID 전송 → job 저장·worker restart·terminal 생성·재조회 | ACCEPTED / PUBLISHED | 1 / false / — | 같은 `coreNormalizationRunId`가 status/descriptor/payload까지 보존; exact input/VersionSet/generation 확인 / commit 뒤 PERSISTED |
 | `TR-ACC-IMPORT-ORCH-022` source bytes SHA-256 불일치와 terminal result hash 불일치 각각 주입 | PROCESSING_FAILED / TERMINAL_FAILURE | 0 / false / SOURCE_CONTENT_HASH_MISMATCH 또는 RESULT_HASH_MISMATCH·WAIT_FOR_RECOVERY | source mismatch는 normalize 시작 전 Compute FAILED; result mismatch는 Core publication 차단; 어느 쪽도 input mismatch code로 대체 금지 / N/A |
 
+### 4.0.1 Result integrity publication (ADR-066)
+
+`fixtures/trading-normalization/result-integrity-v1.json`은 비민감 고정 oracle이다. 각 행은
+Given / When / Then 순서이며 `TR-I04`, `TR-I06`, `TR-I40`, `TR-I41`을 적용한다.
+성공은 Session `ACCEPTED`/Run `PUBLISHED`, 실패는 Session `PROCESSING_FAILED`/
+Run `TERMINAL_FAILURE`/Revision 0/`retryable=false`/`WAIT_FOR_RECOVERY`다. 실패 시 staging
+폐기, latest 불변, `PERSISTED` ACK 금지, Compute TTL cleanup이며 source CSV `REJECTED`가
+아니다. 삭제 generation 증가만 `DISCARDED_STALE` 경계를 따른다. 각 실패의 운영 로그는
+opaque Run ID, section/code, hash prefix 최대 12자만 허용한다.
+
+| Stable Scenario ID | Given | When | Then |
+|---|---|---|---|
+| `TR-ACC-IMPORT-INTEGRITY-001` | V1 모든 section/count/manifest/digest가 vector와 일치 | Core가 staging/count/section/manifest/overall hash를 독립 재계산 | 모두 일치; Revision 하나 발행; commit 뒤 PERSISTED |
+| `TR-ACC-IMPORT-INTEGRITY-002` | canonical record 하나 누락, declared count 유지 | staging count 검사 | `RESULT_COUNT_MISMATCH`; 발행 금지 |
+| `TR-ACC-IMPORT-INTEGRITY-003` | Evidence snapshot 하나 누락, declared count 유지 | Evidence count 검사 | `RESULT_COUNT_MISMATCH`; 발행 금지 |
+| `TR-ACC-IMPORT-INTEGRITY-004` | record 수 동일, 가격만 변경 | canonical section 재계산 | `RESULT_SECTION_HASH_MISMATCH`; 발행 금지 |
+| `TR-ACC-IMPORT-INTEGRITY-005` | 공개 manifest 내용 변경, hash 유지 | manifest 재계산 | `RECONCILIATION_MANIFEST_HASH_MISMATCH`; 발행 금지 |
+| `TR-ACC-IMPORT-INTEGRITY-006` | section 자체는 유효, 선언 section digest만 변경 | overall digest manifest 재계산 | `RESULT_HASH_MISMATCH`; 발행 금지 |
+| `TR-ACC-IMPORT-INTEGRITY-007` | 같은 semantic item을 다른 page 크기/수신 순서로 보냄(V2 transport harness) | Core가 전체 unique item 정렬 | section/result hash 동일; 발행 허용 |
+| `TR-ACC-IMPORT-INTEGRITY-008` | 같은 page identity/bytes 재수신(V2 transport harness) | Core가 중복을 무시 | unique count/hash 불변; 발행 허용 |
+| `TR-ACC-IMPORT-INTEGRITY-009` | 같은 `recordId`에 다른 공개 payload | Core가 identity conflict 검사 | `RESULT_ITEM_CONFLICT`; 발행 금지 |
+| `TR-ACC-IMPORT-INTEGRITY-010` | Core 미지원 result hash version | version gate 실행 | `RESULT_SCHEMA_UNSUPPORTED`, PROCESSING_FAILED; 발행 금지 |
+| `TR-ACC-IMPORT-INTEGRITY-011` | 존재하지 않는 canonical record를 Evidence/allocation이 참조 | 참조 무결성 검사 | `EVIDENCE_REFERENCE_INVALID`; 발행 금지 |
+| `TR-ACC-IMPORT-INTEGRITY-012` | response entity bytes와 descriptor SHA-256 불일치 | 동일 payloadId 한 번 재조회 | 복구되면 semantic 검증 진행; 반복되면 `RESULT_TRANSPORT_HASH_MISMATCH`; 발행 금지 |
+
+V1은 단일 resource이며 007/008의 실제 page/chunk runtime은 새 schema/endpoint 이후의
+후속 Integration 요구사항이다. 현재 `verify-contract-sync.ps1`과 input identity runtime test는
+이 결과 무결성 chain을 검증하지 않는다. 후속 harness는 Compute 생성→resource/page 전송→
+Core staging→count→section→manifest→overall 재계산을 관통해야 한다.
+
 `TR-ACC-IMPORT-ORCH-014`의 이전 payload는 Compute cleanup TTL 또는 명시적 cancellation으로 정리한다.
 `DISCARDED_STALE` ACK는 삭제 generation이 증가한 경우에만 사용한다. `TR-ACC-IMPORT-ORCH-016`의
 VersionSet 불일치는 `VERSION_INCOMPATIBLE`이며 원본 데이터 `REJECTED`로 만들지 않는다.
