@@ -27,6 +27,7 @@ open class TradingImportService(
     private val versions: TradingVersionPins,
     private val transactions: TransactionTemplate,
     private val clock: Clock,
+    private val revisions: TradingLedgerPublicationReader,
 ) : TradingImportUseCase {
     @Transactional
     override fun create(bookId: TradingBookId, sourceTimezone: String, reviewTimezone: String,
@@ -72,7 +73,9 @@ open class TradingImportService(
         val account = accounts.find(book.accountId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
         if (book.status != TradingLifecycleStatus.ACTIVE || account.status != TradingLifecycleStatus.ACTIVE)
             throw TradingFailure("RESOURCE_DELETED", 410)
-        return TradingImportSessionView(session, artifacts.list(id))
+        return TradingImportSessionView(session, artifacts.list(id),
+            if (session.status == TradingImportStatus.ACCEPTED)
+                revisions.publishedForSession(id, owner) else null)
     }
 
     @Transactional(readOnly = true)
@@ -84,7 +87,9 @@ open class TradingImportService(
         if (book.status != TradingLifecycleStatus.ACTIVE || account.status != TradingLifecycleStatus.ACTIVE)
             throw TradingFailure("RESOURCE_DELETED", 410)
         val result = sessions.list(bookId, owner, page, size)
-        return TradingPage(result.items.map { TradingImportSessionView(it, artifacts.list(it.id)) }, page, size, result.total)
+        return TradingPage(result.items.map { session -> TradingImportSessionView(session,
+            artifacts.list(session.id), if (session.status == TradingImportStatus.ACCEPTED)
+                revisions.publishedForSession(session.id, owner) else null) }, page, size, result.total)
     }
 
     override fun upload(id: TradingImportSessionId, role: TradingArtifactRole, filename: String,

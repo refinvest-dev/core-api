@@ -5,6 +5,10 @@ import com.refinvest.core.tradingreview.port.ArtifactReadGrant
 import com.refinvest.core.tradingreview.port.NormalizationSubmission
 import com.refinvest.core.tradingreview.port.NormalizationGrantUpdate
 import com.refinvest.core.tradingreview.port.NormalizationJobStatus
+import com.refinvest.core.tradingreview.port.NormalizationResultLookup
+import com.refinvest.core.tradingreview.port.NormalizationPayloadLookup
+import com.refinvest.core.tradingreview.port.NormalizationPayloadAcknowledgement
+import com.refinvest.core.tradingreview.port.NormalizationAckOutcome
 import org.yaml.snakeyaml.Yaml
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -25,10 +29,80 @@ import tools.jackson.databind.json.JsonMapper
 import tools.jackson.databind.JsonNode
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import java.security.MessageDigest
+import java.util.HexFormat
 
 class RestClientTradingNormalizationClientTest {
     private val mapper = JsonMapper.builder().build()
     private val now = Instant.parse("2026-01-01T00:00:00Z")
+
+    @Test
+    fun terminalPayloadOverContractLimitIsRejectedBeforeParsing() {
+        val builder = RestClient.builder().baseUrl("http://compute.test")
+        val server = MockRestServiceServer.bindTo(builder).build()
+        server.expect(requestTo("http://compute.test/trading-review/terminal-payloads/oversized"))
+            .andRespond(withStatus(HttpStatus.OK)
+                .contentType(MediaType.parseMediaType("application/vnd.refinvest.trading-normalization+json"))
+                .header("Content-Length", "52428801").body("{}"))
+        val client = RestClientTradingNormalizationClient.withClient("test-internal-key", mapper, builder.build())
+        assertEquals("RESULT_SCHEMA_UNSUPPORTED",
+            assertIs<NormalizationPayloadLookup.Rejected>(client.download("oversized")).code)
+        server.verify()
+    }
+
+    @Test
+    fun terminalResourceUsesExactEntityBytesAndAckHasStableIdentity() {
+        val builder = RestClient.builder().baseUrl("http://compute.test")
+        val server = MockRestServiceServer.bindTo(builder).build()
+        val bytes = """{"synthetic":"테스트","value":"1.2300"}""".toByteArray(Charsets.UTF_8)
+        val hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
+        server.expect(requestTo("http://compute.test/trading-review/normalization-jobs/job-1/result"))
+            .andRespond(withStatus(HttpStatus.OK).contentType(MediaType.APPLICATION_JSON).body("""
+                {"jobId":"job-1","coreLogicalJobId":"logical-1","coreNormalizationRunId":"run-1",
+                 "payloadId":"payload-1","transportMode":"SINGLE_RESOURCE",
+                 "mediaType":"application/vnd.refinvest.trading-normalization+json",
+                 "byteSize":${bytes.size},"payloadSha256":"$hash","attemptToken":"attempt-1",
+                 "deletionGeneration":0,"inputSetHash":"${"a".repeat(64)}",
+                 "hashSpecificationVersion":"TRADING_INPUT_SET_HASH_V1","targetVersionSet":{},
+                 "resultSchemaVersion":"TRADING_NORMALIZATION_RESULT_V1",
+                 "resultHashSpecificationVersion":"TRADING_NORMALIZATION_RESULT_HASH_V1",
+                 "counts":{},"sectionDigests":[],"reconciliationManifestHash":"${"b".repeat(64)}",
+                 "resultHash":"${"c".repeat(64)}","expiresAt":"2026-01-01T01:00:00Z"}
+            """))
+        server.expect(requestTo("http://compute.test/trading-review/terminal-payloads/payload-1"))
+            .andExpect { request -> assertEquals("identity", request.headers.getFirst("Accept-Encoding")) }
+            .andRespond(withStatus(HttpStatus.OK)
+                .contentType(MediaType.parseMediaType("application/vnd.refinvest.trading-normalization+json;charset=utf-8"))
+                .body(String(bytes, Charsets.UTF_8)))
+        server.expect(requestTo("http://compute.test/trading-review/jobs/job-1/acknowledgement"))
+            .andExpect { request ->
+                assertEquals("stable-ack-key", request.headers.getFirst("Idempotency-Key"))
+                val body = mapper.readTree((request as MockHttpOutputMessage).bodyAsString)
+                assertEquals("session-1", body.path("coreAggregateId").asText())
+                assertEquals("PERSISTED", body.path("disposition").asText())
+                assertEquals("payload-1", body.path("payloadId").asText())
+                assertFalse(body.has("currentDeletionGeneration"))
+            }.andRespond(withStatus(HttpStatus.NO_CONTENT))
+        server.expect(requestTo("http://compute.test/trading-review/jobs/job-1/acknowledgement"))
+            .andRespond(withStatus(HttpStatus.CONFLICT))
+        val client = RestClientTradingNormalizationClient.withClient("test-internal-key", mapper, builder.build())
+        val descriptor = assertIs<NormalizationResultLookup.Found>(client.descriptor("job-1")).descriptor
+        assertEquals(hash, descriptor.payloadSha256)
+        assertIs<NormalizationPayloadLookup.Found>(client.download(descriptor.payloadId)).payload.use {
+            assertEquals(hash, it.sha256)
+            assertEquals(bytes.size.toLong(), it.byteSize)
+            assertTrue(it.open().use { stream -> stream.readAllBytes().contentEquals(bytes) })
+        }
+        assertIs<NormalizationAckOutcome.Accepted>(client.acknowledge(
+            NormalizationPayloadAcknowledgement("run-1", "session-1", "job-1", "payload-1",
+                hash, "c".repeat(64), "attempt-1", 0, "stable-ack-key", "PERSISTED", now,
+                retryPolicyJson = "{}", payloadExpiresAt = now.plusSeconds(3600))))
+        assertEquals("RESULT_HASH_MISMATCH", assertIs<NormalizationAckOutcome.Rejected>(client.acknowledge(
+            NormalizationPayloadAcknowledgement("run-1", "session-1", "job-1", "payload-1",
+                hash, "c".repeat(64), "attempt-1", 0, "stable-ack-key", "PERSISTED", now,
+                retryPolicyJson = "{}", payloadExpiresAt = now.plusSeconds(3600)))).code)
+        server.verify()
+    }
 
     @Test
     fun retryUsesSameComputeKeyAndJobDespiteFreshGrantUris() {

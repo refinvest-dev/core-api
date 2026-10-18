@@ -2,6 +2,8 @@ package com.refinvest.core.tradingreview.port
 
 import com.refinvest.core.tradingreview.domain.*
 import java.io.InputStream
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 
@@ -12,6 +14,8 @@ interface TradingNormalizationStore {
     fun claimNext(now: Instant, lease: Duration, workerId: String): NormalizationDispatch?
     fun claimSubmitted(now: Instant, lease: Duration, workerId: String): NormalizationDispatch?
     fun schedulePoll(dispatchId: String, leaseOwner: String, next: Instant, now: Instant): Boolean
+    fun schedulePollFailure(dispatchId: String, leaseOwner: String, code: String,
+                            next: Instant, now: Instant): Boolean
     fun markResultReady(dispatchId: String, leaseOwner: String, now: Instant): Boolean
     fun advanceAttempt(runId: String, dispatchId: String, leaseOwner: String,
                        expectedToken: String, nextToken: String, now: Instant): Boolean
@@ -77,6 +81,76 @@ interface TradingNormalizationComputeClient {
     fun updateGrants(run: NormalizationRun, dispatch: NormalizationDispatch,
                      current: NormalizationJobStatus, nextAttemptToken: String,
                      grants: List<ArtifactReadGrant>, updateKey: String): NormalizationGrantUpdate
+}
+
+/** Transport bytes stay outside durable state; the descriptor contains only safe opaque identities and digests. */
+data class NormalizationResultDescriptor(
+    val jobId: String,
+    val logicalJobId: String,
+    val runId: String,
+    val payloadId: String,
+    val byteSize: Long,
+    val payloadSha256: String,
+    val attemptToken: String,
+    val deletionGeneration: Long,
+    val inputSetHash: String,
+    val inputHashSpecificationVersion: String,
+    val targetVersionSet: Map<String, Any?>,
+    val resultSchemaVersion: String,
+    val resultHashSpecificationVersion: String,
+    val counts: Map<String, Any?>,
+    val sectionDigests: List<Any?>,
+    val reconciliationManifestHash: String,
+    val resultHash: String,
+    val expiresAt: Instant,
+)
+
+sealed interface NormalizationResultLookup {
+    data class Found(val descriptor: NormalizationResultDescriptor) : NormalizationResultLookup
+    data class Retry(val code: String) : NormalizationResultLookup
+    data class Rejected(val code: String) : NormalizationResultLookup
+}
+
+/** A temporary, exact HTTP entity body. Closing always removes it. */
+class NormalizationPayloadFile(val path: Path, val byteSize: Long, val sha256: String) : AutoCloseable {
+    fun open(): InputStream = Files.newInputStream(path)
+    override fun close() { Files.deleteIfExists(path) }
+}
+
+sealed interface NormalizationPayloadLookup {
+    data class Found(val payload: NormalizationPayloadFile) : NormalizationPayloadLookup
+    data class Retry(val code: String) : NormalizationPayloadLookup
+    data class Rejected(val code: String) : NormalizationPayloadLookup
+}
+
+data class NormalizationPayloadAcknowledgement(
+    val runId: String,
+    val coreImportSessionId: String,
+    val jobId: String,
+    val payloadId: String,
+    val payloadSha256: String,
+    val resultHash: String,
+    val attemptToken: String,
+    val deletionGeneration: Long,
+    val idempotencyKey: String,
+    val disposition: String,
+    val occurredAt: Instant,
+    val currentDeletionGeneration: Long? = null,
+    val attemptCount: Int = 0,
+    val retryPolicyJson: String,
+    val payloadExpiresAt: Instant,
+)
+
+interface TradingNormalizationResultClient {
+    fun descriptor(jobId: String): NormalizationResultLookup
+    fun download(payloadId: String): NormalizationPayloadLookup
+    fun acknowledge(acknowledgement: NormalizationPayloadAcknowledgement): NormalizationAckOutcome
+}
+
+sealed interface NormalizationAckOutcome {
+    data object Accepted : NormalizationAckOutcome
+    data object Retry : NormalizationAckOutcome
+    data class Rejected(val code: String) : NormalizationAckOutcome
 }
 
 data class TradingNormalizationRetryPolicy(

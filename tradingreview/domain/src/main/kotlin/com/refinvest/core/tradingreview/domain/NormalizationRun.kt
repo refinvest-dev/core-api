@@ -6,7 +6,7 @@ enum class NormalizationRunStatus {
     DISPATCH_PENDING, SUBMITTED, RUNNING, RESULT_READY, PUBLISHING, PUBLISHED,
     RETRY_WAIT, TERMINAL_FAILURE, OBSOLETE
 }
-enum class NormalizationDispatchStatus { PENDING, SUBMITTED, RESULT_READY, TERMINAL_FAILURE, OBSOLETE }
+enum class NormalizationDispatchStatus { PENDING, SUBMITTED, RESULT_READY, PUBLISHED, TERMINAL_FAILURE, OBSOLETE }
 
 data class NormalizationArtifactInput(
     val artifactId: TradingSourceArtifactId,
@@ -69,4 +69,5 @@ data class NormalizationDispatch(
     val lastFailureCode: String?,
     val createdAt: Instant,
     val updatedAt: Instant,
+    val pollFailureCount: Int = 0,
 )

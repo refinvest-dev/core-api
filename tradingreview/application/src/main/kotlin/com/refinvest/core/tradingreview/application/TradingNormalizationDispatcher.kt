@@ -22,6 +22,7 @@ class DefaultTradingRetryJitter : TradingRetryJitter {
 class TradingNormalizationDispatcher(
     private val runs: TradingNormalizationStore,
     private val sessions: TradingImportSessionStore,
+    private val books: TradingBookStore,
     private val artifacts: TradingSourceArtifactStore,
     private val grants: ArtifactAccessGrantIssuer,
     private val compute: TradingNormalizationComputeClient,
@@ -114,9 +115,15 @@ class TradingNormalizationDispatcher(
                 val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
                 val at = clock.instant()
                 if (locked == null || !isCurrent(run, locked)) runs.markObsolete(dispatch.id, workerId, at)
-                else if (Duration.between(run.createdAt, at) >= policy(run).maxElapsedTime)
-                    fail(run, dispatch, locked, workerId, lookup.code, at)
-                else runs.schedulePoll(dispatch.id, workerId, at.plusSeconds(5), at)
+                else {
+                    val pinned = policy(run)
+                    val failureCount = dispatch.pollFailureCount + 1
+                    val next = at.plus(delay(pinned, failureCount, null))
+                    if (failureCount >= pinned.maxAttempts ||
+                        !next.isBefore(run.createdAt.plus(pinned.maxElapsedTime)))
+                        fail(run, dispatch, locked, workerId, lookup.code, at)
+                    else runs.schedulePollFailure(dispatch.id, workerId, lookup.code, next, at)
+                }
             }
             is NormalizationStatusLookup.Rejected -> transactions.execute {
                 val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
@@ -140,6 +147,18 @@ class TradingNormalizationDispatcher(
                 if (locked != null && isCurrent(run, locked))
                     fail(run, dispatch, locked, workerId, "INTERNAL_ERROR", clock.instant())
                 else runs.markObsolete(dispatch.id, workerId, clock.instant())
+            }
+            return
+        }
+        if (status.state in setOf("COMPLETED", "FAILED", "CANCELLED") &&
+            status.attemptToken != run.attemptToken) {
+            transactions.execute {
+                val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
+                val at = clock.instant()
+                if (locked == null || !isCurrent(run, locked)) runs.markObsolete(dispatch.id, workerId, at)
+                else if (Duration.between(run.createdAt, at) >= policy(run).maxElapsedTime)
+                    fail(run, dispatch, locked, workerId, "TEMPORARY_DEPENDENCY_FAILURE", at)
+                else runs.schedulePoll(dispatch.id, workerId, at.plusSeconds(5), at)
             }
             return
         }
@@ -231,8 +250,14 @@ class TradingNormalizationDispatcher(
                 return@execute
             }
             if (code !in RETRYABLE_JOB_CODES && code != "SOURCE_ARTIFACT_EXPIRED") {
-                if (runs.markResultReady(dispatch.id, workerId, now))
-                    runs.audit(run.id, "JOB_FAILED_PENDING_TERMINAL_HANDLING", null, now)
+                if (code in SOURCE_REJECTION_CODES) {
+                    if (!runs.markTerminal(dispatch.id, workerId, code, now)) return@execute
+                    val rejected = session.rejectValidation(run.id, run.input.deletionGeneration,
+                        TradingImportFailure(code, false, "NONE", now), now) ?: return@execute
+                    check(sessions.update(rejected))
+                    runs.audit(run.id, "SOURCE_REJECTED", code, now)
+                } else fail(run, dispatch, session, workerId,
+                    code.takeIf { it in NON_RETRYABLE_COMPUTE_CODES } ?: "INTERNAL_ERROR", now)
                 return@execute
             }
             val policy = policy(run)
@@ -283,7 +308,8 @@ class TradingNormalizationDispatcher(
     private fun isCurrent(run: NormalizationRun, session: TradingImportSession): Boolean =
         !session.deletionPending && session.status == TradingImportStatus.VALIDATING &&
             session.activeNormalizationRunId == run.id &&
-            session.deletionGeneration == run.input.deletionGeneration
+            session.deletionGeneration == run.input.deletionGeneration &&
+            books.find(run.input.tradingBookId, MemberId(run.input.ownerId))?.status == TradingLifecycleStatus.ACTIVE
 
     private fun delay(policy: TradingNormalizationRetryPolicy, count: Int, retryAfter: Duration?): Duration {
         val scaled = policy.initialDelay.toMillis().toDouble() * (1L shl min(count - 1, 20))
@@ -304,6 +330,14 @@ class TradingNormalizationDispatcher(
     private companion object {
         val RETRYABLE_JOB_CODES = setOf("ARTIFACT_REFERENCE_EXPIRED",
             "GRANT_REFRESH_DEADLINE_EXCEEDED", "TEMPORARY_DEPENDENCY_FAILURE")
+        val SOURCE_REJECTION_CODES = setOf("FILE_FORMAT_INVALID", "REQUIRED_COLUMN_MISSING",
+            "UNSUPPORTED_SOURCE_SCHEMA", "UNSUPPORTED_PRODUCT", "UNSUPPORTED_POSITION_MODE",
+            "RECORD_CONFLICT")
+        val NON_RETRYABLE_COMPUTE_CODES = setOf("INPUT_SET_HASH_MISMATCH",
+            "INPUT_HASH_SPECIFICATION_UNSUPPORTED", "SOURCE_CONTENT_HASH_MISMATCH",
+            "SOURCE_CONTENT_LENGTH_MISMATCH", "ARTIFACT_IDENTITY_CONFLICT",
+            "ARTIFACT_ACCESS_DENIED", "VERSION_UNAVAILABLE", "VERSION_INCOMPATIBLE",
+            "CANONICAL_SCHEMA_INCOMPATIBLE", "INSTRUMENT_TERMS_UNAVAILABLE")
         val SAFE_CODES = setOf("SOURCE_ARTIFACT_EXPIRED", "ARTIFACT_IDENTITY_CONFLICT",
             "INTERNAL_ERROR")
     }

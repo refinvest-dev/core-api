@@ -78,10 +78,19 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
             Timestamp.from(now.plus(lease)), Timestamp.from(now)).firstOrNull()
 
     override fun schedulePoll(dispatchId: String, leaseOwner: String, next: Instant, now: Instant): Boolean =
-        jdbc.update("""UPDATE trading_normalization_dispatches SET next_attempt_at=?,
+        jdbc.update("""UPDATE trading_normalization_dispatches SET next_attempt_at=?,poll_failure_count=0,
             lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?::uuid AND
             lease_owner=?::uuid AND lease_expires_at>? AND status='SUBMITTED'""",
             Timestamp.from(next), Timestamp.from(now), dispatchId, leaseOwner, Timestamp.from(now)) == 1
+
+    override fun schedulePollFailure(dispatchId: String, leaseOwner: String, code: String,
+                                     next: Instant, now: Instant): Boolean = jdbc.update("""
+        UPDATE trading_normalization_dispatches SET next_attempt_at=?,
+        poll_failure_count=poll_failure_count+1,last_failure_code=?,
+        lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?::uuid
+        AND lease_owner=?::uuid AND lease_expires_at>? AND status='SUBMITTED'""",
+        Timestamp.from(next), code, Timestamp.from(now), dispatchId, leaseOwner,
+        Timestamp.from(now)) == 1
 
     override fun markResultReady(dispatchId: String, leaseOwner: String, now: Instant): Boolean {
         val changed = jdbc.update("""UPDATE trading_normalization_dispatches SET status='RESULT_READY',
@@ -186,7 +195,7 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
     private fun finish(dispatchId: String, leaseOwner: String, state: String, code: String?, now: Instant): Boolean {
         val count = jdbc.update("""UPDATE trading_normalization_dispatches SET status=?,last_failure_code=?,
             lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?::uuid AND lease_owner=?::uuid
-            AND lease_expires_at>? AND status IN ('PENDING','SUBMITTED')""",
+            AND lease_expires_at>? AND status IN ('PENDING','SUBMITTED','RESULT_READY')""",
             state, code, Timestamp.from(now), dispatchId, leaseOwner, Timestamp.from(now))
         if (count != 1) return false
         jdbc.update("""UPDATE trading_normalization_runs SET status=?,last_failure_code=?,
@@ -255,5 +264,5 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
         rs.getInt("attempt_count"), rs.getTimestamp("next_attempt_at").toInstant(),
         rs.getString("lease_owner"), rs.getTimestamp("lease_expires_at")?.toInstant(),
         rs.getString("last_failure_code"), rs.getTimestamp("created_at").toInstant(),
-        rs.getTimestamp("updated_at").toInstant())
+        rs.getTimestamp("updated_at").toInstant(), rs.getInt("poll_failure_count"))
 }

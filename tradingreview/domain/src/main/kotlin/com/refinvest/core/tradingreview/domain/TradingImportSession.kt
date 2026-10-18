@@ -54,9 +54,18 @@ data class TradingImportSession(
             deletionGeneration == generation && !deletionPending)
             copy(status = TradingImportStatus.PROCESSING_FAILED, failure = cause, updatedAt = now) else null
 
+    fun rejectValidation(runId: String, generation: Long, cause: TradingImportFailure, now: Instant): TradingImportSession? =
+        if (status == TradingImportStatus.VALIDATING && activeNormalizationRunId == runId &&
+            deletionGeneration == generation && !deletionPending)
+            copy(status = TradingImportStatus.REJECTED, failure = cause, updatedAt = now) else null
+
     fun requestRawDeletion(now: Instant): TradingImportSession {
         require(!deletionPending) { "Session deletion already requested" }
-        return copy(deletionGeneration = deletionGeneration + 1, updatedAt = now)
+        return copy(deletionGeneration = deletionGeneration + 1,
+            status = if (status == TradingImportStatus.VALIDATING) TradingImportStatus.PROCESSING_FAILED else status,
+            failure = if (status == TradingImportStatus.VALIDATING)
+                TradingImportFailure("SOURCE_ARTIFACT_DELETED", false, "REUPLOAD_REQUIRED", now) else failure,
+            updatedAt = now)
     }
 
     fun requestDeletion(now: Instant): TradingImportSession {
