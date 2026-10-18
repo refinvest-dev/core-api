@@ -130,9 +130,26 @@ object NormalizationResultVerifier {
     private val sections = listOf("ARTIFACT_COVERAGES", "CANONICAL_RECORDS", "CAPABILITIES",
         "QUALITY_REPORT", "RECONCILIATION_ISSUES", "RECONCILIATION_MANIFEST",
         "RECONCILIATION_MATCHES", "REVIEW_UNITS", "SOURCE_EVIDENCE_SNAPSHOTS")
+    private val rootFields = setOf("jobId", "coreLogicalJobId", "coreNormalizationRunId",
+        "coreImportSessionId", "attemptToken", "deletionGeneration", "status", "targetVersionSet",
+        "inputSetHash", "hashSpecificationVersion", "resultSchemaVersion",
+        "resultHashSpecificationVersion", "counts", "sectionDigests", "resultDigestManifest",
+        "artifactCoverages", "canonicalRecords", "sourceEvidenceSnapshots", "reconciliationManifest",
+        "capability", "qualityReport", "ledgerContentHash", "resultHash", "createdAt", "terminalAt")
+    private val countFields = setOf("artifactCoverageCount", "canonicalRecordCount",
+        "sourceEvidenceSnapshotCount", "reviewUnitCount", "positionAllocationCount",
+        "excludedReviewUnitCount", "capabilityCount", "validationIssueCount",
+        "reconciliationMatchCount", "reconciliationIssueCount")
+    private val digestManifestFields = setOf("resultHashSpecificationVersion", "resultSchemaVersion",
+        "inputSetHash", "inputHashSpecificationVersion", "targetVersionSet", "counts",
+        "sectionDigests", "reconciliationManifestHash")
 
     fun verify(payload: Map<String, Any?>, run: NormalizationRun? = null,
                logicalJobId: String? = null): VerifiedNormalizationResult {
+        if (payload.keys != rootFields || payload.values.any { it == null } ||
+            payload["status"] != "COMPLETED" || obj(payload["counts"]).keys != countFields ||
+            obj(payload["resultDigestManifest"]).keys != digestManifestFields)
+            throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
         if (payload["resultSchemaVersion"] != RESULT_SCHEMA_V1 ||
             payload["resultHashSpecificationVersion"] != RESULT_HASH_V1 ||
             payload["hashSpecificationVersion"] != "TRADING_INPUT_SET_HASH_V1")
@@ -264,13 +281,15 @@ object NormalizationResultVerifier {
             val role = snapshot["artifactRole"] as? String
             if (role !in sourceHashes || (pinned != null &&
                 snapshot["coreArtifactId"] != pinned[role]?.artifactId) ||
-                (snapshot["sourceRowNumber"] as? Number)?.toLong()?.let { it > 0 } != true)
+                (snapshot["sourceRowNumber"] as? Number)?.toLong()?.let { it > 0 } != true ||
+                !sha256(snapshot["sourceRowHash"]))
                 throw ResultIntegrityFailure("EVIDENCE_REFERENCE_INVALID")
         }
-        if (pinned != null && pinned.any { (role, artifact) -> sourceHashes[role] != artifact.sha256 })
+        if (pinned != null && (sourceHashes.keys != pinned.keys ||
+            pinned.any { (role, artifact) -> sourceHashes[role] != artifact.sha256 }))
             throw ResultIntegrityFailure("EVIDENCE_REFERENCE_INVALID")
-        for (record in records) if (record["sourceEvidenceSnapshotId"] !in snapshotIds)
-            throw ResultIntegrityFailure("EVIDENCE_REFERENCE_INVALID")
+        for (record in records) if (record["sourceEvidenceSnapshotId"] !in snapshotIds ||
+            !sha256(record["recordHash"])) throw ResultIntegrityFailure("EVIDENCE_REFERENCE_INVALID")
         for (unit in units) for (raw in array(unit["allocations"])) {
             val allocation = obj(raw)
             if (allocation["recordId"] !in recordIds || allocation["reviewUnitId"] != unit["reviewUnitId"])
@@ -298,11 +317,11 @@ object NormalizationResultVerifier {
         val unique = sortedMapOf<String, Map<String, Any?>>()
         for (raw in array(value)) {
             val item = obj(raw)
-            val key = NormalizationResultCanonicalizer.canonicalize(identity.map { field ->
-                if (identity.size == 1 && !item.containsKey(field))
-                    throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
-                item[field]
-            }).toString(StandardCharsets.UTF_8)
+            val key = if (identity.size == 1) {
+                (item[identity.single()] as? String)?.takeIf(String::isNotBlank)
+                    ?: throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
+            } else NormalizationResultCanonicalizer.canonicalize(identity.map { item[it] })
+                .toString(StandardCharsets.UTF_8)
             val old = unique.putIfAbsent(key, item)
             if (old != null && !equal(old, item)) throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
         }
@@ -330,4 +349,6 @@ object NormalizationResultVerifier {
 
     private fun array(value: Any?): List<Any?> = value as? List<*>
         ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+
+    private fun sha256(value: Any?): Boolean = value is String && Regex("[0-9a-f]{64}").matches(value)
 }

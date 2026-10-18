@@ -54,6 +54,40 @@ class NormalizationResultIntegrityTest {
     }
 
     @Test
+    fun sectionManifestAndEvidenceFailuresStayDistinct() {
+        @Suppress("UNCHECKED_CAST")
+        fun mutated(change: (MutableMap<String, Any?>) -> Unit): String {
+            val value = payload()
+            change(value)
+            return assertFailsWith<ResultIntegrityFailure> {
+                NormalizationResultVerifier.verify(value)
+            }.code
+        }
+        assertEquals("RESULT_SECTION_HASH_MISMATCH", mutated { root ->
+            @Suppress("UNCHECKED_CAST")
+            val records = root["canonicalRecords"] as MutableList<MutableMap<String, Any?>>
+            @Suppress("UNCHECKED_CAST")
+            val price = records[0]["price"] as MutableMap<String, Any?>
+            price["value"] = "9.99"
+        })
+        assertEquals("RECONCILIATION_MANIFEST_HASH_MISMATCH", mutated { root ->
+            @Suppress("UNCHECKED_CAST")
+            val manifest = root["reconciliationManifest"] as MutableMap<String, Any?>
+            manifest["manifestHash"] = "0".repeat(64)
+        })
+        assertEquals("EVIDENCE_REFERENCE_INVALID", mutated { root ->
+            @Suppress("UNCHECKED_CAST")
+            val records = root["canonicalRecords"] as MutableList<MutableMap<String, Any?>>
+            records[0]["sourceEvidenceSnapshotId"] = "missing"
+        })
+        assertEquals("RESULT_ITEM_CONFLICT", mutated { root ->
+            @Suppress("UNCHECKED_CAST")
+            val records = root["canonicalRecords"] as MutableList<MutableMap<String, Any?>>
+            records.add(records[0].toMutableMap().also { it["side"] = "SELL" })
+        })
+    }
+
+    @Test
     fun jcsNormalizesDecimalAndTimestampWithoutTouchingEvidenceText() {
         assertEquals("1.23", NormalizationResultCanonicalizer.normalize("01.2300", "value"))
         assertEquals("0", NormalizationResultCanonicalizer.normalize("-0.000", "amount"))
