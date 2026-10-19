@@ -6,6 +6,10 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
+import javax.crypto.Cipher
+import javax.crypto.CipherInputStream
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 interface TradingNormalizationStore {
     fun insert(run: NormalizationRun, dispatch: NormalizationDispatch)
@@ -103,6 +107,8 @@ data class NormalizationResultDescriptor(
     val reconciliationManifestHash: String,
     val resultHash: String,
     val expiresAt: Instant,
+    val resultDeliveryPolicyVersion: String,
+    val contentEncoding: String,
 )
 
 sealed interface NormalizationResultLookup {
@@ -111,10 +117,26 @@ sealed interface NormalizationResultLookup {
     data class Rejected(val code: String) : NormalizationResultLookup
 }
 
-/** A temporary, exact HTTP entity body. Closing always removes it. */
-class NormalizationPayloadFile(val path: Path, val byteSize: Long, val sha256: String) : AutoCloseable {
-    fun open(): InputStream = Files.newInputStream(path)
-    override fun close() { Files.deleteIfExists(path) }
+/** A temporary HTTP entity body. Production downloads use encrypted spool bytes. */
+class NormalizationPayloadFile(
+    val path: Path, val byteSize: Long, val sha256: String,
+    private val spoolKey: ByteArray? = null,
+    private val spoolIv: ByteArray? = null,
+) : AutoCloseable {
+    fun open(): InputStream {
+        val key = spoolKey ?: return Files.newInputStream(path)
+        val iv = requireNotNull(spoolIv)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
+        return CipherInputStream(Files.newInputStream(path), cipher)
+    }
+    override fun close() {
+        try { Files.deleteIfExists(path) }
+        finally {
+            spoolKey?.fill(0)
+            spoolIv?.fill(0)
+        }
+    }
 }
 
 sealed interface NormalizationPayloadLookup {
@@ -143,7 +165,8 @@ data class NormalizationPayloadAcknowledgement(
 
 interface TradingNormalizationResultClient {
     fun descriptor(jobId: String): NormalizationResultLookup
-    fun download(payloadId: String): NormalizationPayloadLookup
+    fun download(descriptor: NormalizationResultDescriptor,
+                 policy: NormalizationResultDeliveryPolicy): NormalizationPayloadLookup
     fun acknowledge(acknowledgement: NormalizationPayloadAcknowledgement): NormalizationAckOutcome
 }
 
@@ -167,6 +190,7 @@ interface TradingRetryJitter { fun factor(): Double }
 interface TradingNormalizationSettings {
     fun retryPolicy(): TradingNormalizationRetryPolicy
     fun instrumentTermsJson(): String
+    fun resultDeliveryPolicy(): NormalizationResultDeliveryPolicy
 }
 
 interface TradingNormalizationUseCase {

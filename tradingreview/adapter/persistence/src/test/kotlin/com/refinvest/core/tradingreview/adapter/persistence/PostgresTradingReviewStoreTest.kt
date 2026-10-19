@@ -33,6 +33,8 @@ import kotlin.test.assertFailsWith
 
 @EnabledIfEnvironmentVariable(named = "TRADING_REVIEW_TEST_JDBC_URL", matches = ".+")
 class PostgresTradingReviewStoreTest {
+    private val deliveryPolicy = NormalizationResultDeliveryPolicy(
+        "RESULT_DELIVERY_V1", "SINGLE_RESOURCE", 52_428_800, listOf("identity"))
     private val now = Instant.parse("2026-01-01T00:00:00Z")
     private val noPublished = object : TradingLedgerPublicationReader {
         override fun publishedForSession(sessionId: TradingImportSessionId, owner: MemberId): PublishedLedgerSummary? = null
@@ -87,11 +89,13 @@ class PostgresTradingReviewStoreTest {
         val attemptToken = UUID.randomUUID().toString()
         val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
             "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1, attemptToken,
-            null, null, now, now, null, now, null, 0, inputIdentity = identity)
+            null, null, now, now, null, now, null, 0, inputIdentity = identity,
+            resultDeliveryPolicy = deliveryPolicy)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
         val runs = JdbcTradingNormalizationStore(jdbc, mapper)
         runs.insert(run, dispatch)
+        assertEquals(deliveryPolicy, runs.findRun(runId)?.resultDeliveryPolicy)
         assertTrue(imports.update(session.beginValidation(runId, now)))
         jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-synthetic-1' WHERE id=?::uuid", runId)
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY' WHERE id=?::uuid", dispatch.id)
@@ -134,7 +138,7 @@ class PostgresTradingReviewStoreTest {
             run.inputFingerprint, identity.hashSpecificationVersion,
             identity.targetVersionSet.toWireValue(), "TRADING_NORMALIZATION_RESULT_V1",
             "TRADING_NORMALIZATION_RESULT_HASH_V1", payload.getValue("counts") as Map<String, Any?>,
-            digests, manifestHash, resultHash, now.plusSeconds(3600))
+            digests, manifestHash, resultHash, now.plusSeconds(3600), "RESULT_DELIVERY_V1", "identity")
         var acknowledgeCalls = 0
         var descriptorCalls = 0
         var downloadCalls = 0
@@ -144,7 +148,8 @@ class PostgresTradingReviewStoreTest {
                 check(descriptorCalls == 1) { "Completed staging must not fetch Compute again" }
                 return NormalizationResultLookup.Found(descriptor)
             }
-            override fun download(payloadId: String): NormalizationPayloadLookup {
+            override fun download(descriptor: NormalizationResultDescriptor,
+                                  policy: NormalizationResultDeliveryPolicy): NormalizationPayloadLookup {
                 downloadCalls++
                 check(downloadCalls == 1) { "Completed staging must not download again" }
                 val path = java.nio.file.Files.createTempFile("synthetic-result-", ".json")
@@ -234,7 +239,7 @@ class PostgresTradingReviewStoreTest {
         val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
             "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1,
             UUID.randomUUID().toString(), null, null, now, now, null, now, null, 0,
-            inputIdentity = identity)
+            inputIdentity = identity, resultDeliveryPolicy = deliveryPolicy)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
         val runs = JdbcTradingNormalizationStore(jdbc, mapper)
@@ -244,7 +249,9 @@ class PostgresTradingReviewStoreTest {
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY' WHERE id=?::uuid", dispatch.id)
         val client = object : TradingNormalizationResultClient {
             override fun descriptor(jobId: String) = NormalizationResultLookup.Retry("TEMPORARY_DEPENDENCY_FAILURE")
-            override fun download(payloadId: String): NormalizationPayloadLookup = error("No payload after timeout")
+            override fun download(descriptor: NormalizationResultDescriptor,
+                                  policy: NormalizationResultDeliveryPolicy): NormalizationPayloadLookup =
+                error("No payload after timeout")
             override fun acknowledge(acknowledgement: NormalizationPayloadAcknowledgement): NormalizationAckOutcome =
                 error("No ACK after timeout")
         }
@@ -297,7 +304,8 @@ class PostgresTradingReviewStoreTest {
         val token = UUID.randomUUID().toString()
         val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
             "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1, token, null, null,
-            now, now, null, now, null, 0, inputIdentity = identity)
+            now, now, null, now, null, 0, inputIdentity = identity,
+            resultDeliveryPolicy = deliveryPolicy)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
         val runs = JdbcTradingNormalizationStore(jdbc, mapper)
@@ -314,7 +322,7 @@ class PostgresTradingReviewStoreTest {
             "a".repeat(64), token, 0, run.inputFingerprint, identity.hashSpecificationVersion,
             identity.targetVersionSet.toWireValue(), "TRADING_NORMALIZATION_RESULT_V1",
             "TRADING_NORMALIZATION_RESULT_HASH_V1", emptyMap(), emptyList(),
-            "d".repeat(64), "e".repeat(64), now.plusSeconds(3600))
+            "d".repeat(64), "e".repeat(64), now.plusSeconds(3600), "RESULT_DELIVERY_V1", "identity")
         results.beginStage(current, descriptor, now)
         val locked = assertNotNull(imports.find(session.id, MemberId(1)))
         assertTrue(imports.update(locked.requestDeletion(now.plusSeconds(1))))
@@ -373,7 +381,8 @@ class PostgresTradingReviewStoreTest {
         val token = UUID.randomUUID().toString()
         val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
             "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1, token, null, null,
-            now, now, null, now, null, 0, inputIdentity = identity)
+            now, now, null, now, null, 0, inputIdentity = identity,
+            resultDeliveryPolicy = deliveryPolicy)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
         val runs = JdbcTradingNormalizationStore(jdbc, mapper)
@@ -392,7 +401,8 @@ class PostgresTradingReviewStoreTest {
             "a".repeat(64), token, 0, run.inputFingerprint, identity.hashSpecificationVersion,
             identity.targetVersionSet.toWireValue(), "TRADING_NORMALIZATION_RESULT_V1",
             "TRADING_NORMALIZATION_RESULT_HASH_V1", mapOf("canonicalRecordCount" to 1),
-            emptyList(), "d".repeat(64), "e".repeat(64), now.plusSeconds(3600))
+            emptyList(), "d".repeat(64), "e".repeat(64), now.plusSeconds(3600),
+            "RESULT_DELIVERY_V1", "identity")
         results.beginStage(current, descriptor, now)
         results.saveStageBase(runId, """{"status":"COMPLETED","canonicalRecords":[]}""")
         assertEquals("COMPLETED", mapper.readTree(assertNotNull(results.loadStageBase(runId)))
@@ -515,7 +525,8 @@ class PostgresTradingReviewStoreTest {
                 normalizationVersions, Map::class.java))
         val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity), "b".repeat(64),
             NormalizationRunStatus.DISPATCH_PENDING, 1, token, null, null,
-            now, now, null, now, null, 0, inputIdentity = identity)
+            now, now, null, now, null, 0, inputIdentity = identity,
+            resultDeliveryPolicy = deliveryPolicy)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
         store.insert(run, dispatch)
@@ -593,6 +604,7 @@ class PostgresTradingReviewStoreTest {
                     "retry-v1", 3, java.time.Duration.ofMinutes(1), java.time.Duration.ofSeconds(1),
                     java.time.Duration.ofSeconds(10), "NONE")
                 override fun instrumentTermsJson() = "[]"
+                override fun resultDeliveryPolicy() = deliveryPolicy
             }, mapper, Clock.fixed(now, ZoneOffset.UTC))
         assertEquals("MISSING_REQUIRED_ARTIFACT", assertFailsWith<TradingFailure> {
             transactions.execute { service.validate(session.id, null, "missing-position") }
@@ -1227,6 +1239,12 @@ class PostgresTradingReviewStoreTest {
                     .bufferedReader().use { it.readText() }
                 connection.createStatement().use { statement ->
                     splitSqlStatements(migration5).forEach(statement::execute)
+                }
+                val migration6 = javaClass.getResourceAsStream(
+                    "/db/migration/V6__trading_result_delivery_policy.sql")!!
+                    .bufferedReader().use { it.readText() }
+                connection.createStatement().use { statement ->
+                    splitSqlStatements(migration6).forEach(statement::execute)
                 }
                 test(connection)
             } finally {

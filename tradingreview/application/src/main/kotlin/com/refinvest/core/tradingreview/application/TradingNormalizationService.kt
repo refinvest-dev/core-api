@@ -104,6 +104,7 @@ open class TradingNormalizationService(
                 artifact.contentType, artifact.dialectCandidate)
         }.sortedBy { it.role.ordinal }
         val policy = settings.retryPolicy()
+        val deliveryPolicy = settings.resultDeliveryPolicy()
         val policyJson = mapper.writeValueAsString(mapOf(
             "policyVersion" to policy.version, "maxAttempts" to policy.maxAttempts,
             "maxElapsedTime" to policy.maxElapsedTime.toString(),
@@ -138,7 +139,7 @@ open class TradingNormalizationService(
             input.deletionGeneration, mapper)
         val run = NormalizationRun(runId, input, hash, logicalKey,
             NormalizationRunStatus.DISPATCH_PENDING, 1, attemptToken, null, null,
-            now, now, null, now, null, 0, previous?.id, identity)
+            now, now, null, now, null, 0, previous?.id, identity, deliveryPolicy)
         val dispatch = NormalizationDispatch(dispatchId, runId,
             NormalizationInputFingerprint.dispatchKey(runId, logicalKey, attemptToken,
                 input.versionSetJson, input.deletionGeneration, mapper),

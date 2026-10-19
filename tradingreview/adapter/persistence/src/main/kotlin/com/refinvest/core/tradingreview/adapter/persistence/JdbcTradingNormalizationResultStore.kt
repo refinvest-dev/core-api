@@ -58,24 +58,28 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
     override fun beginStage(run: NormalizationRun, descriptor: NormalizationResultDescriptor, now: Instant) {
         jdbc.update("""INSERT INTO trading_normalization_result_staging
             (run_id,payload_id,compute_job_id,attempt_token,deletion_generation,transport_sha256,
-            byte_size,payload_expires_at,
+            byte_size,payload_expires_at,result_delivery_policy_version,content_encoding,
             result_hash,result_schema_version,result_hash_specification_version,state,counts_json,
             section_digests_json,manifest_hash,created_at,updated_at)
-            VALUES (?::uuid,?,?,?::uuid,?,?,?,?,?, ?,?,'RECEIVING',?::jsonb,?::jsonb,?,?,?)
+            VALUES (?::uuid,?,?,?::uuid,?,?,?,?,?,?,?, ?,?,'RECEIVING',?::jsonb,?::jsonb,?,?,?)
             ON CONFLICT (run_id) DO NOTHING""", run.id, descriptor.payloadId, descriptor.jobId,
             descriptor.attemptToken, descriptor.deletionGeneration, descriptor.payloadSha256,
             descriptor.byteSize, Timestamp.from(descriptor.expiresAt),
+            descriptor.resultDeliveryPolicyVersion, descriptor.contentEncoding,
             descriptor.resultHash, descriptor.resultSchemaVersion, descriptor.resultHashSpecificationVersion,
             mapper.writeValueAsString(descriptor.counts), mapper.writeValueAsString(descriptor.sectionDigests),
             descriptor.reconciliationManifestHash, Timestamp.from(now), Timestamp.from(now))
         val pinned = jdbc.query("""SELECT payload_id,compute_job_id,attempt_token::text,transport_sha256,
-            result_hash,deletion_generation,payload_expires_at,byte_size FROM trading_normalization_result_staging WHERE run_id=?::uuid""",
+            result_hash,deletion_generation,payload_expires_at,byte_size,
+            result_delivery_policy_version,content_encoding
+            FROM trading_normalization_result_staging WHERE run_id=?::uuid""",
             { rs, _ -> listOf(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
                 rs.getString(5), rs.getLong(6).toString(), rs.getTimestamp(7).toInstant().toString(),
-                rs.getLong(8).toString()) }, run.id).single()
+                rs.getLong(8).toString(), rs.getString(9), rs.getString(10)) }, run.id).single()
         if (pinned != listOf(descriptor.payloadId, descriptor.jobId, descriptor.attemptToken,
                 descriptor.payloadSha256, descriptor.resultHash, descriptor.deletionGeneration.toString(),
-                descriptor.expiresAt.toString(), descriptor.byteSize.toString()))
+                descriptor.expiresAt.toString(), descriptor.byteSize.toString(),
+                descriptor.resultDeliveryPolicyVersion, descriptor.contentEncoding))
             throw NormalizationResultStoreFailure("RESULT_ITEM_CONFLICT")
     }
 
@@ -86,7 +90,8 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
         return jdbc.query("""SELECT payload_id,compute_job_id,attempt_token::text,
         deletion_generation,transport_sha256,byte_size,payload_expires_at,result_hash,
         result_schema_version,result_hash_specification_version,counts_json::text,
-        section_digests_json::text,manifest_hash FROM trading_normalization_result_staging
+        section_digests_json::text,manifest_hash,result_delivery_policy_version,content_encoding
+        FROM trading_normalization_result_staging
         WHERE run_id=?::uuid""", { rs, _ ->
         NormalizationResultDescriptor(rs.getString(2), dispatch.id, run.id, rs.getString(1),
             rs.getLong(6), rs.getString(5), rs.getString(3), rs.getLong(4), run.inputFingerprint,
@@ -94,7 +99,8 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
             identity.targetVersionSet.toWireValue(), rs.getString(9), rs.getString(10),
             mapper.readValue(rs.getString(11), Map::class.java) as Map<String, Any?>,
             mapper.readValue(rs.getString(12), List::class.java) as List<Any?>,
-            rs.getString(13), rs.getString(8), rs.getTimestamp(7).toInstant())
+            rs.getString(13), rs.getString(8), rs.getTimestamp(7).toInstant(),
+            rs.getString(14) ?: "", rs.getString(15) ?: "")
     }, run.id).firstOrNull()
     }
 

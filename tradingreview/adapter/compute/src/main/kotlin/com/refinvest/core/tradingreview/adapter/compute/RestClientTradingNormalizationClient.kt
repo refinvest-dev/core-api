@@ -3,6 +3,7 @@ package com.refinvest.core.tradingreview.adapter.compute
 import com.refinvest.core.tradingreview.domain.NormalizationDispatch
 import com.refinvest.core.tradingreview.domain.NormalizationInputCanonicalizer
 import com.refinvest.core.tradingreview.domain.NormalizationRun
+import com.refinvest.core.tradingreview.domain.NormalizationResultDeliveryPolicy
 import com.refinvest.core.tradingreview.port.*
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.beans.factory.annotation.Autowired
@@ -18,6 +19,11 @@ import java.nio.file.Files
 import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.util.HexFormat
+import java.security.SecureRandom
+import javax.crypto.Cipher
+import javax.crypto.CipherOutputStream
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 @Component
 class RestClientTradingNormalizationClient private constructor(
@@ -169,7 +175,11 @@ class RestClientTradingNormalizationClient private constructor(
                                 objectValue("targetVersionSet"), body.path("resultSchemaVersion").asText(),
                                 body.path("resultHashSpecificationVersion").asText(), objectValue("counts"),
                                 digests, body.path("reconciliationManifestHash").asText(),
-                                body.path("resultHash").asText(), Instant.parse(body.path("expiresAt").asText())))
+                                body.path("resultHash").asText(), Instant.parse(body.path("expiresAt").asText()),
+                                body.path("resultDeliveryPolicyVersion").asText().takeIf { it == "RESULT_DELIVERY_V1" }
+                                    ?: throw IllegalArgumentException("Unsupported delivery policy"),
+                                body.path("contentEncoding").asText().takeIf { it.isNotBlank() }
+                                    ?: throw IllegalArgumentException("Missing content encoding")))
                         } catch (_: Exception) { NormalizationResultLookup.Rejected("RESULT_SCHEMA_UNSUPPORTED") }
                         401, 403 -> NormalizationResultLookup.Rejected("INTERNAL_AUTHENTICATION_FAILED")
                         404, 409 -> NormalizationResultLookup.Rejected("RESULT_NOT_AVAILABLE")
@@ -179,46 +189,67 @@ class RestClientTradingNormalizationClient private constructor(
         } catch (_: Exception) { NormalizationResultLookup.Retry("TEMPORARY_DEPENDENCY_FAILURE") }
     }
 
-    override fun download(payloadId: String): NormalizationPayloadLookup {
+    override fun download(descriptor: NormalizationResultDescriptor,
+                          policy: NormalizationResultDeliveryPolicy): NormalizationPayloadLookup {
         if (apiKey.isBlank()) return NormalizationPayloadLookup.Rejected("INTERNAL_AUTHENTICATION_FAILED")
+        if (descriptor.byteSize > policy.maxAcceptedPayloadBytes)
+            return NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LIMIT_EXCEEDED")
         return try {
-            client.get().uri("/trading-review/terminal-payloads/{payloadId}", payloadId)
+            client.get().uri("/trading-review/terminal-payloads/{payloadId}", descriptor.payloadId)
                 .header("X-Internal-Api-Key", apiKey)
                 .header("Accept-Encoding", "identity")
                 .exchange { _, response ->
                     when (response.statusCode.value()) {
                         200 -> {
-                            if (response.headers.getFirst("Content-Encoding")?.lowercase() !in setOf(null, "identity") ||
-                                response.headers.contentType?.let {
-                                    it.type != "application" || it.subtype != "vnd.refinvest.trading-normalization+json"
+                            if (response.headers.getFirst("Content-Encoding")?.lowercase() !in setOf(null, "identity"))
+                                return@exchange NormalizationPayloadLookup.Rejected("RESULT_CONTENT_ENCODING_UNSUPPORTED")
+                            if (response.headers.contentType?.let {
+                                    it.type != "application" || it.subtype != "vnd.refinvest.trading-normalization+json" ||
+                                        (it.charset != null && it.charset != Charsets.UTF_8)
                                 } != false) return@exchange NormalizationPayloadLookup.Rejected("RESULT_SCHEMA_UNSUPPORTED")
-                            if (response.headers.contentLength > 52_428_800L)
-                                return@exchange NormalizationPayloadLookup.Rejected("RESULT_SCHEMA_UNSUPPORTED")
-                            val path = Files.createTempFile("trading-normalization-", ".json")
+                            val headerLength = response.headers.contentLength
+                            if (headerLength > policy.maxAcceptedPayloadBytes)
+                                return@exchange NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LIMIT_EXCEEDED")
+                            if (headerLength >= 0 && headerLength != descriptor.byteSize)
+                                return@exchange NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LENGTH_MISMATCH")
+                            val path = NormalizationResultSpool.create()
                             try {
+                                val random = SecureRandom()
+                                val spoolKey = ByteArray(32).also(random::nextBytes)
+                                val spoolIv = ByteArray(12).also(random::nextBytes)
+                                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                                cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(spoolKey, "AES"),
+                                    GCMParameterSpec(128, spoolIv))
                                 val digest = MessageDigest.getInstance("SHA-256")
                                 val size = DigestInputStream(response.body, digest).use { input ->
-                                    Files.newOutputStream(path).use { output ->
+                                    CipherOutputStream(Files.newOutputStream(path), cipher).use { output ->
                                         val buffer = ByteArray(8192)
                                         var total = 0L
                                         while (true) {
                                             val count = input.read(buffer)
                                             if (count < 0) break
                                             total += count
-                                            if (total > 52_428_800L) throw PayloadTooLarge()
+                                            if (total > policy.maxAcceptedPayloadBytes) throw PayloadTooLarge()
+                                            if (total > descriptor.byteSize) throw PayloadLengthMismatch()
                                             output.write(buffer, 0, count)
                                         }
+                                        if (total != descriptor.byteSize ||
+                                            (headerLength >= 0 && total != headerLength))
+                                            throw PayloadLengthMismatch()
                                         total
                                     }
                                 }
                                 NormalizationPayloadLookup.Found(NormalizationPayloadFile(path, size,
-                                    HexFormat.of().formatHex(digest.digest())))
+                                    HexFormat.of().formatHex(digest.digest()), spoolKey, spoolIv))
                             } catch (_: PayloadTooLarge) {
                                 Files.deleteIfExists(path)
-                                NormalizationPayloadLookup.Rejected("RESULT_SCHEMA_UNSUPPORTED")
+                                NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LIMIT_EXCEEDED")
+                            } catch (_: PayloadLengthMismatch) {
+                                Files.deleteIfExists(path)
+                                NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LENGTH_MISMATCH")
                             } catch (_: Exception) {
                                 Files.deleteIfExists(path)
-                                NormalizationPayloadLookup.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+                                NormalizationPayloadLookup.Retry("RESULT_PAYLOAD_STREAM_ABORTED")
                             }
                         }
                         401, 403 -> NormalizationPayloadLookup.Rejected("INTERNAL_AUTHENTICATION_FAILED")
@@ -230,6 +261,7 @@ class RestClientTradingNormalizationClient private constructor(
     }
 
     private class PayloadTooLarge : RuntimeException()
+    private class PayloadLengthMismatch : RuntimeException()
 
     override fun acknowledge(acknowledgement: NormalizationPayloadAcknowledgement): NormalizationAckOutcome {
         if (apiKey.isBlank()) return NormalizationAckOutcome.Rejected("INTERNAL_ERROR")
@@ -272,6 +304,7 @@ class RestClientTradingNormalizationClient private constructor(
                      grants: List<ArtifactReadGrant>): Map<String, Any> {
         val input = run.input
         val identity = requireNotNull(run.inputIdentity) { "Missing normalization identity snapshot" }
+        val deliveryPolicy = requireNotNull(run.resultDeliveryPolicy) { "Missing result delivery policy snapshot" }
         require(NormalizationInputCanonicalizer.hash(identity) == run.inputFingerprint) {
             "Normalization identity/hash mismatch"
         }
@@ -296,6 +329,7 @@ class RestClientTradingNormalizationClient private constructor(
             "artifactAccessGrants" to grantValues,
             "pinnedInstrumentTerms" to terms,
             "expectedInputSetHash" to run.inputFingerprint,
+            "resultDeliveryPolicy" to deliveryPolicy.toWireValue(),
             "retryPolicyVersion" to input.retryPolicyVersion,
             "deletionGeneration" to input.deletionGeneration,
             "attemptToken" to run.attemptToken)

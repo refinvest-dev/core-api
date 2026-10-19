@@ -29,14 +29,15 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
         jdbc.update("""INSERT INTO trading_normalization_runs
             (id, retry_of_run_id, import_session_id, trading_book_id, owner_member_id, input_fingerprint, logical_key,
             input_json, input_identity_json, target_version_set_json, instrument_terms_json, data_policy_version,
-            retry_policy_version, retry_policy_json,
+            retry_policy_version, retry_policy_json, result_delivery_policy_json,
             deletion_generation, status, current_attempt, attempt_token, compute_job_id,
             last_failure_code, next_attempt_at, created_at, started_at, updated_at, completed_at, version)
-            VALUES (?::uuid,?::uuid,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,?,?::jsonb,?,?,?,?::uuid,?,?,?,?,?,?,?,?)""",
+            VALUES (?::uuid,?::uuid,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,?,?::jsonb,?::jsonb,?,?,?,?::uuid,?,?,?,?,?,?,?,?)""",
             run.id, run.retryOfRunId, input.importSessionId.value, input.tradingBookId.value, input.ownerId,
             run.inputFingerprint, run.logicalKey, inputJson, identityJson, input.versionSetJson,
             input.instrumentTermsJson, input.dataPolicyVersion, input.retryPolicyVersion,
-            input.retryPolicyJson, input.deletionGeneration,
+            input.retryPolicyJson,
+            run.resultDeliveryPolicy?.let { mapper.writeValueAsString(it.toWireValue()) }, input.deletionGeneration,
             run.status.name, run.currentAttempt, run.attemptToken, run.computeJobId, run.lastFailureCode,
             Timestamp.from(run.nextAttemptAt), Timestamp.from(run.createdAt), run.startedAt?.let(Timestamp::from),
             Timestamp.from(run.updatedAt), run.completedAt?.let(Timestamp::from), run.version)
@@ -243,7 +244,10 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
             rs.getTimestamp("next_attempt_at").toInstant(), rs.getTimestamp("created_at").toInstant(),
             rs.getTimestamp("started_at")?.toInstant(), rs.getTimestamp("updated_at").toInstant(),
             rs.getTimestamp("completed_at")?.toInstant(), rs.getLong("version"),
-            rs.getString("retry_of_run_id"), identity)
+            rs.getString("retry_of_run_id"), identity,
+            rs.getString("result_delivery_policy_json")?.let {
+                NormalizationResultDeliveryPolicy.fromWireValue(mapper.readValue(it, Map::class.java))
+            })
     }
 
     private fun verifyIdentity(input: NormalizationInput, identity: NormalizationInputIdentity,

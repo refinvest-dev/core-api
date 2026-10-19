@@ -31,10 +31,29 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import java.security.MessageDigest
 import java.util.HexFormat
+import java.nio.file.Files
+import java.nio.file.attribute.FileTime
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
 
 class RestClientTradingNormalizationClientTest {
     private val mapper = JsonMapper.builder().build()
     private val now = Instant.parse("2026-01-01T00:00:00Z")
+    private val deliveryPolicy = NormalizationResultDeliveryPolicy(
+        "RESULT_DELIVERY_V1", "SINGLE_RESOURCE", 52_428_800, listOf("identity"))
+
+    @Test
+    fun orphanSweepRemovesOnlyExpiredOpaqueSpoolFiles(@TempDir directory: Path) {
+        val stale = Files.createFile(directory.resolve("payload-stale.spool"))
+        val fresh = Files.createFile(directory.resolve("payload-fresh.spool"))
+        val unrelated = Files.createFile(directory.resolve("other-file"))
+        Files.setLastModifiedTime(stale, FileTime.from(now.minusSeconds(25 * 3600)))
+        Files.setLastModifiedTime(unrelated, FileTime.from(now.minusSeconds(25 * 3600)))
+        assertEquals(1, NormalizationResultSpool.cleanupOlderThan(directory, now.minusSeconds(24 * 3600)))
+        assertFalse(Files.exists(stale))
+        assertTrue(Files.exists(fresh))
+        assertTrue(Files.exists(unrelated))
+    }
 
     @Test
     fun terminalPayloadOverContractLimitIsRejectedBeforeParsing() {
@@ -45,8 +64,57 @@ class RestClientTradingNormalizationClientTest {
                 .contentType(MediaType.parseMediaType("application/vnd.refinvest.trading-normalization+json"))
                 .header("Content-Length", "52428801").body("{}"))
         val client = RestClientTradingNormalizationClient.withClient("test-internal-key", mapper, builder.build())
-        assertEquals("RESULT_SCHEMA_UNSUPPORTED",
-            assertIs<NormalizationPayloadLookup.Rejected>(client.download("oversized")).code)
+        val descriptor = testDescriptor("oversized", 100)
+        assertEquals("RESULT_PAYLOAD_LIMIT_EXCEEDED",
+            assertIs<NormalizationPayloadLookup.Rejected>(client.download(descriptor, deliveryPolicy)).code)
+        server.verify()
+    }
+
+    @Test
+    fun terminalPayloadRejectsHeaderLengthMismatchAndUnsupportedEncoding() {
+        val builder = RestClient.builder().baseUrl("http://compute.test")
+        val server = MockRestServiceServer.bindTo(builder).build()
+        val mediaType = MediaType.parseMediaType("application/vnd.refinvest.trading-normalization+json")
+        server.expect(requestTo("http://compute.test/trading-review/terminal-payloads/wrong-length"))
+            .andRespond(withStatus(HttpStatus.OK).contentType(mediaType)
+                .header("Content-Length", "3").body("{}"))
+        server.expect(requestTo("http://compute.test/trading-review/terminal-payloads/compressed"))
+            .andRespond(withStatus(HttpStatus.OK).contentType(mediaType)
+                .header("Content-Encoding", "gzip").body("{}"))
+        val client = RestClientTradingNormalizationClient.withClient("test-internal-key", mapper, builder.build())
+        assertEquals("RESULT_PAYLOAD_LENGTH_MISMATCH", assertIs<NormalizationPayloadLookup.Rejected>(
+            client.download(testDescriptor("wrong-length", 2), deliveryPolicy)).code)
+        assertEquals("RESULT_CONTENT_ENCODING_UNSUPPORTED", assertIs<NormalizationPayloadLookup.Rejected>(
+            client.download(testDescriptor("compressed", 2), deliveryPolicy)).code)
+        server.verify()
+    }
+
+    @Test
+    fun terminalPayloadRejectsTruncatedBodyWithoutContentLength() {
+        val builder = RestClient.builder().baseUrl("http://compute.test")
+        val server = MockRestServiceServer.bindTo(builder).build()
+        server.expect(requestTo("http://compute.test/trading-review/terminal-payloads/truncated"))
+            .andRespond(withStatus(HttpStatus.OK)
+                .contentType(MediaType.parseMediaType("application/vnd.refinvest.trading-normalization+json"))
+                .body("{}"))
+        val client = RestClientTradingNormalizationClient.withClient("test-internal-key", mapper, builder.build())
+        assertEquals("RESULT_PAYLOAD_LENGTH_MISMATCH", assertIs<NormalizationPayloadLookup.Rejected>(
+            client.download(testDescriptor("truncated", 3), deliveryPolicy)).code)
+        server.verify()
+    }
+
+    @Test
+    fun terminalPayloadStopsAtActualByteLimitWithoutContentLength() {
+        val builder = RestClient.builder().baseUrl("http://compute.test")
+        val server = MockRestServiceServer.bindTo(builder).build()
+        server.expect(requestTo("http://compute.test/trading-review/terminal-payloads/actual-over-limit"))
+            .andRespond(withStatus(HttpStatus.OK)
+                .contentType(MediaType.parseMediaType("application/vnd.refinvest.trading-normalization+json"))
+                .body("{}XY"))
+        val client = RestClientTradingNormalizationClient.withClient("test-internal-key", mapper, builder.build())
+        val smallPolicy = deliveryPolicy.copy(maxAcceptedPayloadBytes = 3)
+        assertEquals("RESULT_PAYLOAD_LIMIT_EXCEEDED", assertIs<NormalizationPayloadLookup.Rejected>(
+            client.download(testDescriptor("actual-over-limit", 3), smallPolicy)).code)
         server.verify()
     }
 
@@ -60,6 +128,7 @@ class RestClientTradingNormalizationClientTest {
             .andRespond(withStatus(HttpStatus.OK).contentType(MediaType.APPLICATION_JSON).body("""
                 {"jobId":"job-1","coreLogicalJobId":"logical-1","coreNormalizationRunId":"run-1",
                  "payloadId":"payload-1","transportMode":"SINGLE_RESOURCE",
+                 "resultDeliveryPolicyVersion":"RESULT_DELIVERY_V1","contentEncoding":"identity",
                  "mediaType":"application/vnd.refinvest.trading-normalization+json",
                  "byteSize":${bytes.size},"payloadSha256":"$hash","attemptToken":"attempt-1",
                  "deletionGeneration":0,"inputSetHash":"${"a".repeat(64)}",
@@ -88,9 +157,10 @@ class RestClientTradingNormalizationClientTest {
         val client = RestClientTradingNormalizationClient.withClient("test-internal-key", mapper, builder.build())
         val descriptor = assertIs<NormalizationResultLookup.Found>(client.descriptor("job-1")).descriptor
         assertEquals(hash, descriptor.payloadSha256)
-        assertIs<NormalizationPayloadLookup.Found>(client.download(descriptor.payloadId)).payload.use {
+        assertIs<NormalizationPayloadLookup.Found>(client.download(descriptor, deliveryPolicy)).payload.use {
             assertEquals(hash, it.sha256)
             assertEquals(bytes.size.toLong(), it.byteSize)
+            assertFalse(java.nio.file.Files.readAllBytes(it.path).contentEquals(bytes))
             assertTrue(it.open().use { stream -> stream.readAllBytes().contentEquals(bytes) })
         }
         assertIs<NormalizationAckOutcome.Accepted>(client.acknowledge(
@@ -134,7 +204,7 @@ class RestClientTradingNormalizationClientTest {
                 NormalizationInputCanonicalizer.hash(identity), "e".repeat(64),
                 NormalizationRunStatus.DISPATCH_PENDING, 1,
                 "00000000-0000-0000-0000-000000000003", null, null, now, now, null, now, null, 0,
-                inputIdentity = identity)
+                inputIdentity = identity, resultDeliveryPolicy = deliveryPolicy)
             val dispatch = NormalizationDispatch(dispatchId, run.id, "f".repeat(64),
                 NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
             fun grants(uri: String) = input.artifacts.reversed().map {
@@ -153,6 +223,9 @@ class RestClientTradingNormalizationClientTest {
             assertEquals(first.path("attemptToken").asText(), second.path("attemptToken").asText())
             assertEquals(first.path("expectedInputSetHash").asText(), second.path("expectedInputSetHash").asText())
             assertEquals(first.path("inputIdentity"), second.path("inputIdentity"))
+            assertEquals(first.path("resultDeliveryPolicy"), second.path("resultDeliveryPolicy"))
+            assertEquals("RESULT_DELIVERY_V1", first.path("resultDeliveryPolicy")
+                .path("policyVersion").asText())
             assertEquals(identity.tradingBookId, first.path("inputIdentity").path("tradingBookId").asText())
             assertEquals(run.id, first.path("coreNormalizationRunId").asText())
             assertEquals("retry-v1", first.path("retryPolicyVersion").asText())
@@ -182,6 +255,14 @@ class RestClientTradingNormalizationClientTest {
                     "update-key")).code)
         server.verify()
     }
+
+    private fun testDescriptor(payloadId: String, byteSize: Long) =
+        com.refinvest.core.tradingreview.port.NormalizationResultDescriptor(
+            "job-1", "logical-1", "run-1", payloadId, byteSize, "a".repeat(64),
+            "attempt-1", 0, "b".repeat(64), "TRADING_INPUT_SET_HASH_V1", emptyMap(),
+            "TRADING_NORMALIZATION_RESULT_V1", "TRADING_NORMALIZATION_RESULT_HASH_V1",
+            emptyMap(), emptyList(), "c".repeat(64), "d".repeat(64), now.plusSeconds(3600),
+            "RESULT_DELIVERY_V1", "identity")
 
     @Suppress("UNCHECKED_CAST")
     private fun validateAgainstComputeOpenApi(request: JsonNode) {

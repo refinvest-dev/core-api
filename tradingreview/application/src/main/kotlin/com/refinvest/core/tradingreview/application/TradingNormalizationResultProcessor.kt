@@ -63,17 +63,7 @@ class TradingNormalizationResultProcessor(
             terminal(run, dispatch, worker, error.code)
             return true
         }
-        val savedBase = try {
-            val stageAllowed = transactions.execute {
-                if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) false
-                else { results.beginStage(run, descriptor, clock.instant()); true }
-            } == true
-            if (!stageAllowed) return true
-            results.loadStageBase(run.id)
-        } catch (error: NormalizationResultStoreFailure) {
-            terminal(run, dispatch, worker, error.safeCode)
-            return true
-        }
+        val savedBase = results.loadStageBase(run.id)
         var verified: VerifiedNormalizationResult? = null
         var failure: String? = null
         var recovered = false
@@ -90,12 +80,26 @@ class TradingNormalizationResultProcessor(
         }
         repeat(2) { transportAttempt ->
             if (verified != null || failure != null) return@repeat
-            when (val downloaded = compute.download(descriptor.payloadId)) {
+            when (val downloaded = compute.download(descriptor,
+                requireNotNull(run.resultDeliveryPolicy))) {
                 is NormalizationPayloadLookup.Found -> downloaded.payload.use { payload ->
-                    if (payload.byteSize != descriptor.byteSize || payload.sha256 != descriptor.payloadSha256) {
+                    if (payload.byteSize != descriptor.byteSize) {
+                        if (transportAttempt == 1) failure = "RESULT_PAYLOAD_LENGTH_MISMATCH"
+                    } else if (payload.sha256 != descriptor.payloadSha256) {
                         if (transportAttempt == 1) failure = "RESULT_TRANSPORT_HASH_MISMATCH"
                     } else {
+                        val currentSession = sessions.find(run.input.importSessionId,
+                            MemberId(run.input.ownerId))
+                        if (currentSession == null || !isCurrent(run, currentSession)) {
+                            obsolete(run, dispatch, worker, descriptor)
+                            return true
+                        }
                         try {
+                            val stageAllowed = transactions.execute {
+                                if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) false
+                                else { results.beginStage(run, descriptor, clock.instant()); true }
+                            } == true
+                            if (!stageAllowed) return true
                             @Suppress("UNCHECKED_CAST")
                             val body = payload.open().use { strictResultMapper.readValue(it, Map::class.java) }
                                 as Map<String, Any?>
@@ -103,16 +107,20 @@ class TradingNormalizationResultProcessor(
                             comparePayloadDescriptor(result, descriptor)
                             verified = result
                         } catch (error: ResultIntegrityFailure) { failure = error.code }
-                        catch (_: Exception) { failure = "RESULT_SCHEMA_UNSUPPORTED" }
+                        catch (error: NormalizationResultStoreFailure) { failure = error.safeCode }
+                        catch (_: Exception) { failure = "RESULT_PAYLOAD_PARSE_FAILED" }
                     }
                 }
-                is NormalizationPayloadLookup.Retry -> failure = "TEMPORARY_DEPENDENCY_FAILURE"
-                is NormalizationPayloadLookup.Rejected -> failure =
-                    downloaded.code.takeIf { it == "RESULT_NOT_AVAILABLE" } ?: "INTERNAL_ERROR"
+                is NormalizationPayloadLookup.Retry -> failure = downloaded.code
+                is NormalizationPayloadLookup.Rejected -> {
+                    if (downloaded.code != "RESULT_PAYLOAD_LENGTH_MISMATCH" || transportAttempt == 1)
+                        failure = downloaded.code
+                }
             }
         }
         if (failure != null) {
-            if (failure == "TEMPORARY_DEPENDENCY_FAILURE") retry(run, dispatch, worker, failure!!)
+            if (failure in setOf("TEMPORARY_DEPENDENCY_FAILURE", "RESULT_PAYLOAD_STREAM_ABORTED"))
+                retry(run, dispatch, worker, failure!!)
             else terminal(run, dispatch, worker, failure!!)
             return true
         }
@@ -217,6 +225,7 @@ class TradingNormalizationResultProcessor(
                                    descriptor: NormalizationResultDescriptor,
                                    locallyComplete: Boolean = false) {
         val identity = run.inputIdentity ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        val delivery = run.resultDeliveryPolicy ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
         if (descriptor.resultSchemaVersion != NormalizationResultVerifier.RESULT_SCHEMA_V1 ||
             descriptor.resultHashSpecificationVersion != NormalizationResultVerifier.RESULT_HASH_V1 ||
             descriptor.inputHashSpecificationVersion != identity.hashSpecificationVersion)
@@ -227,8 +236,13 @@ class TradingNormalizationResultProcessor(
             descriptor.inputSetHash != run.inputFingerprint ||
             !same(identity.targetVersionSet.toWireValue(), descriptor.targetVersionSet))
             throw ResultIntegrityFailure("INPUT_SET_HASH_MISMATCH")
-        if (descriptor.byteSize !in 1..52_428_800L ||
-            !Regex("[0-9a-f]{64}").matches(descriptor.payloadSha256))
+        if (descriptor.resultDeliveryPolicyVersion != delivery.policyVersion)
+            throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        if (descriptor.contentEncoding !in delivery.acceptedContentEncodings)
+            throw ResultIntegrityFailure("RESULT_CONTENT_ENCODING_UNSUPPORTED")
+        if (descriptor.byteSize > delivery.maxAcceptedPayloadBytes)
+            throw ResultIntegrityFailure("RESULT_PAYLOAD_LIMIT_EXCEEDED")
+        if (descriptor.byteSize < 1 || !Regex("[0-9a-f]{64}").matches(descriptor.payloadSha256))
             throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
         if (!locallyComplete && !descriptor.expiresAt.isAfter(clock.instant()))
             throw ResultIntegrityFailure("RESULT_NOT_AVAILABLE")
