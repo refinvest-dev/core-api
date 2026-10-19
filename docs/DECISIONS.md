@@ -1133,3 +1133,13 @@ capacity를 소비한다. 새 Trading Review job이 자기 pool에서 거절되�
 Compute 내부 `ReconciliationManifest`/`NormalizationResult` 전체 필드를 공개 `manifestHash`/`resultHash` 입력으로 쓰지 않는다. publication에 필요한 내부 필드는 공개 DTO에 추가하고, 필요 없는 내부 필드는 계약 hash에서 제외한다. 별도 내부 audit hash는 허용하지만 공개 계약 이름으로 보내지 않는다. Core는 Compute 계산 자체를 재실행하지 않고 수신 DTO와 staging의 완전성, count, 참조 및 공개 의미 hash를 독립 검증한다.
 
 `payloadSha256`은 단일 resource의 정확한 응답 entity body bytes, `manifestHash`는 공개 manifest projection, `sectionHash`는 정렬된 공개 section, `resultHash`는 공개 digest manifest의 RFC 8785 JCS/SHA-256이다. 공개 결과 hash 규격 `TRADING_NORMALIZATION_RESULT_HASH_V1`은 input hash 규격과 별도다. 실행 시각/locator/attempt/deletion generation은 semantic hash에서 제외하되 publication gate에서 별도 검증한다. V1 hash 입력을 변경하지 않는다. 새 규격은 V2, 새 vector, Core/Compute 호환성 pin 및 새 LedgerRevision으로만 도입한다. 미지원 schema/spec은 발행하지 않고 `PROCESSING_FAILED`로 종료한다.
+
+---
+
+## ADR-067 — Bounded Trading Normalization Result Delivery V1
+
+**상태**: 확정. ADR-063/065/066의 단일 terminal resource에 크기·메모리·실패 경계를 추가한다. 정본은 [`TRADING_NORMALIZATION_RESULT_DELIVERY.md`](TRADING_NORMALIZATION_RESULT_DELIVERY.md)다.
+
+Core는 Run 시작 시 `NormalizationResultDeliveryPolicy(RESULT_DELIVERY_V1, SINGLE_RESOURCE, maxAcceptedPayloadBytes, [identity])`를 Compute create request에 고정한다. Compute는 자체 운영 상한과 Core 광고 상한 중 작은 값을 실제 직렬화된 UTF-8 JSON entity bytes에 적용하고, 초과 결과를 `COMPLETED`로 발행하지 않는다. 기존 vendor JSON media type을 유지한다. 크기와 `payloadSha256`은 같은 exact response body bytes를 대상으로 하며 header/framing은 제외한다. Policy, byteSize, encoding, locator/expiry는 inputSetHash와 semantic resultHash 밖이다.
+
+Core는 Content-Length 사전 검사와 실제 stream count를 모두 적용하고, 보호된 임시 spool에 incremental SHA-256을 계산한다. 전체 transport hash와 길이 확인 전 parse/staging을 금지한다. 이후 전체 JSON tree 없이 streaming parser와 bounded staging batch를 사용하고 기존 ADR-066 무결성 검증을 완료한 뒤에만 발행한다. Spool은 Core restricted artifact lifecycle과 deletion generation을 따른다. V1은 전체 resource 재조회만 허용한다. Page/chunk 및 resumable delivery는 별도 V2 계약이다. 오류 code, retry와 Session 상태는 `TRADING_VERSIONING.md` §14를 따른다.

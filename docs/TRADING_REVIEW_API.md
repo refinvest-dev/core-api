@@ -372,7 +372,12 @@ Normalization request는 Core logical import/dispatch ID와 `coreNormalizationRu
 Artifact ID/SHA-256, source/review timezone, product/mode, hash specification version,
 **exact nested** normalizer+reconstruction target VersionSet), 두 job-bound
 `artifactAccessGrants`, pinned instrument terms, `retryPolicyVersion`, deletion generation,
-attempt token을 포함한다. `inputIdentity`만 RFC 8785 V1 `inputSetHash` 대상이다.
+attempt token과 Run에 pin한 `resultDeliveryPolicy`를 포함한다. `inputIdentity`만 RFC 8785 V1
+`inputSetHash` 대상이다. V1 policy는 `RESULT_DELIVERY_V1`/`SINGLE_RESOURCE`/advertised
+`maxAcceptedPayloadBytes`/`[identity]`이며 semantic resultHash와도 분리한다. Compute는
+실제 직렬화 bytes에 Core advertised 한도와 자체 한도의 최소값을 적용한다. Terminal descriptor는
+적용한 policy version, delivery mode, media type, encoding, byteSize, payloadSha256와
+schema/hash version을 제공한다. Core 수신과 초과 failure는 [delivery 정본](TRADING_NORMALIZATION_RESULT_DELIVERY.md)을 따른다.
 Compute는 독립 재계산과 grant/identity 일치를 검증한다. grant locator/expiry,
 execution/attempt/Run ID, retry policy와 generation은 hash 대상이 아니다. Member profile이나
 raw account identifier는 포함하지 않는다. OpenAPI required field를 runtime `extra=forbid`
