@@ -390,6 +390,10 @@ DeletionRequest
   quality, capability와 Session `ACCEPTED` 및 latest pointer는 한 publication transaction에서 commit한다.
   staging은 조회 불가하다. 현재 deletion generation, 실행 identity, inputSetHash 또는 VersionSet이 다르면
   결과를 `OBSOLETE`로 폐기한다. `PERSISTED` ACK는 commit 뒤에만 보내며 ACK 실패는 ACK만 재시도한다.
+  V1 delivery는 Run에 pin한 bounded 단일 resource이며 Compute는 실제 serialized bytes 상한을
+  terminal success 전에 적용한다. Core는 실제 bytes count와 incremental hash를 protected spool에서
+  확인한 뒤 streaming parse/bounded batch staging한다. 전체 response/JSON tree를 heap에 적재하지
+  않고 deletion generation 변경 시 수신과 staging을 취소·정리한다(ADR-067).
 - `TR-I41 Processing Failure Isolation`: 자동 재시도 중 Session은 `VALIDATING`; RetryPolicy 예산 소진은
   `PROCESSING_FAILED`이고 Revision은 없다. `REJECTED`는 결정적인 source/지원 정책 위반에만 쓴다.
   입력 identity/specification, source content, 결과 count/hash/reference의 무결성 실패는 CSV 거부가

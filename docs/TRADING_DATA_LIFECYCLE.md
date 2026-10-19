@@ -78,6 +78,7 @@ hash도 동일 파일의 재등장을 연결할 수 있어 `OPERATIONAL_METADATA
 | `BehaviorMetric` | Core `TradingAnalysisResult` object | 집계·표본·금액 비율; derived | 결정론적 지표 | 전송·저장 | result lifecycle | result와 함께 purge | 예 | 예 | 금지 |
 | `BehaviorFinding` | Core `TradingAnalysisResult` object | 선택 결과·evidence; derived | 검토 대상 노출 | 전송·저장 | result lifecycle | result와 함께 purge | 예 | 예 | 금지 |
 | Compute Runtime | Compute durable queue/encrypted scratch | 최소 job payload 및 검증된 staging bytes; 원 분류 상속 | 제한된 계산·retry | TLS + 저장 암호화 | terminal 후 최대 `PT24H`; 완료/취소 시 staging 삭제 대상, 삭제 tombstone 수신 시 즉시 purge queue에 등록 | job cleanup/deletion cancellation | 장기 backup 금지 | 아니오 | 금지 |
+| Core terminal result spool | Core protected temporary storage | 공개 canonical/evidence 거래값; restricted | V1 bytes hash 확인 뒤 streaming parse | 기존 Core artifact 암호화·접근 정책 | 성공/실패/삭제 즉시 purge; crash orphan 상한은 설정으로 pin, 최대 `PT24H` | 수신 종료·Session/상위 삭제·orphan sweeper | backup 제외 | 아니오 | 금지 |
 | Operational Log | 중앙 log store | allowlisted metadata만; operational | 상태·성능·장애 진단 | 전송·저장 | event time `+ P30D` | 자동 TTL | 별도 backup 금지 | 아니오 | 금지 |
 | Audit Event | append-only audit store | actor, scope ID, action; operational | 접근·정책·삭제 증거 | 전송·저장 | event time `+ P180D` | TTL purge; financial payload 금지 | 예, backup copy는 최대 `P30D` | 일반 조회 아님; 삭제 상태는 별도 노출 | 금지 |
 | Deletion Request/ledger | primary control table + restore control plane | opaque scope ID, generation, 상태; operational | idempotency, restore suppression | 전송·저장 | 완료/복구 `+ P180D`; failed는 복구 전 만료 금지 | audit TTL 후 purge | restore control copy 예 | request 상태 예 | 금지 |
@@ -289,6 +290,13 @@ deletion ledger는 backup 최대 기간보다 긴 180일을 보관하므로 모�
 analysis와 retry admission 및 normalization grant update를 차단한다. 모든 Core→Compute job,
 grant update와 terminal handoff는 해당 generation을 포함한다.
 Core는 terminal result 저장 transaction에서 현재 generation과 tombstone을 다시 검사한다.
+Terminal result 수신 중 generation이 바뀌면 HTTP stream을 취소하고 Core protected spool과
+부분 staging을 즉시 지운다. Spool 이름은 서버 생성 opaque 값이며 사용자 ID/UID/symbol/
+filename을 path에 넣지 않는다. 최소 권한·quota·암호화는 기존 Core artifact 정책을
+재사용한다. path/content는 log·metric·error·backup에 기록하지 않는다. Hash mismatch와
+parse 실패도 즉시 purge가 기본이고, crash orphan은 생성 시각·generation을 기준으로
+sweeper가 정리한다. 격리가 필요하면 암호화된 별도 짧은 TTL과 접근 감사가 있는 명시적
+운영 정책만 허용한다. 상세 수신 순서는 [result delivery V1](TRADING_NORMALIZATION_RESULT_DELIVERY.md)을 따른다.
 Core가 signed grant를 재발급하기 전에도 raw TTL, owner scope, tombstone과 current generation을
 검사한다. Compute는 자신의 pinned generation과 다른 update를 거절하지만 Core의 최신 tombstone을
 독자 조회하지 않으므로 Core publication 검사가 최종 방어선이다. 삭제 뒤 이미 완료된 payload는
