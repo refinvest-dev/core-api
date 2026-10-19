@@ -55,7 +55,8 @@ interface TradingImportUseCase {
     fun deleteArtifact(id: TradingSourceArtifactId, key: String): TradingDeletion
 }
 
-data class TradingImportSessionView(val session: TradingImportSession, val artifacts: List<TradingSourceArtifact>)
+data class TradingImportSessionView(val session: TradingImportSession, val artifacts: List<TradingSourceArtifact>,
+                                    val published: PublishedLedgerSummary? = null)
 data class UploadArtifactResult(val artifact: TradingSourceArtifact, val created: Boolean)
 data class TradingUploadMetadata(val role: TradingArtifactRole, val filename: String, val contentType: String,
                                  val byteSize: Long, val sha256: String, val dialectCandidate: String)

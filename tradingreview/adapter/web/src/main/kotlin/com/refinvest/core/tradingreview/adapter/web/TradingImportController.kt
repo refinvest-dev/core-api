@@ -47,6 +47,7 @@ data class TradingImportSessionResponse(
     val validationStartedAt: Instant?, val uploadedArtifactRoles: List<TradingArtifactRole>,
     val missingArtifactRoles: List<TradingArtifactRole>, val canValidate: Boolean,
     val failure: TradingImportFailure?, val completedAt: Instant?,
+    val qualitySummary: JsonNode? = null, val createdLedgerRevisionId: String? = null,
 ) {
     companion object {
         fun from(view: TradingImportSessionView, now: Instant, mapper: ObjectMapper): TradingImportSessionResponse {
@@ -54,6 +55,13 @@ data class TradingImportSessionResponse(
             val uploaded = view.artifacts.filter { it.retentionStatus == TradingArtifactRetentionStatus.ACTIVE }
                 .map { it.role }.sortedBy { it.name }
             val missing = session.missingArtifactRoles(view.artifacts).sortedBy { it.name }
+            val published = view.published
+            val qualitySummary = published?.let {
+                val report = mapper.readValue(it.qualityReportJson, Map::class.java)
+                    .entries.associate { entry -> entry.key.toString() to entry.value }
+                val capabilities = mapper.readValue(it.capabilityJson, List::class.java)
+                mapper.readTree(mapper.writeValueAsString(report + ("capability" to capabilities)))
+            }
             return TradingImportSessionResponse(session.id.value.toString(), session.bookId.value.toString(),
                 session.sourceTimezone, session.reviewTimezone, session.declaredPositionMode, session.status,
                 view.artifacts.map { TradingSourceArtifactResponse.from(it, now) }, session.dataPolicyVersion,
@@ -61,7 +69,8 @@ data class TradingImportSessionResponse(
                 session.deletionPolicyVersion, mapper.readTree(session.versionSetJson), session.createdAt,
                 session.validationStartedAt,
                 uploaded, missing, session.canValidate(view.artifacts), session.failure,
-                session.failure?.occurredAt)
+                published?.publishedAt ?: session.failure?.occurredAt,
+                qualitySummary, published?.revisionId)
         }
     }
 }

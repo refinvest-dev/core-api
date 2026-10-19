@@ -24,7 +24,7 @@ class TradingReviewFlywayMigrationTest {
                 val flyway = Flyway.configure().dataSource(url, user, password).schemas(schema)
                     .baselineOnMigrate(true).baselineVersion("0")
                     .locations("classpath:db/migration").load()
-                assertEquals(4, flyway.migrate().migrationsExecuted)
+                assertEquals(6, flyway.migrate().migrationsExecuted)
                 connection.schema = schema
                 connection.createStatement().use { statement ->
                     statement.executeQuery("SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name IN ('trading_accounts','trading_books','trading_idempotency','trading_deletion_requests','trading_import_sessions','trading_source_artifacts')")
@@ -32,6 +32,12 @@ class TradingReviewFlywayMigrationTest {
                     statement.executeQuery("SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name IN ('trading_normalization_runs','trading_normalization_attempts','trading_normalization_dispatches','trading_normalization_audit','trading_artifact_read_grants')")
                         .use { result -> result.next(); assertEquals(5, result.getInt(1)) }
                     statement.executeQuery("SELECT count(*) FROM information_schema.columns WHERE table_schema='$schema' AND table_name='trading_normalization_runs' AND column_name='input_identity_json'")
+                        .use { result -> result.next(); assertEquals(1, result.getInt(1)) }
+                    statement.executeQuery("SELECT count(*) FROM information_schema.columns WHERE table_schema='$schema' AND table_name='trading_normalization_runs' AND column_name='result_delivery_policy_json'")
+                        .use { result -> result.next(); assertEquals(1, result.getInt(1)) }
+                    statement.executeQuery("SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name IN ('trading_normalization_result_staging','trading_normalization_staged_items','trading_ledger_revisions','trading_source_evidence_snapshots','trading_records','trading_ledger_revision_records','trading_ledger_review_units','trading_ledger_allocations','trading_normalization_ack_dispatches')")
+                        .use { result -> result.next(); assertEquals(9, result.getInt(1)) }
+                    statement.executeQuery("SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='$schema' AND t.tgname='trading_ledger_revision_no_update'")
                         .use { result -> result.next(); assertEquals(1, result.getInt(1)) }
                 }
             } finally {

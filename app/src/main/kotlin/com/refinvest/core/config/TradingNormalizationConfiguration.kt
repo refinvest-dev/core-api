@@ -3,6 +3,7 @@ package com.refinvest.core.config
 import com.refinvest.core.tradingreview.port.TradingFailure
 import com.refinvest.core.tradingreview.port.TradingNormalizationRetryPolicy
 import com.refinvest.core.tradingreview.port.TradingNormalizationSettings
+import com.refinvest.core.tradingreview.domain.NormalizationResultDeliveryPolicy
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.time.Duration
@@ -16,6 +17,8 @@ class ConfiguredTradingNormalizationSettings(
     @Value("\${refinvest.trading-review.normalization.retry.max-delay:PT1M}") private val maxDelay: Duration,
     @Value("\${refinvest.trading-review.normalization.retry.jitter:FULL_JITTER}") private val jitter: String,
     @Value("\${refinvest.trading-review.normalization.instrument-terms-json:}") private val termsJson: String,
+    @Value("\${refinvest.trading-review.normalization.delivery.max-accepted-payload-bytes:52428800}")
+    private val maxAcceptedPayloadBytes: Long,
 ) : TradingNormalizationSettings {
     override fun retryPolicy(): TradingNormalizationRetryPolicy {
         if (version.isBlank() || maxAttempts < 1 || maxElapsed.isNegative || maxElapsed.isZero ||
@@ -27,4 +30,8 @@ class ConfiguredTradingNormalizationSettings(
     override fun instrumentTermsJson(): String = termsJson.ifBlank {
         throw TradingFailure("INSTRUMENT_TERMS_UNAVAILABLE", 422)
     }
+    override fun resultDeliveryPolicy(): NormalizationResultDeliveryPolicy = try {
+        NormalizationResultDeliveryPolicy("RESULT_DELIVERY_V1", "SINGLE_RESOURCE",
+            maxAcceptedPayloadBytes, listOf("identity"))
+    } catch (_: IllegalArgumentException) { throw TradingFailure("RESULT_DELIVERY_POLICY_UNAVAILABLE", 503) }
 }
