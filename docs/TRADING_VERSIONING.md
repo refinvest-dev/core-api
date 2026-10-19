@@ -448,7 +448,7 @@ output manifest hash도 입력 identity에 합치지 않는다.
 | `SOURCE_CONTENT_HASH_MISMATCH` | 받은 bytes SHA-256 불일치 | publication 금지 / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 attempt |
 | `INPUT_SET_HASH_MISMATCH` | Compute 재계산 `inputSetHash`와 Core `expectedInputSetHash` 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 동일 요청 자동 retry 금지; 계약 정합성 복구 후 새 Run |
 | `INPUT_HASH_SPECIFICATION_UNSUPPORTED` | Compute가 요청 hash 규격을 지원하지 않음 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 배포 호환성 복구 후 새 Run |
-| `RESULT_TRANSPORT_HASH_MISMATCH` | terminal resource bytes/size와 descriptor 불일치; 동일 payloadId 한 번 재조회 후 확정 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
+| `RESULT_TRANSPORT_HASH_MISMATCH` | exact response bytes SHA-256과 descriptor 불일치; 동일 payloadId 한 번 재조회 후 확정 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
 | `RESULT_COUNT_MISMATCH` | declared/수신 unique/staging/section itemCount 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
 | `RESULT_SECTION_HASH_MISMATCH` | staging의 공개 section hash 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
 | `RECONCILIATION_MANIFEST_HASH_MISMATCH` | 공개 manifest 재계산 hash 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
@@ -456,12 +456,18 @@ output manifest hash도 입력 identity에 합치지 않는다.
 | `RESULT_SCHEMA_UNSUPPORTED` | Core 미지원 결과 schema/hash specification | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 호환 배포 후 새 Run |
 | `EVIDENCE_REFERENCE_INVALID` | Evidence→record/unit/artifact/source row 참조 부재 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
 | `RESULT_ITEM_CONFLICT` | 동일 result item identity에 다른 공개 payload | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
+| `RESULT_PAYLOAD_LIMIT_EXCEEDED` | Compute의 실제 serialized V1 bytes가 effective maximum 초과 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 같은 policy 자동 재시도 금지; limit 호환 배포 또는 V2 후 새 Run |
+| `RESULT_PAYLOAD_LENGTH_MISMATCH` | descriptor 및 존재하는 Content-Length와 actual bytes 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 동일 resource 최대 1회 전체 재조회 후 실패 |
+| `RESULT_CONTENT_ENCODING_UNSUPPORTED` | V1에서 identity 외 Content-Encoding | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 동일 응답 재시도 금지; 계약/배포 수정 후 새 Run |
+| `RESULT_PAYLOAD_STREAM_ABORTED` | EOF 전 network/source stream 중단 | budget 내 `VALIDATING`, 소진 후 `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 동일 resource 전체 재조회; 부분 재개 없음 |
+| `RESULT_PAYLOAD_PARSE_FAILED` | length/hash 확인 후 공개 V1 JSON을 제한된 streaming parser로 해석 불가 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 동일 bytes 재시도 금지; 계약/producer 수정 후 새 Run |
 | `ARTIFACT_IDENTITY_CONFLICT` | 같은 artifact ID에 다른 SHA-256 | `409`, 기존 Session 불변 / `WAIT_FOR_RECOVERY` | 동일 identity로 재시도 금지 |
 | `TEMPORARY_DEPENDENCY_FAILURE` | Compute/network/storage 일시 장애 | budget 내 `VALIDATING`, 소진 후 `PROCESSING_FAILED` / `RETRY` | active raw에서 명시적 retry |
 
 위 입력·source·결과 무결성 실패는 CSV/지원 정책 거부가 아니므로
-Session을 `REJECTED`로 만들지 않는다. 공개 failure의 `retryable=false`와
-`userAction=WAIT_FOR_RECOVERY`를 사용한다. 원인 제거 뒤 active raw와 현재 generation에서
+Session을 `REJECTED`로 만들지 않는다. 최종 공개 failure는 `retryable=false`와
+`userAction=WAIT_FOR_RECOVERY`를 사용한다. Stream 중단의 내부 자동 재조회 중에는
+Session `VALIDATING`을 유지한다. 원인 제거 뒤 active raw와 현재 generation에서
 새 Run을 명시적으로 시작할 수 있는지는 Core가 다시 판단한다. 개별 처리 경계는 다음과 같다.
 
 | Failure | Compute terminal outcome | Core 저장·ACK/cleanup | 운영 audit와 공개 경계 |
@@ -470,6 +476,19 @@ Session을 `REJECTED`로 만들지 않는다. 공개 failure의 `retryable=false
 | `INPUT_HASH_SPECIFICATION_UNSUPPORTED` | job `FAILED`, 성공 payload 없음 | safe code·Run/Session 실패만 저장; Revision 없음, ACK 없음; runtime TTL cleanup | 지원 규격 버전 ID만; 요청 본문/URL 금지 |
 | `SOURCE_CONTENT_HASH_MISMATCH` | 다운로드 검증 뒤 job `FAILED`, normalization 시작 금지 | safe code·Run/Session 실패만 저장; Revision 없음, ACK 없음; staging 즉시 cleanup | 원본 보관/전송 조사. role과 hash prefix 최대 12자만; bytes·locator·filename 금지 |
 | 결과 무결성 code (위 8개) | Compute 자체 검증에서 발견하면 `FAILED`; Core가 완료 payload 검증에서 발견하면 Compute는 `COMPLETED`, Core Run은 `TERMINAL_FAILURE` | staging 폐기, Revision/latest 불변, `PERSISTED` ACK 금지; Compute payload는 TTL cleanup. 삭제 generation만 stale이면 `DISCARDED_STALE` 별도 규칙 | section/code, hash prefix 최대 12자와 opaque Run ID만; records/거래값/URL 금지. `RESULT_TRANSPORT_HASH_MISMATCH`만 동일 resource 한 번 재조회 가능 |
+
+ADR-067 전송 failure는 다음과 같다. 공개 `retryable`은 동일 HTTP resource의 내부 재조회 가능 여부가 아니라 현재 Session에 대한 사용자 retry command 가능 여부다. 자동 재조회 중에는 Session `VALIDATING`; terminal 실패 뒤 공개 `retryable=false`, `userAction=WAIT_FOR_RECOVERY`, Run `TERMINAL_FAILURE`이며 `REJECTED`는 아니다. 자동 재조회 최대 횟수는 최초 다운로드를 포함한 pinned RetryPolicy `maxAttempts`와 `maxElapsedTime`, payload expiry 중 먼저 도달하는 한도이며 hash/length mismatch는 그 안에서도 같은 `payloadId` **최대 1회**만 추가 재조회한다. 단일 download 내부 byte count 초과는 재조회하지 않는다. 삭제 generation이 먼저 바뀌면 failure가 아니라 `DISCARDED_STALE`/삭제 정책이 우선한다.
+
+| code | 발생 측 / Compute terminal | 자동 재조회 | Core 저장·ACK/cleanup | 공개 message | 운영 audit |
+|---|---|---|---|---|---|
+| `RESULT_PAYLOAD_LIMIT_EXCEEDED` | Compute finalization / `FAILED`, payload 없음 | 없음 | Revision 없음, ACK 없음, Compute runtime TTL | 결과 크기 제한으로 처리를 완료할 수 없습니다. | policy version, 적용 상한, code, opaque Run ID |
+| `RESULT_PAYLOAD_LENGTH_MISMATCH` | Core receive / Compute `COMPLETED` | 같은 resource 최대 1회 | spool/staging 삭제, PERSISTED 금지, Compute TTL | 결과 전송 길이를 확인할 수 없습니다. | 선언/실제 byte 수, code, opaque Run ID |
+| `RESULT_TRANSPORT_HASH_MISMATCH` | Core receive / Compute `COMPLETED` | 같은 resource 최대 1회 | spool/staging 삭제, PERSISTED 금지, Compute TTL | 결과 전송을 확인할 수 없습니다. | hash prefix 최대 12자, code, opaque Run ID |
+| `RESULT_CONTENT_ENCODING_UNSUPPORTED` | Core receive / Compute `COMPLETED` | 없음 | spool/staging 삭제, PERSISTED 금지, Compute TTL | 결과 전송 형식을 처리할 수 없습니다. | encoding 이름, code, opaque Run ID |
+| `RESULT_PAYLOAD_STREAM_ABORTED` | Core receive / Compute `COMPLETED` | RetryPolicy budget 내 전체 resource 재조회 | spool 삭제, 부분 staging 없음; 소진 시 PERSISTED 금지, Compute TTL | 결과 전송이 중단되었습니다. | code, attempt 수, opaque Run ID |
+| `RESULT_PAYLOAD_PARSE_FAILED` | Core parse / Compute `COMPLETED` | 없음 | spool/staging 삭제, PERSISTED 금지, Compute TTL | 결과 형식을 확인할 수 없습니다. | parser stage/code, opaque Run ID |
+
+Core가 descriptor/actual bytes의 advertised maximum 초과를 발견하면 `RESULT_PAYLOAD_LIMIT_EXCEEDED`로 차단하되 Compute가 이미 `COMPLETED`라면 운영상 producer 계약 위반으로 별도 기록한다. Local spool quota/timeout 장애는 이 code로 오분류하지 않고 `TEMPORARY_DEPENDENCY_FAILURE`의 budget을 적용한다. 모든 log/metric/error에서 거래값, raw row, UID, symbol, filename, spool path, signed locator와 credential을 제외한다. 파싱 실패의 원본 token이나 exception 문자열을 그대로 출력하지 않는다.
 
 위 failure 모두 공개에는 safe `code`, `retryable=false`, `userAction=WAIT_FOR_RECOVERY`,
 `occurredAt`만 기록하고 원본 행·UID·symbol·거래값·signed URL·credential은 로그에도 쓰지

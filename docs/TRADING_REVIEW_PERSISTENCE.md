@@ -133,6 +133,11 @@ Core가 검증·복사할 때까지의 transport/runtime artifact일 뿐 source 
 
 Normalization `ComputeJob`은 생성 시 계산 pin과 최초 attempt token,
 `grantRenewalCutoffAt`을 고정하고 `grantRevision=0`에서 시작한다.
+같은 시점에 `resultDeliveryPolicy`도 Run/job의 immutable transport pin으로 보존한다.
+Grant update와 execution retry는 이를 바꾸지 않으며 terminal descriptor에는 policy version과
+실제 payload byteSize를 남긴다. 적용 상한은 Core 광고값과 Compute 설정값의 최소값이다.
+Core 수신 spool은 별도 restricted temporary artifact로 관리하고 publication/삭제 시
+정리한다([delivery 정본](TRADING_NORMALIZATION_RESULT_DELIVERY.md)).
 생성 요청의 URI/만료시각은 계산 fingerprint가 아니지만
 저장된 grant를 생성 replay로 교체하지 않는다. `grantRevision`, 현재 attempt token과 grant
 locator/expiry는 별도 grant-update transaction에서만 바뀐다. 필요 동작

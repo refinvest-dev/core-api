@@ -305,8 +305,30 @@ opaque Run ID, section/code, hash prefix 최대 12자만 허용한다.
 
 V1은 단일 resource이며 007/008의 실제 page/chunk runtime은 새 schema/endpoint 이후의
 후속 Integration 요구사항이다. 현재 `verify-contract-sync.ps1`과 input identity runtime test는
-이 결과 무결성 chain을 검증하지 않는다. 후속 harness는 Compute 생성→resource/page 전송→
+이 결과 무결성 chain을 검증하지 않는다. V1 후속 harness는 Compute 생성→단일 resource 전송→
 Core staging→count→section→manifest→overall 재계산을 관통해야 한다.
+
+### 4.0.2 Bounded V1 result delivery (ADR-067)
+
+아래 stable ID는 `TR-I40`~`TR-I41`과 [delivery 정본](TRADING_NORMALIZATION_RESULT_DELIVERY.md)에 연결한다. 모두 비민감 synthetic fixture로 수행한다. 성공은 Session `ACCEPTED`/Run `PUBLISHED`/Revision 1과 commit 후 `PERSISTED` ACK다. 실패는 별도 명시가 없으면 Session `PROCESSING_FAILED`/Run `TERMINAL_FAILURE`/Revision 0, staging·spool 삭제, latest 불변, `PERSISTED` ACK 금지, Compute payload TTL cleanup이다. 자동 재조회 중에는 Session `VALIDATING`이며 삭제 우선순위는 `DISCARDED_STALE`을 따른다. 각 행은 후속 Integration `FIXTURE_PLANNED`다.
+
+| Stable Scenario ID | Given | When | Then |
+|---|---|---|---|
+| `TR-ACC-IMPORT-DELIVERY-001` | policy 한도 내 V1 result | Core가 실제 Compute HTTP stream 수신 | 전체 body/tree heap 적재 없이 protected spool+incremental hash; 확인 후 streaming parse·batch staging·semantic 검증; publication 가능 |
+| `TR-ACC-IMPORT-DELIVERY-002` | Content-Length > Core advertised 한도 | Core가 header 검사 | body 전체 읽기 전 `RESULT_PAYLOAD_LIMIT_EXCEEDED`, 발행 금지 |
+| `TR-ACC-IMPORT-DELIVERY-003` | Content-Length 없음 | Core가 actual bytes count | 한도 이내면 성공; 넘는 즉시 `RESULT_PAYLOAD_LIMIT_EXCEEDED`로 중단 |
+| `TR-ACC-IMPORT-DELIVERY-004` | descriptor/header/actual 길이 불일치 | stream EOF 또는 선언보다 큰 bytes | `RESULT_PAYLOAD_LENGTH_MISMATCH`, 같은 resource 최대 1회 전체 재조회 후 실패, 발행 금지 |
+| `TR-ACC-IMPORT-DELIVERY-005` | one-byte 변조, length 동일 | incremental transport hash 비교 | parse/staging 시작 전 차단, 같은 resource 최대 1회 재조회, 반복 시 `RESULT_TRANSPORT_HASH_MISMATCH`; spool 삭제 |
+| `TR-ACC-IMPORT-DELIVERY-006` | Compute 실제 serialized bytes가 effective maximum 초과 | terminal finalization | `FAILED/RESULT_PAYLOAD_LIMIT_EXCEEDED`, 성공 payload/descriptor 없음; Core 다운로드 없음 |
+| `TR-ACC-IMPORT-DELIVERY-007` | hash 유효, 공개 schema로 parsing 불가 | Core streaming parse | `RESULT_PAYLOAD_PARSE_FAILED`, 부분 staging 발행 금지, spool 삭제 |
+| `TR-ACC-IMPORT-DELIVERY-008` | item 수 > batch 크기 | streaming staging 및 재검증 | bounded heap, 여러 batch, 최종 count/section/overall hash 동일 |
+| `TR-ACC-IMPORT-DELIVERY-009` | spool 생성 뒤 Core crash | orphan sweeper 실행 | retention 상한 내 spool 삭제, LedgerRevision 없음 |
+| `TR-ACC-IMPORT-DELIVERY-010` | 수신 중 Session 삭제·generation 상승 | Core가 stream/transaction 재검사 | stream 취소, spool/staging 삭제, publication 금지, stale 정책 우선 |
+| `TR-ACC-IMPORT-DELIVERY-011` | 큰 synthetic payload와 제한 JVM heap | 실제 Compute→Core 전달 | OOM 없이 성공 또는 명시적 limit failure; heap 사용량이 payload 크기에 선형 증가하지 않음 |
+| `TR-ACC-IMPORT-DELIVERY-012` | gzip 등 V1 미지원 encoding | header/descriptor 검사 | `RESULT_CONTENT_ENCODING_UNSUPPORTED`, publication 금지 |
+| `TR-ACC-IMPORT-DELIVERY-013` | 응답 stream 중단/truncation | EOF/예외 처리 | 예외는 `RESULT_PAYLOAD_STREAM_ABORTED` 재조회, 정상 EOF 길이 부족은 `RESULT_PAYLOAD_LENGTH_MISMATCH`; 모두 부분 publish 금지 |
+
+Harness는 실제 Compute result endpoint와 Core receiver를 연결해 Content-Length 유무/초과, actual 초과, truncate, 변조, encoding, crash, 제한 heap, 삭제 경쟁을 주입한다. 단위 verifier나 fixture bytes 복사 검사만으로 완료 처리하지 않는다. `FIXTURE_PLANNED`를 실제 실행 전 PASS로 표시하지 않는다.
 
 `TR-ACC-IMPORT-ORCH-014`의 이전 payload는 Compute cleanup TTL 또는 명시적 cancellation으로 정리한다.
 `DISCARDED_STALE` ACK는 삭제 generation이 증가한 경우에만 사용한다. `TR-ACC-IMPORT-ORCH-016`의
