@@ -431,6 +431,13 @@ manifestHash와 resultHash를 보존한다. 기존 terminal/revision을 새 규�
 published hash를 덮어쓰지 않는다. 규칙 변경은 새 spec/V2 vector와 새 LedgerRevision을 요구한다.
 정본은 [`TRADING_NORMALIZATION_RESULT_INTEGRITY.md`](TRADING_NORMALIZATION_RESULT_INTEGRITY.md)다.
 
+V1 공개 reconciliation manifest의 required `counts`는 수신 `ReconciliationManifestPayload`에서
+`manifestHash`만 제외한 hash 입력에 포함된다. 필수 필드 목록의 누락을 정정한 것이며 V1 의미,
+hash 알고리즘과 `TRADING_NORMALIZATION_RESULT_HASH_V1`은 변경되지 않는다. 기존 fixed vector,
+terminal result 및 LedgerRevision을 새 규칙으로 재계산하거나 재처리하지 않는다. `counts`를
+hash 입력에서 제외하려는 방식은 V1이 아니며, 도입하려면 새 hash specification version과
+별도 vector가 필요하다. Manifest hash 일치와 staging 실제 count 일치는 각각 검증한다.
+
 Import normalization의 logical input은 한 Book, MVP 한 source ImportSession, role별 artifact ID/SHA-256,
 source/review timezone, product/mode 및 exact target VersionSet의 `inputSetHash`다(ADR-065). 기존 Revision은
 새 Import에 누적되지 않는다. retry attempt, grant locator/expiry와 Compute dispatch ID는 inputSetHash에서
