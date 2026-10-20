@@ -54,6 +54,45 @@ class NormalizationResultIntegrityTest {
     }
 
     @Test
+    fun receivedManifestCountsAreHashedBeforeComparingActualCounts() {
+        val staleHash = payload()
+        @Suppress("UNCHECKED_CAST")
+        val manifest = staleHash["reconciliationManifest"] as MutableMap<String, Any?>
+        @Suppress("UNCHECKED_CAST")
+        val declared = manifest["counts"] as MutableMap<String, Any?>
+        declared["canonicalRecordCount"] = 2
+        assertEquals("RECONCILIATION_MANIFEST_HASH_MISMATCH",
+            assertFailsWith<ResultIntegrityFailure> { NormalizationResultVerifier.verify(staleHash) }.code)
+
+        manifest["manifestHash"] = NormalizationResultCanonicalizer.hash(manifest - "manifestHash")
+        assertEquals("RESULT_COUNT_MISMATCH",
+            assertFailsWith<ResultIntegrityFailure> { NormalizationResultVerifier.verify(staleHash) }.code)
+
+        val missingCounts = payload()
+        @Suppress("UNCHECKED_CAST")
+        (missingCounts["reconciliationManifest"] as MutableMap<String, Any?>).remove("counts")
+        assertEquals("RESULT_SCHEMA_UNSUPPORTED",
+            assertFailsWith<ResultIntegrityFailure> { NormalizationResultVerifier.verify(missingCounts) }.code)
+    }
+
+    @Test
+    fun repeatedIdentityInsideOnePayloadIsRejectedEvenWhenTheItemIsIdentical() {
+        val duplicate = payload()
+        @Suppress("UNCHECKED_CAST")
+        val records = duplicate["canonicalRecords"] as MutableList<MutableMap<String, Any?>>
+        records.add(records.first().toMutableMap())
+        assertEquals("RESULT_ITEM_CONFLICT",
+            assertFailsWith<ResultIntegrityFailure> { NormalizationResultVerifier.verify(duplicate) }.code)
+
+        val duplicateCapability = payload()
+        @Suppress("UNCHECKED_CAST")
+        val capabilities = duplicateCapability["capability"] as MutableList<String>
+        capabilities.add(capabilities.first())
+        assertEquals("RESULT_ITEM_CONFLICT",
+            assertFailsWith<ResultIntegrityFailure> { NormalizationResultVerifier.verify(duplicateCapability) }.code)
+    }
+
+    @Test
     fun sectionManifestAndEvidenceFailuresStayDistinct() {
         @Suppress("UNCHECKED_CAST")
         fun mutated(change: (MutableMap<String, Any?>) -> Unit): String {
