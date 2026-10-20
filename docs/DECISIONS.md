@@ -1134,6 +1134,8 @@ Compute 내부 `ReconciliationManifest`/`NormalizationResult` 전체 필드를 �
 
 `payloadSha256`은 단일 resource의 정확한 응답 entity body bytes, `manifestHash`는 공개 manifest projection, `sectionHash`는 정렬된 공개 section, `resultHash`는 공개 digest manifest의 RFC 8785 JCS/SHA-256이다. 공개 결과 hash 규격 `TRADING_NORMALIZATION_RESULT_HASH_V1`은 input hash 규격과 별도다. 실행 시각/locator/attempt/deletion generation은 semantic hash에서 제외하되 publication gate에서 별도 검증한다. V1 hash 입력을 변경하지 않는다. 새 규격은 V2, 새 vector, Core/Compute 호환성 pin 및 새 LedgerRevision으로만 도입한다. 미지원 schema/spec은 발행하지 않고 `PROCESSING_FAILED`로 종료한다.
 
+**2026-10-21 명확화 — V1 manifest `counts`**: V1 `manifestHash` 입력은 수신한 공개 `ReconciliationManifestPayload`에서 `manifestHash` 하나만 제거한 객체이며 required `counts`를 포함한다. `TRADING_NORMALIZATION_RESULT_INTEGRITY.md`의 필수 필드 목록에서 `counts`가 빠졌던 것은 문서 누락이다. 포괄 projection 규칙, Compute OpenAPI의 required schema, 고정 vector 및 기존 Core·Compute logical hash 구현은 모두 포함 규칙을 따른다. 수신 `counts`를 staging에서 재계산한 값으로 치환해 hash하지 않고, manifest hash와 실제 count를 각각 검증한다. 이번 정정은 V1 알고리즘·`TRADING_NORMALIZATION_RESULT_HASH_V1`·고정 vector·기존 결과를 변경하지 않으므로 LedgerRevision 또는 normalization result를 재처리하지 않는다. 향후 hash 입력 필드를 실제로 바꾸려면 새 specification version과 vector가 필요하다.
+
 ---
 
 ## ADR-067 — Bounded Trading Normalization Result Delivery V1

@@ -290,7 +290,7 @@ opaque Run ID, section/code, hash prefix 최대 12자만 허용한다.
 
 | Stable Scenario ID | Given | When | Then |
 |---|---|---|---|
-| `TR-ACC-IMPORT-INTEGRITY-001` | V1 모든 section/count/manifest/digest가 vector와 일치 | Core가 staging/count/section/manifest/overall hash를 독립 재계산 | 모두 일치; Revision 하나 발행; commit 뒤 PERSISTED |
+| `TR-ACC-IMPORT-INTEGRITY-001` | V1 모든 section/count/manifest/digest가 vector와 일치 | Core가 수신 manifest hash, staging 실제 count, section/overall hash를 독립 검증 | 모두 일치; Revision 하나 발행; commit 뒤 PERSISTED |
 | `TR-ACC-IMPORT-INTEGRITY-002` | canonical record 하나 누락, declared count 유지 | staging count 검사 | `RESULT_COUNT_MISMATCH`; 발행 금지 |
 | `TR-ACC-IMPORT-INTEGRITY-003` | Evidence snapshot 하나 누락, declared count 유지 | Evidence count 검사 | `RESULT_COUNT_MISMATCH`; 발행 금지 |
 | `TR-ACC-IMPORT-INTEGRITY-004` | record 수 동일, 가격만 변경 | canonical section 재계산 | `RESULT_SECTION_HASH_MISMATCH`; 발행 금지 |
@@ -302,11 +302,15 @@ opaque Run ID, section/code, hash prefix 최대 12자만 허용한다.
 | `TR-ACC-IMPORT-INTEGRITY-010` | Core 미지원 result hash version | version gate 실행 | `RESULT_SCHEMA_UNSUPPORTED`, PROCESSING_FAILED; 발행 금지 |
 | `TR-ACC-IMPORT-INTEGRITY-011` | 존재하지 않는 canonical record를 Evidence/allocation이 참조 | 참조 무결성 검사 | `EVIDENCE_REFERENCE_INVALID`; 발행 금지 |
 | `TR-ACC-IMPORT-INTEGRITY-012` | response entity bytes와 descriptor SHA-256 불일치 | 동일 payloadId 한 번 재조회 | 복구되면 semantic 검증 진행; 반복되면 `RESULT_TRANSPORT_HASH_MISMATCH`; 발행 금지 |
+| `TR-ACC-IMPORT-INTEGRITY-013` | 유효한 V1 manifest의 수신 `counts` 한 값을 바꾸고 기존 `manifestHash` 유지 | 수신 manifest에서 `manifestHash`만 제외하고 `counts` 포함 hash 재계산 | `RECONCILIATION_MANIFEST_HASH_MISMATCH`; staging 폐기, Revision 없음, latest 불변 |
+| `TR-ACC-IMPORT-INTEGRITY-014` | 수신 `counts` 한 값을 변경하고 manifest hash, manifest section digest, 전체 resultHash 및 관련 선언값을 그 값에 맞게 다시 계산; 실제 section item은 그대로 유지 | manifest hash 일치 확인 후 staging 실제 count와 수신 `counts` 비교 | `RESULT_COUNT_MISMATCH`; manifest hash 성공을 count 검증 성공으로 취급하지 않고 발행 금지 |
+| `TR-ACC-IMPORT-INTEGRITY-015` | V1 `ReconciliationManifestPayload`에서 required `counts` 누락 또는 null | payload schema 검증 | 정상 manifest가 아니므로 발행 금지; hash 입력을 임의의 재계산 count로 채우지 않음 |
+| `TR-ACC-IMPORT-INTEGRITY-016` | 유효한 V1 manifest의 논리값은 같고 JSON object field 순서만 다름 | JCS 적용 후 manifest hash 비교 | 기존 `manifestHash`와 동일; count와 다른 검증도 통과하면 발행 허용 |
 
 V1은 단일 resource이며 007/008의 실제 page/chunk runtime은 새 schema/endpoint 이후의
 후속 Integration 요구사항이다. 현재 `verify-contract-sync.ps1`과 input identity runtime test는
 이 결과 무결성 chain을 검증하지 않는다. V1 후속 harness는 Compute 생성→단일 resource 전송→
-Core staging→count→section→manifest→overall 재계산을 관통해야 한다.
+Core staging→수신 manifest hash→실제 count→section/overall hash 검증을 관통해야 한다.
 
 ### 4.0.2 Bounded V1 result delivery (ADR-067)
 
