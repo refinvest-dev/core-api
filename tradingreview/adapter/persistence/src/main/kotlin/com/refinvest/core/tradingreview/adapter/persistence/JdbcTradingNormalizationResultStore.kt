@@ -148,10 +148,11 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
             rs.getLong(1) to rs.getLong(2) }, runId).single()
         sections["POSITION_ALLOCATIONS"] = nested.first
         sections["EXCLUDED_REVIEW_UNITS"] = nested.second
-        sections["VALIDATION_ISSUES"] = jdbc.queryForObject("""SELECT COALESCE(SUM(
+        val nestedValidationIssues = jdbc.queryForObject("""SELECT COALESCE(SUM(
             jsonb_array_length(item_json->'validationIssues')),0)
             FROM trading_normalization_staged_items
             WHERE run_id=?::uuid AND section_type='QUALITY_REPORT'""", Long::class.java, runId) ?: 0
+        sections["VALIDATION_ISSUES"] = (sections["VALIDATION_ISSUES"] ?: 0L) + nestedValidationIssues
         return sections
     }
 

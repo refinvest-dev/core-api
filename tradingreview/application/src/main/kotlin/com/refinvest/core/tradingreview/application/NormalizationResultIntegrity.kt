@@ -130,7 +130,7 @@ object NormalizationResultVerifier {
     private val sections = listOf("ARTIFACT_COVERAGES", "CANONICAL_RECORDS", "CAPABILITIES",
         "QUALITY_REPORT", "RECONCILIATION_ISSUES", "RECONCILIATION_MANIFEST",
         "RECONCILIATION_MATCHES", "REVIEW_UNITS", "SOURCE_EVIDENCE_SNAPSHOTS")
-    private val rootFields = setOf("jobId", "coreLogicalJobId", "coreNormalizationRunId",
+    internal val rootFields = setOf("jobId", "coreLogicalJobId", "coreNormalizationRunId",
         "coreImportSessionId", "attemptToken", "deletionGeneration", "status", "targetVersionSet",
         "inputSetHash", "hashSpecificationVersion", "resultSchemaVersion",
         "resultHashSpecificationVersion", "counts", "sectionDigests", "resultDigestManifest",
@@ -143,7 +143,7 @@ object NormalizationResultVerifier {
     private val digestManifestFields = setOf("resultHashSpecificationVersion", "resultSchemaVersion",
         "inputSetHash", "inputHashSpecificationVersion", "targetVersionSet", "counts",
         "sectionDigests", "reconciliationManifestHash")
-    private val manifestFields = setOf("manifestVersion", "manifestHashSpecificationVersion",
+    internal val manifestFields = setOf("manifestVersion", "manifestHashSpecificationVersion",
         "inputSetHash", "executionInputHash", "canonicalRecordSetHash", "qualityReportHash",
         "instrumentTermsHash", "versionSetHash", "sourceArtifactHashesByRole", "counts",
         "manifestHash", "reconstructionPolicyVersion", "reconciliationVersion",
