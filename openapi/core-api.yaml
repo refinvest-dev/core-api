@@ -1788,6 +1788,7 @@ components:
     QualityStatus:
       type: string
       enum: [PENDING, ACCEPTABLE, ACCEPTABLE_WITH_EXCLUSIONS, REJECTED]
+      description: REJECTED는 향후 완전한 rejection quality assessment를 위한 값이며 V1의 미계산 보고서 placeholder로 사용하지 않는다.
     TradingQualityReport:
       type: object
       required: [qualityStatus, rowCountsByArtifactRole, ignoredNonTradingRowCounts, validationIssues, reconciliationStatusCounts, capability, excludedReasonCounts]
@@ -1849,7 +1850,11 @@ components:
           required: [status, qualitySummary, failure, completedAt]
           properties:
             status: { type: string, enum: [REJECTED] }
-            qualitySummary: { $ref: '#/components/schemas/TradingQualityReport' }
+            qualitySummary:
+              allOf:
+                - $ref: '#/components/schemas/TradingQualityReport'
+              nullable: true
+              description: 완전하고 검증된 품질 보고서가 생성되지 않은 V1 source rejection에서는 null이다. Core는 빈 값이나 0으로 합성하지 않는다.
             failure: { $ref: '#/components/schemas/TradingImportFailure' }
             completedAt: { type: string, format: date-time }
     TradingImportSessionProcessingFailed:

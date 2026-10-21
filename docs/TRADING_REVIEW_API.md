@@ -204,6 +204,22 @@ Import status는 다음을 함께 반환한다.
 - pinned Normalizer/Reconstruction/Data Policy version sets와 implementation digest
 - structured failure, created/validation-started/completed timestamps
 
+| Import 상태 | failure | qualitySummary | LedgerRevision |
+|---|---|---|---|
+| `RECEIVED` | 없음 | null 또는 미평가 | 없음 |
+| `VALIDATING` | 없음 | null 또는 미평가 | 없음 |
+| `ACCEPTED` | 없음 | 검증된 Compute `COMPLETED` payload의 non-null report 필수 | 존재; `createdLedgerRevisionId` 필수 |
+| `REJECTED` | non-null 필수 | 필드는 필수, 완전한 report가 없으면 null | 없음 |
+| `PROCESSING_FAILED` | non-null 필수 | 요구하지 않음; 노출 시 null | 없음 |
+
+`ACCEPTED`의 공개 qualitySummary는 발행된 LedgerRevision의 quality report와 같아야 한다. report가
+없으면 Core는 publication하지 않는다. `REJECTED`에서 null은 미계산·미완료이며 실제 0이 아니다.
+Core는 `QualityStatus.REJECTED`를 근거로 빈 row count, capability, reconciliation count를 합성하지
+않는다. V1 Compute `FAILED`는 safe structured failure만으로 유효하며 성공 payload나 quality report를
+요구하지 않는다. Core는 source rejection code만 공개 `REJECTED`로, integrity·delivery·운영 실패는
+`PROCESSING_FAILED`로 분류한다. 어느 실패도 LedgerRevision 또는 Book `latestRevisionId`를 변경하지 않는다.
+행·필드 단위 rejection 진단은 향후 별도 versioned `RejectionDiagnostics` 계약에서 정의한다.
+
 `PROCESSING_FAILED`는 bounded 자동 재시도를 소진한 Compute/네트워크/storage 운영 실패다. 같은 Session의
 active raw와 exact VersionSet을 다시 확인한 명시적 retry만 `VALIDATING`으로 전이하고 새
 `NormalizationRun`/attempt/audit event를 만든다. 동일 logical input fingerprint를 유지한다. raw가
@@ -551,6 +567,7 @@ expected calculation은 HTTP가 아니라 정본 문서의 terminal payload asse
 | `ACC-NORMJOB-011`, `ACC-NORMJOB-012` | poll import | normalization status/create | ComputeJob | deadline safe failure, 별도 pool `503` |
 | `ACC-NORMJOB-013`, `ACC-NORMJOB-014` | validate/poll import | normalization create/status; Core grant redemption | Dispatch, Artifact | terminal 새 job/lineage; pre-create binding 검증 |
 | `ACC-IMPORT-ORCH-017`~`ACC-IMPORT-ORCH-022` | validate/poll/get import/revision | normalization create/status/result/payload/ack | NormalizationRun, ComputeJob, Revision | runtime DTO, V1 hash, grant refresh, failure 분리, Core Run ID 왕복 |
+| `TR-ACC-IMPORT-QUALITY-001`~`TR-ACC-IMPORT-QUALITY-005` | validate/poll/get import/revision | normalization status/result | ImportSession, NormalizationRun, Revision, Book | REJECTED nullable quality, ACCEPTED 검증 report, PROCESSING_FAILED 분리, latest 불변 |
 | `ACC-RECON-001`, `ACC-RECON-002`, `ACC-RECON-003`, `ACC-RECON-004`, `ACC-RECON-005` | get quality/revision; 이후 review unit | normalization result | Manifest, Revision | expected status/allocation |
 | `ACC-RECON-006`, `ACC-RECON-007`, `ACC-RECON-008`, `ACC-RECON-009`, `ACC-RECON-010`, `ACC-RECON-011`, `ACC-RECON-012` | get quality/revision; metric query | normalization result | Manifest, Revision | exclusion/tolerance/capability/coverage |
 | `ACC-ANALYSIS-001`, `ACC-ANALYSIS-002`, `ACC-ANALYSIS-003`, `ACC-ANALYSIS-004`, `ACC-ANALYSIS-005`, `ACC-ANALYSIS-006`, `ACC-ANALYSIS-007`, `ACC-ANALYSIS-008`, `ACC-ANALYSIS-009` | run/poll/get review/metric | create/poll/get analytics | AnalysisRun, Result | completed status/value-or-null |
