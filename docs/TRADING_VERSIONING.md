@@ -447,6 +447,11 @@ source/review timezone, product/mode 및 exact target VersionSet의 `inputSetHas
 실행/삭제 gate에 pin하지만 `inputSetHash`에서 제외한다. Compute의 사후 dialect/terms/
 output manifest hash도 입력 identity에 합치지 않는다.
 
+`REJECTED`의 required nullable `qualitySummary`는 공개 상태 표현만 명확히 한다. 미완료 report의
+`null`을 0으로 대체하지 않으며, 기존 LedgerRevision·resultHash·inputSetHash·section digest·
+manifestHash·고정 vector·hash specification version·성공 payload schema는 변경하지 않는다.
+기존 LedgerRevision 재처리는 필요하지 않다.
+
 | Import failure | 발생 조건 | 공개 Session / userAction | retry |
 |---|---|---|---|
 | `ARTIFACT_REFERENCE_EXPIRED` | signed grant가 staging 전에 만료 | 자동 retry 중 `VALIDATING` / `WAIT_FOR_RECOVERY` | 새 grant, 같은 logical input |

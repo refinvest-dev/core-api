@@ -25,6 +25,8 @@ class TradingImportControllerTest {
         "UTC", "Asia/Seoul", TradingPositionMode.ONE_WAY, "TRADING_DATA_POLICY_V1", "TRADING_RETENTION_V1",
         "SOURCE_EVIDENCE_MASK_V1", "BOOK_LIFECYCLE", "TRADING_DELETION_V1",
         "{\"versionSetHash\":\"exact\"}", TradingImportStatus.RECEIVED, 0, false, now, now, 0)
+    private var currentSession = session
+    private var published: PublishedLedgerSummary? = null
     private val artifacts = mutableListOf<TradingSourceArtifact>()
     private val deletion = TradingDeletion(90, MemberId(30), "TRADING_IMPORT_SESSION", 10,
         "IMPORT_SESSION_SUBTREE", "REQUESTED", 1, 0, 0, now, now, now, now.plusSeconds(86400),
@@ -33,7 +35,7 @@ class TradingImportControllerTest {
         override fun create(bookId: TradingBookId, sourceTimezone: String, reviewTimezone: String,
                             mode: TradingPositionMode, dataPolicyVersion: String?, clientRequestReference: String?,
                             key: String) = session
-        override fun get(id: TradingImportSessionId) = TradingImportSessionView(session, artifacts.toList())
+        override fun get(id: TradingImportSessionId) = TradingImportSessionView(currentSession, artifacts.toList(), published)
         override fun list(bookId: TradingBookId, page: Int, size: Int) = TradingPage(listOf(get(session.id)), page, size, 1)
         override fun upload(id: TradingImportSessionId, role: TradingArtifactRole, filename: String,
                             contentType: String, declaredSize: Long, declaredSha256: String,
@@ -81,6 +83,40 @@ class TradingImportControllerTest {
             .andExpect(jsonPath("$.missingArtifactRoles.length()").value(2))
         mvc.perform(delete("/trading-import-sessions/10").header("Idempotency-Key", "delete"))
             .andExpect(status().isAccepted).andExpect(jsonPath("$.affectedResources.importSessions").value(1))
+    }
+
+    @Test
+    fun terminalImportResponsesPreserveQualityNullAndAcceptedReport() {
+        currentSession = session.copy(status = TradingImportStatus.REJECTED,
+            failure = TradingImportFailure("REQUIRED_COLUMN_MISSING", false, "NONE", now))
+        val rejected = mapper.readTree(mvc.perform(get("/trading-import-sessions/10"))
+            .andExpect(status().isOk).andReturn().response.contentAsString)
+        assertEquals("REJECTED", rejected.path("status").asText())
+        assertEquals(true, rejected.has("qualitySummary"))
+        assertEquals(true, rejected.path("qualitySummary").isNull)
+        assertEquals("REQUIRED_COLUMN_MISSING", rejected.path("failure").path("code").asText())
+        assertEquals(true, rejected.hasNonNull("completedAt"))
+        assertEquals(false, rejected.hasNonNull("createdLedgerRevisionId"))
+
+        currentSession = session.copy(status = TradingImportStatus.PROCESSING_FAILED,
+            failure = TradingImportFailure("RESULT_HASH_MISMATCH", false, "WAIT_FOR_RECOVERY", now))
+        val failed = mapper.readTree(mvc.perform(get("/trading-import-sessions/10"))
+            .andExpect(status().isOk).andReturn().response.contentAsString)
+        assertEquals("PROCESSING_FAILED", failed.path("status").asText())
+        assertEquals("RESULT_HASH_MISMATCH", failed.path("failure").path("code").asText())
+        assertEquals(false, failed.hasNonNull("qualitySummary"))
+        assertEquals(false, failed.hasNonNull("createdLedgerRevisionId"))
+
+        currentSession = session.copy(status = TradingImportStatus.ACCEPTED)
+        published = PublishedLedgerSummary("revision-1",
+            """{"qualityStatus":"ACCEPTABLE","rowCountsByArtifactRole":{"TRADE_HISTORY":1},"ignoredNonTradingRowCounts":{},"validationIssues":[],"reconciliationStatusCounts":{},"excludedReasonCounts":{}}""",
+            """["CLOSED_OUTCOME"]""", now)
+        val accepted = mapper.readTree(mvc.perform(get("/trading-import-sessions/10"))
+            .andExpect(status().isOk).andReturn().response.contentAsString)
+        assertEquals("ACCEPTED", accepted.path("status").asText())
+        assertEquals("revision-1", accepted.path("createdLedgerRevisionId").asText())
+        assertEquals("ACCEPTABLE", accepted.path("qualitySummary").path("qualityStatus").asText())
+        assertEquals("CLOSED_OUTCOME", accepted.path("qualitySummary").path("capability")[0].asText())
     }
 
     @Test

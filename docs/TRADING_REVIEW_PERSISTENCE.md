@@ -70,6 +70,12 @@ Member
 
 ### 2.1 Required field-by-field contract
 
+Import Session의 공개 `qualitySummary`는 저장된 실패 상태의 파생 품질값이 아니다. `ACCEPTED`에서만
+검증된 Compute `COMPLETED` report를 LedgerRevision에 저장하고 같은 값을 공개한다. source
+`REJECTED`는 safe failure를 저장하지만 Revision을 만들지 않으며, 완전한 report가 없으면 공개
+`qualitySummary=null`이다. Core는 report를 계산하거나 0/빈 컬렉션으로 합성하지 않는다.
+`PROCESSING_FAILED`에도 report 저장 의무가 없다. 실패 전이는 Book `latestRevisionId`를 갱신하지 않는다.
+
 아래 표의 열은 구현 schema review에서 각각 독립적으로 확인한다. 위 compact matrix의 결합 항목을 생략 가능한
 것으로 해석하지 않는다.
 

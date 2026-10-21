@@ -1201,6 +1201,87 @@ class PostgresTradingReviewStoreTest {
         override fun cleanupOrphans(olderThan: Instant, limit: Int, isReferenced: (String) -> Boolean) = 0
     }
 
+    @Test
+    fun sourceFailuresRejectWithoutRevisionOrLatestPointerUpdate() = withDatabase { connection ->
+        val source = SingleConnectionDataSource(connection, true)
+        val jdbc = JdbcTemplate(source)
+        val transactions = TransactionTemplate(DataSourceTransactionManager(source))
+        val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
+        members(jdbc)
+        val review = JdbcTradingReviewStore(jdbc)
+        val imports = JdbcTradingImportStore(jdbc)
+        val runs = JdbcTradingNormalizationStore(jdbc, mapper)
+        val account = TradingAccount.create(TradingAccountId(2001), MemberId(1), TradingVenue.BINANCE, "A", now)
+        review.insert(account)
+        val book = TradingBook.create(TradingBookId(2002), account, "B",
+            TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY,
+            TradingSettlementAsset.USDT, "UTC", now)
+        review.insert(book)
+        val codes = listOf("FILE_FORMAT_INVALID", "REQUIRED_COLUMN_MISSING",
+            "UNSUPPORTED_SOURCE_SCHEMA", "UNSUPPORTED_PRODUCT", "UNSUPPORTED_POSITION_MODE",
+            "RECORD_CONFLICT", "RESULT_HASH_MISMATCH")
+        for ((index, code) in codes.withIndex()) {
+            val session = TradingImportSession.create(TradingImportSessionId(2010L + index), book,
+                "UTC", "UTC", TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
+            imports.insert(session)
+            val artifactInputs = TradingArtifactRole.entries.mapIndexed { roleIndex, role ->
+                val artifactId = TradingSourceArtifactId(2100L + index * 2 + roleIndex)
+                val sha = (if (roleIndex == 0) "a" else "b").repeat(64)
+                imports.insert(TradingSourceArtifact(artifactId, session.id, role, null, "text/csv",
+                    20, sha, "AUTO", "objects/${UUID.randomUUID()}", byteArrayOf(1), "test-v1",
+                    TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(3600), null, null, 0))
+                NormalizationArtifactInput(artifactId, role, sha, 20, "text/csv", "AUTO")
+            }
+            val input = NormalizationInput(book.id, session.id, 1, artifactInputs, "BINANCE",
+                "LINEAR_PERPETUAL", "ONE_WAY", "USDT", "UTC", "UTC", normalizationVersions, "[]",
+                "TRADING_DATA_POLICY_V1", "retry-v1",
+                """{"policyVersion":"retry-v1","maxAttempts":3,"maxElapsedTime":"PT1H","initialDelay":"PT1S","maxDelay":"PT10S","jitter":"NONE"}""", 0)
+            val identity = NormalizationInputIdentity.fromPinnedInput(input,
+                mapper.readValue(normalizationVersions, Map::class.java))
+            val runId = UUID.randomUUID().toString()
+            val attemptToken = UUID.randomUUID().toString()
+            val jobId = "job-$index"
+            val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
+                UUID.randomUUID().toString().replace("-", "").repeat(2), NormalizationRunStatus.SUBMITTED,
+                1, attemptToken, jobId, null, now, now, now, now, null, 0,
+                inputIdentity = identity, resultDeliveryPolicy = deliveryPolicy)
+            val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId,
+                "c".repeat(64), NormalizationDispatchStatus.SUBMITTED, 0, now,
+                null, null, null, now, now)
+            runs.insert(run, dispatch)
+            assertTrue(imports.update(session.beginValidation(runId, now)))
+            val compute = object : TradingNormalizationComputeClient {
+                override fun submit(run: NormalizationRun, dispatch: NormalizationDispatch,
+                                    grants: List<ArtifactReadGrant>): NormalizationSubmission = error("poll only")
+                override fun status(run: NormalizationRun, dispatch: NormalizationDispatch): NormalizationStatusLookup =
+                    NormalizationStatusLookup.Found(NormalizationJobStatus(jobId, "FAILED", attemptToken,
+                        0, 0, run.inputFingerprint, "f".repeat(64), "NONE", null, code))
+                override fun updateGrants(run: NormalizationRun, dispatch: NormalizationDispatch,
+                                          current: NormalizationJobStatus, nextAttemptToken: String,
+                                          grants: List<ArtifactReadGrant>, updateKey: String): NormalizationGrantUpdate =
+                    error("no grant update")
+            }
+            val dispatcher = com.refinvest.core.tradingreview.application.TradingNormalizationDispatcher(
+                runs, imports, review, imports, object : ArtifactAccessGrantIssuer {
+                    override fun issueReadGrant(artifact: NormalizationArtifactInput, logicalJobId: String,
+                                                sessionId: TradingImportSessionId, attemptToken: String,
+                                                deletionGeneration: Long): ArtifactReadGrant = error("poll only")
+                }, compute, object : TradingRetryJitter { override fun factor() = 0.5 },
+                transactions, Clock.fixed(now, ZoneOffset.UTC), mapper)
+            assertTrue(dispatcher.pollOne(), code)
+            val terminal = assertNotNull(imports.find(session.id, MemberId(1)))
+            val expected = if (index < 6) TradingImportStatus.REJECTED else TradingImportStatus.PROCESSING_FAILED
+            assertEquals(expected, terminal.status, code)
+            assertEquals(code, terminal.failure?.code, code)
+            assertEquals(NormalizationRunStatus.TERMINAL_FAILURE, runs.findRun(runId)?.status, code)
+            assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
+            assertNull(jdbc.queryForObject("SELECT latest_ledger_revision_id FROM trading_books WHERE id=?",
+                String::class.java, book.id.value))
+            assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_ack_dispatches",
+                Long::class.java))
+        }
+    }
+
     private fun members(jdbc: JdbcTemplate) {
         jdbc.update("INSERT INTO members(id, role, created_at) VALUES (1, 'USER', CURRENT_TIMESTAMP)")
         jdbc.update("INSERT INTO members(id, role, created_at) VALUES (2, 'USER', CURRENT_TIMESTAMP)")
