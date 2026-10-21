@@ -1145,3 +1145,31 @@ Compute 내부 `ReconciliationManifest`/`NormalizationResult` 전체 필드를 �
 Core는 Run 시작 시 `NormalizationResultDeliveryPolicy(RESULT_DELIVERY_V1, SINGLE_RESOURCE, maxAcceptedPayloadBytes, [identity])`를 Compute create request에 고정한다. Compute는 자체 운영 상한과 Core 광고 상한 중 작은 값을 실제 직렬화된 UTF-8 JSON entity bytes에 적용하고, 초과 결과를 `COMPLETED`로 발행하지 않는다. 기존 vendor JSON media type을 유지한다. 크기와 `payloadSha256`은 같은 exact response body bytes를 대상으로 하며 header/framing은 제외한다. Policy, byteSize, encoding, locator/expiry는 inputSetHash와 semantic resultHash 밖이다.
 
 Core는 Content-Length 사전 검사와 실제 stream count를 모두 적용하고, 보호된 임시 spool에 incremental SHA-256을 계산한다. 전체 transport hash와 길이 확인 전 parse/staging을 금지한다. 이후 전체 JSON tree 없이 streaming parser와 bounded staging batch를 사용하고 기존 ADR-066 무결성 검증을 완료한 뒤에만 발행한다. Spool은 Core restricted artifact lifecycle과 deletion generation을 따른다. V1은 전체 resource 재조회만 허용한다. Page/chunk 및 resumable delivery는 별도 V2 계약이다. 오류 code, retry와 Session 상태는 `TRADING_VERSIONING.md` §14를 따른다.
+
+---
+
+## ADR-068 — Rejected Import quality summary semantics
+
+**상태**: 확정. ADR-063/065의 public rejection과 완료된 quality assessment를 구분한다.
+
+`TradingQualityReport`는 Compute가 정규화·복원 결과에서 계산한 완료된 assessment다. Core는
+검증·저장·공개만 하며 계산하거나 합성하지 않는다. `ACCEPTED`는 검증된 Compute `COMPLETED`
+payload의 non-null report와 `createdLedgerRevisionId`가 필수이고, 공개 report는 발행된
+LedgerRevision의 report와 같다. report가 없으면 publication하지 않는다.
+
+`REJECTED`는 safe structured `failure`가 필수이며 `qualitySummary` 필드도 required nullable이다.
+조기 source rejection은 완전한 report 없이 끝날 수 있으므로 이때 값은 `null`이다. `null`은
+미계산·미완료를 뜻하며 실제 row count, capability 또는 reconciliation count 0과 다르다. Core는
+빈 map/list/0으로 report를 합성하지 않는다. `QualityStatus.REJECTED`는 향후 완전한 rejection
+assessment에 대비해 유지하지만 V1 placeholder report 생성 근거가 아니다. `REJECTED`는
+LedgerRevision을 만들거나 Book `latestRevisionId`를 변경하지 않는다.
+
+Compute `FAILED`는 safe structured failure만으로 유효하며 terminal success payload나 quality
+report를 요구하지 않는다. Core는 source rejection code에 한해 `REJECTED`를 선택하고 integrity,
+delivery 및 운영 실패는 `PROCESSING_FAILED`로 처리한다. 후자 역시 failure가 필수이며 Revision과
+latest pointer를 변경하지 않는다. 행·필드 단위 rejection 진단은 향후 별도 versioned
+`RejectionDiagnostics` 계약으로 확장한다.
+
+이 명확화는 성공 payload schema, inputSetHash, section digest, manifestHash, resultHash,
+result integrity 고정 vector 및 hash specification version을 변경하지 않는다. 기존
+LedgerRevision과 결과 hash는 그대로이며 재처리가 필요하지 않다.

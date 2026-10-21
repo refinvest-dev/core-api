@@ -126,7 +126,7 @@ Revision 전체와 병합하지 않는다. content hash가 같아도 inputSetHas
 | `VALIDATING` | retryable Compute failure | retry budget/generation valid | `VALIDATING` | 새 attempt, 같은 logical input | budget 소진 시 `PROCESSING_FAILED` |
 | `VALIDATING` | retry budget exhausted | versioned policy 소진 | `PROCESSING_FAILED` | Run `TERMINAL_FAILURE`, Revision 없음 | raw TTL 별도 검증 |
 | `VALIDATING` | accepted callback | input/hash/generation 일치, complete records/manifest/quality/policy | `ACCEPTED` | 정확히 한 새 Revision publication | 불완전 callback discard/fail |
-| `VALIDATING` | input rejection callback | safe failure/report complete | `REJECTED` | LedgerRevision 없음 | — |
+| `VALIDATING` | input rejection callback | source rejection code와 safe structured failure | `REJECTED` | LedgerRevision 없음, latestRevisionId 불변, 미계산 qualitySummary=null | — |
 | `PROCESSING_FAILED` | `RetryTradingImportSession` | active raw, same input/VersionSet/generation | `VALIDATING` | 새 Run/attempt와 audit, 기존 failure 보존 | raw expired면 `SOURCE_ARTIFACT_EXPIRED`; 삭제면 410 |
 | `ACCEPTED`/`REJECTED` | validate/retry | terminal | 동일 | 동일 callback은 `NO_OP` | 다른 payload `REJECT_CONFLICT`; 재검증은 새 session |
 | any non-deleted | raw-only delete | owner, scope/generation | session 상태는 유지; validating이면 `PROCESSING_FAILED` | artifact retention→pending, output discard | `SOURCE_ARTIFACT_DELETED` |
@@ -266,7 +266,7 @@ quality/capability, publishedAt을 포함한다. 실패는 raw/URI/credential을
 | `TR-ACC-IMPORT-ORCH-009` 자동 재시도 예산 소진 → terminal 전이 → 데이터 거부 없음 | PROCESSING_FAILED / TERMINAL_FAILURE | 0 / true(active raw) / TEMPORARY_DEPENDENCY_FAILURE·RETRY | policyVersion·attempt·elapsed audit; partial staging 비공개 / N/A |
 | `TR-ACC-IMPORT-ORCH-010` 실패 Session과 active raw → 명시적 retry → 새 Run 성공 | ACCEPTED / 이전 TERMINAL_FAILURE, 새 PUBLISHED | 1 / false / — | retryOf, 같은 inputSetHash·VersionSet, 새 attempt/audit; 이전 결과 OBSOLETE / commit 뒤 PERSISTED |
 | `TR-ACC-IMPORT-ORCH-011` raw TTL 만료된 실패 Session → retry command → 410 재업로드 안내 | PROCESSING_FAILED / TERMINAL_FAILURE 불변 | 0 / false / SOURCE_ARTIFACT_EXPIRED·REUPLOAD_REQUIRED | retention status/expiry만 공개, grant 없음; 늦은 결과 폐기 / N/A |
-| `TR-ACC-IMPORT-ORCH-012` 필수 컬럼 누락 등 결정적 입력 위반 → validation → 데이터 거부 | REJECTED / TERMINAL_FAILURE | 0 / false / REQUIRED_COLUMN_MISSING·REUPLOAD_REQUIRED | safe field/row/role와 quality, 원본 값 없음; stale 없음 / N/A |
+| `TR-ACC-IMPORT-ORCH-012` 필수 컬럼 누락 등 결정적 입력 위반 → validation → 데이터 거부 | REJECTED / TERMINAL_FAILURE | 0 / false / REQUIRED_COLUMN_MISSING·REUPLOAD_REQUIRED | safe failure, qualitySummary=null, latestRevisionId 불변, 원본 값 없음; stale 없음 / N/A |
 | `TR-ACC-IMPORT-ORCH-013` Compute 실행 중 Session 삭제 tombstone commit → 늦은 결과 도착 → 발행 금지 | 정상 Session 조회 차단 / OBSOLETE | 0 / false / 공개 resource 410 RESOURCE_DELETED | generation 증가·payload discard, artifact/Run purge; stale 기록 / DISCARDED_STALE |
 | `TR-ACC-IMPORT-ORCH-014` retry의 새 execution 뒤 이전 결과 도착 → attempt 비교 → 이전 결과 폐기 | VALIDATING 또는 ACCEPTED / 이전 OBSOLETE, 현 Run active/PUBLISHED | 현 성공 전 0 또는 후 1 / 상황별 / 이전 failure 비공개 | attemptToken·run ID mismatch audit, 이전 payload 불가시화 / 이전 결과 ACK 금지(삭제면 DISCARDED_STALE) |
 | `TR-ACC-IMPORT-ORCH-015` Core publication commit 뒤 ACK 전송 실패 → ACK 재시도 → 중복 Revision 없음 | ACCEPTED / PUBLISHED | 1 / false / — | commit ID·result/payload hash 동일, latest 불변; stale 없음 / 같은 PERSISTED ACK 재전송 |
@@ -277,6 +277,19 @@ quality/capability, publishedAt을 포함한다. 실패는 raw/URI/credential을
 | `TR-ACC-IMPORT-ORCH-020` expectedInputSetHash와 Compute 재계산값 불일치 → safe FAILED | PROCESSING_FAILED / TERMINAL_FAILURE | 0 / false / INPUT_SET_HASH_MISMATCH·WAIT_FOR_RECOVERY | 성공 payload 없음, LedgerRevision 없음, source CSV rejection 아님 / N/A |
 | `TR-ACC-IMPORT-ORCH-021` Core Run ID 전송 → job 저장·worker restart·terminal 생성·재조회 | ACCEPTED / PUBLISHED | 1 / false / — | 같은 `coreNormalizationRunId`가 status/descriptor/payload까지 보존; exact input/VersionSet/generation 확인 / commit 뒤 PERSISTED |
 | `TR-ACC-IMPORT-ORCH-022` source bytes SHA-256 불일치와 terminal result hash 불일치 각각 주입 | PROCESSING_FAILED / TERMINAL_FAILURE | 0 / false / SOURCE_CONTENT_HASH_MISMATCH 또는 RESULT_HASH_MISMATCH·WAIT_FOR_RECOVERY | source mismatch는 normalize 시작 전 Compute FAILED; result mismatch는 Core publication 차단; 어느 쪽도 input mismatch code로 대체 금지 / N/A |
+
+### 4.0 Trading Import quality status (ADR-068)
+
+아래 ID는 비민감 synthetic fixture로 검증한다. source rejection code 여섯 개는 같은 terminal
+assertion을 parameterized로 적용한다. `FIXTURE_PLANNED`는 실제 실행 증거가 생기기 전까지 완료가 아니다.
+
+| Scenario | Given | When | Then | Fixture state |
+|---|---|---|---|---|
+| `TR-ACC-IMPORT-QUALITY-001` source rejection | 필수 column이 빠진 Binance Trade History; Compute `FAILED/REQUIRED_COLUMN_MISSING`, safe structured failure, terminal success payload 없음 | Core가 terminal failure를 처리하고 공개 Import status 조회 | Session `REJECTED`, `failure.code=REQUIRED_COLUMN_MISSING`, `qualitySummary` key 존재·값 `null`, LedgerRevision 0, Book `latestRevisionId` 불변, `PERSISTED` ACK 없음; rejected raw retention 적용 | `FIXTURE_PLANNED` |
+| `TR-ACC-IMPORT-QUALITY-002` no synthetic quality | schema 검증 도중 중단된 Import | 공개 Import status 조회 | 미계산 row count, capability, reconciliation count를 0 또는 빈 정상 결과로 합성하지 않고 `qualitySummary=null` | `FIXTURE_PLANNED` |
+| `TR-ACC-IMPORT-QUALITY-003` accepted quality | Compute `COMPLETED` payload와 완전하고 검증된 quality report | Core가 publication 완료 | Session `ACCEPTED`, `qualitySummary` non-null, `createdLedgerRevisionId` 존재, 공개 summary가 발행된 LedgerRevision report와 동일; report 누락 시 publication 금지 | `FIXTURE_PLANNED` |
+| `TR-ACC-IMPORT-QUALITY-004` processing failure | `RESULT_HASH_MISMATCH` 또는 retry exhaustion | Core가 terminal failure 처리 | Session `PROCESSING_FAILED`와 non-null failure, `REJECTED`로 전환하지 않음, LedgerRevision 0, Book `latestRevisionId` 불변 | `FIXTURE_PLANNED` |
+| `TR-ACC-IMPORT-QUALITY-005` source code mapping | Compute `FAILED`와 `FILE_FORMAT_INVALID`, `REQUIRED_COLUMN_MISSING`, `UNSUPPORTED_SOURCE_SCHEMA`, `UNSUPPORTED_PRODUCT`, `UNSUPPORTED_POSITION_MODE`, `RECORD_CONFLICT` 중 하나를 각 case로 주입 | Core가 각 terminal failure 처리 | 각 case는 `REJECTED`, 동일 failure code 저장, `qualitySummary=null`, Revision 0, latest 불변; integrity·delivery·운영 failure code는 `REJECTED` 금지 | `FIXTURE_PLANNED` |
 
 ### 4.0.1 Result integrity publication (ADR-066)
 

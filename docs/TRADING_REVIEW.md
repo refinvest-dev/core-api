@@ -277,6 +277,12 @@ TradingSourceArtifact
 제외 사유를 가진 LedgerRevision을 만들 수 있다. 분석에는 `EXACT` 또는
 `WITHIN_ROUNDING_TOLERANCE`로 유일하게 조정된 episode만 포함한다.
 
+`TradingQualityReport`는 Compute가 정규화·복원 결과에서 계산한 완료된 assessment다. 조기 source
+rejection은 완전한 report 이전에 끝날 수 있으므로 `REJECTED`의 공개 `qualitySummary`는 필드는 존재하되
+`null`일 수 있다. 이 `null`은 미계산·미완료를 뜻하며 실제 row count나 reconciliation count가 0이라는
+뜻이 아니다. Core는 빈 map/list 또는 0으로 report를 합성하지 않는다. `QualityStatus.REJECTED`는
+향후 완전한 rejection quality assessment를 위해 유지하며 V1 placeholder 생성의 근거가 아니다.
+
 policy field와 raw retention/deletion, 장기 `SourceEvidenceSnapshot` 의미는
 [`TRADING_DATA_LIFECYCLE.md`](TRADING_DATA_LIFECYCLE.md)를 따른다. 이 필드가 고정되지 않은 session은
 `ACCEPTED`가 될 수 없다.
