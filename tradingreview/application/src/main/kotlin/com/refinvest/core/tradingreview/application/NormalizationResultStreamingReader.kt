@@ -4,19 +4,46 @@ import com.refinvest.core.tradingreview.port.NormalizationStagedItem
 import tools.jackson.core.JacksonException
 import tools.jackson.core.JsonParser
 import tools.jackson.core.JsonToken
+import tools.jackson.core.StreamReadConstraints
+import tools.jackson.core.StreamReadFeature
+import tools.jackson.core.exc.StreamConstraintsException
+import tools.jackson.core.json.JsonFactory
 import tools.jackson.databind.DeserializationFeature
 import tools.jackson.databind.ObjectMapper
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
 /** Reads collection entries after the transport bytes have been authenticated. */
-internal class NormalizationResultStreamingReader(private val mapper: ObjectMapper) {
+internal data class NormalizationResultReadLimits(
+    val maxNestingDepth: Int = 64,
+    val maxStringLength: Int = 1_048_576,
+    val maxNameLength: Int = 256,
+    val maxTokenCount: Long = 5_000_000,
+) {
+    init {
+        require(maxNestingDepth > 0 && maxStringLength > 0 && maxNameLength > 0 && maxTokenCount > 0)
+    }
+}
+
+internal class NormalizationResultStreamingReader(
+    private val mapper: ObjectMapper,
+    limits: NormalizationResultReadLimits = NormalizationResultReadLimits(),
+) {
     companion object {
         const val STAGE_FORMAT_FIELD = "_coreStageFormat"
         const val STREAM_STAGE_FORMAT = "STREAM_V1"
     }
     private val itemReader = mapper.readerFor(Any::class.java)
         .without(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+    private val parserFactory = JsonFactory.builder()
+        .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+        .streamReadConstraints(StreamReadConstraints.builder()
+            .maxNestingDepth(limits.maxNestingDepth)
+            .maxStringLength(limits.maxStringLength)
+            .maxNameLength(limits.maxNameLength)
+            .maxTokenCount(limits.maxTokenCount)
+            .build())
+        .build()
     private val rootCollections = mapOf(
         "artifactCoverages" to ("ARTIFACT_COVERAGES" to "artifactRole"),
         "canonicalRecords" to ("CANONICAL_RECORDS" to "recordId"),
@@ -31,7 +58,7 @@ internal class NormalizationResultStreamingReader(private val mapper: ObjectMapp
     private val issueIdentityFields = listOf("artifactRole", "sourceRowNumber", "code", "field", "severity")
 
     fun read(input: InputStream, accept: (String, String, Any) -> Unit): Map<String, Any?> = try {
-        mapper.createParser(input).use { parser ->
+        parserFactory.createParser(input).use { parser ->
             if (parser.nextToken() != JsonToken.START_OBJECT) malformed()
             val root = linkedMapOf<String, Any?>()
             while (parser.nextToken() != JsonToken.END_OBJECT) {
@@ -57,6 +84,9 @@ internal class NormalizationResultStreamingReader(private val mapper: ObjectMapp
             root[STAGE_FORMAT_FIELD] = STREAM_STAGE_FORMAT
             root
         }
+    } catch (_: StreamConstraintsException) {
+        // These are local capacity limits, not a source-data rejection.
+        throw ResultIntegrityFailure("TEMPORARY_DEPENDENCY_FAILURE")
     } catch (_: JacksonException) {
         throw ResultIntegrityFailure("RESULT_PAYLOAD_PARSE_FAILED")
     }

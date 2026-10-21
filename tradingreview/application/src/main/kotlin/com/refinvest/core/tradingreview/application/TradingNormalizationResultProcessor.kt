@@ -4,6 +4,7 @@ import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.port.*
 import org.springframework.stereotype.Service
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.databind.json.JsonMapper
@@ -25,10 +26,23 @@ class TradingNormalizationResultProcessor(
     private val clock: Clock,
     private val mapper: ObjectMapper,
     private val jitter: TradingRetryJitter,
+    @Value("\${refinvest.trading-review.normalization.delivery.parser-max-depth:64}")
+    parserMaxDepth: Int = 64,
+    @Value("\${refinvest.trading-review.normalization.delivery.parser-max-string-length:1048576}")
+    parserMaxStringLength: Int = 1_048_576,
+    @Value("\${refinvest.trading-review.normalization.delivery.parser-max-name-length:256}")
+    parserMaxNameLength: Int = 256,
+    @Value("\${refinvest.trading-review.normalization.delivery.parser-max-token-count:5000000}")
+    parserMaxTokenCount: Long = 5_000_000,
+    @Value("\${refinvest.trading-review.normalization.delivery.stage-batch-size:100}")
+    private val stageBatchSize: Int = 100,
 ) {
+    init { require(stageBatchSize > 0) }
     private val strictResultMapper = JsonMapper.builder()
         .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build()
-    private val streamingReader = NormalizationResultStreamingReader(strictResultMapper)
+    private val streamingReader = NormalizationResultStreamingReader(strictResultMapper,
+        NormalizationResultReadLimits(parserMaxDepth, parserMaxStringLength,
+            parserMaxNameLength, parserMaxTokenCount))
     fun processOne(): Boolean {
         val worker = UUID.randomUUID().toString()
         val dispatch = transactions.execute {
@@ -99,7 +113,8 @@ class TradingNormalizationResultProcessor(
                                 else { results.beginStage(run, descriptor, clock.instant()); true }
                             } == true
                             if (!stageAllowed) return true
-                            val batch = ArrayList<NormalizationStagedItem>(100)
+                            val declaredLimits = declaredItemLimits(descriptor)
+                            val batch = ArrayList<NormalizationStagedItem>(stageBatchSize)
                             val receivedCounts = mutableMapOf<String, Long>()
                             fun flush() {
                                 if (batch.isEmpty()) return
@@ -112,9 +127,13 @@ class TradingNormalizationResultProcessor(
                             }
                             val base = payload.open().use { input ->
                                 streamingReader.read(input) { section, id, value ->
-                                    receivedCounts[section] = (receivedCounts[section] ?: 0L) + 1
+                                    val nextCount = (receivedCounts[section] ?: 0L) + 1
+                                    if (nextCount > (declaredLimits[section]
+                                            ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")))
+                                        throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
+                                    receivedCounts[section] = nextCount
                                     batch.add(staged(section, id, value))
-                                    if (batch.size == 100) flush()
+                                    if (batch.size >= stageBatchSize) flush()
                                 }
                             }
                             flush()
@@ -285,6 +304,25 @@ class TradingNormalizationResultProcessor(
     private fun staged(section: String, id: String, value: Any?): NormalizationStagedItem =
         NormalizationStagedItem(section, id, NormalizationResultCanonicalizer.hash(value),
             mapper.writeValueAsString(value))
+
+    private fun declaredItemLimits(descriptor: NormalizationResultDescriptor): Map<String, Long> {
+        val limits = mutableMapOf<String, Long>()
+        for (raw in descriptor.sectionDigests) {
+            val digest = raw as? Map<*, *> ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+            val section = digest["sectionType"] as? String
+                ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+            val count = (digest["itemCount"] as? Number)?.toString()?.toLongOrNull()
+                ?.takeIf { it in 0..9_007_199_254_740_991L }
+                ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+            if (limits.putIfAbsent(section, count) != null)
+                throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        }
+        val issues = (descriptor.counts["validationIssueCount"] as? Number)?.toString()?.toLongOrNull()
+            ?.takeIf { it in 0..9_007_199_254_740_991L }
+            ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        limits["VALIDATION_ISSUES"] = issues
+        return limits
+    }
 
     private fun stageComplete(runId: String, descriptor: NormalizationResultDescriptor): Boolean {
         val actual = results.stagedCounts(runId)

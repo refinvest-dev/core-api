@@ -85,6 +85,41 @@ class NormalizationResultStreamingReaderTest {
     }
 
     @Test
+    fun parserCapacityLimitsStopOversizedTokensAndDeepObjectsBeforeStaging() {
+        val limited = NormalizationResultStreamingReader(mapper,
+            NormalizationResultReadLimits(maxNestingDepth = 3, maxStringLength = 8,
+                maxNameLength = 64, maxTokenCount = 100))
+        var staged = 0
+        val oversized = assertFailsWith<ResultIntegrityFailure> {
+            limited.read(ByteArrayInputStream(
+                "{\"canonicalRecords\":[{\"recordId\":\"a-very-long-record-id\"}]}".toByteArray()))
+            { _, _, _ -> staged++ }
+        }
+        assertEquals("TEMPORARY_DEPENDENCY_FAILURE", oversized.code)
+        assertEquals(0, staged)
+
+        val deep = assertFailsWith<ResultIntegrityFailure> {
+            limited.read(ByteArrayInputStream(
+                "{\"canonicalRecords\":[{\"recordId\":\"short\",\"nested\":{\"a\":{}}}]}".toByteArray()))
+            { _, _, _ -> staged++ }
+        }
+        assertEquals("TEMPORARY_DEPENDENCY_FAILURE", deep.code)
+        assertEquals(0, staged)
+    }
+
+    @Test
+    fun parserTokenLimitAppliesAcrossTheEntireResource() {
+        val limited = NormalizationResultStreamingReader(mapper,
+            NormalizationResultReadLimits(maxTokenCount = 8))
+        val failure = assertFailsWith<ResultIntegrityFailure> {
+            limited.read(ByteArrayInputStream(
+                "{\"canonicalRecords\":[{\"recordId\":\"one\"},{\"recordId\":\"two\"}]}".toByteArray()))
+            { _, _, _ -> }
+        }
+        assertEquals("TEMPORARY_DEPENDENCY_FAILURE", failure.code)
+    }
+
+    @Test
     fun streamedManifestCannotBorrowMissingValuesFromTheRoot() {
         @Suppress("UNCHECKED_CAST")
         val payload = mapper.readValue(mapper.writeValueAsBytes(vector.path("terminalPayload")),
