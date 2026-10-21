@@ -1219,7 +1219,8 @@ class PostgresTradingReviewStoreTest {
         review.insert(book)
         val codes = listOf("FILE_FORMAT_INVALID", "REQUIRED_COLUMN_MISSING",
             "UNSUPPORTED_SOURCE_SCHEMA", "UNSUPPORTED_PRODUCT", "UNSUPPORTED_POSITION_MODE",
-            "RECORD_CONFLICT", "RESULT_HASH_MISMATCH")
+            "RECORD_CONFLICT", "RESULT_HASH_MISMATCH", "RESULT_COUNT_MISMATCH",
+            "RECONCILIATION_MANIFEST_HASH_MISMATCH", "EVIDENCE_REFERENCE_INVALID")
         for ((index, code) in codes.withIndex()) {
             val session = TradingImportSession.create(TradingImportSessionId(2010L + index), book,
                 "UTC", "UTC", TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
@@ -1246,7 +1247,7 @@ class PostgresTradingReviewStoreTest {
                 1, attemptToken, jobId, null, now, now, now, now, null, 0,
                 inputIdentity = identity, resultDeliveryPolicy = deliveryPolicy)
             val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId,
-                "c".repeat(64), NormalizationDispatchStatus.SUBMITTED, 0, now,
+                index.toString(16).padStart(64, 'c'), NormalizationDispatchStatus.SUBMITTED, 0, now,
                 null, null, null, now, now)
             runs.insert(run, dispatch)
             assertTrue(imports.update(session.beginValidation(runId, now)))
