@@ -1,6 +1,5 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.NormalizationStagedItem
 import tools.jackson.core.JacksonException
 import tools.jackson.core.JsonParser
 import tools.jackson.core.JsonToken
@@ -31,7 +30,7 @@ internal class NormalizationResultStreamingReader(
 ) {
     companion object {
         const val STAGE_FORMAT_FIELD = "_coreStageFormat"
-        const val STREAM_STAGE_FORMAT = "STREAM_V1"
+        const val STREAM_STAGE_FORMAT = "STREAM_V2"
     }
     private val itemReader = mapper.readerFor(Any::class.java)
         .without(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
@@ -89,45 +88,6 @@ internal class NormalizationResultStreamingReader(
         throw ResultIntegrityFailure("TEMPORARY_DEPENDENCY_FAILURE")
     } catch (_: JacksonException) {
         throw ResultIntegrityFailure("RESULT_PAYLOAD_PARSE_FAILED")
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    fun rehydrate(base: Map<String, Any?>, staged: List<NormalizationStagedItem>): Map<String, Any?> {
-        val grouped = staged.groupBy { it.sectionType }.mapValues { (_, values) -> values.map {
-            mapper.readValue(it.publicJson, Any::class.java)
-        } }
-        val root = base.toMutableMap()
-        val streamed = when (root.remove(STAGE_FORMAT_FIELD)) {
-            STREAM_STAGE_FORMAT -> true
-            null -> false
-            else -> throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
-        }
-        val manifest = (base["reconciliationManifest"] as Map<String, Any?>).toMutableMap()
-        val mappings = mapOf("ARTIFACT_COVERAGES" to "artifactCoverages",
-            "CANONICAL_RECORDS" to "canonicalRecords",
-            "SOURCE_EVIDENCE_SNAPSHOTS" to "sourceEvidenceSnapshots")
-        for ((section, name) in mappings) root[name] = grouped[section] ?: emptyList<Any>()
-        root["capability"] = grouped["CAPABILITIES"] ?: emptyList<Any>()
-        val qualityBase = grouped["QUALITY_REPORT"]?.singleOrNull() as? Map<*, *>
-            ?: throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
-        root["qualityReport"] = if (streamed) qualityBase +
-            ("validationIssues" to (grouped["VALIDATION_ISSUES"] ?: emptyList<Any>()))
-            else qualityBase
-        val manifestBase = grouped["RECONCILIATION_MANIFEST"]?.singleOrNull()
-            as? Map<String, Any?> ?: throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
-        manifest.putAll(manifestBase)
-        // The previous stage format deliberately omitted these two redundant manifest arrays.
-        // Its full payload was verified before staging, so reconstruct them from the staged root.
-        // A streamed payload retains the received arrays and must compare them unchanged.
-        if (!streamed) {
-            manifest["artifactCoverages"] = root["artifactCoverages"]
-            manifest["capability"] = root["capability"]
-        }
-        manifest["reviewUnits"] = grouped["REVIEW_UNITS"] ?: emptyList<Any>()
-        manifest["reconciliationMatches"] = grouped["RECONCILIATION_MATCHES"] ?: emptyList<Any>()
-        manifest["reconciliationIssues"] = grouped["RECONCILIATION_ISSUES"] ?: emptyList<Any>()
-        root["reconciliationManifest"] = manifest
-        return root
     }
 
     private fun readManifest(parser: JsonParser, accept: (String, String, Any) -> Unit): Map<String, Any?> {

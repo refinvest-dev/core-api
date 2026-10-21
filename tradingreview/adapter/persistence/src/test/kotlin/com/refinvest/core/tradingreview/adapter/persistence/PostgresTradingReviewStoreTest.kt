@@ -422,6 +422,12 @@ class PostgresTradingReviewStoreTest {
         }
         stage("REVIEW_UNITS", "unit-1",
             """{"reviewUnitId":"unit-1","allocations":[{"allocationId":"allocation-1","reviewUnitId":"unit-1","recordId":"record-1"}],"exclusionReasons":[]}""")
+        assertTrue(results.hasInvalidEvidence(current))
+        stage("VALIDATION_ISSUES", "\uE000", """{"id":"bmp"}""")
+        stage("VALIDATION_ISSUES", "\uD800\uDC00", """{"id":"supplementary"}""")
+        val ordered = mutableListOf<String>()
+        results.visitItems(runId, "VALIDATION_ISSUES", 1) { ordered.add(it.identity) }
+        assertEquals(listOf("\uD800\uDC00", "\uE000"), ordered)
         results.markValidated(runId, now)
         assertNull(results.publishedForSession(session.id, MemberId(1)))
         assertFailsWith<Exception> {
@@ -431,7 +437,8 @@ class PostgresTradingReviewStoreTest {
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
         assertEquals(TradingImportStatus.VALIDATING, imports.find(session.id, MemberId(1))?.status)
         stage("SOURCE_EVIDENCE_SNAPSHOTS", "snapshot-1",
-            """{"snapshotId":"snapshot-1","coreArtifactId":"994","sourceRowNumber":1,"maskingPolicyVersion":"MASK_V1"}""")
+            """{"snapshotId":"snapshot-1","coreArtifactId":"994","artifactRole":"${inputs.first().role.name}","sourceRowNumber":1,"sourceRowHash":"${"a".repeat(64)}","maskingPolicyVersion":"MASK_V1"}""")
+        assertFalse(results.hasInvalidEvidence(current))
         assertEquals(1L, results.stagedCounts(runId)["SOURCE_EVIDENCE_SNAPSHOTS"])
         val publicationGate = java.util.concurrent.CountDownLatch(1)
         val publishers = Executors.newFixedThreadPool(2)
@@ -461,6 +468,14 @@ class PostgresTradingReviewStoreTest {
         assertNotNull(results.publishedForSession(session.id, MemberId(1)))
         assertNull(results.publishedForSession(session.id, MemberId(2)))
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
+        val publishedJson = jdbc.queryForMap("""SELECT reconciliation_manifest_json::text AS manifest,
+            quality_report_json::text AS quality FROM trading_ledger_revisions WHERE run_id=?::uuid""",
+            runId)
+        val publishedManifest = mapper.readTree(publishedJson.getValue("manifest") as String)
+        val publishedQuality = mapper.readTree(publishedJson.getValue("quality") as String)
+        assertEquals("unit-1", publishedManifest.path("reviewUnits")[0].path("reviewUnitId").asText())
+        assertEquals(2, publishedQuality.path("validationIssues").size())
+        assertEquals("supplementary", publishedQuality.path("validationIssues")[0].path("id").asText())
         assertFailsWith<Exception> {
             jdbc.update("UPDATE trading_ledger_revisions SET result_hash=? WHERE run_id=?::uuid",
                 "0".repeat(64), runId)
@@ -1327,6 +1342,12 @@ class PostgresTradingReviewStoreTest {
                     .bufferedReader().use { it.readText() }
                 connection.createStatement().use { statement ->
                     splitSqlStatements(migration6).forEach(statement::execute)
+                }
+                val migration7 = javaClass.getResourceAsStream(
+                    "/db/migration/V7__trading_result_stage_order.sql")!!
+                    .bufferedReader().use { it.readText() }
+                connection.createStatement().use { statement ->
+                    splitSqlStatements(migration7).forEach(statement::execute)
                 }
                 test(connection)
             } finally {

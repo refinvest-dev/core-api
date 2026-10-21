@@ -43,6 +43,8 @@ class TradingNormalizationResultProcessor(
     private val streamingReader = NormalizationResultStreamingReader(strictResultMapper,
         NormalizationResultReadLimits(parserMaxDepth, parserMaxStringLength,
             parserMaxNameLength, parserMaxTokenCount))
+    private val stagedVerifier = NormalizationStagedResultVerifier(results, strictResultMapper,
+        stageBatchSize)
     fun processOne(): Boolean {
         val worker = UUID.randomUUID().toString()
         val dispatch = transactions.execute {
@@ -58,8 +60,13 @@ class TradingNormalizationResultProcessor(
             terminal(run, dispatch, worker, "RESULT_SCHEMA_UNSUPPORTED")
             return true
         }
+        val savedBase = results.loadStageBase(run.id)
+        val currentStageFormat = savedBase?.let {
+            strictResultMapper.readTree(it).path(NormalizationResultStreamingReader.STAGE_FORMAT_FIELD)
+                .asText() == NormalizationResultStreamingReader.STREAM_STAGE_FORMAT
+        } == true
         val locallyStaged = results.loadStageDescriptor(run, dispatch)
-            ?.takeIf { results.loadStageBase(run.id) != null && stageComplete(run.id, it) }
+            ?.takeIf { currentStageFormat && stageComplete(run.id, it) }
         val descriptor = locallyStaged ?: when (val lookup = compute.descriptor(jobId)) {
             is NormalizationResultLookup.Found -> lookup.descriptor
             is NormalizationResultLookup.Retry -> {
@@ -78,16 +85,23 @@ class TradingNormalizationResultProcessor(
             terminal(run, dispatch, worker, error.code)
             return true
         }
-        val savedBase = results.loadStageBase(run.id)
-        var verified: VerifiedNormalizationResult? = null
+        // Pre-streaming stages did not preserve bounded collection rows. Re-fetch the
+        // authenticated V1 resource and rebuild rather than guessing missing data.
+        if (savedBase != null && !currentStageFormat) {
+            val cleared = transactions.execute {
+                if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) false
+                else { results.discardStage(run.id); true }
+            } == true
+            if (!cleared) return true
+        }
+        var verified: VerifiedStagedResult? = null
         var failure: String? = null
-        if (savedBase != null && stageComplete(run.id, descriptor)) {
+        if (currentStageFormat && savedBase != null && stageComplete(run.id, descriptor)) {
             try {
                 @Suppress("UNCHECKED_CAST")
                 val base = strictResultMapper.readValue(savedBase, Map::class.java) as Map<String, Any?>
-                val restored = streamingReader.rehydrate(base, results.loadItems(run.id))
-                verified = NormalizationResultVerifier.verify(restored, run, dispatch.id)
-                comparePayloadDescriptor(verified!!, descriptor)
+                verified = stagedVerifier.verify(base, run, dispatch.id)
+                comparePayloadDescriptor(requireNotNull(verified), descriptor)
             } catch (error: ResultIntegrityFailure) { failure = error.code }
             catch (_: Exception) { failure = "RESULT_SCHEMA_UNSUPPORTED" }
         }
@@ -142,8 +156,7 @@ class TradingNormalizationResultProcessor(
                                     throw LeaseLost()
                                 results.saveStageBase(run.id, mapper.writeValueAsString(base))
                             }
-                            val result = NormalizationResultVerifier.verify(
-                                streamingReader.rehydrate(base, results.loadItems(run.id)), run, dispatch.id)
+                            val result = stagedVerifier.verify(base, run, dispatch.id)
                             comparePayloadDescriptor(result, descriptor)
                             for (digest in result.sectionDigests) {
                                 val section = digest.getValue("sectionType") as String
@@ -174,45 +187,26 @@ class TradingNormalizationResultProcessor(
             else terminal(run, dispatch, worker, failure!!)
             return true
         }
-        val checked = verified ?: return true
+        if (verified == null) return true
         try {
-            val staged = results.stagedCounts(run.id)
-            for (digest in checked.sectionDigests) {
-                val section = digest.getValue("sectionType") as String
-                val declared = (digest.getValue("itemCount") as Number).toLong()
-                if ((staged[section] ?: 0) != declared) throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
-            }
-            val countKeys = mapOf("positionAllocationCount" to "POSITION_ALLOCATIONS",
-                "excludedReviewUnitCount" to "EXCLUDED_REVIEW_UNITS",
-                "validationIssueCount" to "VALIDATION_ISSUES")
-            for ((field, section) in countKeys) if (staged[section] != checked.counts[field])
-                throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
-            val persistedItems = results.loadItems(run.id)
-            for (item in persistedItems) {
-                val parsed = mapper.readValue(item.publicJson, Any::class.java)
-                if (NormalizationResultCanonicalizer.hash(parsed) != item.contentHash)
-                    throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
-            }
             val persistedBaseJson = results.loadStageBase(run.id)
                 ?: throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
             @Suppress("UNCHECKED_CAST")
             val persistedBase = strictResultMapper.readValue(persistedBaseJson, Map::class.java)
                 as Map<String, Any?>
-            val reloaded = streamingReader.rehydrate(persistedBase, persistedItems)
-            val independentlyVerified = NormalizationResultVerifier.verify(reloaded, run, dispatch.id)
+            val independentlyVerified = stagedVerifier.verify(persistedBase, run, dispatch.id)
             comparePayloadDescriptor(independentlyVerified, descriptor)
             val published = transactions.execute {
                 val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
                 if (locked == null || !isCurrent(run, locked)) return@execute false
                 if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) return@execute false
                 results.markValidated(run.id, clock.instant())
-                val public = independentlyVerified.public
                 results.publish(run, dispatch, worker, descriptor,
-                    mapper.writeValueAsString(public["reconciliationManifest"]),
-                    mapper.writeValueAsString(public["artifactCoverages"]),
-                    mapper.writeValueAsString(public["capability"]),
-                    mapper.writeValueAsString(public["qualityReport"]),
-                    public["ledgerContentHash"] as String, clock.instant())
+                    mapper.writeValueAsString(independentlyVerified.manifestBase),
+                    mapper.writeValueAsString(independentlyVerified.coverages),
+                    mapper.writeValueAsString(independentlyVerified.capabilities),
+                    mapper.writeValueAsString(independentlyVerified.qualityBase),
+                    independentlyVerified.ledgerContentHash, clock.instant())
             } == true
             if (!published && transactions.execute {
                     results.hasReadyLease(dispatch.id, worker, clock.instant()) } == true)
@@ -290,7 +284,7 @@ class TradingNormalizationResultProcessor(
             throw ResultIntegrityFailure("RESULT_NOT_AVAILABLE")
     }
 
-    private fun comparePayloadDescriptor(result: VerifiedNormalizationResult,
+    private fun comparePayloadDescriptor(result: VerifiedStagedResult,
                                          descriptor: NormalizationResultDescriptor) {
         if (result.manifestHash != descriptor.reconciliationManifestHash)
             throw ResultIntegrityFailure("RECONCILIATION_MANIFEST_HASH_MISMATCH")
@@ -301,9 +295,11 @@ class TradingNormalizationResultProcessor(
             throw ResultIntegrityFailure("RESULT_SECTION_HASH_MISMATCH")
     }
 
-    private fun staged(section: String, id: String, value: Any?): NormalizationStagedItem =
-        NormalizationStagedItem(section, id, NormalizationResultCanonicalizer.hash(value),
-            mapper.writeValueAsString(value))
+    private fun staged(section: String, id: String, value: Any?): NormalizationStagedItem {
+        val normalized = stagedVerifier.normalizeForStage(section, value)
+        return NormalizationStagedItem(section, id, NormalizationResultCanonicalizer.hash(normalized),
+            mapper.writeValueAsString(normalized))
+    }
 
     private fun declaredItemLimits(descriptor: NormalizationResultDescriptor): Map<String, Long> {
         val limits = mutableMapOf<String, Long>()

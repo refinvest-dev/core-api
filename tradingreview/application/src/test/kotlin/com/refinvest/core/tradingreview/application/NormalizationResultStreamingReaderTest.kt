@@ -1,10 +1,12 @@
 package com.refinvest.core.tradingreview.application
 
 import com.refinvest.core.tradingreview.port.NormalizationStagedItem
+import com.refinvest.core.tradingreview.port.TradingNormalizationResultStore
 import tools.jackson.core.StreamReadFeature
 import tools.jackson.databind.json.JsonMapper
 import java.io.ByteArrayInputStream
 import java.io.FilterInputStream
+import java.lang.reflect.Proxy
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -32,7 +34,7 @@ class NormalizationResultStreamingReaderTest {
         assertTrue(rows.any { it.sectionType == "VALIDATION_ISSUES" })
         assertEquals(emptyList<Any>(), (rows.single { it.sectionType == "QUALITY_REPORT" }.let {
             mapper.readValue(it.publicJson, Map::class.java) } as Map<*, *>)["validationIssues"])
-        val verified = NormalizationResultVerifier.verify(reader.rehydrate(base, rows))
+        val verified = verifyStaged(base, rows)
         assertEquals(vector.path("resultDigestManifestVector").path("expectedSha256").asText(),
             verified.resultHash)
         assertEquals(vector.path("manifestVector").path("expectedSha256").asText(),
@@ -133,13 +135,13 @@ class NormalizationResultStreamingReaderTest {
                 NormalizationResultCanonicalizer.hash(value), mapper.writeValueAsString(value)))
         }
         val failure = assertFailsWith<ResultIntegrityFailure> {
-            NormalizationResultVerifier.verify(reader.rehydrate(base, rows))
+            verifyStaged(base, rows)
         }
         assertEquals("RECONCILIATION_MANIFEST_HASH_MISMATCH", failure.code)
     }
 
     @Test
-    fun previouslyStagedBaseCanBeRehydrated() {
+    fun legacyStageFormatRequiresAuthenticatedRedownload() {
         val rows = mutableListOf<NormalizationStagedItem>()
         val base = reader.read(ByteArrayInputStream(
             mapper.writeValueAsBytes(vector.path("terminalPayload")))) { section, id, value ->
@@ -147,20 +149,32 @@ class NormalizationResultStreamingReaderTest {
                 NormalizationResultCanonicalizer.hash(value), mapper.writeValueAsString(value)))
         }
         @Suppress("UNCHECKED_CAST")
-        val oldManifest = (base.getValue("reconciliationManifest") as Map<String, Any?>) + mapOf(
-            "artifactCoverages" to emptyList<Any>(), "capability" to emptyList<Any>())
-        val oldBase = (base - NormalizationResultStreamingReader.STAGE_FORMAT_FIELD) +
-            ("reconciliationManifest" to oldManifest)
-        val oldQuality = mapper.readValue(
-            mapper.writeValueAsBytes(vector.path("terminalPayload").path("qualityReport")),
-            Map::class.java)
-        val oldRows = rows.filter { it.sectionType != "VALIDATION_ISSUES" }.map { item ->
-            if (item.sectionType == "QUALITY_REPORT") NormalizationStagedItem(
-                item.sectionType, item.identity, NormalizationResultCanonicalizer.hash(oldQuality),
-                mapper.writeValueAsString(oldQuality)) else item
-        }
-        val result = NormalizationResultVerifier.verify(reader.rehydrate(oldBase, oldRows))
-        assertEquals(vector.path("resultDigestManifestVector").path("expectedSha256").asText(),
-            result.resultHash)
+        val legacy = base + (NormalizationResultStreamingReader.STAGE_FORMAT_FIELD to "STREAM_V1")
+        assertEquals("RESULT_SCHEMA_UNSUPPORTED", assertFailsWith<ResultIntegrityFailure> {
+            verifyStaged(legacy, rows)
+        }.code)
+    }
+
+    private fun verifyStaged(base: Map<String, Any?>,
+                             rows: List<NormalizationStagedItem>): VerifiedStagedResult {
+        val declared = base["counts"] as Map<*, *>
+        val counts = rows.groupingBy { it.sectionType }.eachCount().mapValues { it.value.toLong() } +
+            mapOf("POSITION_ALLOCATIONS" to (declared["positionAllocationCount"] as Number).toLong(),
+                "EXCLUDED_REVIEW_UNITS" to (declared["excludedReviewUnitCount"] as Number).toLong())
+        val store = Proxy.newProxyInstance(javaClass.classLoader,
+            arrayOf(TradingNormalizationResultStore::class.java)) { _, method, args ->
+            when (method.name) {
+                "stagedCounts" -> counts
+                "visitItems" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val accept = args!![3] as (NormalizationStagedItem) -> Unit
+                    rows.asSequence().filter { it.sectionType == args[1] }
+                        .sortedBy { it.identity }.forEach(accept)
+                    Unit
+                }
+                else -> error("Unexpected store call: ${method.name}")
+            }
+        } as TradingNormalizationResultStore
+        return NormalizationStagedResultVerifier(store, mapper, 2).verify(base)
     }
 }

@@ -127,7 +127,7 @@ data class VerifiedNormalizationResult(
 object NormalizationResultVerifier {
     const val RESULT_SCHEMA_V1 = "TRADING_NORMALIZATION_RESULT_V1"
     const val RESULT_HASH_V1 = "TRADING_NORMALIZATION_RESULT_HASH_V1"
-    private val sections = listOf("ARTIFACT_COVERAGES", "CANONICAL_RECORDS", "CAPABILITIES",
+    internal val sections = listOf("ARTIFACT_COVERAGES", "CANONICAL_RECORDS", "CAPABILITIES",
         "QUALITY_REPORT", "RECONCILIATION_ISSUES", "RECONCILIATION_MANIFEST",
         "RECONCILIATION_MATCHES", "REVIEW_UNITS", "SOURCE_EVIDENCE_SNAPSHOTS")
     internal val rootFields = setOf("jobId", "coreLogicalJobId", "coreNormalizationRunId",
@@ -136,11 +136,11 @@ object NormalizationResultVerifier {
         "resultHashSpecificationVersion", "counts", "sectionDigests", "resultDigestManifest",
         "artifactCoverages", "canonicalRecords", "sourceEvidenceSnapshots", "reconciliationManifest",
         "capability", "qualityReport", "ledgerContentHash", "resultHash", "createdAt", "terminalAt")
-    private val countFields = setOf("artifactCoverageCount", "canonicalRecordCount",
+    internal val countFields = setOf("artifactCoverageCount", "canonicalRecordCount",
         "sourceEvidenceSnapshotCount", "reviewUnitCount", "positionAllocationCount",
         "excludedReviewUnitCount", "capabilityCount", "validationIssueCount",
         "reconciliationMatchCount", "reconciliationIssueCount")
-    private val digestManifestFields = setOf("resultHashSpecificationVersion", "resultSchemaVersion",
+    internal val digestManifestFields = setOf("resultHashSpecificationVersion", "resultSchemaVersion",
         "inputSetHash", "inputHashSpecificationVersion", "targetVersionSet", "counts",
         "sectionDigests", "reconciliationManifestHash")
     internal val manifestFields = setOf("manifestVersion", "manifestHashSpecificationVersion",
@@ -266,7 +266,7 @@ object NormalizationResultVerifier {
         return VerifiedNormalizationResult(public, sectionValues, counts, digests, manifestHash, resultHash)
     }
 
-    private fun verifyIdentity(payload: Map<String, Any?>, run: NormalizationRun, logicalJobId: String?) {
+    internal fun verifyIdentity(payload: Map<String, Any?>, run: NormalizationRun, logicalJobId: String?) {
         val identity = run.inputIdentity ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
         if (payload["coreNormalizationRunId"] != run.id || payload["jobId"] != run.computeJobId ||
             (logicalJobId != null && payload["coreLogicalJobId"] != logicalJobId) ||
