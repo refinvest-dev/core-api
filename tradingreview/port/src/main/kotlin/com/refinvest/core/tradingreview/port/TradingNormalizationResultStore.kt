@@ -29,7 +29,11 @@ interface TradingNormalizationResultStore {
     fun stageItems(runId: String, items: List<NormalizationStagedItem>) {
         items.forEach { stageItem(runId, it) }
     }
-    fun loadItems(runId: String): List<NormalizationStagedItem>
+    /** Yields a section in JCS UTF-16 identity order, without retaining all rows in the caller. */
+    fun visitItems(runId: String, sectionType: String, batchSize: Int,
+                   accept: (NormalizationStagedItem) -> Unit)
+    /** Checks all staged evidence/record/unit references with database joins. */
+    fun hasInvalidEvidence(run: NormalizationRun): Boolean
     fun stagedCounts(runId: String): Map<String, Long>
     fun markValidated(runId: String, now: Instant)
     fun discardStage(runId: String)

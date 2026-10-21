@@ -4,6 +4,7 @@ import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.port.*
 import org.springframework.stereotype.Service
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.databind.json.JsonMapper
@@ -25,9 +26,25 @@ class TradingNormalizationResultProcessor(
     private val clock: Clock,
     private val mapper: ObjectMapper,
     private val jitter: TradingRetryJitter,
+    @Value("\${refinvest.trading-review.normalization.delivery.parser-max-depth:64}")
+    parserMaxDepth: Int = 64,
+    @Value("\${refinvest.trading-review.normalization.delivery.parser-max-string-length:1048576}")
+    parserMaxStringLength: Int = 1_048_576,
+    @Value("\${refinvest.trading-review.normalization.delivery.parser-max-name-length:256}")
+    parserMaxNameLength: Int = 256,
+    @Value("\${refinvest.trading-review.normalization.delivery.parser-max-token-count:5000000}")
+    parserMaxTokenCount: Long = 5_000_000,
+    @Value("\${refinvest.trading-review.normalization.delivery.stage-batch-size:100}")
+    private val stageBatchSize: Int = 100,
 ) {
+    init { require(stageBatchSize > 0) }
     private val strictResultMapper = JsonMapper.builder()
         .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build()
+    private val streamingReader = NormalizationResultStreamingReader(strictResultMapper,
+        NormalizationResultReadLimits(parserMaxDepth, parserMaxStringLength,
+            parserMaxNameLength, parserMaxTokenCount))
+    private val stagedVerifier = NormalizationStagedResultVerifier(results, strictResultMapper,
+        stageBatchSize)
     fun processOne(): Boolean {
         val worker = UUID.randomUUID().toString()
         val dispatch = transactions.execute {
@@ -43,8 +60,13 @@ class TradingNormalizationResultProcessor(
             terminal(run, dispatch, worker, "RESULT_SCHEMA_UNSUPPORTED")
             return true
         }
+        val savedBase = results.loadStageBase(run.id)
+        val currentStageFormat = savedBase?.let {
+            strictResultMapper.readTree(it).path(NormalizationResultStreamingReader.STAGE_FORMAT_FIELD)
+                .asText() == NormalizationResultStreamingReader.STREAM_STAGE_FORMAT
+        } == true
         val locallyStaged = results.loadStageDescriptor(run, dispatch)
-            ?.takeIf { results.loadStageBase(run.id) != null && stageComplete(run.id, it) }
+            ?.takeIf { currentStageFormat && stageComplete(run.id, it) }
         val descriptor = locallyStaged ?: when (val lookup = compute.descriptor(jobId)) {
             is NormalizationResultLookup.Found -> lookup.descriptor
             is NormalizationResultLookup.Retry -> {
@@ -63,18 +85,23 @@ class TradingNormalizationResultProcessor(
             terminal(run, dispatch, worker, error.code)
             return true
         }
-        val savedBase = results.loadStageBase(run.id)
-        var verified: VerifiedNormalizationResult? = null
+        // Pre-streaming stages did not preserve bounded collection rows. Re-fetch the
+        // authenticated V1 resource and rebuild rather than guessing missing data.
+        if (savedBase != null && !currentStageFormat) {
+            val cleared = transactions.execute {
+                if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) false
+                else { results.discardStage(run.id); true }
+            } == true
+            if (!cleared) return true
+        }
+        var verified: VerifiedStagedResult? = null
         var failure: String? = null
-        var recovered = false
-        if (savedBase != null && stageComplete(run.id, descriptor)) {
+        if (currentStageFormat && savedBase != null && stageComplete(run.id, descriptor)) {
             try {
                 @Suppress("UNCHECKED_CAST")
                 val base = strictResultMapper.readValue(savedBase, Map::class.java) as Map<String, Any?>
-                val restored = rehydrate(base, results.loadItems(run.id))
-                verified = NormalizationResultVerifier.verify(restored, run, dispatch.id)
-                comparePayloadDescriptor(verified!!, descriptor)
-                recovered = true
+                verified = stagedVerifier.verify(base, run, dispatch.id)
+                comparePayloadDescriptor(requireNotNull(verified), descriptor)
             } catch (error: ResultIntegrityFailure) { failure = error.code }
             catch (_: Exception) { failure = "RESULT_SCHEMA_UNSUPPORTED" }
         }
@@ -100,13 +127,49 @@ class TradingNormalizationResultProcessor(
                                 else { results.beginStage(run, descriptor, clock.instant()); true }
                             } == true
                             if (!stageAllowed) return true
-                            @Suppress("UNCHECKED_CAST")
-                            val body = payload.open().use { strictResultMapper.readValue(it, Map::class.java) }
-                                as Map<String, Any?>
-                            val result = NormalizationResultVerifier.verify(body, run, dispatch.id)
+                            val declaredLimits = declaredItemLimits(descriptor)
+                            val batch = ArrayList<NormalizationStagedItem>(stageBatchSize)
+                            val receivedCounts = mutableMapOf<String, Long>()
+                            fun flush() {
+                                if (batch.isEmpty()) return
+                                transactions.execute {
+                                    if (!results.hasReadyLease(dispatch.id, worker, clock.instant()))
+                                        throw LeaseLost()
+                                    results.stageItems(run.id, batch)
+                                }
+                                batch.clear()
+                            }
+                            val base = payload.open().use { input ->
+                                streamingReader.read(input) { section, id, value ->
+                                    val nextCount = (receivedCounts[section] ?: 0L) + 1
+                                    if (nextCount > (declaredLimits[section]
+                                            ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")))
+                                        throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
+                                    receivedCounts[section] = nextCount
+                                    batch.add(staged(section, id, value))
+                                    if (batch.size >= stageBatchSize) flush()
+                                }
+                            }
+                            flush()
+                            transactions.execute {
+                                if (!results.hasReadyLease(dispatch.id, worker, clock.instant()))
+                                    throw LeaseLost()
+                                results.saveStageBase(run.id, mapper.writeValueAsString(base))
+                            }
+                            val result = stagedVerifier.verify(base, run, dispatch.id)
                             comparePayloadDescriptor(result, descriptor)
+                            for (digest in result.sectionDigests) {
+                                val section = digest.getValue("sectionType") as String
+                                val declared = (digest.getValue("itemCount") as Number).toLong()
+                                if ((receivedCounts[section] ?: 0L) != declared)
+                                    throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
+                            }
+                            if ((receivedCounts["VALIDATION_ISSUES"] ?: 0L) !=
+                                result.counts["validationIssueCount"])
+                                throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
                             verified = result
-                        } catch (error: ResultIntegrityFailure) { failure = error.code }
+                        } catch (_: LeaseLost) { return true }
+                        catch (error: ResultIntegrityFailure) { failure = error.code }
                         catch (error: NormalizationResultStoreFailure) { failure = error.safeCode }
                         catch (_: Exception) { failure = "RESULT_PAYLOAD_PARSE_FAILED" }
                     }
@@ -124,53 +187,26 @@ class TradingNormalizationResultProcessor(
             else terminal(run, dispatch, worker, failure!!)
             return true
         }
-        val checked = verified ?: return true
+        if (verified == null) return true
         try {
-            if (!recovered) {
-                val base = stageBase(checked.public)
-                transactions.execute {
-                    if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) throw LeaseLost()
-                    results.saveStageBase(run.id, mapper.writeValueAsString(base))
-                }
-                for (batch in items(checked).chunked(100)) {
-                    transactions.execute {
-                        if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) throw LeaseLost()
-                        results.stageItems(run.id, batch)
-                    }
-                }
-            }
-            val staged = results.stagedCounts(run.id)
-            for (digest in checked.sectionDigests) {
-                val section = digest.getValue("sectionType") as String
-                val declared = (digest.getValue("itemCount") as Number).toLong()
-                if ((staged[section] ?: 0) != declared) throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
-            }
-            val countKeys = mapOf("positionAllocationCount" to "POSITION_ALLOCATIONS",
-                "excludedReviewUnitCount" to "EXCLUDED_REVIEW_UNITS",
-                "validationIssueCount" to "VALIDATION_ISSUES")
-            for ((field, section) in countKeys) if (staged[section] != checked.counts[field])
-                throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
-            val persistedItems = results.loadItems(run.id)
-            for (item in persistedItems) {
-                val parsed = mapper.readValue(item.publicJson, Any::class.java)
-                if (NormalizationResultCanonicalizer.hash(parsed) != item.contentHash)
-                    throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
-            }
-            val reloaded = rehydrate(checked.public, persistedItems)
-            val independentlyVerified = NormalizationResultVerifier.verify(reloaded, run, dispatch.id)
+            val persistedBaseJson = results.loadStageBase(run.id)
+                ?: throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
+            @Suppress("UNCHECKED_CAST")
+            val persistedBase = strictResultMapper.readValue(persistedBaseJson, Map::class.java)
+                as Map<String, Any?>
+            val independentlyVerified = stagedVerifier.verify(persistedBase, run, dispatch.id)
             comparePayloadDescriptor(independentlyVerified, descriptor)
             val published = transactions.execute {
                 val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
                 if (locked == null || !isCurrent(run, locked)) return@execute false
                 if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) return@execute false
                 results.markValidated(run.id, clock.instant())
-                val public = independentlyVerified.public
                 results.publish(run, dispatch, worker, descriptor,
-                    mapper.writeValueAsString(public["reconciliationManifest"]),
-                    mapper.writeValueAsString(public["artifactCoverages"]),
-                    mapper.writeValueAsString(public["capability"]),
-                    mapper.writeValueAsString(public["qualityReport"]),
-                    public["ledgerContentHash"] as String, clock.instant())
+                    mapper.writeValueAsString(independentlyVerified.manifestBase),
+                    mapper.writeValueAsString(independentlyVerified.coverages),
+                    mapper.writeValueAsString(independentlyVerified.capabilities),
+                    mapper.writeValueAsString(independentlyVerified.qualityBase),
+                    independentlyVerified.ledgerContentHash, clock.instant())
             } == true
             if (!published && transactions.execute {
                     results.hasReadyLease(dispatch.id, worker, clock.instant()) } == true)
@@ -248,7 +284,7 @@ class TradingNormalizationResultProcessor(
             throw ResultIntegrityFailure("RESULT_NOT_AVAILABLE")
     }
 
-    private fun comparePayloadDescriptor(result: VerifiedNormalizationResult,
+    private fun comparePayloadDescriptor(result: VerifiedStagedResult,
                                          descriptor: NormalizationResultDescriptor) {
         if (result.manifestHash != descriptor.reconciliationManifestHash)
             throw ResultIntegrityFailure("RECONCILIATION_MANIFEST_HASH_MISMATCH")
@@ -259,46 +295,29 @@ class TradingNormalizationResultProcessor(
             throw ResultIntegrityFailure("RESULT_SECTION_HASH_MISMATCH")
     }
 
-    private fun items(result: VerifiedNormalizationResult): Sequence<NormalizationStagedItem> = sequence {
-        val public = result.public
-        val manifest = public["reconciliationManifest"] as Map<*, *>
-        val sources = mapOf(
-            "ARTIFACT_COVERAGES" to (public["artifactCoverages"] to "artifactRole"),
-            "CANONICAL_RECORDS" to (public["canonicalRecords"] to "recordId"),
-            "SOURCE_EVIDENCE_SNAPSHOTS" to (public["sourceEvidenceSnapshots"] to "snapshotId"),
-            "REVIEW_UNITS" to (manifest["reviewUnits"] to "reviewUnitId"),
-            "RECONCILIATION_MATCHES" to (manifest["reconciliationMatches"] to "matchId"),
-            "RECONCILIATION_ISSUES" to (manifest["reconciliationIssues"] to "issueId"))
-        for ((section, source) in sources) for (raw in source.first as List<*>) {
-            val item = raw as Map<*, *>
-            val id = item[source.second] as? String ?: throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
-            yield(staged(section, id, item))
-        }
-        for (capability in public["capability"] as List<*>) {
-            val name = capability as? String ?: throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
-            yield(staged("CAPABILITIES", name, name))
-        }
-        yield(staged("QUALITY_REPORT", "singleton", public["qualityReport"]))
-        yield(staged("RECONCILIATION_MANIFEST", "singleton", manifest))
+    private fun staged(section: String, id: String, value: Any?): NormalizationStagedItem {
+        val normalized = stagedVerifier.normalizeForStage(section, value)
+        return NormalizationStagedItem(section, id, NormalizationResultCanonicalizer.hash(normalized),
+            mapper.writeValueAsString(normalized))
     }
 
-    private fun staged(section: String, id: String, value: Any?): NormalizationStagedItem =
-        NormalizationStagedItem(section, id, NormalizationResultCanonicalizer.hash(value),
-            mapper.writeValueAsString(value))
-
-    @Suppress("UNCHECKED_CAST")
-    private fun stageBase(public: Map<String, Any?>): Map<String, Any?> {
-        val manifest = public["reconciliationManifest"] as Map<String, Any?>
-        return public + mapOf(
-            "artifactCoverages" to emptyList<Any>(), "canonicalRecords" to emptyList<Any>(),
-            "sourceEvidenceSnapshots" to emptyList<Any>(), "capability" to emptyList<Any>(),
-            "qualityReport" to emptyMap<String, Any>(),
-            "reconciliationManifest" to (manifest + mapOf(
-                "reviewUnits" to emptyList<Any>(),
-                "reconciliationMatches" to emptyList<Any>(),
-                "reconciliationIssues" to emptyList<Any>(),
-                "artifactCoverages" to emptyList<Any>(),
-                "capability" to emptyList<Any>())))
+    private fun declaredItemLimits(descriptor: NormalizationResultDescriptor): Map<String, Long> {
+        val limits = mutableMapOf<String, Long>()
+        for (raw in descriptor.sectionDigests) {
+            val digest = raw as? Map<*, *> ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+            val section = digest["sectionType"] as? String
+                ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+            val count = (digest["itemCount"] as? Number)?.toString()?.toLongOrNull()
+                ?.takeIf { it in 0..9_007_199_254_740_991L }
+                ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+            if (limits.putIfAbsent(section, count) != null)
+                throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        }
+        val issues = (descriptor.counts["validationIssueCount"] as? Number)?.toString()?.toLongOrNull()
+            ?.takeIf { it in 0..9_007_199_254_740_991L }
+            ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        limits["VALIDATION_ISSUES"] = issues
+        return limits
     }
 
     private fun stageComplete(runId: String, descriptor: NormalizationResultDescriptor): Boolean {
@@ -314,30 +333,6 @@ class TradingNormalizationResultProcessor(
             "validationIssueCount" to "VALIDATION_ISSUES")
         return nested.all { (field, section) -> actual[section] ==
             (descriptor.counts[field] as? Number)?.toLong() }
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun rehydrate(base: Map<String, Any?>, staged: List<NormalizationStagedItem>): Map<String, Any?> {
-        val grouped = staged.groupBy { it.sectionType }.mapValues { (_, values) -> values.map {
-            mapper.readValue(it.publicJson, Any::class.java)
-        } }
-        val root = base.toMutableMap()
-        val manifest = (base["reconciliationManifest"] as Map<String, Any?>).toMutableMap()
-        val mappings = mapOf("ARTIFACT_COVERAGES" to "artifactCoverages",
-            "CANONICAL_RECORDS" to "canonicalRecords",
-            "SOURCE_EVIDENCE_SNAPSHOTS" to "sourceEvidenceSnapshots")
-        for ((section, name) in mappings) root[name] = grouped[section] ?: emptyList<Any>()
-        root["capability"] = grouped["CAPABILITIES"] ?: emptyList<Any>()
-        root["qualityReport"] = grouped["QUALITY_REPORT"]?.singleOrNull()
-            ?: throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
-        val manifestBase = grouped["RECONCILIATION_MANIFEST"]?.singleOrNull()
-            as? Map<String, Any?> ?: throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
-        manifest.putAll(manifestBase)
-        manifest["reviewUnits"] = grouped["REVIEW_UNITS"] ?: emptyList<Any>()
-        manifest["reconciliationMatches"] = grouped["RECONCILIATION_MATCHES"] ?: emptyList<Any>()
-        manifest["reconciliationIssues"] = grouped["RECONCILIATION_ISSUES"] ?: emptyList<Any>()
-        root["reconciliationManifest"] = manifest
-        return root
     }
 
     private fun retry(run: NormalizationRun, dispatch: NormalizationDispatch, worker: String, code: String) {

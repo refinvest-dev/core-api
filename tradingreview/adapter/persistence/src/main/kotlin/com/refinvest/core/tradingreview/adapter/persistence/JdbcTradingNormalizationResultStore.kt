@@ -13,6 +13,8 @@ import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.Duration
 import java.time.Instant
+import java.nio.charset.StandardCharsets
+import java.util.HexFormat
 import java.util.UUID
 
 @Repository
@@ -119,22 +121,131 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
         { rs, _ -> rs.getString(1) }, runId).firstOrNull()
 
     override fun stageItem(runId: String, item: NormalizationStagedItem) {
+        val sortKey = sortKey(item.identity)
         jdbc.update("""INSERT INTO trading_normalization_staged_items
-            (run_id,section_type,item_identity,item_sha256,item_json)
-            VALUES (?::uuid,?,?,?,?::jsonb) ON CONFLICT (run_id,section_type,item_identity) DO NOTHING""",
-            runId, item.sectionType, item.identity, item.contentHash, item.publicJson)
+            (run_id,section_type,item_identity,item_sort_key,item_sha256,item_json)
+            VALUES (?::uuid,?,?,?,?,?::jsonb)
+            ON CONFLICT (run_id,section_type,item_identity) DO UPDATE
+            SET item_sort_key=EXCLUDED.item_sort_key
+            WHERE trading_normalization_staged_items.item_sort_key IS NULL
+            AND trading_normalization_staged_items.item_sha256=EXCLUDED.item_sha256""",
+            runId, item.sectionType, item.identity, sortKey, item.contentHash, item.publicJson)
         val saved = jdbc.queryForObject("""SELECT item_sha256 FROM trading_normalization_staged_items
             WHERE run_id=?::uuid AND section_type=? AND item_identity=?""", String::class.java,
             runId, item.sectionType, item.identity)
         if (saved != item.contentHash) throw NormalizationResultStoreFailure("RESULT_ITEM_CONFLICT")
     }
 
-    override fun loadItems(runId: String): List<NormalizationStagedItem> = jdbc.query("""
-        SELECT section_type,item_identity,item_sha256,item_json::text
-        FROM trading_normalization_staged_items WHERE run_id=?::uuid
-        ORDER BY section_type,item_identity""", { rs, _ ->
-        NormalizationStagedItem(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4))
-    }, runId)
+    override fun visitItems(runId: String, sectionType: String, batchSize: Int,
+                            accept: (NormalizationStagedItem) -> Unit) {
+        require(batchSize > 0)
+        // V7 can be applied while a V5/V6 stage exists. Repair its sort keys without
+        // loading the full stage or guessing a different canonical ordering.
+        while (true) {
+            val missing = jdbc.query("""SELECT item_identity FROM trading_normalization_staged_items
+                WHERE run_id=?::uuid AND section_type=? AND item_sort_key IS NULL
+                ORDER BY item_identity COLLATE "C" LIMIT ?""",
+                { rs, _ -> rs.getString(1) }, runId, sectionType, batchSize)
+            if (missing.isEmpty()) break
+            missing.forEach { identity -> jdbc.update("""UPDATE trading_normalization_staged_items
+                SET item_sort_key=? WHERE run_id=?::uuid AND section_type=? AND item_identity=?
+                AND item_sort_key IS NULL""", sortKey(identity), runId, sectionType, identity) }
+        }
+        var after: String? = null
+        while (true) {
+            val page = jdbc.query("""SELECT section_type,item_identity,item_sha256,item_json::text,item_sort_key
+                FROM trading_normalization_staged_items WHERE run_id=?::uuid AND section_type=?
+                AND (?::text IS NULL OR item_sort_key COLLATE "C">?::text COLLATE "C")
+                ORDER BY item_sort_key COLLATE "C" LIMIT ?""", { rs, _ ->
+                NormalizationStagedItem(rs.getString(1), rs.getString(2), rs.getString(3),
+                    rs.getString(4)) to rs.getString(5)
+            }, runId, sectionType, after, after, batchSize)
+            if (page.isEmpty()) break
+            page.forEach { (item, _) -> accept(item) }
+            after = page.last().second
+        }
+    }
+
+    private fun sortKey(identity: String): String {
+        var index = 0
+        while (index < identity.length) {
+            val current = identity[index]
+            if (Character.isHighSurrogate(current)) {
+                if (++index >= identity.length || !Character.isLowSurrogate(identity[index]))
+                    throw NormalizationResultStoreFailure("RESULT_ITEM_CONFLICT")
+            } else if (Character.isLowSurrogate(current)) {
+                throw NormalizationResultStoreFailure("RESULT_ITEM_CONFLICT")
+            }
+            index++
+        }
+        return HexFormat.of().formatHex(identity.toByteArray(StandardCharsets.UTF_16BE))
+    }
+
+    override fun hasInvalidEvidence(run: NormalizationRun): Boolean {
+        val input = requireNotNull(run.inputIdentity)
+        val artifactIds = mapper.writeValueAsString(input.artifactsByRole.mapValues { it.value.artifactId })
+        fun invalid(sql: String, vararg args: Any): Boolean =
+            jdbc.queryForObject(sql, Boolean::class.java, *args) == true
+        val runId = run.id
+        if (invalid("""SELECT EXISTS (SELECT 1 FROM trading_normalization_staged_items e
+            WHERE e.run_id=?::uuid AND e.section_type='SOURCE_EVIDENCE_SNAPSHOTS'
+            AND ((?::jsonb ->> (e.item_json->>'artifactRole')) IS DISTINCT FROM
+                    e.item_json->>'coreArtifactId'
+                OR (e.item_json->>'sourceRowNumber') !~ '^[1-9][0-9]*$'
+                OR (e.item_json->>'sourceRowHash') !~ '^[0-9a-f]{64}$'))""",
+                runId, artifactIds)) return true
+        if (invalid("""SELECT EXISTS (SELECT 1 FROM trading_normalization_staged_items r
+            LEFT JOIN trading_normalization_staged_items e ON e.run_id=r.run_id
+                AND e.section_type='SOURCE_EVIDENCE_SNAPSHOTS'
+                AND e.item_identity=r.item_json->>'sourceEvidenceSnapshotId'
+            WHERE r.run_id=?::uuid AND r.section_type='CANONICAL_RECORDS'
+            AND (e.item_identity IS NULL OR
+                (r.item_json->>'recordHash') !~ '^[0-9a-f]{64}$'))""", runId)) return true
+        if (invalid("""SELECT EXISTS (SELECT 1 FROM trading_normalization_staged_items u
+            CROSS JOIN LATERAL jsonb_array_elements(u.item_json->'allocations') a(value)
+            LEFT JOIN trading_normalization_staged_items r ON r.run_id=u.run_id
+                AND r.section_type='CANONICAL_RECORDS'
+                AND r.item_identity=a.value->>'recordId'
+            WHERE u.run_id=?::uuid AND u.section_type='REVIEW_UNITS'
+            AND (r.item_identity IS NULL OR a.value->>'reviewUnitId' IS DISTINCT FROM u.item_identity
+                OR NULLIF(a.value->>'allocationId','') IS NULL))""", runId)) return true
+        if (invalid("""SELECT EXISTS (SELECT 1 FROM (
+                SELECT a.value->>'allocationId' AS id
+                FROM trading_normalization_staged_items u
+                CROSS JOIN LATERAL jsonb_array_elements(u.item_json->'allocations') a(value)
+                WHERE u.run_id=?::uuid AND u.section_type='REVIEW_UNITS'
+                GROUP BY a.value->>'allocationId' HAVING count(*)>1) duplicate)""", runId)) return true
+        if (invalid("""SELECT EXISTS (SELECT 1 FROM trading_normalization_staged_items m
+            WHERE m.run_id=?::uuid AND m.section_type='RECONCILIATION_MATCHES'
+            AND (NOT EXISTS (SELECT 1 FROM trading_normalization_staged_items r
+                    WHERE r.run_id=m.run_id AND r.section_type='CANONICAL_RECORDS'
+                    AND r.item_identity=m.item_json->>'summaryRecordId')
+                OR (m.item_json->>'reviewUnitId' IS NOT NULL AND NOT EXISTS
+                    (SELECT 1 FROM trading_normalization_staged_items u WHERE u.run_id=m.run_id
+                    AND u.section_type='REVIEW_UNITS' AND u.item_identity=m.item_json->>'reviewUnitId'))
+                OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+                    m.item_json->'candidateReviewUnitIds') candidate(id) WHERE NOT EXISTS
+                    (SELECT 1 FROM trading_normalization_staged_items u WHERE u.run_id=m.run_id
+                    AND u.section_type='REVIEW_UNITS' AND u.item_identity=candidate.id))
+                OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+                    m.item_json->'evidenceRecordIds') evidence(id) WHERE NOT EXISTS
+                    (SELECT 1 FROM trading_normalization_staged_items r WHERE r.run_id=m.run_id
+                    AND r.section_type='CANONICAL_RECORDS' AND r.item_identity=evidence.id))))""",
+                runId)) return true
+        return invalid("""SELECT EXISTS (SELECT 1 FROM trading_normalization_staged_items i
+            WHERE i.run_id=?::uuid AND i.section_type='RECONCILIATION_ISSUES'
+            AND ((i.item_json->>'reviewUnitId' IS NOT NULL AND NOT EXISTS
+                    (SELECT 1 FROM trading_normalization_staged_items u WHERE u.run_id=i.run_id
+                    AND u.section_type='REVIEW_UNITS' AND u.item_identity=i.item_json->>'reviewUnitId'))
+                OR (i.item_json->>'summaryRecordId' IS NOT NULL AND NOT EXISTS
+                    (SELECT 1 FROM trading_normalization_staged_items r WHERE r.run_id=i.run_id
+                    AND r.section_type='CANONICAL_RECORDS' AND r.item_identity=i.item_json->>'summaryRecordId'))
+                OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+                    i.item_json->'evidenceRecordIds') evidence(id) WHERE NOT EXISTS
+                    (SELECT 1 FROM trading_normalization_staged_items r WHERE r.run_id=i.run_id
+                    AND r.section_type='CANONICAL_RECORDS' AND r.item_identity=evidence.id))))""",
+            runId)
+    }
 
     override fun stagedCounts(runId: String): Map<String, Long> {
         val sections = jdbc.query("""SELECT section_type,count(*) FROM trading_normalization_staged_items
@@ -148,10 +259,11 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
             rs.getLong(1) to rs.getLong(2) }, runId).single()
         sections["POSITION_ALLOCATIONS"] = nested.first
         sections["EXCLUDED_REVIEW_UNITS"] = nested.second
-        sections["VALIDATION_ISSUES"] = jdbc.queryForObject("""SELECT COALESCE(SUM(
+        val nestedValidationIssues = jdbc.queryForObject("""SELECT COALESCE(SUM(
             jsonb_array_length(item_json->'validationIssues')),0)
             FROM trading_normalization_staged_items
             WHERE run_id=?::uuid AND section_type='QUALITY_REPORT'""", Long::class.java, runId) ?: 0
+        sections["VALIDATION_ISSUES"] = (sections["VALIDATION_ISSUES"] ?: 0L) + nestedValidationIssues
         return sections
     }
 
@@ -228,21 +340,33 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
             run.input.tradingBookId.value) ?: 1L)
         val revisionId = UUID.randomUUID().toString()
         val identity = requireNotNull(run.inputIdentity)
+        // Materialize published nested collections inside PostgreSQL. No complete manifest or
+        // quality-report collection is returned to the Core JVM during publication.
+        fun stageArray(section: String) = """COALESCE((SELECT jsonb_agg(item_json
+            ORDER BY item_sort_key COLLATE "C") FROM trading_normalization_staged_items
+            WHERE run_id=?::uuid AND section_type='$section'), '[]'::jsonb)"""
+        val manifestProjection = """jsonb_set(jsonb_set(jsonb_set(?::jsonb,
+            '{reviewUnits}', ${stageArray("REVIEW_UNITS")}),
+            '{reconciliationMatches}', ${stageArray("RECONCILIATION_MATCHES")}),
+            '{reconciliationIssues}', ${stageArray("RECONCILIATION_ISSUES")})"""
+        val qualityProjection = """jsonb_set(?::jsonb, '{validationIssues}',
+            ${stageArray("VALIDATION_ISSUES")})"""
         jdbc.update("""INSERT INTO trading_ledger_revisions
             (id,run_id,trading_book_id,import_session_id,revision_number,input_set_hash,
             input_hash_specification_version,input_identity_json,target_version_set_json,
             result_schema_version,result_hash_specification_version,result_hash,ledger_content_hash,
             reconciliation_manifest_hash,reconciliation_manifest_json,coverage_json,capability_json,
             quality_report_json,counts_json,section_digests_json,published_at)
-            VALUES (?::uuid,?::uuid,?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?,?::jsonb,
-            ?::jsonb,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?)""",
+            VALUES (?::uuid,?::uuid,?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?,
+            $manifestProjection,?::jsonb,?::jsonb,$qualityProjection,?::jsonb,?::jsonb,?)""",
             revisionId, run.id, run.input.tradingBookId.value, run.input.importSessionId.value, number,
             run.inputFingerprint, identity.hashSpecificationVersion,
             mapper.writeValueAsString(identity.toWireValue()),
             mapper.writeValueAsString(identity.targetVersionSet.toWireValue()),
             descriptor.resultSchemaVersion, descriptor.resultHashSpecificationVersion,
             descriptor.resultHash, ledgerContentHash, descriptor.reconciliationManifestHash,
-            manifestJson, coverageJson, capabilityJson, qualityJson,
+            manifestJson, run.id, run.id, run.id, coverageJson, capabilityJson,
+            qualityJson, run.id,
             mapper.writeValueAsString(descriptor.counts), mapper.writeValueAsString(descriptor.sectionDigests),
             Timestamp.from(now))
         jdbc.update("""INSERT INTO trading_source_evidence_snapshots

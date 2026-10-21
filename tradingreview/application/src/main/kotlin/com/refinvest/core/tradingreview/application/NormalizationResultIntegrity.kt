@@ -127,22 +127,28 @@ data class VerifiedNormalizationResult(
 object NormalizationResultVerifier {
     const val RESULT_SCHEMA_V1 = "TRADING_NORMALIZATION_RESULT_V1"
     const val RESULT_HASH_V1 = "TRADING_NORMALIZATION_RESULT_HASH_V1"
-    private val sections = listOf("ARTIFACT_COVERAGES", "CANONICAL_RECORDS", "CAPABILITIES",
+    internal val sections = listOf("ARTIFACT_COVERAGES", "CANONICAL_RECORDS", "CAPABILITIES",
         "QUALITY_REPORT", "RECONCILIATION_ISSUES", "RECONCILIATION_MANIFEST",
         "RECONCILIATION_MATCHES", "REVIEW_UNITS", "SOURCE_EVIDENCE_SNAPSHOTS")
-    private val rootFields = setOf("jobId", "coreLogicalJobId", "coreNormalizationRunId",
+    internal val rootFields = setOf("jobId", "coreLogicalJobId", "coreNormalizationRunId",
         "coreImportSessionId", "attemptToken", "deletionGeneration", "status", "targetVersionSet",
         "inputSetHash", "hashSpecificationVersion", "resultSchemaVersion",
         "resultHashSpecificationVersion", "counts", "sectionDigests", "resultDigestManifest",
         "artifactCoverages", "canonicalRecords", "sourceEvidenceSnapshots", "reconciliationManifest",
         "capability", "qualityReport", "ledgerContentHash", "resultHash", "createdAt", "terminalAt")
-    private val countFields = setOf("artifactCoverageCount", "canonicalRecordCount",
+    internal val countFields = setOf("artifactCoverageCount", "canonicalRecordCount",
         "sourceEvidenceSnapshotCount", "reviewUnitCount", "positionAllocationCount",
         "excludedReviewUnitCount", "capabilityCount", "validationIssueCount",
         "reconciliationMatchCount", "reconciliationIssueCount")
-    private val digestManifestFields = setOf("resultHashSpecificationVersion", "resultSchemaVersion",
+    internal val digestManifestFields = setOf("resultHashSpecificationVersion", "resultSchemaVersion",
         "inputSetHash", "inputHashSpecificationVersion", "targetVersionSet", "counts",
         "sectionDigests", "reconciliationManifestHash")
+    internal val manifestFields = setOf("manifestVersion", "manifestHashSpecificationVersion",
+        "inputSetHash", "executionInputHash", "canonicalRecordSetHash", "qualityReportHash",
+        "instrumentTermsHash", "versionSetHash", "sourceArtifactHashesByRole", "counts",
+        "manifestHash", "reconstructionPolicyVersion", "reconciliationVersion",
+        "artifactCoverages", "reviewUnits", "reconciliationMatches", "reconciliationIssues",
+        "capability", "quantityConservationPassed", "cashFlowConservationPassed")
 
     fun verify(payload: Map<String, Any?>, run: NormalizationRun? = null,
                logicalJobId: String? = null): VerifiedNormalizationResult {
@@ -185,6 +191,15 @@ object NormalizationResultVerifier {
         manifest["reviewUnits"] = units
         manifest["reconciliationMatches"] = matches
         manifest["reconciliationIssues"] = reconciliationIssues
+        if (manifest.keys != manifestFields || manifest.values.any { it == null } ||
+            manifest["manifestHashSpecificationVersion"] != RESULT_HASH_V1 ||
+            obj(manifest["counts"]).keys != countFields)
+            throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        // Hash the received public manifest, including its declared counts. Actual counts are
+        // checked independently below; substituting them here would hide a forged manifest.
+        val manifestHash = NormalizationResultCanonicalizer.hash(manifest - "manifestHash")
+        if (manifest["manifestHash"] != manifestHash)
+            throw ResultIntegrityFailure("RECONCILIATION_MANIFEST_HASH_MISMATCH")
         public["artifactCoverages"] = coverages
         public["canonicalRecords"] = records
         public["sourceEvidenceSnapshots"] = evidence
@@ -238,11 +253,7 @@ object NormalizationResultVerifier {
             manifest["canonicalRecordSetHash"] != bySection.getValue("CANONICAL_RECORDS")["sectionHash"] ||
             manifest["qualityReportHash"] != bySection.getValue("QUALITY_REPORT")["sectionHash"])
             throw ResultIntegrityFailure("RESULT_SECTION_HASH_MISMATCH")
-        if (manifest["manifestHashSpecificationVersion"] != RESULT_HASH_V1)
-            throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
-        val manifestHash = NormalizationResultCanonicalizer.hash(manifest - "manifestHash")
-        if (manifest["manifestHash"] != manifestHash ||
-            bySection.getValue("RECONCILIATION_MANIFEST")["sectionHash"] != manifestHash)
+        if (bySection.getValue("RECONCILIATION_MANIFEST")["sectionHash"] != manifestHash)
             throw ResultIntegrityFailure("RECONCILIATION_MANIFEST_HASH_MISMATCH")
         val digestManifest = mapOf("resultHashSpecificationVersion" to RESULT_HASH_V1,
             "resultSchemaVersion" to RESULT_SCHEMA_V1, "inputSetHash" to public["inputSetHash"],
@@ -255,7 +266,7 @@ object NormalizationResultVerifier {
         return VerifiedNormalizationResult(public, sectionValues, counts, digests, manifestHash, resultHash)
     }
 
-    private fun verifyIdentity(payload: Map<String, Any?>, run: NormalizationRun, logicalJobId: String?) {
+    internal fun verifyIdentity(payload: Map<String, Any?>, run: NormalizationRun, logicalJobId: String?) {
         val identity = run.inputIdentity ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
         if (payload["coreNormalizationRunId"] != run.id || payload["jobId"] != run.computeJobId ||
             (logicalJobId != null && payload["coreLogicalJobId"] != logicalJobId) ||
@@ -323,14 +334,15 @@ object NormalizationResultVerifier {
             } else NormalizationResultCanonicalizer.canonicalize(identity.map { item[it] })
                 .toString(StandardCharsets.UTF_8)
             val old = unique.putIfAbsent(key, item)
-            if (old != null && !equal(old, item)) throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
+            if (old != null) throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
         }
         return unique.values.toList()
     }
 
     private fun sortedStrings(value: Any?): List<String> = array(value).map {
         (it as? String)?.takeIf(String::isNotBlank) ?: throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
-    }.distinct().sorted()
+    }.also { if (it.size != it.toSet().size) throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT") }
+        .sorted()
 
     private fun same(expected: Any?, actual: Any?, code: String) {
         if (!equal(expected, actual)) throw ResultIntegrityFailure(code)
