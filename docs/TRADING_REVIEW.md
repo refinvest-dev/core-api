@@ -1,5 +1,7 @@
 # TRADING_REVIEW.md — 실제 거래 행동 분석 도메인
 
+Analytics Compute job의 입력·상태·결과·전달 계약은 ADR-069 및 [Analytics Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md), [Input Identity](TRADING_ANALYTICS_INPUT_IDENTITY.md), [Result Integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md), [Result Delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md)를 따른다. LedgerRevision과 AnalysisResult 소유권은 Core에 남는다.
+
 이 문서는 RefInvest의 `Trading Review` 제품 정체성, MVP 경계, 확장 가능한 도메인 모델과
 미확정 쟁점을 정의한다. Binance One-way 복원 계산의 기술 정본은
 [`TRADING_RECONSTRUCTION.md`](TRADING_RECONSTRUCTION.md), 초기 세 Behavior Metric의 계산 정본은

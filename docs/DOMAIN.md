@@ -1,5 +1,7 @@
 # DOMAIN.md — 도메인 모델
 
+TradingAnalysisRun의 Analytics V1 publication은 ADR-069와 [Analytics Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md)의 current Run/attempt/deletion generation 검증 및 [Result Integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md)의 독립 무결성 검증을 통과해야 한다. Metric별 population과 root structural count는 별개이며, V1 Finding 0개는 versioned rule의 결과다.
+
 Core와 Compute가 각각 소유하는 Aggregate를 구분한다. 소유하지 않는 서비스는 해당 데이터를 **읽기 전용**으로만 참조한다.
 
 ---

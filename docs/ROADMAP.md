@@ -1,5 +1,7 @@
 # ROADMAP.md — Phase별 범위
 
+TR-1 Compute Analytics Job Runtime 구현 전제 계약은 ADR-069와 [Analytics Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md)이다. 이 계약 작업은 runtime 코드, 새 Metric, 실제 Finding ranking, Web UI, DB migration, Integration E2E를 포함하지 않는다.
+
 에이전트는 지금 어느 Phase에 있는지 먼저 확인하고, **다음 Phase의 기능을 미리 구현하지 않는다.** 각 Phase는 이전 Phase의 종료 조건을 만족해야 다음으로 넘어간다.
 
 **현재 우선순위(2026-09-29)**: Strategy Validation의 추가 개발은 안정된 상태에서 잠시 중단하고,

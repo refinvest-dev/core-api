@@ -1,5 +1,9 @@
 # TRADING_REVIEW_PERSISTENCE.md — Trading Review Logical Persistence Contract
 
+Analytics V1은 Core가 immutable input artifact, current attempt/deletion generation, publication CAS 및 ACK outbox를 소유하고 Compute가 durable job/lease/grant revision과 제한된 terminal spool을 소유한다. transaction 경계는 [Analytics Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md)과 [Result Delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md)를 따른다. 기존 Normalization 저장 의미는 바뀌지 않는다.
+
+Analytics용 Ledger artifact 생성 시 Core는 published Revision의 canonical records, pinned terms, masked source references와 `reviewUnitEngineInputs`의 direct evidence, stable-time flag, allocation fee/PnL을 동일한 immutable snapshot에서 읽어야 한다. 필요한 필드가 retained Revision에 없다면 artifact를 합성하지 않고 `INPUT_SCHEMA_UNSUPPORTED`로 Run을 실패시킨다. 새 장기 저장 필드가 필요하면 Core 후속 구현에서 별도 migration/retention 계획을 세우며 이 Context PR은 DB schema를 변경하지 않는다.
+
 이 문서는 Trading Review의 논리적 저장 경계, 소유권, uniqueness, immutability와 transaction boundary를
 정의한다. 실제 table/column/index type, ORM과 migration syntax는 구현 저장소가 정한다. 정확한 HTTP schema는
 [`../openapi/core-api.yaml`](../openapi/core-api.yaml)과

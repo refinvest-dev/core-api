@@ -12,7 +12,9 @@
 `openapi/CONTEXT_REVISION`은 이 문서, OpenAPI, fixture snapshot의 기준 Context commit을 기록한다.
 `context/fixtures/trading-normalization/`의 고정 hash vector와 검증용 schema/wire fixture는
 `tradingreview/application/src/test/resources/trading-normalization/`에 바이트 그대로 복제한다.
-이 fixture의 정본도 Context에 있으며 Core에서 기대 hash를 수정하지 않는다.
+context/fixtures/trading-analytics/의 Analytics identity/result vector와 schema는
+	radingreview/application/src/test/resources/trading-analytics-protocol/v1/에 바이트 그대로 복제한다.
+이 fixture들의 정본은 Context에 있으며 Core에서 기대 hash를 수정하지 않는다.
 
 정본을 변경해야 하면 먼저 Context에 반영한 뒤 이 저장소의 snapshot을 갱신한다. 갱신 후에는
 다음 명령으로 누락과 내용 불일치를 확인한다.
