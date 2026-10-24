@@ -1,5 +1,7 @@
 # TRADING_REVIEW_API.md — Trading Review API Contract
 
+Analytics create/poll/input-grant/retry/terminal/ACK 의미는 ADR-069와 [Analytics Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md), [Result Delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md)가 정본이다. 정확한 wire 필드와 vendor media type은 `openapi/compute-api.yaml`을 따른다. 공개 Core API는 이 내부 Compute endpoint를 노출하지 않는다.
+
 이 문서는 Trading Review의 공개 Web→Core API와 내부 Core→Compute API의 의미, 흐름, 상태 및 오류
 계약이다. 정확한 HTTP path와 schema는 [`../openapi/core-api.yaml`](../openapi/core-api.yaml)과
 [`../openapi/compute-api.yaml`](../openapi/compute-api.yaml)이 정본이다. 논리적 저장 구조와 transaction

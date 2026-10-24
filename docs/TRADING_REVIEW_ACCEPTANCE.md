@@ -1,5 +1,7 @@
 # TRADING_REVIEW_ACCEPTANCE.md — Trading Review Acceptance Contract
 
+Analytics runtime Scenario `TR-ACC-ANALYSIS-016`~`039`는 ADR-069와 [Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md), [Input Identity](TRADING_ANALYTICS_INPUT_IDENTITY.md), [Result Integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md), [Result Delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md)를 따른다. 기존 Scenario ID는 유지한다.
+
 이 문서는 Trading Review TR-0G의 사용자 관점 완료 조건과 Aggregate 상태 전이를 정의한다. Integration
 harness는 이 문서의 Scenario ID, fixture 상태와 `Then`을 assertion 이름으로 재사용한다. 계산식은
 [`TRADING_RECONSTRUCTION.md`](TRADING_RECONSTRUCTION.md)와
@@ -825,6 +827,37 @@ snapshot sync가 통과해도 `017` 실패다.
 - **Idempotency Result:** terminal Run immutable; retry is `CREATE_NEW_ATTEMPT`/new Run.
 - **Evidence / Applied Invariants:** failure/attempt/version; `TR-I10`~`TR-I12`, `TR-I27`, `TR-I36`.
 - **Service Ownership / Observability / Deferred HTTP Contract:** common; `SAFE`; terminal failure status query.
+
+### C.1 Analytics Job Protocol V1 (ADR-069)
+
+아래의 모든 Scenario는 별도 표기가 없으면 동일한 accepted `LedgerRevision=LR-V1`, 두 immutable artifact의 identity/hash, `ANALYSIS_CONFIG_V1`, exact Analytics VersionSet(`findingRuleSetVersion=TRADING_FINDING_RULES_DISABLED_V1`), `TRADING_ANALYTICS_INPUT_HASH_V1`, result schema/hash V1, retry/delivery V1, current attempt A1, deletion generation G1을 pin한다. `R`은 Compute job `PENDING`/Core Run `RUNNING`, `C`는 Compute `COMPLETED`/Core Run `COMPLETED`, `F`는 Compute `FAILED`/Core Run `FAILED`, `S`는 Compute completed stale/Core Run 미발행을 뜻한다. Evidence 기본값은 request identity, 두 artifact byte digest, pinned Revision의 ReviewUnit→allocation→record→source evidence chain과 terminal descriptor/payload/ACK이다. 기본 invariant는 `TR-I10`~`TR-I12`, `TR-I16`, `TR-I27`, `TR-I36` 및 ADR-069이다. `FIXTURE_PLANNED`는 실행 검증 완료가 아니다.
+
+| Stable ID / Given→When→Then | Pinned difference / request→terminal | Publication / retry | Evidence / invariant / safe failure / idempotency |
+|---|---|---|---|
+| `TR-ACC-ANALYSIS-016` create | base; new key / R→R | no / no | create fingerprint and A1/G1; base; —; CREATE_NEW |
+| `TR-ACC-ANALYSIS-017` same create replay | same key/fingerprint, changed locator only / R→R | no / no | original grant revision unchanged; base; —; RETURN_EXISTING |
+| `TR-ACC-ANALYSIS-018` conflicting replay | same key, changed config/hash / R→R | no / no | fingerprint conflict; base; `IDEMPOTENCY_CONFLICT`; REJECT_CONFLICT 409 |
+| `TR-ACC-ANALYSIS-019` two artifact bytes | valid exact bytes and manifest / R→C | yes / no | both SHA/size, ledger/manifest independent hashes; `TR-I08`; —; one result |
+| `TR-ACC-ANALYSIS-020` expected hash mismatch | wrong expectedInputHash / R→F | no / no | independent JCS root; base; `INPUT_HASH_MISMATCH`; no result |
+| `TR-ACC-ANALYSIS-021` expired queued grant | A1 grant expired, same identities / R→R | no / replacement | grant revision 0→1, token A1; base; `INPUT_REFERENCE_EXPIRED`; update replay same receipt |
+| `TR-ACC-ANALYSIS-022` explicit retry | retryable failed A1, fresh grants, A2/G1 / R→R→C | yes once / yes | attempt and lease fencing; `TR-I16`; transient code; new attempt only |
+| `TR-ACC-ANALYSIS-023` old attempt result | A2 current, A1 completed later / R→S | no / no | A1/A2 mismatch despite equal resultHash; `TR-I16`; `STALE_ATTEMPT`; stale ACK |
+| `TR-ACC-ANALYSIS-024` deletion in worker | G1 worker, G2 tombstone / R→S | no / no | deletion journal/generation; `TR-I14`~`TR-I24`; `DELETED_GENERATION`; stale ACK when payload exists |
+| `TR-ACC-ANALYSIS-025` three Metrics | result vector: all three typed definitions / R→C | yes / no | counts=3 and metric hashes, provenance; `TR-I12`; —; one immutable result |
+| `TR-ACC-ANALYSIS-026` missing capability | manifest lacks required capability / R→C | yes / no | per-Metric MISSING_CAPABILITY/exclusion; `TR-I11`; —; same result hash |
+| `TR-ACC-ANALYSIS-027` insufficient sample | one exposure pair, minimum two / R→C | yes / no | exact pair and status; `TR-I11`; —; same result hash |
+| `TR-ACC-ANALYSIS-028` actual zero | eligible win/loss equal median duration / R→C | yes / no | `0/1`, AVAILABLE and nonzero sample; `TR-I11`; —; same result hash |
+| `TR-ACC-ANALYSIS-029` Finding disabled | rule version disabled, `findings=[]` / R→C | yes / no | findingCount=0 and section digest; `TR-I12`; —; same result hash |
+| `TR-ACC-ANALYSIS-030` transport byte mismatch | descriptor byteSize or SHA wrong / R→F | no / no | exact spool bytes; base; `RESULT_TRANSPORT_HASH_MISMATCH`; no ACK |
+| `TR-ACC-ANALYSIS-031` section mismatch | one Metric value changed without digest / R→F | no / no | metric and section hash recompute; base; `RESULT_SECTION_HASH_MISMATCH`; no ACK |
+| `TR-ACC-ANALYSIS-032` invalid reference | membership record missing in pinned Revision / R→F | no / no | evidence chain resolution; `TR-I12`; `EVIDENCE_REFERENCE_INVALID`; no ACK |
+| `TR-ACC-ANALYSIS-033` result hash mismatch | manifest hash changed / R→F | no / no | six section digests and JCS manifest; base; `RESULT_HASH_MISMATCH`; no ACK |
+| `TR-ACC-ANALYSIS-034` persisted ACK | current A1/G1 and committed AnalysisResult / R→C | yes / ACK retry only | transaction/outbox; `TR-I16`; —; PERSISTED replay no-op |
+| `TR-ACC-ANALYSIS-035` stale discard ACK | completed A1/G1, current A2 or G2 / R→S | no / no | stale reason/current identity; `TR-I16`; —; DISCARDED_STALE replay no-op |
+| `TR-ACC-ANALYSIS-036` duplicate ACK | same identity/hash/disposition / C→C | once / ACK only | receipt/tombstone; base; —; NO_OP; changed tuple 409 |
+| `TR-ACC-ANALYSIS-037` payload cap | effective limit smaller than full bytes / R→F | no / no | serialization count; base; `RESULT_PAYLOAD_TOO_LARGE`; no ACK |
+| `TR-ACC-ANALYSIS-038` resource expiry | 24h passed, no ACK / C Compute→F Core | no / new Run only | expiry timestamp; lifecycle; `RESULT_PAYLOAD_EXPIRED`; no publication |
+| `TR-ACC-ANALYSIS-039` worker restart | A1 lease expires, no committed failure / R→R→C | yes same attempt / reclaim | lease generation CAS, one payload; `TR-I16`; `LEASE_LOST` for old worker; one result |
 
 ### D. Evidence
 

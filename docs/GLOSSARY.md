@@ -1,5 +1,7 @@
 # GLOSSARY.md — 도메인 용어 ↔ 코드 네이밍
 
+Analytics V1 용어: `analysisInputHash`는 Compute가 재계산하는 semantic input hash, `analysisLogicalKey`는 Core orchestration key, `attemptToken`/`deletionGeneration`은 runtime freshness identity, `payloadSha256`은 exact transport entity bytes hash, `resultHash`는 여섯 public section digest manifest hash다. 정의와 projection은 [Input Identity](TRADING_ANALYTICS_INPUT_IDENTITY.md) 및 [Result Integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md)를 따른다.
+
 에이전트는 변수명/클래스명/필드명을 지을 때 이 표를 그대로 따른다. 임의로 축약하거나 동의어로 바꾸지 않는다(`AI_AGENT.md` §2).
 
 | 용어 (한글) | 용어 (영문/코드) | 정의 | Related ADR |

@@ -1,5 +1,7 @@
 # TRADING_ANALYTICS.md — Trading Behavior Analytics 계산 계약
 
+이 문서의 세 Metric 공식과 population은 그대로 정본이다. Compute Analytics job의 wire/runtime 규칙은 ADR-069 및 [Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md), [Input Identity](TRADING_ANALYTICS_INPUT_IDENTITY.md), [Result Integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md), [Result Delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md)를 따른다. V1 Finding은 `TRADING_FINDING_RULES_DISABLED_V1`에 따라 결과 배열이 비며 Metric `findingEligibility`는 계산한다.
+
 이 문서는 Trading Review MVP의 초기 세 Behavior Metric 계산 정본이다. Binance One-way 체결 복원,
 allocation, reconciliation과 capability 생성의 선행 의미는
 [`TRADING_RECONSTRUCTION.md`](TRADING_RECONSTRUCTION.md)를 따르며 여기서 다시 정의하지 않는다.

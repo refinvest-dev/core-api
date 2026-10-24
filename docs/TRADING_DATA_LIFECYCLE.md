@@ -1,5 +1,7 @@
 # TRADING_DATA_LIFECYCLE.md — Trading Review Data Lifecycle Contract
 
+Analytics V1 input grant와 terminal spool 보관, ACK 후 정리 및 deletion generation 우선순위는 [Analytics Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md)과 [Result Delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md)를 따른다. 임시 Compute artifact를 Core의 장기 제품 결과로 취급하지 않는다.
+
 이 문서는 Trading Review 데이터의 분류, 수집 목적, 저장, 접근, 보관, 삭제, backup과 복원 경계를
 정의하는 상세 정본이다. 제품·도메인·기술 정책이며 법률 준수를 단정하거나 개인정보 처리방침을
 대체하지 않는다. 도메인 불변식 요약은 [`DOMAIN.md`](DOMAIN.md), 결정과 이유는

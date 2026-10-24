@@ -1,5 +1,7 @@
 # TRADING_VERSIONING.md — Trading Review Versioning & Reprocessing Contract
 
+Analytics semantic input은 `TRADING_ANALYTICS_INPUT_HASH_V1`, 결과는 `TRADING_ANALYTICS_RESULT_SCHEMA_V1`/`TRADING_ANALYTICS_RESULT_HASH_V1`로 고정한다. [Input Identity](TRADING_ANALYTICS_INPUT_IDENTITY.md)와 [Result Integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md)의 hash projection을 따른다. `TRADING_FINDING_RULES_DISABLED_V1`에서 실제 Finding rule로 변경하면 새 VersionSet과 새 AnalysisRun을 만든다.
+
 이 문서는 Trading Review의 version compatibility, 재처리, 결과 lineage와 publication의 상세 정본이다.
 제품·Aggregate 경계는 [`TRADING_REVIEW.md`](TRADING_REVIEW.md), 복원 계산은
 [`TRADING_RECONSTRUCTION.md`](TRADING_RECONSTRUCTION.md), Metric 계산은

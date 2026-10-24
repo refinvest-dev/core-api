@@ -1173,3 +1173,17 @@ latest pointer를 변경하지 않는다. 행·필드 단위 rejection 진단은
 이 명확화는 성공 payload schema, inputSetHash, section digest, manifestHash, resultHash,
 result integrity 고정 vector 및 hash specification version을 변경하지 않는다. 기존
 LedgerRevision과 결과 hash는 그대로이며 재처리가 필요하지 않다.
+
+---
+
+## ADR-069 — Trading Analytics Job Protocol and Result Integrity V1
+
+**상태**: 확정. ADR-060의 세 Metric 계산 의미, ADR-062의 immutable 재처리와 ADR-063의 Core→Compute 위임을 유지하며 Analytics runtime의 별도 wire 계약을 고정한다.
+
+Core는 immutable `AnalyticsLedgerInputV1`과 기존 공개 `ReconciliationManifestPayload` 두 artifact를 전달한다. `TRADING_ANALYTICS_INPUT_HASH_V1`은 artifact content identity, LedgerRevision ID/content hash, manifest hash, exact AnalysisConfig hash, Analytics VersionSet와 capability만 포함한다. Core `analysisLogicalKey` 및 job/Run/attempt/deletion runtime identity, locator와 expiry, 전달 policy는 semantic hash와 분리한다. 정확한 projection과 vector는 [`TRADING_ANALYTICS_INPUT_IDENTITY.md`](TRADING_ANALYTICS_INPUT_IDENTITY.md)에 둔다.
+
+Compute의 durable job은 initial attempt, 갱신 가능한 grant revision, 명시적 retry budget/lease를 보유한다. queued grant replacement는 locator/expiry만 바꾸고, retry는 새 attempt token을 요구한다. 현재 Run·attempt·deletion generation을 통과하지 않은 terminal 결과는 발행하지 않는다. `PERSISTED` ACK는 Core의 원자적 AnalysisResult commit 뒤에만, `DISCARDED_STALE`은 저장하지 않은 completed payload에만 보낸다. 상태·재시작·실패 taxonomy는 [`TRADING_ANALYTICS_JOB_PROTOCOL.md`](TRADING_ANALYTICS_JOB_PROTOCOL.md)가 정본이다.
+
+결과는 Engine 세 Metric을 손실 없이 표현하는 definition별 typed value, relation, observation, Evidence membership와 Metric별 population을 사용한다. root count는 section 구조적 count만 뜻한다. V1 Finding rule은 `TRADING_FINDING_RULES_DISABLED_V1`이며 `findings=[]`를 강제하되 Metric finding eligibility는 계산한다. Metric hash, 여섯 section digest, evidence hash 및 result digest manifest의 정확한 projection과 vector는 [`TRADING_ANALYTICS_RESULT_INTEGRITY.md`](TRADING_ANALYTICS_RESULT_INTEGRITY.md)에 둔다. Core와 Compute는 고정 vector를 각자 독립 검증한다.
+
+V1 transport는 한 개의 bounded UTF-8 entity resource, Analytics vendor media type, identity encoding, exact byte size/SHA-256를 사용한다. limit 초과 시 잘라서 성공시키지 않는다. 24시간 이내 보존과 ACK 후 정리, Core streaming 수신은 [`TRADING_ANALYTICS_RESULT_DELIVERY.md`](TRADING_ANALYTICS_RESULT_DELIVERY.md)가 정본이다. Normalization V1 schema/hash/vector는 변경하지 않는다.
