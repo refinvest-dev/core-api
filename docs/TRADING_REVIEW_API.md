@@ -421,6 +421,11 @@ Analytics request는 Core AnalysisRun ID, LedgerRevision content handle와 hash,
 Analytics VersionSet, AnalysisConfig/hash, capability, deletion generation, attempt token을 포함한다. 결과는
 ReviewUnit/Observation/Metric/Finding, full evidence membership, population/exclusion, version/config/result hash,
 structured failure와 timestamps를 가진다.
+Analytics create 최초 접수는 `202 TradingAnalyticsJobAccepted`를 반환한다. 같은
+`Idempotency-Key`와 create fingerprint의 재전송은 `200 TradingAnalyticsJobStatusResponse`로
+기존 job의 현재 `PENDING | RUNNING | COMPLETED | FAILED | CANCELLED` 상태, 현재 attempt와
+grant revision을 반환한다. 재전송은 grant·attempt·capacity 예약·job 상태를 변경하지 않으며,
+같은 key와 다른 fingerprint는 `409`다.
 
 ### 10.3 Large payload와 retention
 
@@ -441,9 +446,11 @@ attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
 - create의 `Idempotency-Key`는 Core durable dispatch identity다. canonical fingerprint에는
   모든 immutable 계산 입력·artifact descriptor/hash, Core IDs, 최초 attempt token과 deletion
   generation을 포함한다. `accessUri`/`expiresAt`, 인증/멱등 header, runtime ID/시각은 제외한다.
-  JSON object의 key/order 또는 header 표현 차이는 영향을 주지 않는다. same key/fingerprint는 최초
-  `202/jobId`를 돌려주고 **기존 grant/token을 바꾸지 않는다**. 최초 grant가 만료된 뒤의
-  응답 유실 replay도 기존 job을 반환한다. 같은 key와 다른 token/계산 입력은 `409`다.
+  JSON object의 key/order 또는 header 표현 차이는 영향을 주지 않는다. Normalization의
+  same key/fingerprint는 최초 `202/jobId`를 재반환한다. Analytics의 신규 접수는 `202`,
+  same key/fingerprint 재전송은 현재 상태를 담은 `200`이다. 두 create replay 모두
+  **기존 grant/token을 바꾸지 않는다**. 최초 grant가 만료된 뒤의 응답 유실 replay도
+  기존 job을 반환한다. 같은 key와 다른 token/계산 입력은 `409`다.
 - Compute status는 normalization에 한해 현재 `attemptToken`, `deletionGeneration`,
   `grantRevision`, `expectedInputSetHash`, optional 재계산 `inputSetHash`,
   `hashSpecificationVersion`, exact `targetVersionSet`,

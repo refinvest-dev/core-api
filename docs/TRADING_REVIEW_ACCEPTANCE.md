@@ -834,8 +834,8 @@ snapshot sync가 통과해도 `017` 실패다.
 
 | Stable ID / Given→When→Then | Pinned difference / request→terminal | Publication / retry | Evidence / invariant / safe failure / idempotency |
 |---|---|---|---|
-| `TR-ACC-ANALYSIS-016` create | base; new key / R→R | no / no | create fingerprint and A1/G1; base; —; CREATE_NEW |
-| `TR-ACC-ANALYSIS-017` same create replay | same key/fingerprint, changed locator only / R→R | no / no | original grant revision unchanged; base; —; RETURN_EXISTING |
+| `TR-ACC-ANALYSIS-016` create | base; new key / R→R | no / no | `202 TradingAnalyticsJobAccepted`, PENDING/A1/grant revision 0; base; —; CREATE_NEW |
+| `TR-ACC-ANALYSIS-017` same create replay | same key/fingerprint, changed locator only / R→R | no / no | `200 TradingAnalyticsJobStatusResponse`, PENDING/A1/current grant revision; grant·attempt·capacity·job state unchanged; base; —; RETURN_EXISTING |
 | `TR-ACC-ANALYSIS-018` conflicting replay | same key, changed config/hash / R→R | no / no | fingerprint conflict; base; `IDEMPOTENCY_CONFLICT`; REJECT_CONFLICT 409 |
 | `TR-ACC-ANALYSIS-019` two artifact bytes | valid exact bytes and manifest / R→C | yes / no | both SHA/size, ledger/manifest independent hashes; `TR-I08`; —; one result |
 | `TR-ACC-ANALYSIS-020` expected hash mismatch | wrong expectedInputHash / R→F | no / no | independent JCS root; base; `INPUT_HASH_MISMATCH`; no result |
@@ -858,6 +858,12 @@ snapshot sync가 통과해도 `017` 실패다.
 | `TR-ACC-ANALYSIS-037` payload cap | effective limit smaller than full bytes / R→F | no / no | serialization count; base; `RESULT_PAYLOAD_TOO_LARGE`; no ACK |
 | `TR-ACC-ANALYSIS-038` resource expiry | 24h passed, no ACK / C Compute→F Core | no / new Run only | expiry timestamp; lifecycle; `RESULT_PAYLOAD_EXPIRED`; no publication |
 | `TR-ACC-ANALYSIS-039` worker restart | A1 lease expires, no committed failure / R→R→C | yes same attempt / reclaim | lease generation CAS, one payload; `TR-I16`; `LEASE_LOST` for old worker; one result |
+| `TR-ACC-ANALYSIS-040` running create replay | same key/fingerprint after claim / RUNNING→RUNNING | no / no | `200 TradingAnalyticsJobStatusResponse`, RUNNING/current attempt/grant revision; lease and capacity unchanged; RETURN_EXISTING |
+| `TR-ACC-ANALYSIS-041` completed create replay | same key/fingerprint after terminal commit / C→C | no new publication / no | `200 TradingAnalyticsJobStatusResponse`, COMPLETED/current terminal payload ID/hash; no second job/result; RETURN_EXISTING |
+| `TR-ACC-ANALYSIS-042` failed create replay | same key/fingerprint after nonretryable failure / F→F | no / no | `200 TradingAnalyticsJobStatusResponse`, FAILED/current safe failure; no retry or resurrection; RETURN_EXISTING |
+| `TR-ACC-ANALYSIS-043` cancelled create replay | same key/fingerprint after cancellation / CANCELLED→CANCELLED | no / no | `200 TradingAnalyticsJobStatusResponse`, CANCELLED; no new job or capacity reservation; RETURN_EXISTING |
+| `TR-ACC-ANALYSIS-044` grant replacement then create replay | same create key/fingerprint after `REPLACE_QUEUED_GRANTS` / R→R | no / replacement already committed | `200 TradingAnalyticsJobStatusResponse`, PENDING/A1/grant revision 1; replay does not restore revision 0 grants or reserve capacity; RETURN_EXISTING |
+| `TR-ACC-ANALYSIS-045` new attempt then create replay | same create key/fingerprint after `START_RETRY_ATTEMPT` / R→R | no / retry already committed | `200 TradingAnalyticsJobStatusResponse`, PENDING/A2/grant revision 1 and current token; replay does not restore A1 or update grants; RETURN_EXISTING |
 
 ### D. Evidence
 
