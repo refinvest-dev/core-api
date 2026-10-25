@@ -2,6 +2,8 @@
 
 Analytics semantic input은 `TRADING_ANALYTICS_INPUT_HASH_V1`, 결과는 `TRADING_ANALYTICS_RESULT_SCHEMA_V1`/`TRADING_ANALYTICS_RESULT_HASH_V1`로 고정한다. [Input Identity](TRADING_ANALYTICS_INPUT_IDENTITY.md)와 [Result Integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md)의 hash projection을 따른다. `TRADING_FINDING_RULES_DISABLED_V1`에서 실제 Finding rule로 변경하면 새 VersionSet과 새 AnalysisRun을 만든다.
 
+Normalization 결과 wire 계약은 `TRADING_NORMALIZATION_RESULT_V1`/`TRADING_NORMALIZATION_RESULT_HASH_V1`과 ADR-070의 `TRADING_NORMALIZATION_RESULT_V2`/`TRADING_NORMALIZATION_RESULT_HASH_V2`가 exact pair로 공존한다. V2의 `analyticsInputSupplement`는 V1 ReviewUnit/manifest의 의미와 hash를 유지하면서 Analytics Engine 입력을 새 Revision에 보존한다. result wire version은 계산 VersionSet의 묵시적 alias가 아니다. producer/reader 지원을 registry에 명시하고, V2 terminal은 새 result hash를 갖는 새 Revision으로만 발행한다. 기존 V1 hash·fixed vector·Revision/Result는 재해석하거나 덮어쓰지 않는다. V1 신규 생산 종료는 별도 retirement/migration 결정으로 진행하며 보존 중인 V1 조회는 유지한다. 보충값 없는 V1 Revision의 Analytics admission은 `ANALYTICS_INPUT_UNAVAILABLE`이고, compatible `RERUN_RECONSTRUCTION`/`REBUILD_LEDGER`이 새 V2 Revision을 완성해야 분석할 수 있다. Raw가 없어도 canonical source와 pinned terms가 남고 registry가 해당 변환을 지원하면 가능하며, 그렇지 않으면 `REPROCESSING_SOURCE_UNAVAILABLE` 또는 `REPROCESSING_NOT_SUPPORTED`를 반환한다. 단순 `RERUN_ANALYTICS`나 조회가 누락 근거를 만들어내지 않는다.
+
 이 문서는 Trading Review의 version compatibility, 재처리, 결과 lineage와 publication의 상세 정본이다.
 제품·Aggregate 경계는 [`TRADING_REVIEW.md`](TRADING_REVIEW.md), 복원 계산은
 [`TRADING_RECONSTRUCTION.md`](TRADING_RECONSTRUCTION.md), Metric 계산은

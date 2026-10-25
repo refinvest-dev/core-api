@@ -159,6 +159,8 @@ job terminal 뒤에는 grant revision·token을 수정하지 않는다.
 
 ## 4. Persistence ownership matrix
 
+ADR-070의 V2 `analyticsInputSupplement`는 Core가 terminal 수신 시 독립적으로 section hash, 1:1 대응과 근거 참조를 검증한 뒤 `LedgerRevision`과 같은 publication transaction에서 불변 저장한다. 논리적으로 Revision의 일부이며 같은 owner/Book, retention, 삭제 및 lineage 범위를 따른다. 저장 방식은 Revision 소유 immutable object 또는 별도 FK 테이블이어도 되지만 `reviewUnitId`/`allocationId`의 1:1 unique constraint, 버전·section digest/result hash 결속, partial publication 금지를 강제한다. V1 Revision에는 보충 row를 인위적으로 만들지 않는다. Analytics input builder는 발행된 V2 Revision의 보충 row를 그대로 사용하고 없으면 Run/dispatch 생성 전에 `ANALYTICS_INPUT_UNAVAILABLE`로 거절한다. 재처리로 새 V2 Revision을 발행할 때도 동일 publication gate를 거친다.
+
 | Logical data | Owner | Writer | Reader | Retention | Immutable |
 |---|---|---|---|---|---:|
 | Account/Book/import metadata | Core | Core | Core public use cases | parent lifecycle | identity/pin은 예 |

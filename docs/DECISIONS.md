@@ -1187,3 +1187,15 @@ Compute의 durable job은 initial attempt, 갱신 가능한 grant revision, 명�
 결과는 Engine 세 Metric을 손실 없이 표현하는 definition별 typed value, relation, observation, Evidence membership와 Metric별 population을 사용한다. root count는 section 구조적 count만 뜻한다. V1 Finding rule은 `TRADING_FINDING_RULES_DISABLED_V1`이며 `findings=[]`를 강제하되 Metric finding eligibility는 계산한다. Metric hash, 여섯 section digest, evidence hash 및 result digest manifest의 정확한 projection과 vector는 [`TRADING_ANALYTICS_RESULT_INTEGRITY.md`](TRADING_ANALYTICS_RESULT_INTEGRITY.md)에 둔다. Core와 Compute는 고정 vector를 각자 독립 검증한다.
 
 V1 transport는 한 개의 bounded UTF-8 entity resource, Analytics vendor media type, identity encoding, exact byte size/SHA-256를 사용한다. limit 초과 시 잘라서 성공시키지 않는다. 24시간 이내 보존과 ACK 후 정리, Core streaming 수신은 [`TRADING_ANALYTICS_RESULT_DELIVERY.md`](TRADING_ANALYTICS_RESULT_DELIVERY.md)가 정본이다. Normalization V1 schema/hash/vector는 변경하지 않는다.
+
+---
+
+## ADR-070 — Normalization Analytics input supplement V2
+
+**상태**: 확정. ADR-066의 V1 결과와 ADR-069의 Analytics 입력 계약을 유지한다.
+
+새 단일 terminal 결과는 `TRADING_NORMALIZATION_RESULT_V2` / `TRADING_NORMALIZATION_RESULT_HASH_V2`를 사용하고 필수 `analyticsInputSupplement` singleton section을 추가한다. 이 section은 공개 ReviewUnit마다 직접 `evidenceRecordIds`와 `stableEpisodeTimeAvailable`, Allocation마다 `evidenceRecordIds`, `allocatedFee`, `allocatedReportedPnl`을 전달한다. `ReconciliationManifestPayload`와 공개 ReviewUnit/Allocation 형태, manifest V1 hash 및 `AnalyticsLedgerInputV1` 형태는 그대로 둔다. 새 section은 독립 section hash와 V2 전체 result hash로 보호하며 Core는 검증한 값을 새 LedgerRevision에 불변 저장한다. 정확한 투영과 참조 규칙 및 fixed vector는 [`TRADING_NORMALIZATION_RESULT_INTEGRITY.md`](TRADING_NORMALIZATION_RESULT_INTEGRITY.md)를 따른다.
+
+**선택 이유**: Compute의 복원 결과에는 이 값들이 있지만 V1 공개 ReviewUnit에는 직접 근거 ID가 없고 Core의 현재 발행 경로는 이를 저장하지 않는다. Core가 canonical record를 조합해 episode/Allocation 근거를 추정하거나 누락 금액을 0으로 채우면 원래 계산 입력을 복원할 수 없다. 공개 ReviewUnit을 확장하면 중첩 `REVIEW_UNITS` section과 `ReconciliationManifestPayload`의 hash가 모두 변경되고 Analytics가 받는 manifest artifact의 root schema 및 hash 검증도 새 버전을 요구한다. 별도 section은 기존 manifest의 hash projection을 그대로 유지하면서 새 값만 V2 전체 digest에 묶는다. 두 방식 모두 terminal result hash와 새 Revision이 필요하지만 이 방식은 manifest 및 Analytics V1 adapter를 보존한다.
+
+V1 producer/reader와 V2 producer/reader는 registry의 exact 지원 선언으로 공존한다. V1 Revision/result/hash/vector는 재해석·수정하지 않는다. 보충값이 없는 Revision의 Analytics 접수는 `ANALYTICS_INPUT_UNAVAILABLE`로 실패하며, 명시적 호환 재처리가 새 V2 Revision을 완성한 경우에만 분석한다. V1 신규 생산 종료는 별도 registry retirement/migration 결정으로 진행하며 기존 조회는 보존한다. Core·Compute·Integration 후속 구현과 검증 전에는 V2 동작을 배포 완료로 간주하지 않는다.

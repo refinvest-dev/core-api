@@ -401,6 +401,7 @@ DeletionRequest
   입력 identity/specification, source content, 결과 count/hash/reference의 무결성 실패는 CSV 거부가
   아닌 `PROCESSING_FAILED`이며 각 failure를 혼용하지 않는다. 명시적 retry는 active
   raw와 삭제되지 않은 Session에서 새 Run/attempt 및 audit event로 시작한다.
+- `TR-I42 Analytics Input Provenance`: V2 LedgerRevision은 모든 ReviewUnit/Allocation의 직접 근거, 실제 배분 fee/PnL과 stable time capability를 검증된 `analyticsInputSupplement`에서 1:1 불변 보존한다. Analytics 입력은 이 저장값에서만 생성한다. 보충값 없는 과거 Revision은 `ANALYTICS_INPUT_UNAVAILABLE`이며 0 또는 record 기반 추정으로 성공시키지 않는다.
 
 `NormalizationRun`은 Core 내부 모델이다. `runId`, `importSessionId`, `inputFingerprint`(inputSetHash),
 target VersionSet, `retryPolicyVersion`, `deletionGeneration`, logical idempotency key, current execution
