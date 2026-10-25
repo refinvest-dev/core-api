@@ -616,3 +616,5 @@ expected.manifest{schemaVersion,reconstructionPolicyVersion,canonicalHash}
 
 `null`, absent, zero를 서로 바꿔 쓰지 않는다. 알려진 실제 값 0은 scale을 포함한 Decimal로, 알 수 없거나
 capability가 없는 값은 `null`과 명시적 status/reason으로 기록한다.
+
+ADR-070의 새 Normalization V2 공개 결과는 위 복원 결과의 episode 직접 `evidence_record_ids`, 각 Allocation의 동일 체결 execution/fee/venue-reported-PnL `evidence_record_ids`, 실제 배분 fee/PnL 및 `stable_episode_time_available`을 `analyticsInputSupplement`로 전달한다. 공개 ReviewUnit/Allocation과 ReconciliationManifest는 확장하지 않는다. 이 보충값의 정확한 참조·정렬·hash 및 Core 불변 저장 규칙은 [`TRADING_NORMALIZATION_RESULT_INTEGRITY.md`](TRADING_NORMALIZATION_RESULT_INTEGRITY.md)를 따른다. 복원 fixture는 여러 Allocation과 실제 0이 있는 경우에도 이 직접 근거와 금액을 expected result에 명시해야 한다.

@@ -64,7 +64,7 @@
 ## 7. Trading Review 현재 작업 규칙
 
 - 현재 우선순위는 `docs/ROADMAP.md`의 TR-0이며 실제 Binance Trade/Position History fixture package로 ADR-058의 입력 계약과 reconciliation을 먼저 검증한다.
-- 구현과 harness fixture는 `docs/DOMAIN.md`의 `TR-I01`~`TR-I41` 중 적용되는 불변식과 expected result를 명시한다.
+- 구현과 harness fixture는 `docs/DOMAIN.md`의 `TR-I01`~`TR-I42` 중 적용되는 불변식과 expected result를 명시한다.
 - provider row를 조용히 버리거나 불완전한 position episode를 완성했다고 추정하지 않는다.
 - 같은 `LedgerRevision + Reconstruction/Metric/Finding versions + AnalysisConfig`는 같은 결과를 내야 한다.
 - Finding은 source row까지 provenance를 제공하고, 행동과 결과 사이의 인과관계나 심리 상태를 단정하지 않는다.
@@ -80,6 +80,7 @@
 - ADR-062와 `docs/TRADING_VERSIONING.md`의 exact compatibility, 새 Revision/Run, idempotency, lineage,
   completed-only publication과 deterministic hash를 적용한다. 새 version 배포·결과 조회를 기존 결과의 자동
   재처리 trigger로 사용하거나 unavailable version을 가까운 version으로 대체하지 않는다.
+- ADR-070의 V2 Normalization `analyticsInputSupplement`는 Compute가 직접 생성하고 Core가 독립 검증 후 새 Revision에 불변 저장한다. Analytics 입력을 만들 때 누락 근거·배분 금액을 canonical record에서 추정하거나 0으로 채우지 않는다.
 - `docs/TRADING_REVIEW_ACCEPTANCE.md`의 Scenario ID는 Integration/PR evidence에서 그대로 사용하고,
   `FIXTURE_PLANNED`를 실제 fixture 없이 검증 완료로 표시하지 않는다. AcceptanceOutcome을 Aggregate status나
   HTTP status로 구현하지 않는다.

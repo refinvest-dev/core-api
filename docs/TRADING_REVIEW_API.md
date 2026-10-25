@@ -108,6 +108,7 @@ CSRF 경계를 그대로 적용할 수 있다. MVP의 두 CSV와 수동 upload �
 | `GetLedgerRevision` | `GET /ledger-revisions/{ledgerRevisionId}` | `200` |
 | `ListLedgerRevisions` | `GET /trading-books/{tradingBookId}/ledger-revisions` | `200` page |
 | `RunTradingAnalysis` | `POST /ledger-revisions/{ledgerRevisionId}/analyses` | `202` |
+
 | `PollTradingAnalysisStatus` | `GET /trading-analysis-runs/{analysisRunId}` | `200` |
 | `ListTradingAnalysisRuns` | `GET /trading-books/{tradingBookId}/analysis-runs` | `200` page |
 | `GetTradingReview` | `GET /trading-analysis-runs/{analysisRunId}/review` | `200` |
@@ -124,6 +125,8 @@ CSRF 경계를 그대로 적용할 수 있다. MVP의 두 CSV와 수동 upload �
 | `DeleteTradingBook` | `DELETE /trading-books/{tradingBookId}` | `202` |
 | `DeleteTradingAccount` | `DELETE /trading-accounts/{tradingAccountId}` | `202` |
 | `GetTradingDeletionRequest` | `GET /trading-deletion-requests/{deletionRequestId}` | `200` |
+
+`RunTradingAnalysis`는 LedgerRevision의 검증된 V2 `analyticsInputSupplement` 보존 여부를 admission에서 확인한다. 없는 V1 Revision은 `422` 공통 `ErrorResponse` (`code=ANALYTICS_INPUT_UNAVAILABLE`, `retryable=false`, 안전한 message `이 거래 원장 버전에는 분석 입력 근거가 없습니다.`, 민감정보 없는 `traceId`)로 응답하고 Run/artifact/Compute job을 만들지 않는다. 조회는 계속 가능하다. compatible source/terms가 있으면 명시적 ledger reconstruction/rebuild로 새 V2 Revision을 발행한 뒤 분석할 수 있고, 자동 재해석이나 기존 Revision 수정은 없다.
 
 `FinalizeTradingImportArtifact`는 없다. Core가 multipart stream을 끝까지 읽고 encrypted object를 검증하는
 transactional boundary가 finalize 역할을 한다. `GetTradingResultHistory`, reprocessing difference와 comparable

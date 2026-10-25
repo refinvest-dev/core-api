@@ -724,6 +724,7 @@ paths:
       operationId: runTradingAnalysis
       tags: [trading-analysis]
       summary: pinned Revision 분석 시작 (`RunTradingAnalysis`)
+      description: 보충값 없는 과거 V1 Revision은 Run을 만들지 않고 422 ANALYTICS_INPUT_UNAVAILABLE을 반환한다. 명시적 호환 재처리로 새 V2 Revision을 발행한 뒤 분석할 수 있다.
       parameters:
         - $ref: '#/components/parameters/LedgerRevisionId'
         - $ref: '#/components/parameters/CsrfToken'
@@ -741,7 +742,16 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '410': { $ref: '#/components/responses/Gone' }
-        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '422':
+          description: V1 등 보충 근거가 없는 Revision은 ANALYTICS_INPUT_UNAVAILABLE. Run/Compute job은 생성하지 않는다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                code: ANALYTICS_INPUT_UNAVAILABLE
+                message: 이 거래 원장 버전에는 분석 입력 근거가 없습니다.
+                traceId: trace-synthetic-analytics-input
+                retryable: false
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /trading-analysis-runs/{analysisRunId}:
@@ -1472,6 +1482,7 @@ components:
         - ARTIFACT_IDENTITY_CONFLICT
         - MISSING_CAPABILITY
         - INVALID_ANALYSIS_CONFIG
+        - ANALYTICS_INPUT_UNAVAILABLE
         - INCOMPLETE_ANALYSIS_RESULT
         - RESULT_NOT_AVAILABLE
         - VERSION_UNAVAILABLE

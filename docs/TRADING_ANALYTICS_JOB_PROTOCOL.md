@@ -2,6 +2,8 @@
 
 ADR-069 selects this protocol. The [input identity](TRADING_ANALYTICS_INPUT_IDENTITY.md), [result integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md), and [delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md) documents are normative, together with `openapi/compute-api.yaml`. This is an internal Core→Compute contract; Web only calls Core.
 
+Core admits a Revision to this protocol only if its independently verified, immutable Normalization V2 `analyticsInputSupplement` is stored. A historical Revision without it returns public `422 ANALYTICS_INPUT_UNAVAILABLE` before Run/job or Analytics artifacts are created. This is a Core admission failure, not an Analytics Compute job failure. See [Normalization result integrity](TRADING_NORMALIZATION_RESULT_INTEGRITY.md) and ADR-070.
+
 ## Ownership and state
 
 Core owns the immutable LedgerRevision, AnalysisConfig, TradingAnalysisRun, deletion tombstone/generation, publication transaction, long-lived AnalysisResult and ACK outbox. Compute owns the durable job, grant revision, attempt/lease, bounded transient input and terminal payload, and failure metadata. Core pins the exact artifacts, semantic hash, Analytics VersionSet, attempt token, deletion generation, retry policy and delivery limit before create. Compute never changes these semantic pins. The Core `analysisLogicalKey` is its own orchestration/idempotency key; Compute independently calculates `analysisInputHash`.

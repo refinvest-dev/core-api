@@ -1,6 +1,6 @@
 # TRADING_REVIEW_ACCEPTANCE.md — Trading Review Acceptance Contract
 
-Analytics runtime Scenario `TR-ACC-ANALYSIS-016`~`039`는 ADR-069와 [Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md), [Input Identity](TRADING_ANALYTICS_INPUT_IDENTITY.md), [Result Integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md), [Result Delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md)를 따른다. 기존 Scenario ID는 유지한다.
+Analytics runtime Scenario `TR-ACC-ANALYSIS-016`~`045`는 ADR-069와 [Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md), [Input Identity](TRADING_ANALYTICS_INPUT_IDENTITY.md), [Result Integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md), [Result Delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md)를 따른다. `046`~`047`은 ADR-070의 Analytics 입력 provenance/admission 경계다. 기존 Scenario ID는 유지한다.
 
 이 문서는 Trading Review TR-0G의 사용자 관점 완료 조건과 Aggregate 상태 전이를 정의한다. Integration
 harness는 이 문서의 Scenario ID, fixture 상태와 `Then`을 assertion 이름으로 재사용한다. 계산식은
@@ -321,6 +321,12 @@ opaque Run ID, section/code, hash prefix 최대 12자만 허용한다.
 | `TR-ACC-IMPORT-INTEGRITY-014` | 수신 `counts` 한 값을 변경하고 manifest hash, manifest section digest, 전체 resultHash 및 관련 선언값을 그 값에 맞게 다시 계산; 실제 section item은 그대로 유지 | manifest hash 일치 확인 후 staging 실제 count와 수신 `counts` 비교 | `RESULT_COUNT_MISMATCH`; manifest hash 성공을 count 검증 성공으로 취급하지 않고 발행 금지 |
 | `TR-ACC-IMPORT-INTEGRITY-015` | V1 `ReconciliationManifestPayload`에서 required `counts` 누락 또는 null | payload schema 검증 | 정상 manifest가 아니므로 발행 금지; hash 입력을 임의의 재계산 count로 채우지 않음 |
 | `TR-ACC-IMPORT-INTEGRITY-016` | 유효한 V1 manifest의 논리값은 같고 JSON object field 순서만 다름 | JCS 적용 후 manifest hash 비교 | 기존 `manifestHash`와 동일; count와 다른 검증도 통과하면 발행 허용 |
+| `TR-ACC-IMPORT-INTEGRITY-017` | V2 fixed vector의 unit 1개, Allocation 2개와 실제 0 금액, 보충 근거 행 | Compute terminal 생성→Core가 10개 section/manifest/result와 1:1·참조 검증 | 새 Revision에 보충값 불변 저장, Session ACCEPTED, commit 뒤 PERSISTED; `TR-I42`; Integration `FIXTURE_PLANNED` |
+| `TR-ACC-IMPORT-INTEGRITY-018` | V2 보충 Allocation의 `evidenceRecordIds`가 없는 record를 참조하거나 대응 행이 빠짐 | Core가 canonical membership/Allocation 1:1 검증 | `EVIDENCE_REFERENCE_INVALID`, Revision 없음, latest 불변; `TR-I42`; Integration `FIXTURE_PLANNED` |
+| `TR-ACC-IMPORT-INTEGRITY-019` | V2 보충의 실제 0 금액이 null이거나 공개 Allocation 금액과 다름 | Core가 필수 money schema·공개값 일치 검증 | null은 `RESULT_SCHEMA_UNSUPPORTED`, 불일치는 `EVIDENCE_REFERENCE_INVALID`; 발행 금지; `TR-I10`, `TR-I42`; Integration `FIXTURE_PLANNED` |
+| `TR-ACC-IMPORT-INTEGRITY-020` | V2 보충 stableEpisodeTimeAvailable과 unit capability가 다름 | Core가 boolean/capability 일치 검증 | `EVIDENCE_REFERENCE_INVALID`; 발행 금지; `TR-I42`; Integration `FIXTURE_PLANNED` |
+
+017~020의 고정 비민감 입력은 `fixtures/trading-normalization/result-integrity-v2.json`이며 Context 정적 hash/shape 검사만 완료했다. Compute→Core 실제 경로의 Integration 검증은 아직 `FIXTURE_PLANNED`다.
 
 V1은 단일 resource이며 007/008의 실제 page/chunk runtime은 새 schema/endpoint 이후의
 후속 Integration 요구사항이다. 현재 `verify-contract-sync.ps1`과 input identity runtime test는
@@ -864,6 +870,8 @@ snapshot sync가 통과해도 `017` 실패다.
 | `TR-ACC-ANALYSIS-043` cancelled create replay | same key/fingerprint after cancellation / CANCELLED→CANCELLED | no / no | `200 TradingAnalyticsJobStatusResponse`, CANCELLED; no new job or capacity reservation; RETURN_EXISTING |
 | `TR-ACC-ANALYSIS-044` grant replacement then create replay | same create key/fingerprint after `REPLACE_QUEUED_GRANTS` / R→R | no / replacement already committed | `200 TradingAnalyticsJobStatusResponse`, PENDING/A1/grant revision 1; replay does not restore revision 0 grants or reserve capacity; RETURN_EXISTING |
 | `TR-ACC-ANALYSIS-045` new attempt then create replay | same create key/fingerprint after `START_RETRY_ATTEMPT` / R→R | no / retry already committed | `200 TradingAnalyticsJobStatusResponse`, PENDING/A2/grant revision 1 and current token; replay does not restore A1 or update grants; RETURN_EXISTING |
+| `TR-ACC-ANALYSIS-046` V1 Revision에 보충값 없음 | Core Analytics admission / Run 없음 | no / no | 공개 `422 ANALYTICS_INPUT_UNAVAILABLE`, retryable=false; Artifact/Compute job 없음; `TR-I42`; Integration `FIXTURE_PLANNED` |
+| `TR-ACC-ANALYSIS-047` 발행된 V2 Revision | Core가 저장된 보충 행으로 `AnalyticsLedgerInputV1` 작성 / R→C | yes / no | manifest unit·allocation 1:1, direct evidence·실제 0·capability가 원본 보충값과 일치; 추정 없음; `TR-I42`; Integration `FIXTURE_PLANNED` |
 
 ### D. Evidence
 
