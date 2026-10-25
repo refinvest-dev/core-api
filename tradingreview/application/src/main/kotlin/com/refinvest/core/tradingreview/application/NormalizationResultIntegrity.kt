@@ -127,9 +127,12 @@ data class VerifiedNormalizationResult(
 object NormalizationResultVerifier {
     const val RESULT_SCHEMA_V1 = "TRADING_NORMALIZATION_RESULT_V1"
     const val RESULT_HASH_V1 = "TRADING_NORMALIZATION_RESULT_HASH_V1"
+    const val RESULT_SCHEMA_V2 = "TRADING_NORMALIZATION_RESULT_V2"
+    const val RESULT_HASH_V2 = "TRADING_NORMALIZATION_RESULT_HASH_V2"
     internal val sections = listOf("ARTIFACT_COVERAGES", "CANONICAL_RECORDS", "CAPABILITIES",
         "QUALITY_REPORT", "RECONCILIATION_ISSUES", "RECONCILIATION_MANIFEST",
         "RECONCILIATION_MATCHES", "REVIEW_UNITS", "SOURCE_EVIDENCE_SNAPSHOTS")
+    internal val sectionsV2 = (sections + "ANALYTICS_INPUT_SUPPLEMENT").sorted()
     internal val rootFields = setOf("jobId", "coreLogicalJobId", "coreNormalizationRunId",
         "coreImportSessionId", "attemptToken", "deletionGeneration", "status", "targetVersionSet",
         "inputSetHash", "hashSpecificationVersion", "resultSchemaVersion",

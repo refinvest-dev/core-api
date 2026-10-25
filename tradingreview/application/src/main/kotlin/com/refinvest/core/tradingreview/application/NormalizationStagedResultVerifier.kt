@@ -28,22 +28,26 @@ internal class NormalizationStagedResultVerifier(
     private val batchSize: Int,
 ) {
     init { require(batchSize > 0) }
-    private val sections = NormalizationResultVerifier.sections
-    private val collections = sections - setOf("QUALITY_REPORT", "RECONCILIATION_MANIFEST")
-
     fun verify(base: Map<String, Any?>, run: NormalizationRun? = null,
                logicalJobId: String? = null): VerifiedStagedResult {
         val root = base - NormalizationResultStreamingReader.STAGE_FORMAT_FIELD
+        val v2 = root["resultSchemaVersion"] == NormalizationResultVerifier.RESULT_SCHEMA_V2 &&
+            root["resultHashSpecificationVersion"] == NormalizationResultVerifier.RESULT_HASH_V2
+        val sections = if (v2) NormalizationResultVerifier.sectionsV2 else NormalizationResultVerifier.sections
+        val collections = sections - setOf("QUALITY_REPORT", "RECONCILIATION_MANIFEST",
+            "ANALYTICS_INPUT_SUPPLEMENT")
         val runId = run?.id ?: root["coreNormalizationRunId"] as? String
             ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
         if (base[NormalizationResultStreamingReader.STAGE_FORMAT_FIELD] !=
                 NormalizationResultStreamingReader.STREAM_STAGE_FORMAT ||
-            root.keys != NormalizationResultVerifier.rootFields || root.values.any { it == null } ||
+            root.keys != NormalizationResultVerifier.rootFields +
+                (if (v2) setOf("analyticsInputSupplement") else emptySet()) ||
+            root.values.any { it == null } ||
             root["status"] != "COMPLETED" ||
             obj(root["counts"]).keys != NormalizationResultVerifier.countFields ||
             obj(root["resultDigestManifest"]).keys != NormalizationResultVerifier.digestManifestFields ||
-            root["resultSchemaVersion"] != NormalizationResultVerifier.RESULT_SCHEMA_V1 ||
-            root["resultHashSpecificationVersion"] != NormalizationResultVerifier.RESULT_HASH_V1 ||
+            (!v2 && (root["resultSchemaVersion"] != NormalizationResultVerifier.RESULT_SCHEMA_V1 ||
+                root["resultHashSpecificationVersion"] != NormalizationResultVerifier.RESULT_HASH_V1)) ||
             root["hashSpecificationVersion"] != "TRADING_INPUT_SET_HASH_V1")
             throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
         if (run != null) NormalizationResultVerifier.verifyIdentity(root, run, logicalJobId)
@@ -87,6 +91,7 @@ internal class NormalizationStagedResultVerifier(
         }
 
         val staged = store.stagedCounts(runId)
+        if (v2) verifySupplement(runId, root, staged)
         val counts = mapOf(
             "artifactCoverageCount" to count(staged, "ARTIFACT_COVERAGES"),
             "canonicalRecordCount" to count(staged, "CANONICAL_RECORDS"),
@@ -106,6 +111,9 @@ internal class NormalizationStagedResultVerifier(
         val sectionDigests = sections.map { section ->
             val (items, hash) = when (section) {
                 "RECONCILIATION_MANIFEST" -> 1L to manifestHash
+                "ANALYTICS_INPUT_SUPPLEMENT" -> 1L to hashObjectWithSections(
+                    obj(singleton(runId, "ANALYTICS_INPUT_SUPPLEMENT")), runId,
+                    mapOf("reviewUnitEngineInputs" to "ANALYTICS_INPUT_SUPPLEMENT_ROWS"))
                 "QUALITY_REPORT" -> 1L to hashObjectWithSections(qualityBase, runId,
                     mapOf("validationIssues" to "VALIDATION_ISSUES"))
                 else -> hashArray(runId, section)
@@ -113,7 +121,8 @@ internal class NormalizationStagedResultVerifier(
             if (items != (if (section in collections) count(staged, section) else 1L))
                 throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
             mapOf<String, Any>("sectionType" to section, "itemCount" to items,
-                "hashSpecificationVersion" to NormalizationResultVerifier.RESULT_HASH_V1,
+                "hashSpecificationVersion" to (if (v2) NormalizationResultVerifier.RESULT_HASH_V2
+                    else NormalizationResultVerifier.RESULT_HASH_V1),
                 "sectionHash" to hash)
         }
         if (!same(sectionDigests, root["sectionDigests"]))
@@ -126,8 +135,9 @@ internal class NormalizationStagedResultVerifier(
             throw ResultIntegrityFailure("RESULT_SECTION_HASH_MISMATCH")
 
         val digestManifest = mapOf("resultHashSpecificationVersion" to
-                NormalizationResultVerifier.RESULT_HASH_V1,
-            "resultSchemaVersion" to NormalizationResultVerifier.RESULT_SCHEMA_V1,
+                (if (v2) NormalizationResultVerifier.RESULT_HASH_V2 else NormalizationResultVerifier.RESULT_HASH_V1),
+            "resultSchemaVersion" to (if (v2) NormalizationResultVerifier.RESULT_SCHEMA_V2
+                else NormalizationResultVerifier.RESULT_SCHEMA_V1),
             "inputSetHash" to root["inputSetHash"],
             "inputHashSpecificationVersion" to root["hashSpecificationVersion"],
             "targetVersionSet" to root["targetVersionSet"], "counts" to counts,
@@ -159,6 +169,68 @@ internal class NormalizationStagedResultVerifier(
             items.add(project(section, parseAndCheck(row)))
         }
         return items
+    }
+
+    private fun verifySupplement(runId: String, root: Map<String, Any?>,
+                                 staged: Map<String, Long>) {
+        val supplement = obj(root["analyticsInputSupplement"])
+        val saved = obj(singleton(runId, "ANALYTICS_INPUT_SUPPLEMENT"))
+        if (supplement.keys != setOf("schemaVersion", "reviewUnitEngineInputs") ||
+            supplement["schemaVersion"] != "TRADING_ANALYTICS_INPUT_SUPPLEMENT_V1" ||
+            supplement["reviewUnitEngineInputs"] != emptyList<Any>() ||
+            !same(supplement, saved))
+            throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        if (count(staged, "ANALYTICS_INPUT_SUPPLEMENT_ROWS") != count(staged, "REVIEW_UNITS"))
+            throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
+        var allocationCount = 0L
+        store.visitItems(runId, "ANALYTICS_INPUT_SUPPLEMENT_ROWS", batchSize) { stagedRow ->
+            val row = obj(parseAndCheck(stagedRow))
+            if (row.keys != setOf("reviewUnitId", "evidenceRecordIds",
+                    "stableEpisodeTimeAvailable", "allocationEvidence") ||
+                row["stableEpisodeTimeAvailable"] !is Boolean)
+                throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+            val evidence = sortedStrings(row["evidenceRecordIds"])
+            if (evidence.isEmpty() || !same(evidence, row["evidenceRecordIds"]))
+                throw ResultIntegrityFailure("EVIDENCE_REFERENCE_INVALID")
+            var previous: String? = null
+            for (raw in array(row["allocationEvidence"])) {
+                val allocation = obj(raw)
+                if (allocation.keys != setOf("allocationId", "evidenceRecordIds",
+                        "allocatedFee", "allocatedReportedPnl"))
+                    throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+                val id = (allocation["allocationId"] as? String)?.takeIf(String::isNotBlank)
+                    ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+                if (previous != null && previous!! >= id)
+                    throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+                previous = id
+                val allocationEvidence = sortedStrings(allocation["evidenceRecordIds"])
+                if (allocationEvidence.size != 3 ||
+                    !same(allocationEvidence, allocation["evidenceRecordIds"]) ||
+                    !evidence.containsAll(allocationEvidence))
+                    throw ResultIntegrityFailure("EVIDENCE_REFERENCE_INVALID")
+                verifyMoney(allocation["allocatedFee"])
+                verifyMoney(allocation["allocatedReportedPnl"])
+                allocationCount++
+            }
+        }
+        if (allocationCount != count(staged, "POSITION_ALLOCATIONS"))
+            throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
+        if (store.hasInvalidSupplement(runId))
+            throw ResultIntegrityFailure("EVIDENCE_REFERENCE_INVALID")
+    }
+
+    private fun verifyMoney(raw: Any?) {
+        val money = obj(raw)
+        if (money.keys != setOf("amount", "currency", "sourceScale"))
+            throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        val amount = money["amount"] as? String ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        val currency = money["currency"] as? String ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        val scale = (money["sourceScale"] as? Number)?.toString()?.toIntOrNull()
+            ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        if (!Regex("-?(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?").matches(amount) ||
+            amount.startsWith("-0") && amount.toBigDecimal().signum() == 0 ||
+            currency.isBlank() || scale < 0 || scale < amount.substringAfter('.', "").length)
+            throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
     }
 
     private fun hashArray(runId: String, section: String): Pair<Long, String> {
@@ -208,7 +280,7 @@ internal class NormalizationStagedResultVerifier(
         if (NormalizationResultCanonicalizer.hash(value) != row.contentHash)
             throw ResultIntegrityFailure("RESULT_ITEM_CONFLICT")
         val identity = when (row.sectionType) {
-            "QUALITY_REPORT", "RECONCILIATION_MANIFEST" -> "singleton"
+            "QUALITY_REPORT", "RECONCILIATION_MANIFEST", "ANALYTICS_INPUT_SUPPLEMENT" -> "singleton"
             "CAPABILITIES" -> value as? String
             "VALIDATION_ISSUES" -> {
                 val issue = obj(value)
@@ -222,6 +294,7 @@ internal class NormalizationStagedResultVerifier(
                     "CANONICAL_RECORDS" -> "recordId"
                     "SOURCE_EVIDENCE_SNAPSHOTS" -> "snapshotId"
                     "REVIEW_UNITS" -> "reviewUnitId"
+                    "ANALYTICS_INPUT_SUPPLEMENT_ROWS" -> "reviewUnitId"
                     "RECONCILIATION_MATCHES" -> "matchId"
                     "RECONCILIATION_ISSUES" -> "issueId"
                     else -> throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
@@ -248,6 +321,10 @@ internal class NormalizationStagedResultVerifier(
 
     /** Persist the same public ordering used by the semantic hash and publication. */
     fun normalizeForStage(section: String, raw: Any?): Any? {
+        // V2 money and evidence are exact supplemental outputs. Never repair a noncanonical
+        // decimal lexeme or reorder evidence before validating the received section hash.
+        if (section == "ANALYTICS_INPUT_SUPPLEMENT_ROWS" ||
+            section == "ANALYTICS_INPUT_SUPPLEMENT") return raw
         val value = NormalizationResultCanonicalizer.normalize(raw)
         if (section == "CAPABILITIES") return value
         val item = obj(value)

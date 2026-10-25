@@ -247,6 +247,98 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
             runId)
     }
 
+    override fun hasInvalidSupplement(runId: String): Boolean {
+        fun invalid(sql: String): Boolean = jdbc.queryForObject(sql, Boolean::class.java,
+            runId, runId) == true
+        if (invalid("""WITH supplements AS (
+                SELECT * FROM trading_normalization_staged_items
+                WHERE run_id=?::uuid AND section_type='ANALYTICS_INPUT_SUPPLEMENT_ROWS'),
+            units AS (SELECT * FROM trading_normalization_staged_items
+                WHERE run_id=?::uuid AND section_type='REVIEW_UNITS')
+            SELECT EXISTS (SELECT 1 FROM supplements s FULL JOIN units u
+                ON s.item_identity=u.item_identity
+                WHERE s.item_identity IS NULL OR u.item_identity IS NULL
+                OR (s.item_json->>'stableEpisodeTimeAvailable')::boolean IS DISTINCT FROM
+                    jsonb_exists(u.item_json->'capability', 'STABLE_EPISODE_TIME')
+                OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+                    s.item_json->'evidenceRecordIds') evidence(id)
+                    LEFT JOIN trading_normalization_staged_items r
+                    ON r.run_id=s.run_id AND r.section_type='CANONICAL_RECORDS'
+                    AND r.item_identity=evidence.id
+                    WHERE r.item_identity IS NULL OR r.item_json->>'instrumentId'
+                        IS DISTINCT FROM u.item_json->>'instrumentId')
+                OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+                    s.item_json->'evidenceRecordIds') evidence(id)
+                    JOIN trading_normalization_staged_items r ON r.run_id=s.run_id
+                        AND r.section_type='CANONICAL_RECORDS' AND r.item_identity=evidence.id
+                    WHERE r.item_json->>'recordType'='VENUE_POSITION_SUMMARY'
+                    AND NOT EXISTS (SELECT 1 FROM trading_normalization_staged_items explanation
+                        WHERE explanation.run_id=s.run_id
+                        AND ((explanation.section_type='RECONCILIATION_MATCHES'
+                            AND explanation.item_json->>'summaryRecordId'=evidence.id
+                            AND (explanation.item_json->>'reviewUnitId'=s.item_identity
+                                OR jsonb_exists(explanation.item_json->'candidateReviewUnitIds',
+                                    s.item_identity)))
+                        OR (explanation.section_type='RECONCILIATION_ISSUES'
+                            AND explanation.item_json->>'summaryRecordId'=evidence.id
+                            AND explanation.item_json->>'reviewUnitId'=s.item_identity)))))"""))
+            return true
+        return invalid("""WITH supplement AS (
+                SELECT * FROM trading_normalization_staged_items
+                WHERE run_id=?::uuid AND section_type='ANALYTICS_INPUT_SUPPLEMENT_ROWS'),
+            extras AS (SELECT s.run_id,s.item_identity AS unit_id,a.value AS extra
+                FROM supplement s CROSS JOIN LATERAL
+                    jsonb_array_elements(s.item_json->'allocationEvidence') a),
+            allocations AS (SELECT u.run_id,u.item_identity AS unit_id,a.value AS public
+                FROM trading_normalization_staged_items u CROSS JOIN LATERAL
+                    jsonb_array_elements(u.item_json->'allocations') a
+                WHERE u.run_id=?::uuid AND u.section_type='REVIEW_UNITS')
+            SELECT EXISTS (SELECT 1 FROM extras e FULL JOIN allocations a
+                ON e.unit_id=a.unit_id AND e.extra->>'allocationId'=a.public->>'allocationId'
+                LEFT JOIN trading_normalization_staged_items execution
+                    ON execution.run_id=COALESCE(e.run_id,a.run_id)
+                    AND execution.section_type='CANONICAL_RECORDS'
+                    AND execution.item_identity=a.public->>'recordId'
+                WHERE e.extra IS NULL OR a.public IS NULL OR execution.item_identity IS NULL
+                OR execution.item_json->>'recordType'<>'EXECUTION'
+                OR (a.public->'allocatedFee' IS NOT NULL
+                    AND a.public->'allocatedFee'<>'null'::jsonb
+                    AND a.public->'allocatedFee'<>e.extra->'allocatedFee')
+                OR (a.public->'allocatedReportedPnl' IS NOT NULL
+                    AND a.public->'allocatedReportedPnl'<>'null'::jsonb
+                    AND a.public->'allocatedReportedPnl'<>e.extra->'allocatedReportedPnl')
+                OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+                    e.extra->'evidenceRecordIds') evidence(id)
+                    LEFT JOIN trading_normalization_staged_items r ON r.run_id=e.run_id
+                    AND r.section_type='CANONICAL_RECORDS' AND r.item_identity=evidence.id
+                    WHERE r.item_identity IS NULL OR r.item_json->>'instrumentId'
+                        IS DISTINCT FROM execution.item_json->>'instrumentId'
+                    OR r.item_json->>'sourceExecutionKey'
+                        IS DISTINCT FROM execution.item_json->>'sourceExecutionKey')
+                OR (SELECT count(DISTINCT r.item_json->>'recordType') FROM
+                    jsonb_array_elements_text(e.extra->'evidenceRecordIds') evidence(id)
+                    JOIN trading_normalization_staged_items r ON r.run_id=e.run_id
+                    AND r.section_type='CANONICAL_RECORDS' AND r.item_identity=evidence.id)<>3
+                OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+                    e.extra->'evidenceRecordIds') evidence(id)
+                    JOIN trading_normalization_staged_items r ON r.run_id=e.run_id
+                    AND r.section_type='CANONICAL_RECORDS' AND r.item_identity=evidence.id
+                    WHERE r.item_json->>'recordType' NOT IN
+                        ('EXECUTION','FEE','VENUE_REPORTED_PNL'))
+                OR NOT jsonb_exists(e.extra->'evidenceRecordIds', a.public->>'recordId')
+                OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+                    e.extra->'evidenceRecordIds') evidence(id)
+                    JOIN trading_normalization_staged_items r ON r.run_id=e.run_id
+                    AND r.section_type='CANONICAL_RECORDS' AND r.item_identity=evidence.id
+                    WHERE (r.item_json->>'recordType'='FEE' AND
+                        r.item_json->'sourceAmount'->>'currency'
+                        IS DISTINCT FROM e.extra->'allocatedFee'->>'currency')
+                    OR (r.item_json->>'recordType'='VENUE_REPORTED_PNL' AND
+                        r.item_json->'realizedPnl'->>'currency'
+                        IS DISTINCT FROM e.extra->'allocatedReportedPnl'->>'currency'))
+            )""")
+    }
+
     override fun stagedCounts(runId: String): Map<String, Long> {
         val sections = jdbc.query("""SELECT section_type,count(*) FROM trading_normalization_staged_items
             WHERE run_id=?::uuid GROUP BY section_type""", { rs, _ -> rs.getString(1) to rs.getLong(2) },
@@ -405,6 +497,18 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
         jdbc.update("""INSERT INTO trading_ledger_review_units(revision_id,review_unit_id,unit_json)
             SELECT ?::uuid,item_identity,item_json FROM trading_normalization_staged_items
             WHERE run_id=?::uuid AND section_type='REVIEW_UNITS'""", revisionId, run.id)
+        if (descriptor.resultSchemaVersion == "TRADING_NORMALIZATION_RESULT_V2") {
+            jdbc.update("""INSERT INTO trading_ledger_analytics_supplement
+                (revision_id,review_unit_id,engine_input_json)
+                SELECT ?::uuid,item_identity,item_json FROM trading_normalization_staged_items
+                WHERE run_id=?::uuid AND section_type='ANALYTICS_INPUT_SUPPLEMENT_ROWS'""",
+                revisionId, run.id)
+            val savedCount = jdbc.queryForObject("""SELECT count(*) FROM
+                trading_ledger_analytics_supplement WHERE revision_id=?::uuid""",
+                Long::class.java, revisionId)
+            if (savedCount != descriptor.counts["reviewUnitCount"]?.toString()?.toLongOrNull())
+                throw NormalizationResultStoreFailure("RESULT_COUNT_MISMATCH")
+        }
         jdbc.update("""INSERT INTO trading_ledger_allocations
             (revision_id,allocation_id,review_unit_id,record_id,allocation_json)
             SELECT ?::uuid,a.value->>'allocationId',u.item_identity,a.value->>'recordId',a.value

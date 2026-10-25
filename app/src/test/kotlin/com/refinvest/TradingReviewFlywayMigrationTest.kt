@@ -24,7 +24,7 @@ class TradingReviewFlywayMigrationTest {
                 val flyway = Flyway.configure().dataSource(url, user, password).schemas(schema)
                     .baselineOnMigrate(true).baselineVersion("0")
                     .locations("classpath:db/migration").load()
-                assertEquals(7, flyway.migrate().migrationsExecuted)
+                assertEquals(8, flyway.migrate().migrationsExecuted)
                 connection.schema = schema
                 connection.createStatement().use { statement ->
                     statement.executeQuery("SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name IN ('trading_accounts','trading_books','trading_idempotency','trading_deletion_requests','trading_import_sessions','trading_source_artifacts')")
@@ -39,6 +39,8 @@ class TradingReviewFlywayMigrationTest {
                         .use { result -> result.next(); assertEquals(1, result.getInt(1)) }
                     statement.executeQuery("SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name IN ('trading_normalization_result_staging','trading_normalization_staged_items','trading_ledger_revisions','trading_source_evidence_snapshots','trading_records','trading_ledger_revision_records','trading_ledger_review_units','trading_ledger_allocations','trading_normalization_ack_dispatches')")
                         .use { result -> result.next(); assertEquals(9, result.getInt(1)) }
+                    statement.executeQuery("SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name='trading_ledger_analytics_supplement'")
+                        .use { result -> result.next(); assertEquals(1, result.getInt(1)) }
                     statement.executeQuery("SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='$schema' AND t.tgname='trading_ledger_revision_no_update'")
                         .use { result -> result.next(); assertEquals(1, result.getInt(1)) }
                 }

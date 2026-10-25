@@ -1,6 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
 import com.refinvest.core.tradingreview.port.RawArtifactStorage
+import com.refinvest.core.tradingreview.port.TradingAnalyticsArtifactStore
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.scheduling.annotation.Scheduled
@@ -19,6 +20,7 @@ class TradingDeletionWorker(
     private val transactions: TransactionTemplate,
     private val storage: RawArtifactStorage,
     private val clock: Clock,
+    private val analyticsArtifacts: TradingAnalyticsArtifactStore? = null,
 ) {
     @Scheduled(fixedDelay = 5000)
     fun purgePending() {
@@ -131,8 +133,11 @@ class TradingDeletionWorker(
             "ON b.id=s.trading_book_id WHERE " + scopeClause(request)
         val target = request.target
         val revisionIds = "SELECT id FROM trading_ledger_revisions WHERE import_session_id IN ($sessionIds)"
+        jdbc.query("SELECT id::text FROM trading_ledger_revisions WHERE import_session_id IN ($sessionIds)",
+            { rs, _ -> rs.getString(1) }, target).forEach { analyticsArtifacts?.deleteRevision(it) }
         jdbc.update("UPDATE trading_books SET latest_ledger_revision_id=NULL WHERE latest_ledger_revision_id IN ($revisionIds)", target)
         jdbc.update("UPDATE trading_import_sessions SET created_ledger_revision_id=NULL WHERE id IN ($sessionIds)", target)
+        jdbc.update("DELETE FROM trading_ledger_analytics_supplement WHERE revision_id IN ($revisionIds)", target)
         jdbc.update("DELETE FROM trading_ledger_allocations WHERE revision_id IN ($revisionIds)", target)
         jdbc.update("DELETE FROM trading_ledger_revision_records WHERE revision_id IN ($revisionIds)", target)
         jdbc.update("DELETE FROM trading_ledger_review_units WHERE revision_id IN ($revisionIds)", target)

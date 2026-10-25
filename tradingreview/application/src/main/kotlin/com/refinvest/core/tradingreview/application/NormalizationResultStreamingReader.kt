@@ -63,7 +63,7 @@ internal class NormalizationResultStreamingReader(
             while (parser.nextToken() != JsonToken.END_OBJECT) {
                 if (parser.currentToken() != JsonToken.PROPERTY_NAME) malformed()
                 val name = parser.currentName()
-                if (name !in NormalizationResultVerifier.rootFields)
+                if (name !in NormalizationResultVerifier.rootFields && name != "analyticsInputSupplement")
                     throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
                 if (parser.nextToken() == null) malformed()
                 root[name] = when (name) {
@@ -73,6 +73,7 @@ internal class NormalizationResultStreamingReader(
                         emptyList<Any>()
                     }
                     "reconciliationManifest" -> readManifest(parser, accept)
+                    "analyticsInputSupplement" -> readSupplement(parser, accept)
                     "qualityReport" -> readQualityReport(parser, accept).also { value ->
                         accept("QUALITY_REPORT", "singleton", value)
                     }.let { emptyMap<String, Any>() }
@@ -130,6 +131,26 @@ internal class NormalizationResultStreamingReader(
             } else readValue(parser)
         }
         return quality
+    }
+
+    private fun readSupplement(parser: JsonParser, accept: (String, String, Any) -> Unit): Map<String, Any?> {
+        if (parser.currentToken() != JsonToken.START_OBJECT) malformed()
+        val supplement = linkedMapOf<String, Any?>()
+        while (parser.nextToken() != JsonToken.END_OBJECT) {
+            if (parser.currentToken() != JsonToken.PROPERTY_NAME) malformed()
+            val name = parser.currentName()
+            if (name !in setOf("schemaVersion", "reviewUnitEngineInputs"))
+                throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+            if (parser.nextToken() == null) malformed()
+            supplement[name] = if (name == "reviewUnitEngineInputs") {
+                readItems(parser, "ANALYTICS_INPUT_SUPPLEMENT_ROWS", "reviewUnitId", accept)
+                emptyList<Any>()
+            } else readValue(parser)
+        }
+        if (supplement.keys != setOf("schemaVersion", "reviewUnitEngineInputs"))
+            throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        accept("ANALYTICS_INPUT_SUPPLEMENT", "singleton", supplement)
+        return supplement
     }
 
     private fun readItems(parser: JsonParser, section: String?, identity: String?,
