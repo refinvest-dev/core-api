@@ -393,13 +393,20 @@ Normalization request는 Core logical import/dispatch ID와 `coreNormalizationRu
 Artifact ID/SHA-256, source/review timezone, product/mode, hash specification version,
 **exact nested** normalizer+reconstruction target VersionSet), 두 job-bound
 `artifactAccessGrants`, pinned instrument terms, `retryPolicyVersion`, deletion generation,
-attempt token과 Run에 pin한 `resultDeliveryPolicy`를 포함한다. `inputIdentity`만 RFC 8785 V1
+attempt token과 Run에 pin한 `resultDeliveryPolicy`를 포함한다.
+`resultSchemaVersion`/`resultHashSpecificationVersion`의 정확한 V1/V1 또는 V2/V2 쌍도
+Run admission에서 pin해 create의 필수 필드로 보낸다. 새 create에서 누락은
+`422 REQUEST_INVALID`, 지원 값의 교차 조합은 `422 RESULT_VERSION_PAIR_INVALID`,
+미지원 값/쌍은 `422 RESULT_SCHEMA_UNSUPPORTED`이며 어느 경우에도 Job을 만들지 않는다.
+기존 key와 다른 지원 쌍을 제시하면 fingerprint 충돌 `409 IDEMPOTENCY_PAYLOAD_CONFLICT`다.
+`inputIdentity`만 RFC 8785 V1
 `inputSetHash` 대상이다. V1 policy는 `RESULT_DELIVERY_V1`/`SINGLE_RESOURCE`/advertised
 `maxAcceptedPayloadBytes`/`[identity]`이며 semantic resultHash와도 분리한다. Compute는
 실제 직렬화 bytes에 Core advertised 한도와 자체 한도의 최소값을 적용한다. Terminal descriptor는
 적용한 policy version, delivery mode, media type, encoding, byteSize, payloadSha256와
 schema/hash version을 제공한다. Core 수신과 초과 failure는 [delivery 정본](TRADING_NORMALIZATION_RESULT_DELIVERY.md)을 따른다.
-Compute는 독립 재계산과 grant/identity 일치를 검증한다. grant locator/expiry,
+Compute accepted와 PENDING/RUNNING/COMPLETED/FAILED/CANCELLED status는 Job에 저장한
+결과 쌍을 필수로 반환한다. Compute는 독립 재계산과 grant/identity 일치를 검증한다. grant locator/expiry,
 execution/attempt/Run ID, retry policy와 generation은 hash 대상이 아니다. Member profile이나
 raw account identifier는 포함하지 않는다. OpenAPI required field를 runtime `extra=forbid`
 DTO가 거부하면 계약 위반이다(`TR-ACC-IMPORT-ORCH-017`).
@@ -447,7 +454,8 @@ Compute job은 `PENDING → RUNNING → COMPLETED | FAILED | CANCELLED`만 허�
 attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
 
 - create의 `Idempotency-Key`는 Core durable dispatch identity다. canonical fingerprint에는
-  모든 immutable 계산 입력·artifact descriptor/hash, Core IDs, 최초 attempt token과 deletion
+  모든 immutable 계산 입력·artifact descriptor/hash, Core IDs, 최초 attempt token, 결과
+  schema/hash pin과 deletion
   generation을 포함한다. `accessUri`/`expiresAt`, 인증/멱등 header, runtime ID/시각은 제외한다.
   JSON object의 key/order 또는 header 표현 차이는 영향을 주지 않는다. Normalization의
   same key/fingerprint는 최초 `202/jobId`를 재반환한다. Analytics의 신규 접수는 `202`,
@@ -456,7 +464,7 @@ attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
   기존 job을 반환한다. 같은 key와 다른 token/계산 입력은 `409`다.
 - Compute status는 normalization에 한해 현재 `attemptToken`, `deletionGeneration`,
   `grantRevision`, `expectedInputSetHash`, optional 재계산 `inputSetHash`,
-  `hashSpecificationVersion`, exact `targetVersionSet`,
+  `hashSpecificationVersion`, exact `targetVersionSet`, 저장된 결과 schema/hash pin,
   `grantAction`과 nullable
   `grantRefreshDeadlineAt`을 반환한다. `grantAction=NONE`이면 갱신이 필요 없다.
   `PENDING/REPLACE_QUEUED_GRANTS`는 claim 전 대기 grant가 만료됐음을,
@@ -486,7 +494,9 @@ attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
 - Core는 status를 polling한다. `COMPLETED`인데 terminal descriptor/payload/hash가 없으면 acceptance하지 않는다.
 - Core publication은 logical run ID, **completed descriptor와 payload의 최종 attempt token**,
   recomputed input set hash/exact nested VersionSet/config hash, deletion generation과
-  별도 result hash를 모두 비교한다.
+  별도 result hash를 모두 비교한다. descriptor, payload root 및 result digest manifest의
+  결과 쌍이 서로 같고 Run admission pin 및 Job status pin과 정확히 같아야 한다.
+  불일치는 `RESULT_VERSION_PIN_MISMATCH`로 publication과 `PERSISTED` ACK를 금지한다.
   `resultHash`는 [결과 무결성 정본](TRADING_NORMALIZATION_RESULT_INTEGRITY.md)의 공개 digest
   manifest hash이고, `payloadSha256`은 identity content-encoding의 응답 entity body exact bytes hash다.
   Core는 count/section/manifest/result/reference를 staging에서 각각 재계산한다. duplicate same payload는

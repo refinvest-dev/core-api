@@ -62,7 +62,7 @@ V1 `manifestHash` 입력 M은 수신한 공개 `ReconciliationManifestPayload`�
 
 Nested collection은 위 정렬을 적용한다. `sourceArtifactHashesByRole`은 role→원본 SHA-256이며 identity artifact와 대조한다. `qualityReportHash`는 QUALITY_REPORT.sectionHash다. `executionInputHash`는 Compute provenance 선언값이고 Core가 재계산할 수 없는 별도 audit 입력이다. 공개 manifest hash 자체는 수신한 공개 DTO에서 재계산 가능하다. 임시 locator, `generatedAt`, `capturedAt`, worker/attempt/poll 시각, HTTP metadata는 공개 `ReconciliationManifestPayload`의 필드가 아니므로 M에 없다. Optional/null 추가는 V2에서 결정한다.
 
-`NormalizationResultDigestManifest`의 정확한 root 필드는 `resultHashSpecificationVersion`, `resultSchemaVersion`, `inputSetHash`, `inputHashSpecificationVersion`, `targetVersionSet`, `counts`, `sectionDigests`, `reconciliationManifestHash`다. `sectionDigests`는 9개 sectionType을 wire value 순으로 정렬하고 각각 `{sectionType,itemCount,hashSpecificationVersion,sectionHash}`를 가진다. 각 `hashSpecificationVersion`은 root와 같다. `resultHash = SHA-256(JCS(NormalizationResultDigestManifest))`. Manifest에는 `resultHash` 자체가 없다. Core Run/job/attempt, deletion generation, locator/expiry, createdAt, terminalAt은 publication gate에서 별도 비교하지만 의미적 result hash에는 포함하지 않는다. 동일 input/VersionSet의 정상 재시도는 같은 resultHash가 나와야 한다. `ledgerContentHash`는 `CANONICAL_RECORDS.sectionHash`와 같은 값으로만 전달한다; 과거 내부 record-set hash를 그 이름으로 보내지 않는다.
+`NormalizationResultDigestManifest`의 정확한 root 필드는 `resultHashSpecificationVersion`, `resultSchemaVersion`, `inputSetHash`, `inputHashSpecificationVersion`, `targetVersionSet`, `counts`, `sectionDigests`, `reconciliationManifestHash`다. `sectionDigests`는 9개 sectionType을 wire value 순으로 정렬하고 각각 `{sectionType,itemCount,hashSpecificationVersion,sectionHash}`를 가진다. 각 `hashSpecificationVersion`은 root와 같다. `resultHash = SHA-256(JCS(NormalizationResultDigestManifest))`. Manifest에는 `resultHash` 자체가 없다. Core Run/job/attempt, deletion generation, locator/expiry, createdAt, terminalAt은 publication gate에서 별도 비교하지만 의미적 result hash에는 포함하지 않는다. 동일 input/VersionSet/결과 쌍의 정상 재시도는 같은 resultHash가 나와야 한다. `ledgerContentHash`는 `CANONICAL_RECORDS.sectionHash`와 같은 값으로만 전달한다; 과거 내부 record-set hash를 그 이름으로 보내지 않는다.
 
 Core는 terminal identity, inputSetHash/spec, exact VersionSet, current deletion generation, V1 단일 resource, 전송 bytes, count, staging count, section hashes, manifest hash, overall result hash와 evidence→record/unit/artifact/source row 참조를 모두 검증한 뒤 발행한다. Consumer의 검증 순서는 (1) payload schema와 required `counts` 검증, (2) 수신 manifest에서 `manifestHash`만 제거, (3) 수신 `counts`를 포함한 manifest hash 재계산, (4) 선언된 `manifestHash`와 비교, (5) staging 실제 count 계산, (6) 수신 `counts`와 실제 count 비교, (7) section digest 검증, (8) `resultHash` 검증이다. 수신 `counts`를 실제 count로 먼저 바꿔서 hash하면 안 된다. Manifest hash 일치는 실제 count 일치를 뜻하지 않는다. 하나라도 실패하면 Revision/latest pointer를 발행하지 않는다. Compute 금융 계산을 Core가 재수행하지는 않는다. 미지원 result schema/hash version은 `RESULT_SCHEMA_UNSUPPORTED`다. V1 의미 변경은 금지하며 규칙 변경은 V2와 별도 vector를 요구한다. LedgerRevision provenance에 schema/spec/version, counts, section digests, manifestHash, resultHash를 보존하고 기존 Revision hash를 덮어쓰지 않는다. 새 버전 재처리는 새 Revision이다.
 
@@ -103,6 +103,18 @@ Unit `evidenceRecordIds`는 **해당 unit에 Compute가 직접 붙인 근거**�
 `allocatedFee`와 `allocatedReportedPnl`은 각 Allocation에서 **항상 필수이고 non-null**인 기존 `TradingMoney` 객체 `{amount,currency,sourceScale}`다. `amount`는 finite plain decimal JSON string으로 정규화되어 `-0`은 `0`, 불필요한 trailing zero는 제거한다. `sourceScale`은 해당 원천 계산의 0 이상 안전 정수로 보존하며 값이 그 scale로 정확히 표현 가능해야 한다. `currency`는 비어 있지 않은 pinned instrument/fee asset 식별자다. Reported PnL currency는 instrument settlement asset과 같고, fee currency는 연결된 canonical fee record asset과 같아야 한다. 공개 Allocation에 non-null 값이 있으면 보충값과 amount·currency·sourceScale까지 정확히 일치해야 한다. 공개 값이 null/생략돼도 보충값은 필수다. 실제 `0`은 `amount:"0"`과 원래 currency/sourceScale로 전달하며 누락, null 또는 임의 0 대체는 실패한다. fee/PnL record가 없다는 정상적인 상태가 정의된 경우에도 Compute가 실제 배분한 0만 전달한다. Core는 보충값과 source record의 관계를 검사하되 합계·분할을 재계산해 보충값을 만들지 않는다.
 
 `stableEpisodeTimeAvailable`은 필수 JSON boolean이고 해당 공개 unit `capability`에 `STABLE_EPISODE_TIME`이 있는 것과 정확히 같다. 시간 필드 존재만 보고 Core가 추론하지 않는다. 불일치는 `EVIDENCE_REFERENCE_INVALID`다. 위 참조/대응/금액 불일치도 같은 code이며 schema·필수 필드·정렬 위반은 `RESULT_SCHEMA_UNSUPPORTED` 또는 중복 ID에 `RESULT_ITEM_CONFLICT`다. 어느 경우든 Revision/latest 발행과 `PERSISTED` ACK를 금지한다.
+
+## 결과 버전 pin과 publication gate
+
+Core가 Run admission에 고정한 `resultSchemaVersion`/`resultHashSpecificationVersion` 쌍을
+Compute create가 받아 Job에 보존한다. accepted 및 PENDING/RUNNING/COMPLETED/FAILED/CANCELLED
+status는 이 저장된 쌍을 반환한다. Compute는 terminal descriptor, payload root,
+`resultDigestManifest`에 같은 쌍만 쓴다. Core는 transport와 schema 검증 후, staging 및
+Revision publication 전에 descriptor와 payload root/digest의 쌍이 서로 같고 Run pin과
+Job status pin에 정확히 일치하는지 확인한다. 다른 지원 쌍으로 완전히 유효한 결과라도
+`RESULT_VERSION_PIN_MISMATCH`로 발행하지 않으며 `PERSISTED` ACK를 보내지 않는다.
+이는 `resultHash`만으로 대체할 수 없는 correlation 검증이다. V1/V1과 V2/V2의
+result hash 계산 및 기존 fixed vector는 변경하지 않는다.
 
 V2도 `NormalizationResultCounts`의 **기존 10개 필드만** 사용한다. terminal, manifest, digest manifest의 count는 동일하다. 새 `ANALYTICS_INPUT_SUPPLEMENT` section의 `itemCount=1` (빈 unit 배열이어도 singleton 객체 1개), 내부 `reviewUnitEngineInputs.length=reviewUnitCount`, 모든 `allocationEvidence.length`의 합=`positionAllocationCount`다. V2 `sectionDigests`는 기존 9개에 `ANALYTICS_INPUT_SUPPLEMENT`를 더한 정확히 10개이며 sectionType wire value의 UTF-16 ordinal 오름차순이다. 각 digest의 `hashSpecificationVersion=TRADING_NORMALIZATION_RESULT_HASH_V2`다.
 

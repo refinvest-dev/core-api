@@ -8,7 +8,7 @@ ADR-065의 `inputSetHash` 바이트 계약이다. Core와 Compute는 이 문서�
 
 | 이름 | 대상 | 확인 시점 |
 |---|---|---|
-| `inputSetHash` | 아래 `inputIdentity`만 | Core admission 및 Compute job 접수 시 독립 재계산 |
+| `inputSetHash` | 아래 `inputIdentity`만; 결과 schema/hash 쌍 제외 | Core admission 및 Compute job 접수 시 독립 재계산 |
 | source content SHA-256 | 각 grant에서 실제로 받은 원본 bytes | normalize 이전; identity의 role별 `sha256`과 비교 |
 | `resultHash` | ADR-066의 공개 result digest manifest | terminal 생성과 Core staging/publication |
 
@@ -90,25 +90,47 @@ identity와 정확히 일치해야 하며 byte size/content type은 pin한 descr
 검증한다. `coreImportSessionId`는 V1 `sourceImportSessionIds[0]`와 일치해야 한다.
 `deletionGeneration`은 hash 입력이 아니고 Core publication의 stale-result guard다.
 `coreNormalizationRunId`는 Core correlation ID이며 hash 입력이 아니다.
+`resultSchemaVersion`/`resultHashSpecificationVersion`은 Run과 Job의 불변 결과 표현 pin이다.
+이 두 값은 V1 `inputIdentity`의 아홉 필드에 추가하지 않고 `inputSetHash`에도 넣지 않는다.
+따라서 같은 계산 입력의 V1/V1과 V2/V2 요청은 동일한 `inputSetHash`를 가질 수 있다.
 
 Compute create `Idempotency-Key`의 fingerprint는 ADR-064의 별도 transport/create
-fingerprint다. 같은 key와 같은 logical identity, 같은 Core Run ID, 같은 최초
+fingerprint다. 두 결과 버전값은 immutable create field로 fingerprint에 **각각** 포함한다.
+같은 key와 같은 logical identity, 같은 결과 쌍, 같은 Core Run ID, 같은 최초
 `attemptToken`·generation 등 immutable create field는 한 job으로 수렴한다. grant의
 locator/expiry만 새로 받은 replay는 conflict가 아니며 저장된 grant/token을 바꾸지
 않고 기존 job을 반환한다. 다른 logical identity 또는 다른 Core Run ID/최초 token/
-generation을 같은 key에 붙이면 `409`다. grant의 변경은 별도 CAS update를 쓴다.
-logical normalization key는 owner + `inputSetHash` + deletion generation이다.
+generation 또는 다른 결과 쌍을 같은 key에 붙이면 `409 IDEMPOTENCY_PAYLOAD_CONFLICT`다.
+grant의 변경은 별도 CAS update를 쓴다. Core logical normalization key는 owner +
+`inputSetHash` + 고정된 `resultSchemaVersion` + `resultHashSpecificationVersion` +
+deletion generation이다. 같은 입력에서 쌍만 바꾸면 이 key와 create fingerprint는 달라진다.
 
 `coreNormalizationRunId`는 create에서 받은 값을 job persistence, worker restart,
 status, completed descriptor/payload 및 idempotent 재조회까지 그대로 반환한다.
-Compute가 새 Core Run ID를 생성하지 않는다. `FAILED`에는 별도 payload가 없으므로
+Compute가 새 Core Run ID를 생성하지 않는다. accepted와 모든 Job status는 저장된 결과
+쌍을 반환한다. `FAILED`에는 별도 payload가 없으므로
 status의 correlation identity, input hash specification version, 요청
 `expectedInputSetHash`, exact VersionSet 및 safe failure를 유지한다. 지원 규격에서
 재계산이 가능했던 실패에는 재계산 `inputSetHash`도 포함하고, 미지원 규격에는 생략한다.
 `COMPLETED` payload에는
 이 값과 job/attempt/generation, manifest identity, 별도 result hash를 모두 담는다.
-Core는 current Run·attempt·generation·identity·VersionSet과 source/result/payload
+Core는 current Run·Job의 결과 쌍·attempt·generation·identity·VersionSet과 source/result/payload
 hash를 각각 확인한 뒤에만 발행한다. descriptor의 `reconciliationManifestHash`는
 payload `reconciliationManifest.manifestHash`와 일치해야 한다. `payloadSha256`은 받은
 terminal JSON bytes, `resultHash`는 공개 digest manifest의 JCS hash, role별 `sha256`은 다운로드한
 원본 bytes에 각각 적용한다.
+
+## 비민감 계약 사례
+
+아래 사례의 입력은 [`input-identity-v1.json`](../fixtures/trading-normalization/input-identity-v1.json)의
+synthetic `inputIdentity`이고 `inputSetHash`는 고정 oracle의
+`1122481b2c208afc1cae751f952f1b9a670f446f404d42c1e581a3b83f25552e`다.
+`wire-v1.json`은 V1 요청·accepted·FAILED status·completed descriptor의 필수 pin 예시다.
+
+| 사례 | 조작 | 기대 결과 |
+|---|---|---|
+| 같은 계산 입력, 결과 쌍만 V1/V1→V2/V2 | 같은 `inputIdentity`/`expectedInputSetHash`를 유지하고 두 create 필드만 변경 | `inputSetHash`는 위 값 그대로; Compute create fingerprint와 Core logical normalization key는 서로 다름. 새 key/Run을 쓴 경우 별도 Revision 가능 |
+| 동일 create 재전송 | 같은 `Idempotency-Key`와 동일 immutable request; grant locator/expiry만 갱신 가능 | 최초 `202`와 같은 `jobId`·저장된 pin 반환, grant/token 불변 |
+| 같은 key에 다른 결과 쌍 | V1/V1 key를 V2/V2 create에 재사용 | `409 IDEMPOTENCY_PAYLOAD_CONFLICT`, 원 Job 불변 |
+| terminal pin 불일치 | V1/V1 Run·Job에 V2/V2 descriptor 또는 payload/digest | `RESULT_VERSION_PIN_MISMATCH`, Revision/latest 발행과 `PERSISTED` ACK 없음 |
+| 과거 저장된 V1 Job | 당시 V1-only Job의 V1 결과 provenance 확인 후 backfill | status/재개/terminal은 V1/V1; 신규 create의 필드 누락은 `422 REQUEST_INVALID` |
