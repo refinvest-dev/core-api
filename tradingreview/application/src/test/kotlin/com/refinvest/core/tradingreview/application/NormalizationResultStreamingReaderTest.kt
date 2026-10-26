@@ -18,6 +18,53 @@ class NormalizationResultStreamingReaderTest {
     private val reader = NormalizationResultStreamingReader(mapper)
     private val vector = mapper.readTree(requireNotNull(javaClass.getResourceAsStream(
         "/trading-normalization/result-integrity-v1.json")))
+    private val v2 = mapper.readTree(requireNotNull(javaClass.getResourceAsStream(
+        "/trading-normalization/result-integrity-v2.json")))
+
+    @Test
+    fun v2SupplementRowsStreamAndMatchFixedResultDigest() {
+        val rows = mutableListOf<NormalizationStagedItem>()
+        val base = reader.read(ByteArrayInputStream(
+            mapper.writeValueAsBytes(v2.path("terminalPayload")))) { section, id, value ->
+            rows.add(NormalizationStagedItem(section, id,
+                NormalizationResultCanonicalizer.hash(value), mapper.writeValueAsString(value)))
+        }
+        assertEquals(emptyList<Any>(),
+            (base["analyticsInputSupplement"] as Map<*, *>)["reviewUnitEngineInputs"])
+        assertEquals(1, rows.count { it.sectionType == "ANALYTICS_INPUT_SUPPLEMENT_ROWS" })
+        assertEquals(1, rows.count { it.sectionType == "ANALYTICS_INPUT_SUPPLEMENT" })
+        val verified = verifyStaged(base, rows)
+        assertEquals(v2.path("resultDigestManifestVector").path("expectedSha256").asText(),
+            verified.resultHash)
+    }
+
+    @Test
+    fun v2RejectsMissingMoneyAndMissingDirectEvidence() {
+        for ((field, replacement, expected) in listOf(
+            Triple("allocatedFee", null, "RESULT_SCHEMA_UNSUPPORTED"),
+            Triple("evidenceRecordIds", emptyList<String>(), "EVIDENCE_REFERENCE_INVALID"))) {
+            @Suppress("UNCHECKED_CAST")
+            val payload = mapper.readValue(mapper.writeValueAsBytes(v2.path("terminalPayload")),
+                Map::class.java) as MutableMap<String, Any?>
+            @Suppress("UNCHECKED_CAST")
+            val supplement = payload.getValue("analyticsInputSupplement") as MutableMap<String, Any?>
+            @Suppress("UNCHECKED_CAST")
+            val unit = (supplement.getValue("reviewUnitEngineInputs") as MutableList<MutableMap<String, Any?>>)[0]
+            if (field == "allocatedFee") {
+                @Suppress("UNCHECKED_CAST")
+                val allocation = (unit.getValue("allocationEvidence") as MutableList<MutableMap<String, Any?>>)[0]
+                allocation[field] = replacement
+            } else unit[field] = replacement
+            val rows = mutableListOf<NormalizationStagedItem>()
+            val base = reader.read(ByteArrayInputStream(mapper.writeValueAsBytes(payload))) { section, id, value ->
+                rows.add(NormalizationStagedItem(section, id,
+                    NormalizationResultCanonicalizer.hash(value), mapper.writeValueAsString(value)))
+            }
+            assertEquals(expected, assertFailsWith<ResultIntegrityFailure> {
+                verifyStaged(base, rows)
+            }.code)
+        }
+    }
 
     @Test
     fun fixedResultVectorStreamsCollectionsAndStillVerifiesAfterStaging() {
@@ -165,6 +212,7 @@ class NormalizationResultStreamingReaderTest {
             arrayOf(TradingNormalizationResultStore::class.java)) { _, method, args ->
             when (method.name) {
                 "stagedCounts" -> counts
+                "hasInvalidSupplement" -> false
                 "visitItems" -> {
                     @Suppress("UNCHECKED_CAST")
                     val accept = args!![3] as (NormalizationStagedItem) -> Unit

@@ -262,8 +262,11 @@ class TradingNormalizationResultProcessor(
                                    locallyComplete: Boolean = false) {
         val identity = run.inputIdentity ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
         val delivery = run.resultDeliveryPolicy ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
-        if (descriptor.resultSchemaVersion != NormalizationResultVerifier.RESULT_SCHEMA_V1 ||
-            descriptor.resultHashSpecificationVersion != NormalizationResultVerifier.RESULT_HASH_V1 ||
+        val supportedPair = (descriptor.resultSchemaVersion == NormalizationResultVerifier.RESULT_SCHEMA_V1 &&
+            descriptor.resultHashSpecificationVersion == NormalizationResultVerifier.RESULT_HASH_V1) ||
+            (descriptor.resultSchemaVersion == NormalizationResultVerifier.RESULT_SCHEMA_V2 &&
+                descriptor.resultHashSpecificationVersion == NormalizationResultVerifier.RESULT_HASH_V2)
+        if (!supportedPair ||
             descriptor.inputHashSpecificationVersion != identity.hashSpecificationVersion)
             throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
         if (descriptor.jobId != run.computeJobId || descriptor.logicalJobId != dispatch.id ||
@@ -317,6 +320,12 @@ class TradingNormalizationResultProcessor(
             ?.takeIf { it in 0..9_007_199_254_740_991L }
             ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
         limits["VALIDATION_ISSUES"] = issues
+        if (descriptor.resultSchemaVersion == NormalizationResultVerifier.RESULT_SCHEMA_V2) {
+            val units = (descriptor.counts["reviewUnitCount"] as? Number)?.toString()?.toLongOrNull()
+                ?.takeIf { it in 0..9_007_199_254_740_991L }
+                ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+            limits["ANALYTICS_INPUT_SUPPLEMENT_ROWS"] = units
+        }
         return limits
     }
 
@@ -332,7 +341,10 @@ class TradingNormalizationResultProcessor(
             "excludedReviewUnitCount" to "EXCLUDED_REVIEW_UNITS",
             "validationIssueCount" to "VALIDATION_ISSUES")
         return nested.all { (field, section) -> actual[section] ==
-            (descriptor.counts[field] as? Number)?.toLong() }
+            (descriptor.counts[field] as? Number)?.toLong() } &&
+            (descriptor.resultSchemaVersion != NormalizationResultVerifier.RESULT_SCHEMA_V2 ||
+                (actual["ANALYTICS_INPUT_SUPPLEMENT_ROWS"] ?: 0L) ==
+                    (descriptor.counts["reviewUnitCount"] as? Number)?.toLong())
     }
 
     private fun retry(run: NormalizationRun, dispatch: NormalizationDispatch, worker: String, code: String) {

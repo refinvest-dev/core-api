@@ -34,6 +34,8 @@ interface TradingNormalizationResultStore {
                    accept: (NormalizationStagedItem) -> Unit)
     /** Checks all staged evidence/record/unit references with database joins. */
     fun hasInvalidEvidence(run: NormalizationRun): Boolean
+    /** Checks V2 unit/allocation membership and canonical evidence relationships. */
+    fun hasInvalidSupplement(runId: String): Boolean
     fun stagedCounts(runId: String): Map<String, Long>
     fun markValidated(runId: String, now: Instant)
     fun discardStage(runId: String)

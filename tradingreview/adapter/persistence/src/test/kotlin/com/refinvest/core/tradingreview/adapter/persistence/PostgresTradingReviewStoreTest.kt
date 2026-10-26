@@ -42,7 +42,93 @@ class PostgresTradingReviewStoreTest {
     private val normalizationVersions = """{"versionSetHash":"${"f".repeat(64)}","normalizer":{"sourceDialectVersionsByArtifactRole":{"TRADE_HISTORY":"TRADE_V1","POSITION_HISTORY":"POSITION_V1"},"adapterVersion":"ADAPTER_V1","normalizerVersion":"NORMALIZER_V1","canonicalSchemaVersion":"CANONICAL_V1","implementationDigest":"normalizer-digest","versionSetHash":"${"d".repeat(64)}"},"reconstruction":{"instrumentTermsVersionByInstrument":{},"reconstructionPolicyVersion":"RECONSTRUCTION_V1","reconciliationVersion":"RECONCILIATION_V1","reviewUnitSchemaVersion":"REVIEW_UNIT_V1","evidenceSchemaVersion":"EVIDENCE_V1","implementationDigest":"reconstruction-digest","versionSetHash":"${"e".repeat(64)}"}}"""
 
     @Test
-    fun verifiedTerminalPayloadPublishesOnceAndAcknowledgesAfterCommit() = withDatabase { connection ->
+    fun v2SupplementMustMatchPublishedUnitAndCanonicalEvidence() = withDatabase { connection ->
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
+        members(jdbc)
+        val review = JdbcTradingReviewStore(jdbc)
+        val account = TradingAccount.create(TradingAccountId(1201), MemberId(1), TradingVenue.BINANCE, "A", now)
+        review.insert(account)
+        val book = TradingBook.create(TradingBookId(1202), account, "B",
+            TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY,
+            TradingSettlementAsset.USDT, "UTC", now)
+        review.insert(book)
+        val session = TradingImportSession.create(TradingImportSessionId(1203), book, "UTC", "UTC",
+            TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
+        JdbcTradingImportStore(jdbc).insert(session)
+        val inputs = TradingArtifactRole.entries.mapIndexed { index, role ->
+            NormalizationArtifactInput(TradingSourceArtifactId(1204L + index), role,
+                (if (role == TradingArtifactRole.TRADE_HISTORY) "a" else "b").repeat(64),
+                20, "text/csv", "AUTO")
+        }
+        val input = NormalizationInput(book.id, session.id, 1, inputs, "BINANCE",
+            "LINEAR_PERPETUAL", "ONE_WAY", "USDT", "UTC", "UTC", normalizationVersions,
+            "[]", "TRADING_DATA_POLICY_V1", "retry-v1",
+            """{"policyVersion":"retry-v1","maxAttempts":1,"maxElapsedTime":"PT1H","initialDelay":"PT1S","maxDelay":"PT10S","jitter":"NONE"}""", 0)
+        val identity = NormalizationInputIdentity.fromPinnedInput(input,
+            mapper.readValue(normalizationVersions, Map::class.java))
+        val runId = UUID.randomUUID().toString()
+        val token = UUID.randomUUID().toString()
+        val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
+            "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1, token,
+            null, null, now, now, null, now, null, 0, inputIdentity = identity,
+            resultDeliveryPolicy = deliveryPolicy)
+        val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
+            NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
+        JdbcTradingNormalizationStore(jdbc, mapper).insert(run, dispatch)
+        val fixture = generateSequence(java.io.File(System.getProperty("user.dir"))) { it.parentFile }
+            .map { java.io.File(it,
+                "tradingreview/application/src/test/resources/trading-normalization/result-integrity-v2.json") }
+            .first { it.isFile }
+        @Suppress("UNCHECKED_CAST")
+        val vector = mapper.readValue(fixture.readText(), Map::class.java) as Map<String, Any?>
+        @Suppress("UNCHECKED_CAST")
+        val payload = vector.getValue("terminalPayload") as Map<String, Any?>
+        @Suppress("UNCHECKED_CAST")
+        val manifest = payload.getValue("reconciliationManifest") as Map<String, Any?>
+        val results = JdbcTradingNormalizationResultStore(jdbc, mapper)
+        @Suppress("UNCHECKED_CAST")
+        val descriptor = NormalizationResultDescriptor("job-v2", dispatch.id, runId,
+            "payload-v2", 1, "a".repeat(64), token, 0, run.inputFingerprint,
+            identity.hashSpecificationVersion, identity.targetVersionSet.toWireValue(),
+            "TRADING_NORMALIZATION_RESULT_V2", "TRADING_NORMALIZATION_RESULT_HASH_V2",
+            payload.getValue("counts") as Map<String, Any?>, payload.getValue("sectionDigests") as List<Any?>,
+            "b".repeat(64), "c".repeat(64), now.plusSeconds(3600), "RESULT_DELIVERY_V1", "identity")
+        results.beginStage(run, descriptor, now)
+        fun stage(section: String, id: String, value: Any?) = results.stageItem(runId,
+            NormalizationStagedItem(section, id,
+                com.refinvest.core.tradingreview.application.NormalizationResultCanonicalizer.hash(value),
+                mapper.writeValueAsString(value)))
+        @Suppress("UNCHECKED_CAST")
+        (payload.getValue("canonicalRecords") as List<Map<String, Any?>>).forEach {
+            stage("CANONICAL_RECORDS", it.getValue("recordId") as String, it)
+        }
+        @Suppress("UNCHECKED_CAST")
+        (manifest.getValue("reviewUnits") as List<Map<String, Any?>>).forEach {
+            stage("REVIEW_UNITS", it.getValue("reviewUnitId") as String, it)
+        }
+        @Suppress("UNCHECKED_CAST")
+        val supplement = payload.getValue("analyticsInputSupplement") as Map<String, Any?>
+        @Suppress("UNCHECKED_CAST")
+        (supplement.getValue("reviewUnitEngineInputs") as List<Map<String, Any?>>).forEach {
+            stage("ANALYTICS_INPUT_SUPPLEMENT_ROWS", it.getValue("reviewUnitId") as String, it)
+        }
+        assertFalse(results.hasInvalidSupplement(runId))
+        jdbc.update("""UPDATE trading_normalization_staged_items SET item_json=jsonb_set(item_json,
+            '{allocationEvidence,0,allocatedFee,currency}', '"BTC"'::jsonb)
+            WHERE run_id=?::uuid AND section_type='ANALYTICS_INPUT_SUPPLEMENT_ROWS'""", runId)
+        assertTrue(results.hasInvalidSupplement(runId))
+    }
+
+    @Test
+    fun verifiedTerminalPayloadPublishesOnceAndAcknowledgesAfterCommit() =
+        verifyPublishedTerminal(false)
+
+    @Test
+    fun verifiedV2TerminalPublishesImmutableAnalyticsSupplement() =
+        verifyPublishedTerminal(true)
+
+    private fun verifyPublishedTerminal(v2: Boolean) = withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
         val transactions = TransactionTemplate(DataSourceTransactionManager(source))
@@ -58,7 +144,7 @@ class PostgresTradingReviewStoreTest {
         review.insert(book)
         val fixture = generateSequence(java.io.File(System.getProperty("user.dir"))) { it.parentFile }
             .map { java.io.File(it,
-                "tradingreview/application/src/test/resources/trading-normalization/result-integrity-v1.json") }
+                "tradingreview/application/src/test/resources/trading-normalization/result-integrity-v${if (v2) 2 else 1}.json") }
             .first { it.isFile }
         @Suppress("UNCHECKED_CAST")
         val vector = mapper.readValue(fixture.readText(), Map::class.java) as Map<String, Any?>
@@ -80,7 +166,8 @@ class PostgresTradingReviewStoreTest {
             NormalizationArtifactInput(TradingSourceArtifactId(id), role, sha, 20, "text/csv", "AUTO")
         }
         val input = NormalizationInput(book.id, session.id, 1, inputs, "BINANCE",
-            "LINEAR_PERPETUAL", "ONE_WAY", "USDT", "UTC", "UTC", versions, "[]",
+            "LINEAR_PERPETUAL", "ONE_WAY", "USDT", "UTC", "UTC", versions,
+            if (v2) """[{"instrumentId":"instrument-synthetic-1","venueSymbol":"SYNTHETICUSDT","settlementAsset":"USDT","quantityStep":"0.01","priceTick":"0.01","contractMultiplier":"1","settlementPrecision":8,"instrumentTermsVersion":"TERMS_V1"}]""" else "[]",
             "TRADING_DATA_POLICY_V1", "retry-v1",
             """{"policyVersion":"retry-v1","maxAttempts":3,"maxElapsedTime":"PT1H","initialDelay":"PT1S","maxDelay":"PT10S","jitter":"NONE"}""", 0)
         val identity = NormalizationInputIdentity.fromPinnedInput(input,
@@ -109,8 +196,11 @@ class PostgresTradingReviewStoreTest {
         payload["targetVersionSet"] = identity.targetVersionSet.toWireValue()
         @Suppress("UNCHECKED_CAST")
         val evidence = payload.getValue("sourceEvidenceSnapshots") as MutableList<MutableMap<String, Any?>>
-        evidence.single()["coreArtifactId"] = inputs.single { it.role == TradingArtifactRole.TRADE_HISTORY }
-            .artifactId.value.toString()
+        evidence.forEach { row ->
+            row["coreArtifactId"] = inputs.single {
+                it.role.name == row["artifactRole"]
+            }.artifactId.value.toString()
+        }
         @Suppress("UNCHECKED_CAST")
         val manifest = payload.getValue("reconciliationManifest") as MutableMap<String, Any?>
         manifest["inputSetHash"] = run.inputFingerprint
@@ -136,8 +226,10 @@ class PostgresTradingReviewStoreTest {
         val descriptor = NormalizationResultDescriptor("job-synthetic-1", dispatch.id, runId,
             "payload-synthetic-1", bytes.size.toLong(), transportHash, attemptToken, 0,
             run.inputFingerprint, identity.hashSpecificationVersion,
-            identity.targetVersionSet.toWireValue(), "TRADING_NORMALIZATION_RESULT_V1",
-            "TRADING_NORMALIZATION_RESULT_HASH_V1", payload.getValue("counts") as Map<String, Any?>,
+            identity.targetVersionSet.toWireValue(),
+            if (v2) "TRADING_NORMALIZATION_RESULT_V2" else "TRADING_NORMALIZATION_RESULT_V1",
+            if (v2) "TRADING_NORMALIZATION_RESULT_HASH_V2" else "TRADING_NORMALIZATION_RESULT_HASH_V1",
+            payload.getValue("counts") as Map<String, Any?>,
             digests, manifestHash, resultHash, now.plusSeconds(3600), "RESULT_DELIVERY_V1", "identity")
         var acknowledgeCalls = 0
         var descriptorCalls = 0
@@ -188,6 +280,54 @@ class PostgresTradingReviewStoreTest {
         assertEquals(1, downloadCalls)
         assertEquals(TradingImportStatus.ACCEPTED, imports.find(session.id, MemberId(1))?.status)
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
+        val revisionId = assertNotNull(jdbc.queryForObject(
+            "SELECT id::text FROM trading_ledger_revisions", String::class.java))
+        transactions.execute {
+            val analyticsReader = JdbcTradingAnalyticsRevisionReader(jdbc)
+            val header = assertNotNull(analyticsReader.find(revisionId, 1))
+            var records = 0L
+            analyticsReader.visitRecords(revisionId) { records++ }
+            var references = 0L
+            analyticsReader.visitEvidenceReferences(revisionId) { references++ }
+            assertEquals(header.canonicalRecordCount, records)
+            assertEquals(records, references)
+            var supplements = 0L
+            analyticsReader.visitEngineInputs(revisionId) { supplements++ }
+            assertEquals(if (v2) header.reviewUnitCount else 0L, supplements)
+            assertNull(analyticsReader.find(revisionId, 2))
+            if (v2) {
+                val saved = mutableMapOf<String, ByteArray>()
+                val artifacts = object : TradingAnalyticsArtifactStore {
+                    override fun put(revisionId: String, role: String, mediaType: String,
+                                     write: (java.io.OutputStream) -> Unit): AnalyticsInputArtifact {
+                        val out = java.io.ByteArrayOutputStream()
+                        write(out)
+                        val bytes = out.toByteArray()
+                        val hash = java.util.HexFormat.of().formatHex(
+                            java.security.MessageDigest.getInstance("SHA-256").digest(bytes))
+                        val reference = "$revisionId:$role:$hash"
+                        saved[reference] = bytes
+                        return AnalyticsInputArtifact(reference, mediaType, bytes.size.toLong(), hash)
+                    }
+                    override fun open(coreReferenceId: String): java.io.InputStream =
+                        java.io.ByteArrayInputStream(saved.getValue(coreReferenceId))
+                    override fun deleteRevision(revisionId: String) = Unit
+                }
+                val builder = com.refinvest.core.tradingreview.application.TradingAnalyticsInputBuilder(
+                    analyticsReader, artifacts, object : TradingMemberProvider {
+                        override fun currentMemberId() = MemberId(1)
+                    }, mapper)
+                val prepared = builder.prepare(revisionId)
+                val ledger = mapper.readValue(artifacts.open(
+                    prepared.ledgerRevisionContent.coreReferenceId), Map::class.java)
+                assertEquals(header.canonicalRecordCount,
+                    (ledger["canonicalRecords"] as List<*>).size.toLong())
+                assertEquals(header.reviewUnitCount,
+                    (ledger["reviewUnitEngineInputs"] as List<*>).size.toLong())
+                assertEquals(header.ledgerContentHash, prepared.ledgerContentHash)
+                assertEquals(header.manifestHash, prepared.manifestHash)
+            }
+        }
         assertEquals("PUBLISHED", jdbc.queryForObject(
             "SELECT status FROM trading_normalization_runs WHERE id=?::uuid", String::class.java, runId))
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_ack_dispatches", Long::class.java))
@@ -1348,6 +1488,12 @@ class PostgresTradingReviewStoreTest {
                     .bufferedReader().use { it.readText() }
                 connection.createStatement().use { statement ->
                     splitSqlStatements(migration7).forEach(statement::execute)
+                }
+                val migration8 = javaClass.getResourceAsStream(
+                    "/db/migration/V8__trading_analytics_input_supplement.sql")!!
+                    .bufferedReader().use { it.readText() }
+                connection.createStatement().use { statement ->
+                    splitSqlStatements(migration8).forEach(statement::execute)
                 }
                 test(connection)
             } finally {
