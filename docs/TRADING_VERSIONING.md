@@ -4,6 +4,51 @@ Analytics semantic input은 `TRADING_ANALYTICS_INPUT_HASH_V1`, 결과는 `TRADIN
 
 Normalization 결과 wire 계약은 `TRADING_NORMALIZATION_RESULT_V1`/`TRADING_NORMALIZATION_RESULT_HASH_V1`과 ADR-070의 `TRADING_NORMALIZATION_RESULT_V2`/`TRADING_NORMALIZATION_RESULT_HASH_V2`가 exact pair로 공존한다. V2의 `analyticsInputSupplement`는 V1 ReviewUnit/manifest의 의미와 hash를 유지하면서 Analytics Engine 입력을 새 Revision에 보존한다. result wire version은 계산 VersionSet의 묵시적 alias가 아니다. producer/reader 지원을 registry에 명시하고, V2 terminal은 새 result hash를 갖는 새 Revision으로만 발행한다. 기존 V1 hash·fixed vector·Revision/Result는 재해석하거나 덮어쓰지 않는다. V1 신규 생산 종료는 별도 retirement/migration 결정으로 진행하며 보존 중인 V1 조회는 유지한다. 보충값 없는 V1 Revision의 Analytics admission은 `ANALYTICS_INPUT_UNAVAILABLE`이고, compatible `RERUN_RECONSTRUCTION`/`REBUILD_LEDGER`이 새 V2 Revision을 완성해야 분석할 수 있다. Raw가 없어도 canonical source와 pinned terms가 남고 registry가 해당 변환을 지원하면 가능하며, 그렇지 않으면 `REPROCESSING_SOURCE_UNAVAILABLE` 또는 `REPROCESSING_NOT_SUPPORTED`를 반환한다. 단순 `RERUN_ANALYTICS`나 조회가 누락 근거를 만들어내지 않는다.
 
+### Normalization 결과 버전 선택과 배포 전환
+
+Core는 신규 Normalization Run admission에서 등록된 exact producer/reader pair 중 하나를
+명시적으로 선택해 `resultSchemaVersion`과 `resultHashSpecificationVersion`을 Run과
+durable dispatch에 고정한다. 선택 근거는 해당 logical request에 저장된 명시적 정책/요청이며
+Compute 배포 버전이나 실행 시점 기본값이 아니다. 초기 신규 접수 정책은 V1/V1이다.
+V2 선택은 양 서비스의 V2 지원과 publication gate가 배포·검증된 후 명시적으로 활성화한다.
+Run 재전송, worker 재시작, attempt 재시도, grant 갱신, terminal `FAILED` 뒤의 새
+Compute Job/Run lineage도 기존 logical request의 쌍을 계승한다. V2를 원하면
+별도 명시적 재처리 요청과 새 Run/Revision을 사용한다.
+
+Compute create는 두 필드를 필수로 받는다. 누락은 `422 REQUEST_INVALID`, 알려진
+값의 V1/V2 교차 조합은 `422 RESULT_VERSION_PAIR_INVALID`, 등록되지 않은 값/쌍은
+`422 RESULT_SCHEMA_UNSUPPORTED`로 Job을 만들지 않는다. 같은 key의 다른 지원 쌍은
+create fingerprint가 달라 `409 IDEMPOTENCY_PAYLOAD_CONFLICT`다. 지원되지 않는
+pin을 가까운 버전으로 대체하거나 무시하지 않는다. Core가 지원하지 않는 terminal 쌍은
+기존 `RESULT_SCHEMA_UNSUPPORTED`이며, 지원 쌍이더라도 Run/Job pin과 다르면
+`RESULT_VERSION_PIN_MISMATCH`로 `PROCESSING_FAILED` 처리하고 발행하지 않는다.
+
+기존 저장된 V1 Run/Job은 기존 result metadata 또는 당시 V1-only producer 계약으로
+확인한 뒤 V1/V1 pin을 명시적으로 backfill한다. Core는 기존 Run의 새 logical key와
+성공 유일성 mapping을 V1/V1로 재키잉하되 Run/Revision ID, published result/hash와
+이미 발급한 dispatch key는 유지한다. Compute는 기존 Job의 request snapshot과
+idempotency fingerprint/record를 V1/V1로 함께 backfill한다. 이미 접수한 Job의
+replay가 새 필수 필드를 포함해도 같은 Job에 수렴해야 한다. migration 중인 legacy
+dispatch는 기존 Job ID와 pin을 조회해 재개하며, ID를 모르는 미결 접수는 두 쪽의
+idempotency migration을 마치거나 drain한 뒤 재전송한다. 검증할 근거가 없거나
+불일치하면 재개/발행을 보류하고 복구한다. 신규 요청의 필드 누락에는 이 legacy
+해석을 적용하지 않는다.
+
+후속 작업 순서는 (1) Context snapshot 동기화, (2) Core pin·전송과 legacy Run
+backfill, (3) Compute V2 생성·저장·조회와 legacy Job backfill, (4) Core V2 publication
+검증·Revision 유일성 제약 반영 및 명시적 V2 선택 활성화다. 실제 배포는 단계 (2)의
+Core 전송을 켜기 전에 Compute가 V1/V1 필드를 수용하도록 호환 경로를 먼저 배포하고,
+Core가 모두 pin을 보내기 전에는 Compute가 새 요청의 필드 누락을 거절하는 strict
+경로를 켜지 않는다. migration과 in-flight Job 재개가 끝나면 strict create를 켠다.
+두 서비스의 저장된 V1 작업이 배포를 가로질러 재개돼도 V1/V1을 유지한다.
+계약 검증만으로 이 runtime 단계가 완료된 것은 아니다.
+
+`inputIdentity`/`inputSetHash`는 결과 표현 버전과 무관하다. 같은 계산 입력의 V1/V2
+`inputSetHash`는 같을 수 있지만 Core logical normalization key, Compute create
+fingerprint 및 Revision 성공 유일성에는 결과 쌍이 들어간다. V1/V2는 같은
+Book·inputSetHash·VersionSet에서도 각각 하나의 불변 LedgerRevision을 만들 수 있고,
+기존 Revision/resultHash는 수정하지 않는다. V1 신규 생산 종료는 별도 결정이다.
+
 이 문서는 Trading Review의 version compatibility, 재처리, 결과 lineage와 publication의 상세 정본이다.
 제품·Aggregate 경계는 [`TRADING_REVIEW.md`](TRADING_REVIEW.md), 복원 계산은
 [`TRADING_RECONSTRUCTION.md`](TRADING_RECONSTRUCTION.md), Metric 계산은
@@ -470,6 +515,7 @@ manifestHash·고정 vector·hash specification version·성공 payload schema�
 | `RECONCILIATION_MANIFEST_HASH_MISMATCH` | 공개 manifest 재계산 hash 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
 | `RESULT_HASH_MISMATCH` | 공개 digest manifest 재계산 hash 불일치 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
 | `RESULT_SCHEMA_UNSUPPORTED` | Core 미지원 결과 schema/hash specification | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 호환 배포 후 새 Run |
+| `RESULT_VERSION_PIN_MISMATCH` | terminal descriptor/payload/digest 쌍이 Run 또는 Job pin과 다름 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run; 발행·PERSISTED ACK 금지 |
 | `EVIDENCE_REFERENCE_INVALID` | Evidence→record/unit/artifact/source row 참조 부재 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
 | `RESULT_ITEM_CONFLICT` | 동일 result item identity에 다른 공개 payload | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 원인 조사 후 새 Run |
 | `RESULT_PAYLOAD_LIMIT_EXCEEDED` | Compute의 실제 serialized V1 bytes가 effective maximum 초과 | `PROCESSING_FAILED` / `WAIT_FOR_RECOVERY` | 같은 policy 자동 재시도 금지; limit 호환 배포 또는 V2 후 새 Run |

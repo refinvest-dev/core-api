@@ -251,14 +251,14 @@ Run, session 또는 remediation request다.
 아래 ID는 후속 Integration fixture/assertion의 stable ID다. `BASE-V1` synthetic 두 Artifact를 쓰며 실제 CSV
 fixture는 모두 `FIXTURE_PLANNED`, 장애·경쟁 시나리오는 `FIXTURE_NOT_REQUIRED`다. `—`는 공개 failure 없음,
 `N/A`는 ACK할 terminal payload 없음이다. 모든 행은 owner/Book/Session, role별 artifact ID/hash,
-inputSetHash, VersionSet, attempt, deletion generation을 audit/evidence로 대조한다. 성공 Revision의
+inputSetHash, VersionSet, 결과 schema/hash pin, attempt, deletion generation을 audit/evidence로 대조한다. 성공 Revision의
 provenance는 source Session, 두 artifact ID/role/SHA-256, pinned versions, coverage, manifest hash,
 quality/capability, publishedAt을 포함한다. 실패는 raw/URI/credential을 노출하지 않는다.
 
 | Scenario / Given → When → Then | 최종 Session / Run | Revision / retryable / 공개 failure·userAction | Evidence·stale / ACK |
 |---|---|---|---|
 | `TR-ACC-IMPORT-ORCH-001` 두 정상 Artifact → validation 완료 → 완전 검증·원자적 publication | ACCEPTED / PUBLISHED | 정확히 1 / false / — | role별 hash, inputSetHash, manifest·quality·capability 고정; stale 없음 / commit 뒤 PERSISTED |
-| `TR-ACC-IMPORT-ORCH-002` 같은 입력·VersionSet의 retry 또는 terminal replay → 동일 성공 조회 → 중복 발행 없음 | ACCEPTED / PUBLISHED | 기존 1 / false / — | 같은 logical key·result hash, 추가 membership 없음; stale replay NO_OP / 기존 ACK 재전송만 |
+| `TR-ACC-IMPORT-ORCH-002` 같은 입력·VersionSet·결과 쌍의 retry 또는 terminal replay → 동일 성공 조회 → 중복 발행 없음 | ACCEPTED / PUBLISHED | 기존 1 / false / — | 같은 logical key·result hash, 추가 membership 없음; stale replay NO_OP / 기존 ACK 재전송만 |
 | `TR-ACC-IMPORT-ORCH-003` 첫 Revision 뒤 두 번째 Session 업로드 → 검증 → 첫 membership 미합산 | 두 Session ACCEPTED / 각 PUBLISHED | 각 1 / false / — | 서로 다른 inputSetHash/source Session, 공유 record 허용, latest는 둘째 범위만; stale 없음 / 각 commit 뒤 ACK |
 | `TR-ACC-IMPORT-ORCH-004` 시작·끝 경계 불완전 입력 → 검증 → exclusion과 제한된 Capability로 발행 | ACCEPTED / PUBLISHED | 1 / false / — | LEFT/RIGHT/BOTH_CENSORED 또는 INDETERMINATE, role별 NOT_PROVEN, quality reason; stale 없음 / PERSISTED |
 | `TR-ACC-IMPORT-ORCH-005` staging 전 grant 만료 → Core fresh grant CAS → 같은 job 재시도 성공 | ACCEPTED / PUBLISHED | 1 / false / — | ARTIFACT_REFERENCE_EXPIRED attempt audit, bytes size/hash 검증; 이전 grant 폐기 / PERSISTED |
@@ -273,12 +273,20 @@ quality/capability, publishedAt을 포함한다. 실패는 raw/URI/credential을
 | `TR-ACC-IMPORT-ORCH-014` retry의 새 execution 뒤 이전 결과 도착 → attempt 비교 → 이전 결과 폐기 | VALIDATING 또는 ACCEPTED / 이전 OBSOLETE, 현 Run active/PUBLISHED | 현 성공 전 0 또는 후 1 / 상황별 / 이전 failure 비공개 | attemptToken·run ID mismatch audit, 이전 payload 불가시화 / 이전 결과 ACK 금지(삭제면 DISCARDED_STALE) |
 | `TR-ACC-IMPORT-ORCH-015` Core publication commit 뒤 ACK 전송 실패 → ACK 재시도 → 중복 Revision 없음 | ACCEPTED / PUBLISHED | 1 / false / — | commit ID·result/payload hash 동일, latest 불변; stale 없음 / 같은 PERSISTED ACK 재전송 |
 | `TR-ACC-IMPORT-ORCH-016` terminal input hash 또는 VersionSet 불일치 → publication 시 검증 → 발행 금지 | PROCESSING_FAILED / OBSOLETE 또는 TERMINAL_FAILURE | 0 / false / INPUT_SET_HASH_MISMATCH 또는 VERSION_INCOMPATIBLE·WAIT_FOR_RECOVERY | hash prefix·version ID만 audit, staging 비공개; stale 폐기 / PERSISTED 금지 |
-| `TR-ACC-IMPORT-ORCH-017` Context OpenAPI의 Core serializer 요청 → 실제 Compute runtime DTO 역직렬화 → 모든 required field 수용 | VALIDATING / SUBMITTED | 0 / N/A / — | `coreNormalizationRunId`, `retryPolicyVersion`, nested identity·VersionSet 유지; extra-field 거부 없음 / N/A |
+| `TR-ACC-IMPORT-ORCH-017` Context OpenAPI의 Core serializer 요청 → 실제 Compute runtime DTO 역직렬화 → 모든 required field 수용 | VALIDATING / SUBMITTED | 0 / N/A / — | `coreNormalizationRunId`, `retryPolicyVersion`, 결과 schema/hash pin, nested identity·VersionSet 유지; extra-field 거부 없음 / N/A |
 | `TR-ACC-IMPORT-ORCH-018` Context V1 고정 vector → Core·Compute 각각 canonicalize/hash → oracle 일치 | VALIDATING / DISPATCH_PENDING | 0 / N/A / — | canonical bytes와 `1122481b2c208afc1cae751f952f1b9a670f446f404d42c1e581a3b83f25552e` 일치 / N/A |
 | `TR-ACC-IMPORT-ORCH-019` 같은 logical identity, 다른 locator/expiry → create replay/refresh → 같은 job/hash | VALIDATING / SUBMITTED | 0 / N/A / — | idempotency conflict 없음; 최초 create replay는 저장된 grant 유지, 변경은 CAS update / N/A |
 | `TR-ACC-IMPORT-ORCH-020` expectedInputSetHash와 Compute 재계산값 불일치 → safe FAILED | PROCESSING_FAILED / TERMINAL_FAILURE | 0 / false / INPUT_SET_HASH_MISMATCH·WAIT_FOR_RECOVERY | 성공 payload 없음, LedgerRevision 없음, source CSV rejection 아님 / N/A |
 | `TR-ACC-IMPORT-ORCH-021` Core Run ID 전송 → job 저장·worker restart·terminal 생성·재조회 | ACCEPTED / PUBLISHED | 1 / false / — | 같은 `coreNormalizationRunId`가 status/descriptor/payload까지 보존; exact input/VersionSet/generation 확인 / commit 뒤 PERSISTED |
 | `TR-ACC-IMPORT-ORCH-022` source bytes SHA-256 불일치와 terminal result hash 불일치 각각 주입 | PROCESSING_FAILED / TERMINAL_FAILURE | 0 / false / SOURCE_CONTENT_HASH_MISMATCH 또는 RESULT_HASH_MISMATCH·WAIT_FOR_RECOVERY | source mismatch는 normalize 시작 전 Compute FAILED; result mismatch는 Core publication 차단; 어느 쪽도 input mismatch code로 대체 금지 / N/A |
+| `TR-ACC-IMPORT-ORCH-023` 같은 inputIdentity에서 명시적 재처리로 결과 쌍만 V1/V1→V2/V2 → 두 create 비교 | 별도 Run / 각 상태 | 각 쌍 최대 1 / N/A / — | inputSetHash 동일, create fingerprint·Core logical key 상이; 서로 다른 Revision 허용 / 완료 후 각 PERSISTED |
+| `TR-ACC-IMPORT-ORCH-024` 같은 key/request 재전송 및 같은 key/다른 지원 쌍 재사용 | 기존 Job 불변 | 기존 결과만 / N/A / — | exact replay는 최초 202/jobId와 저장 pin; 다른 쌍은 Compute 409 IDEMPOTENCY_PAYLOAD_CONFLICT, grant/token 불변 / N/A |
+| `TR-ACC-IMPORT-ORCH-025` 새 create 버전 필드 누락·교차 쌍·미지원 값 | Job 생성 없음 | 0 / false / RESULT_SCHEMA_UNSUPPORTED·WAIT_FOR_RECOVERY | Compute는 순서대로 422 REQUEST_INVALID·RESULT_VERSION_PAIR_INVALID·RESULT_SCHEMA_UNSUPPORTED; 암묵적 V1/V2 기본값 없음 / N/A |
+| `TR-ACC-IMPORT-ORCH-026` V1/V1 Run·Job에 V2/V2 descriptor/payload → publication 검증 | PROCESSING_FAILED / TERMINAL_FAILURE | 0 / false / RESULT_VERSION_PIN_MISMATCH·WAIT_FOR_RECOVERY | staging 비공개, latest 불변 / PERSISTED 금지 |
+| `TR-ACC-IMPORT-ORCH-027` 기존 저장 V1 Job을 확인·backfill 후 재개 | 원 상태 유지 | 기존 Revision만 / N/A / — | Run/Job/status pin V1/V1, 기존 Revision/hash 불변; 신규 무필드 요청 422 / 기존 ACK만 |
+
+`TR-ACC-IMPORT-ORCH-023`~`027`의 runtime/Integration fixture는 `FIXTURE_PLANNED`다.
+Context wire schema 검증은 이 시나리오들의 runtime 통과 증거가 아니다.
 
 ### 4.0 Trading Import quality status (ADR-068)
 
