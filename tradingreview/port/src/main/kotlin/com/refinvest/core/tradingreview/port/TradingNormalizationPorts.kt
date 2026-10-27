@@ -66,6 +66,7 @@ data class NormalizationJobStatus(
     val expectedInputSetHash: String, val versionSetHash: String,
     val grantAction: String, val grantRefreshDeadlineAt: Instant?,
     val failureCode: String?,
+    val resultVersionPin: NormalizationResultVersionPin = NormalizationResultVersionPin.V1,
 )
 sealed interface NormalizationStatusLookup {
     data class Found(val status: NormalizationJobStatus) : NormalizationStatusLookup

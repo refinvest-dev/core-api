@@ -57,6 +57,7 @@ data class NormalizationRun(
     val inputIdentity: NormalizationInputIdentity? = null,
     // Null only for pre-ADR-067 runs. Never infer a new transport policy for an old job.
     val resultDeliveryPolicy: NormalizationResultDeliveryPolicy? = null,
+    val resultVersionPin: NormalizationResultVersionPin = NormalizationResultVersionPin.V1,
 )
 
 data class NormalizationDispatch(
@@ -72,4 +73,5 @@ data class NormalizationDispatch(
     val createdAt: Instant,
     val updatedAt: Instant,
     val pollFailureCount: Int = 0,
+    val resultVersionPin: NormalizationResultVersionPin = NormalizationResultVersionPin.V1,
 )

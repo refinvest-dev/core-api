@@ -128,7 +128,8 @@ class TradingNormalizationDispatcher(
             is NormalizationStatusLookup.Rejected -> transactions.execute {
                 val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
                 if (locked != null && isCurrent(run, locked))
-                    fail(run, dispatch, locked, workerId, "INTERNAL_ERROR", clock.instant())
+                    fail(run, dispatch, locked, workerId,
+                        lookup.code.takeIf { it in SAFE_CODES } ?: "INTERNAL_ERROR", clock.instant())
                 else runs.markObsolete(dispatch.id, workerId, clock.instant())
             }
             is NormalizationStatusLookup.Found -> handleStatus(run, dispatch, workerId, lookup.status)
@@ -146,6 +147,16 @@ class TradingNormalizationDispatcher(
                 val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
                 if (locked != null && isCurrent(run, locked))
                     fail(run, dispatch, locked, workerId, "INTERNAL_ERROR", clock.instant())
+                else runs.markObsolete(dispatch.id, workerId, clock.instant())
+            }
+            return
+        }
+        if (dispatch.resultVersionPin != run.resultVersionPin ||
+            status.resultVersionPin != run.resultVersionPin) {
+            transactions.execute {
+                val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
+                if (locked != null && isCurrent(run, locked))
+                    fail(run, dispatch, locked, workerId, "RESULT_VERSION_PIN_MISMATCH", clock.instant())
                 else runs.markObsolete(dispatch.id, workerId, clock.instant())
             }
             return
@@ -270,7 +281,8 @@ class TradingNormalizationDispatcher(
                         NormalizationInputFingerprint.dispatchKey(run.id, run.logicalKey, nextToken,
                             run.input.versionSetJson, run.input.deletionGeneration, mapper),
                         NormalizationDispatchStatus.PENDING, 0,
-                        nextAt, null, null, code, now, now)
+                        nextAt, null, null, code, now, now,
+                        resultVersionPin = run.resultVersionPin)
                     runs.restartAfterJobFailure(run.id, dispatch.id, workerId, next,
                         nextToken, code, now)
                     return@execute
@@ -345,6 +357,6 @@ class TradingNormalizationDispatcher(
             "RESULT_ITEM_CONFLICT", "RESULT_PAYLOAD_LENGTH_MISMATCH",
             "RESULT_CONTENT_ENCODING_UNSUPPORTED", "RESULT_PAYLOAD_PARSE_FAILED")
         val SAFE_CODES = setOf("SOURCE_ARTIFACT_EXPIRED", "ARTIFACT_IDENTITY_CONFLICT",
-            "INTERNAL_ERROR")
+            "RESULT_SCHEMA_UNSUPPORTED", "RESULT_VERSION_PIN_MISMATCH", "INTERNAL_ERROR")
     }
 }

@@ -284,8 +284,9 @@ quality/capability, publishedAt을 포함한다. 실패는 raw/URI/credential을
 | `TR-ACC-IMPORT-ORCH-025` 새 create 버전 필드 누락·교차 쌍·미지원 값 | Job 생성 없음 | 0 / false / RESULT_SCHEMA_UNSUPPORTED·WAIT_FOR_RECOVERY | Compute는 순서대로 422 REQUEST_INVALID·RESULT_VERSION_PAIR_INVALID·RESULT_SCHEMA_UNSUPPORTED; 암묵적 V1/V2 기본값 없음 / N/A |
 | `TR-ACC-IMPORT-ORCH-026` V1/V1 Run·Job에 V2/V2 descriptor/payload → publication 검증 | PROCESSING_FAILED / TERMINAL_FAILURE | 0 / false / RESULT_VERSION_PIN_MISMATCH·WAIT_FOR_RECOVERY | staging 비공개, latest 불변 / PERSISTED 금지 |
 | `TR-ACC-IMPORT-ORCH-027` 기존 저장 V1 Job을 확인·backfill 후 재개 | 원 상태 유지 | 기존 Revision만 / N/A / — | Run/Job/status pin V1/V1, 기존 Revision/hash 불변; 신규 무필드 요청 422 / 기존 ACK만 |
+| `TR-ACC-IMPORT-ORCH-028` 공동 전환 중 validation·retry와 dispatch 일시 중지 → V1/V1 HTTP 검증 후 재개 | 신규 Session은 기존 상태 유지, 기존 Run은 drain 또는 V1/V1 backfill | 중지 중 신규 Run·dispatch·idempotency record 0 / true / 503 TEMPORARY_DEPENDENCY_FAILURE | 이전 Core·미전송 무필드 create 0, 불명확한 create는 같은 Job으로 수렴하거나 보류; 실제 create/accepted/status/terminal/replay 성공 후에만 재개, 실패 시 중지 유지 / 중지 중 신규 PERSISTED 없음 |
 
-`TR-ACC-IMPORT-ORCH-023`~`027`의 runtime/Integration fixture는 `FIXTURE_PLANNED`다.
+`TR-ACC-IMPORT-ORCH-023`~`028`의 runtime/Integration fixture는 `FIXTURE_PLANNED`다.
 Context wire schema 검증은 이 시나리오들의 runtime 통과 증거가 아니다.
 
 ### 4.0 Trading Import quality status (ADR-068)

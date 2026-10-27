@@ -3,6 +3,7 @@ package com.refinvest.core.tradingreview.adapter.persistence
 import com.refinvest.core.tradingreview.domain.NormalizationDispatch
 import com.refinvest.core.tradingreview.domain.NormalizationDispatchStatus
 import com.refinvest.core.tradingreview.domain.NormalizationRun
+import com.refinvest.core.tradingreview.domain.NormalizationResultVersionPin
 import com.refinvest.core.tradingreview.domain.TradingImportSessionId
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.port.*
@@ -58,6 +59,9 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
         Timestamp.from(next), code, Timestamp.from(now), dispatchId, workerId, Timestamp.from(now)) == 1
 
     override fun beginStage(run: NormalizationRun, descriptor: NormalizationResultDescriptor, now: Instant) {
+        if (run.resultVersionPin.schemaVersion != descriptor.resultSchemaVersion ||
+            run.resultVersionPin.hashSpecificationVersion != descriptor.resultHashSpecificationVersion)
+            throw NormalizationResultStoreFailure("RESULT_VERSION_PIN_MISMATCH")
         jdbc.update("""INSERT INTO trading_normalization_result_staging
             (run_id,payload_id,compute_job_id,attempt_token,deletion_generation,transport_sha256,
             byte_size,payload_expires_at,result_delivery_policy_version,content_encoding,
@@ -394,6 +398,10 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
                          descriptor: NormalizationResultDescriptor, manifestJson: String,
                          coverageJson: String, capabilityJson: String, qualityJson: String,
                          ledgerContentHash: String, now: Instant): Boolean {
+        if (run.resultVersionPin != dispatch.resultVersionPin ||
+            run.resultVersionPin.schemaVersion != descriptor.resultSchemaVersion ||
+            run.resultVersionPin.hashSpecificationVersion != descriptor.resultHashSpecificationVersion)
+            throw NormalizationResultStoreFailure("RESULT_VERSION_PIN_MISMATCH")
         val session = jdbc.query("""SELECT status,deletion_generation,deletion_pending,
             active_normalization_run_id::text,created_ledger_revision_id::text FROM trading_import_sessions
             WHERE id=? AND owner_member_id=? FOR UPDATE""", { rs, _ ->
@@ -637,5 +645,7 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
         rs.getInt("attempt_count"), rs.getTimestamp("next_attempt_at").toInstant(),
         rs.getString("lease_owner"), rs.getTimestamp("lease_expires_at")?.toInstant(),
         rs.getString("last_failure_code"), rs.getTimestamp("created_at").toInstant(),
-        rs.getTimestamp("updated_at").toInstant(), rs.getInt("poll_failure_count"))
+        rs.getTimestamp("updated_at").toInstant(), rs.getInt("poll_failure_count"),
+        NormalizationResultVersionPin(rs.getString("result_schema_version"),
+            rs.getString("result_hash_specification_version")))
 }

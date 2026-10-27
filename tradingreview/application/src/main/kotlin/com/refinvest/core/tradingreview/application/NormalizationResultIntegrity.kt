@@ -271,6 +271,9 @@ object NormalizationResultVerifier {
 
     internal fun verifyIdentity(payload: Map<String, Any?>, run: NormalizationRun, logicalJobId: String?) {
         val identity = run.inputIdentity ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        if (payload["resultSchemaVersion"] != run.resultVersionPin.schemaVersion ||
+            payload["resultHashSpecificationVersion"] != run.resultVersionPin.hashSpecificationVersion)
+            throw ResultIntegrityFailure("RESULT_VERSION_PIN_MISMATCH")
         if (payload["coreNormalizationRunId"] != run.id || payload["jobId"] != run.computeJobId ||
             (logicalJobId != null && payload["coreLogicalJobId"] != logicalJobId) ||
             payload["coreImportSessionId"] != run.input.importSessionId.value.toString() ||
