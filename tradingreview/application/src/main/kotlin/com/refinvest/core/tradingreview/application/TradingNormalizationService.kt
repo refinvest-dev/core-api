@@ -135,15 +135,17 @@ open class TradingNormalizationService(
         val runId = UUID.randomUUID().toString()
         val dispatchId = UUID.randomUUID().toString()
         val attemptToken = UUID.randomUUID().toString()
+        val resultPin = previous?.resultVersionPin ?: NormalizationResultVersionPin.V1
         val logicalKey = NormalizationInputFingerprint.logicalKey(owner.value, hash,
-            input.deletionGeneration, mapper)
+            input.deletionGeneration, resultPin, mapper)
         val run = NormalizationRun(runId, input, hash, logicalKey,
             NormalizationRunStatus.DISPATCH_PENDING, 1, attemptToken, null, null,
-            now, now, null, now, null, 0, previous?.id, identity, deliveryPolicy)
+            now, now, null, now, null, 0, previous?.id, identity, deliveryPolicy, resultPin)
         val dispatch = NormalizationDispatch(dispatchId, runId,
             NormalizationInputFingerprint.dispatchKey(runId, logicalKey, attemptToken,
                 input.versionSetJson, input.deletionGeneration, mapper),
-            NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
+            NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now,
+            resultVersionPin = resultPin)
         runs.insert(run, dispatch)
         if (!sessions.update(session.beginValidation(runId, now))) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
         runs.audit(runId, if (retry) "EXPLICIT_RETRY" else "VALIDATION_ADMITTED", null, now)
@@ -169,11 +171,13 @@ object NormalizationInputFingerprint {
     }
 
     fun logicalKey(ownerId: Long, inputSetHash: String, deletionGeneration: Long,
-                   mapper: ObjectMapper): String {
+                   resultPin: NormalizationResultVersionPin, mapper: ObjectMapper): String {
         val body = mapOf(
             "ownerScope" to ownerId.toString(),
             "inputSetHash" to inputSetHash,
             "deletionGeneration" to deletionGeneration,
+            "resultSchemaVersion" to resultPin.schemaVersion,
+            "resultHashSpecificationVersion" to resultPin.hashSpecificationVersion,
         )
         return sha256(canonical(body, mapper))
     }

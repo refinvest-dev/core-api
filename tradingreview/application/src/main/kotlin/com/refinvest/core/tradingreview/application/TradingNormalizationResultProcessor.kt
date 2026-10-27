@@ -150,6 +150,10 @@ class TradingNormalizationResultProcessor(
                                     if (batch.size >= stageBatchSize) flush()
                                 }
                             }
+                            if (base["resultSchemaVersion"] != run.resultVersionPin.schemaVersion ||
+                                base["resultHashSpecificationVersion"] !=
+                                    run.resultVersionPin.hashSpecificationVersion)
+                                throw ResultIntegrityFailure("RESULT_VERSION_PIN_MISMATCH")
                             flush()
                             transactions.execute {
                                 if (!results.hasReadyLease(dispatch.id, worker, clock.instant()))
@@ -269,6 +273,10 @@ class TradingNormalizationResultProcessor(
         if (!supportedPair ||
             descriptor.inputHashSpecificationVersion != identity.hashSpecificationVersion)
             throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        if (dispatch.resultVersionPin != run.resultVersionPin ||
+            descriptor.resultSchemaVersion != run.resultVersionPin.schemaVersion ||
+            descriptor.resultHashSpecificationVersion != run.resultVersionPin.hashSpecificationVersion)
+            throw ResultIntegrityFailure("RESULT_VERSION_PIN_MISMATCH")
         if (descriptor.jobId != run.computeJobId || descriptor.logicalJobId != dispatch.id ||
             descriptor.runId != run.id || descriptor.attemptToken != run.attemptToken ||
             descriptor.deletionGeneration != run.input.deletionGeneration ||

@@ -14,6 +14,7 @@ import java.util.UUID
 @Repository
 class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val mapper: ObjectMapper) : TradingNormalizationStore {
     override fun insert(run: NormalizationRun, dispatch: NormalizationDispatch) {
+        require(run.resultVersionPin == dispatch.resultVersionPin)
         val input = run.input
         val identityJson = run.inputIdentity?.let { identity ->
             verifyIdentity(input, identity, run.inputFingerprint)
@@ -31,8 +32,9 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
             input_json, input_identity_json, target_version_set_json, instrument_terms_json, data_policy_version,
             retry_policy_version, retry_policy_json, result_delivery_policy_json,
             deletion_generation, status, current_attempt, attempt_token, compute_job_id,
-            last_failure_code, next_attempt_at, created_at, started_at, updated_at, completed_at, version)
-            VALUES (?::uuid,?::uuid,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,?,?::jsonb,?::jsonb,?,?,?,?::uuid,?,?,?,?,?,?,?,?)""",
+            last_failure_code, next_attempt_at, created_at, started_at, updated_at, completed_at, version,
+            result_schema_version,result_hash_specification_version)
+            VALUES (?::uuid,?::uuid,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,?,?::jsonb,?::jsonb,?,?,?,?::uuid,?,?,?,?,?,?,?,?,?,?)""",
             run.id, run.retryOfRunId, input.importSessionId.value, input.tradingBookId.value, input.ownerId,
             run.inputFingerprint, run.logicalKey, inputJson, identityJson, input.versionSetJson,
             input.instrumentTermsJson, input.dataPolicyVersion, input.retryPolicyVersion,
@@ -40,17 +42,19 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
             run.resultDeliveryPolicy?.let { mapper.writeValueAsString(it.toWireValue()) }, input.deletionGeneration,
             run.status.name, run.currentAttempt, run.attemptToken, run.computeJobId, run.lastFailureCode,
             Timestamp.from(run.nextAttemptAt), Timestamp.from(run.createdAt), run.startedAt?.let(Timestamp::from),
-            Timestamp.from(run.updatedAt), run.completedAt?.let(Timestamp::from), run.version)
+            Timestamp.from(run.updatedAt), run.completedAt?.let(Timestamp::from), run.version,
+            run.resultVersionPin.schemaVersion, run.resultVersionPin.hashSpecificationVersion)
         jdbc.update("""INSERT INTO trading_normalization_attempts
             (run_id,attempt_number,attempt_token,started_at) VALUES (?::uuid,?,?::uuid,?)""",
             run.id, run.currentAttempt, run.attemptToken, Timestamp.from(run.createdAt))
         jdbc.update("""INSERT INTO trading_normalization_dispatches
             (id,run_id,compute_key,status,attempt_count,next_attempt_at,lease_owner,lease_expires_at,
-            last_failure_code,created_at,updated_at)
-            VALUES (?::uuid,?::uuid,?,?,?,?,?,?,?,?,?)""",
+            last_failure_code,created_at,updated_at,result_schema_version,result_hash_specification_version)
+            VALUES (?::uuid,?::uuid,?,?,?,?,?,?,?,?,?,?,?)""",
             dispatch.id, dispatch.runId, dispatch.computeKey, dispatch.status.name,
             dispatch.attemptCount, Timestamp.from(dispatch.nextAttemptAt), null,
-            null, dispatch.lastFailureCode, Timestamp.from(dispatch.createdAt), Timestamp.from(dispatch.updatedAt))
+            null, dispatch.lastFailureCode, Timestamp.from(dispatch.createdAt), Timestamp.from(dispatch.updatedAt),
+            dispatch.resultVersionPin.schemaVersion, dispatch.resultVersionPin.hashSpecificationVersion)
     }
 
     override fun findRun(id: String): NormalizationRun? = jdbc.query(
@@ -128,6 +132,8 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
     override fun restartAfterJobFailure(runId: String, dispatchId: String, leaseOwner: String,
                                         nextDispatch: NormalizationDispatch, nextToken: String,
                                         failureCode: String, now: Instant): Boolean {
+        val pinned = findRun(runId)?.resultVersionPin ?: return false
+        require(nextDispatch.resultVersionPin == pinned)
         val changed = jdbc.update("""UPDATE trading_normalization_dispatches SET status='TERMINAL_FAILURE',
             last_failure_code=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?::uuid
             AND lease_owner=?::uuid AND lease_expires_at>? AND status='SUBMITTED'""",
@@ -144,10 +150,12 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
             SELECT id,current_attempt,attempt_token,? FROM trading_normalization_runs WHERE id=?::uuid""",
             Timestamp.from(now), runId)
         jdbc.update("""INSERT INTO trading_normalization_dispatches
-            (id,run_id,retry_of_dispatch_id,compute_key,status,attempt_count,next_attempt_at,created_at,updated_at)
-            VALUES (?::uuid,?::uuid,?::uuid,?,'PENDING',0,?,?,?)""",
+            (id,run_id,retry_of_dispatch_id,compute_key,status,attempt_count,next_attempt_at,created_at,updated_at,
+            result_schema_version,result_hash_specification_version)
+            VALUES (?::uuid,?::uuid,?::uuid,?,'PENDING',0,?,?,?,?,?)""",
             nextDispatch.id, runId, dispatchId, nextDispatch.computeKey,
-            Timestamp.from(nextDispatch.nextAttemptAt), Timestamp.from(now), Timestamp.from(now))
+            Timestamp.from(nextDispatch.nextAttemptAt), Timestamp.from(now), Timestamp.from(now),
+            pinned.schemaVersion, pinned.hashSpecificationVersion)
         audit(runId, "COMPUTE_JOB_RETRY", failureCode, now)
         return true
     }
@@ -247,7 +255,8 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
             rs.getString("retry_of_run_id"), identity,
             rs.getString("result_delivery_policy_json")?.let {
                 NormalizationResultDeliveryPolicy.fromWireValue(mapper.readValue(it, Map::class.java))
-            })
+            }, NormalizationResultVersionPin(rs.getString("result_schema_version"),
+                rs.getString("result_hash_specification_version")))
     }
 
     private fun verifyIdentity(input: NormalizationInput, identity: NormalizationInputIdentity,
@@ -268,5 +277,7 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
         rs.getInt("attempt_count"), rs.getTimestamp("next_attempt_at").toInstant(),
         rs.getString("lease_owner"), rs.getTimestamp("lease_expires_at")?.toInstant(),
         rs.getString("last_failure_code"), rs.getTimestamp("created_at").toInstant(),
-        rs.getTimestamp("updated_at").toInstant(), rs.getInt("poll_failure_count"))
+        rs.getTimestamp("updated_at").toInstant(), rs.getInt("poll_failure_count"),
+        NormalizationResultVersionPin(rs.getString("result_schema_version"),
+            rs.getString("result_hash_specification_version")))
 }

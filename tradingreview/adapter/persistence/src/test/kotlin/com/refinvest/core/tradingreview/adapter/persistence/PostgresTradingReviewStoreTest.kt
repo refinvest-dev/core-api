@@ -9,6 +9,7 @@ import com.refinvest.core.tradingreview.port.TradingIdGenerator
 import com.refinvest.core.tradingreview.port.TradingMemberProvider
 import com.refinvest.core.tradingreview.port.*
 import com.refinvest.core.tradingreview.application.TradingReviewService
+import com.refinvest.core.tradingreview.application.NormalizationInputFingerprint
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.SingleConnectionDataSource
@@ -28,6 +29,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertFailsWith
 
@@ -40,6 +42,85 @@ class PostgresTradingReviewStoreTest {
         override fun publishedForSession(sessionId: TradingImportSessionId, owner: MemberId): PublishedLedgerSummary? = null
     }
     private val normalizationVersions = """{"versionSetHash":"${"f".repeat(64)}","normalizer":{"sourceDialectVersionsByArtifactRole":{"TRADE_HISTORY":"TRADE_V1","POSITION_HISTORY":"POSITION_V1"},"adapterVersion":"ADAPTER_V1","normalizerVersion":"NORMALIZER_V1","canonicalSchemaVersion":"CANONICAL_V1","implementationDigest":"normalizer-digest","versionSetHash":"${"d".repeat(64)}"},"reconstruction":{"instrumentTermsVersionByInstrument":{},"reconstructionPolicyVersion":"RECONSTRUCTION_V1","reconciliationVersion":"RECONCILIATION_V1","reviewUnitSchemaVersion":"REVIEW_UNIT_V1","evidenceSchemaVersion":"EVIDENCE_V1","implementationDigest":"reconstruction-digest","versionSetHash":"${"e".repeat(64)}"}}"""
+
+    @Test
+    fun legacyV1MigrationBackfillsPinAndLogicalKeyWithoutChangingDispatchOrRevision() =
+        withDatabase(applyPinMigration = false) { connection ->
+            val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+            val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
+            members(jdbc)
+            val review = JdbcTradingReviewStore(jdbc)
+            val account = TradingAccount.create(TradingAccountId(3001), MemberId(1),
+                TradingVenue.BINANCE, "A", now)
+            review.insert(account)
+            val book = TradingBook.create(TradingBookId(3002), account, "B",
+                TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY,
+                TradingSettlementAsset.USDT, "UTC", now)
+            review.insert(book)
+            val session = TradingImportSession.create(TradingImportSessionId(3003), book,
+                "UTC", "UTC", TradingPositionMode.ONE_WAY, TradingDataPolicy(),
+                normalizationVersions, now)
+            JdbcTradingImportStore(jdbc).insert(session)
+            val runId = UUID.randomUUID().toString()
+            val dispatchId = UUID.randomUUID().toString()
+            val token = UUID.randomUUID().toString()
+            val inputHash = "a".repeat(64)
+            val oldKey = "b".repeat(64)
+            val dispatchKey = "c".repeat(64)
+            val resultHash = "d".repeat(64)
+            jdbc.update("""INSERT INTO trading_normalization_runs
+                (id,import_session_id,trading_book_id,owner_member_id,input_fingerprint,logical_key,
+                input_json,target_version_set_json,instrument_terms_json,data_policy_version,
+                retry_policy_version,retry_policy_json,deletion_generation,status,current_attempt,
+                attempt_token,next_attempt_at,created_at,updated_at)
+                VALUES (?::uuid,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?,?,?::jsonb,0,'PUBLISHED',1,
+                ?::uuid,?,?,?)""", runId, session.id.value, book.id.value, 1, inputHash, oldKey,
+                "{}", normalizationVersions, "[]", "TRADING_DATA_POLICY_V1", "retry-v1",
+                "{}", token, java.sql.Timestamp.from(now), java.sql.Timestamp.from(now),
+                java.sql.Timestamp.from(now))
+            jdbc.update("""INSERT INTO trading_normalization_dispatches
+                (id,run_id,compute_key,status,next_attempt_at,created_at,updated_at)
+                VALUES (?::uuid,?::uuid,?,'PUBLISHED',?,?,?)""", dispatchId, runId,
+                dispatchKey, java.sql.Timestamp.from(now), java.sql.Timestamp.from(now),
+                java.sql.Timestamp.from(now))
+            jdbc.update("""INSERT INTO trading_ledger_revisions
+                (id,run_id,trading_book_id,import_session_id,revision_number,input_set_hash,
+                input_hash_specification_version,input_identity_json,target_version_set_json,
+                result_schema_version,result_hash_specification_version,result_hash,
+                ledger_content_hash,reconciliation_manifest_hash,reconciliation_manifest_json,
+                coverage_json,capability_json,quality_report_json,counts_json,section_digests_json,
+                published_at) VALUES (?::uuid,?::uuid,?,?,1,?,'TRADING_INPUT_SET_HASH_V1',
+                '{}'::jsonb,?::jsonb,?,?,?,? ,?,'{}'::jsonb,'[]'::jsonb,'[]'::jsonb,
+                '{}'::jsonb,'{}'::jsonb,'[]'::jsonb,?)""", UUID.randomUUID().toString(),
+                runId, book.id.value, session.id.value, inputHash, normalizationVersions,
+                NormalizationResultVersionPin.V1.schemaVersion,
+                NormalizationResultVersionPin.V1.hashSpecificationVersion,
+                resultHash, "e".repeat(64), "f".repeat(64), java.sql.Timestamp.from(now))
+            val migration = javaClass.getResourceAsStream(
+                "/db/migration/V9__trading_normalization_result_pin.sql")!!
+                .bufferedReader().use { it.readText() }
+            connection.createStatement().use { statement ->
+                splitSqlStatements(migration).forEach(statement::execute)
+            }
+            val expectedKey = NormalizationInputFingerprint.logicalKey(1, inputHash, 0,
+                NormalizationResultVersionPin.V1, mapper)
+            assertNotEquals(oldKey, expectedKey)
+            assertEquals(expectedKey, jdbc.queryForObject("""SELECT logical_key FROM
+                trading_normalization_runs WHERE id=?::uuid""", String::class.java, runId))
+            assertEquals(dispatchKey, jdbc.queryForObject("""SELECT compute_key FROM
+                trading_normalization_dispatches WHERE id=?::uuid""", String::class.java, dispatchId))
+            assertEquals(resultHash, jdbc.queryForObject("""SELECT result_hash FROM
+                trading_ledger_revisions WHERE run_id=?::uuid""", String::class.java, runId))
+            assertEquals(NormalizationResultVersionPin.V1,
+                JdbcTradingNormalizationStore(jdbc, mapper).findRun(runId)?.resultVersionPin)
+            assertEquals(NormalizationResultVersionPin.V1.schemaVersion,
+                jdbc.queryForObject("""SELECT result_schema_version FROM
+                    trading_normalization_dispatches WHERE id=?::uuid""", String::class.java, dispatchId))
+            assertFailsWith<Exception> {
+                jdbc.update("""UPDATE trading_normalization_runs
+                    SET result_schema_version='TRADING_NORMALIZATION_RESULT_V2' WHERE id=?::uuid""", runId)
+            }
+        }
 
     @Test
     fun v2SupplementMustMatchPublishedUnitAndCanonicalEvidence() = withDatabase { connection ->
@@ -72,9 +153,11 @@ class PostgresTradingReviewStoreTest {
         val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
             "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1, token,
             null, null, now, now, null, now, null, 0, inputIdentity = identity,
-            resultDeliveryPolicy = deliveryPolicy)
+            resultDeliveryPolicy = deliveryPolicy,
+            resultVersionPin = NormalizationResultVersionPin.V2)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
-            NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
+            NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now,
+            resultVersionPin = NormalizationResultVersionPin.V2)
         JdbcTradingNormalizationStore(jdbc, mapper).insert(run, dispatch)
         val fixture = generateSequence(java.io.File(System.getProperty("user.dir"))) { it.parentFile }
             .map { java.io.File(it,
@@ -128,7 +211,17 @@ class PostgresTradingReviewStoreTest {
     fun verifiedV2TerminalPublishesImmutableAnalyticsSupplement() =
         verifyPublishedTerminal(true)
 
-    private fun verifyPublishedTerminal(v2: Boolean) = withDatabase { connection ->
+    @Test
+    fun mismatchedTerminalDescriptorBlocksRevisionAndPersistedAck() =
+        verifyPublishedTerminal(false, mismatchedDescriptor = true)
+
+    @Test
+    fun mismatchedTerminalPayloadBlocksRevisionAndPersistedAck() =
+        verifyPublishedTerminal(false, mismatchedPayload = true)
+
+    private fun verifyPublishedTerminal(v2: Boolean, mismatchedDescriptor: Boolean = false,
+                                        mismatchedPayload: Boolean = false) =
+        withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
         val transactions = TransactionTemplate(DataSourceTransactionManager(source))
@@ -177,9 +270,12 @@ class PostgresTradingReviewStoreTest {
         val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
             "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1, attemptToken,
             null, null, now, now, null, now, null, 0, inputIdentity = identity,
-            resultDeliveryPolicy = deliveryPolicy)
+            resultDeliveryPolicy = deliveryPolicy,
+            resultVersionPin = if (v2 && !mismatchedPayload) NormalizationResultVersionPin.V2
+                else NormalizationResultVersionPin.V1)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
-            NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
+            NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now,
+            resultVersionPin = run.resultVersionPin)
         val runs = JdbcTradingNormalizationStore(jdbc, mapper)
         runs.insert(run, dispatch)
         assertEquals(deliveryPolicy, runs.findRun(runId)?.resultDeliveryPolicy)
@@ -219,6 +315,11 @@ class PostgresTradingReviewStoreTest {
         digestManifest["reconciliationManifestHash"] = manifestHash
         val resultHash = canonicalizer.hash(digestManifest)
         payload["resultHash"] = resultHash
+        if (mismatchedPayload) {
+            payload["resultSchemaVersion"] = NormalizationResultVersionPin.V2.schemaVersion
+            payload["resultHashSpecificationVersion"] =
+                NormalizationResultVersionPin.V2.hashSpecificationVersion
+        }
         val bytes = mapper.writeValueAsBytes(payload)
         val transportHash = java.util.HexFormat.of().formatHex(
             java.security.MessageDigest.getInstance("SHA-256").digest(bytes))
@@ -227,10 +328,13 @@ class PostgresTradingReviewStoreTest {
             "payload-synthetic-1", bytes.size.toLong(), transportHash, attemptToken, 0,
             run.inputFingerprint, identity.hashSpecificationVersion,
             identity.targetVersionSet.toWireValue(),
-            if (v2) "TRADING_NORMALIZATION_RESULT_V2" else "TRADING_NORMALIZATION_RESULT_V1",
-            if (v2) "TRADING_NORMALIZATION_RESULT_HASH_V2" else "TRADING_NORMALIZATION_RESULT_HASH_V1",
+            run.resultVersionPin.schemaVersion, run.resultVersionPin.hashSpecificationVersion,
             payload.getValue("counts") as Map<String, Any?>,
             digests, manifestHash, resultHash, now.plusSeconds(3600), "RESULT_DELIVERY_V1", "identity")
+        val deliveredDescriptor = if (mismatchedDescriptor) descriptor.copy(
+            resultSchemaVersion = NormalizationResultVersionPin.V2.schemaVersion,
+            resultHashSpecificationVersion = NormalizationResultVersionPin.V2.hashSpecificationVersion)
+            else descriptor
         var acknowledgeCalls = 0
         var descriptorCalls = 0
         var downloadCalls = 0
@@ -238,7 +342,7 @@ class PostgresTradingReviewStoreTest {
             override fun descriptor(jobId: String): NormalizationResultLookup {
                 descriptorCalls++
                 check(descriptorCalls == 1) { "Completed staging must not fetch Compute again" }
-                return NormalizationResultLookup.Found(descriptor)
+                return NormalizationResultLookup.Found(deliveredDescriptor)
             }
             override fun download(descriptor: NormalizationResultDescriptor,
                                   policy: NormalizationResultDeliveryPolicy): NormalizationPayloadLookup {
@@ -257,6 +361,26 @@ class PostgresTradingReviewStoreTest {
             }
         }
         val results = JdbcTradingNormalizationResultStore(jdbc, mapper)
+        if (mismatchedDescriptor || mismatchedPayload) {
+            val processor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
+                runs, imports, review, results, client, transactions,
+                Clock.fixed(now, ZoneOffset.UTC), mapper,
+                object : TradingRetryJitter { override fun factor() = 0.5 })
+            assertTrue(processor.processOne())
+            assertEquals(1, descriptorCalls)
+            assertEquals(if (mismatchedPayload) 1 else 0, downloadCalls)
+            assertEquals(0, acknowledgeCalls)
+            assertEquals(TradingImportStatus.PROCESSING_FAILED,
+                imports.find(session.id, MemberId(1))?.status)
+            assertEquals("RESULT_VERSION_PIN_MISMATCH", jdbc.queryForObject(
+                "SELECT last_failure_code FROM trading_normalization_runs WHERE id=?::uuid",
+                String::class.java, runId))
+            assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
+            assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM trading_normalization_ack_dispatches", Long::class.java))
+            return@withDatabase
+        }
         val interrupted = object : TradingNormalizationResultStore by results {
             override fun publish(run: NormalizationRun, dispatch: NormalizationDispatch, workerId: String,
                                  descriptor: NormalizationResultDescriptor, manifestJson: String,
@@ -845,6 +969,11 @@ class PostgresTradingReviewStoreTest {
         assertEquals(TradingImportStatus.VALIDATING, retried.status)
         assertTrue(retried.activeNormalizationRunId != active.id)
         assertEquals(active.id, runs.findRun(retried.activeNormalizationRunId!!)?.retryOfRunId)
+        assertEquals(NormalizationResultVersionPin.V1,
+            runs.findRun(retried.activeNormalizationRunId!!)?.resultVersionPin)
+        assertEquals(NormalizationResultVersionPin.V1.schemaVersion,
+            jdbc.queryForObject("""SELECT result_schema_version FROM trading_normalization_dispatches
+                WHERE run_id=?::uuid""", String::class.java, retried.activeNormalizationRunId!!))
         assertEquals(retried.activeNormalizationRunId,
             transactions.execute { service.retry(session.id, "retry-once") }!!.activeNormalizationRunId)
         assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
@@ -884,6 +1013,8 @@ class PostgresTradingReviewStoreTest {
             java.sql.Timestamp.from(now.plusSeconds(3600)), session.id.value)
         val again = transactions.execute { service.retry(session.id, "retry-after-exhaustion") }!!
         assertEquals(retried.activeNormalizationRunId, runs.findRun(again.activeNormalizationRunId!!)?.retryOfRunId)
+        assertEquals(NormalizationResultVersionPin.V1,
+            runs.findRun(again.activeNormalizationRunId!!)?.resultVersionPin)
         val staleDispatch = assertNotNull(runs.claimNext(now, java.time.Duration.ofSeconds(45),
             UUID.randomUUID().toString()))
         val staleRun = assertNotNull(runs.findRun(again.activeNormalizationRunId!!))
@@ -1443,7 +1574,7 @@ class PostgresTradingReviewStoreTest {
         jdbc.update("INSERT INTO members(id, role, created_at) VALUES (2, 'USER', CURRENT_TIMESTAMP)")
     }
 
-    private fun withDatabase(test: (Connection) -> Unit) {
+    private fun withDatabase(applyPinMigration: Boolean = true, test: (Connection) -> Unit) {
         val url = requireNotNull(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"))
         val user = requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_USER"))
         val password = requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD"))
@@ -1494,6 +1625,14 @@ class PostgresTradingReviewStoreTest {
                     .bufferedReader().use { it.readText() }
                 connection.createStatement().use { statement ->
                     splitSqlStatements(migration8).forEach(statement::execute)
+                }
+                if (applyPinMigration) {
+                    val migration9 = javaClass.getResourceAsStream(
+                        "/db/migration/V9__trading_normalization_result_pin.sql")!!
+                        .bufferedReader().use { it.readText() }
+                    connection.createStatement().use { statement ->
+                        splitSqlStatements(migration9).forEach(statement::execute)
+                    }
                 }
                 test(connection)
             } finally {

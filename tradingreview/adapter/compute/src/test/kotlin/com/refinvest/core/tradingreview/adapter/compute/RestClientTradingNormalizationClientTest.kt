@@ -3,6 +3,7 @@ package com.refinvest.core.tradingreview.adapter.compute
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.port.ArtifactReadGrant
 import com.refinvest.core.tradingreview.port.NormalizationSubmission
+import com.refinvest.core.tradingreview.port.NormalizationStatusLookup
 import com.refinvest.core.tradingreview.port.NormalizationGrantUpdate
 import com.refinvest.core.tradingreview.port.NormalizationJobStatus
 import com.refinvest.core.tradingreview.port.NormalizationResultLookup
@@ -67,6 +68,54 @@ class RestClientTradingNormalizationClientTest {
         val descriptor = testDescriptor("oversized", 100)
         assertEquals("RESULT_PAYLOAD_LIMIT_EXCEEDED",
             assertIs<NormalizationPayloadLookup.Rejected>(client.download(descriptor, deliveryPolicy)).code)
+        server.verify()
+    }
+
+    @Test
+    fun acceptedAndStatusResultPairMustMatchRunPin() {
+        val input = NormalizationInput(TradingBookId(1), TradingImportSessionId(2), 3,
+            listOf(NormalizationArtifactInput(TradingSourceArtifactId(10), TradingArtifactRole.TRADE_HISTORY,
+                "a".repeat(64), 100, "text/csv", "AUTO"),
+                NormalizationArtifactInput(TradingSourceArtifactId(11), TradingArtifactRole.POSITION_HISTORY,
+                    "b".repeat(64), 200, "text/csv", "AUTO")),
+            "BINANCE", "LINEAR_PERPETUAL", "ONE_WAY", "USDT", "UTC", "UTC",
+            """{"versionSetHash":"${"f".repeat(64)}","normalizer":{"sourceDialectVersionsByArtifactRole":{"TRADE_HISTORY":"AUTO","POSITION_HISTORY":"AUTO"},"adapterVersion":"a","normalizerVersion":"n","canonicalSchemaVersion":"c","implementationDigest":"d","versionSetHash":"${"d".repeat(64)}"},"reconstruction":{"instrumentTermsVersionByInstrument":{},"reconstructionPolicyVersion":"r","reconciliationVersion":"rc","reviewUnitSchemaVersion":"u","evidenceSchemaVersion":"e","implementationDigest":"d","versionSetHash":"${"e".repeat(64)}"}}""",
+            "[]", "TRADING_DATA_POLICY_V1", "retry-v1", "{}", 0)
+        val identity = NormalizationInputIdentity.fromPinnedInput(input,
+            mapper.readValue(input.versionSetJson, Map::class.java))
+        val run = NormalizationRun("00000000-0000-0000-0000-000000000001", input,
+            NormalizationInputCanonicalizer.hash(identity), "a".repeat(64),
+            NormalizationRunStatus.SUBMITTED, 1, "00000000-0000-0000-0000-000000000003",
+            "job-1", null, now, now, null, now, null, 0,
+            inputIdentity = identity, resultDeliveryPolicy = deliveryPolicy)
+        val dispatch = NormalizationDispatch("00000000-0000-0000-0000-000000000002", run.id,
+            "b".repeat(64), NormalizationDispatchStatus.SUBMITTED, 0, now, null, null, null, now, now)
+        val builder = RestClient.builder().baseUrl("http://compute.test")
+        val server = MockRestServiceServer.bindTo(builder).build()
+        server.expect(requestTo("http://compute.test/trading-review/normalization-jobs"))
+            .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON)
+                .body(mapper.writeValueAsString(mapOf(
+                    "jobId" to "job-1", "coreLogicalJobId" to dispatch.id,
+                    "resultSchemaVersion" to "TRADING_NORMALIZATION_RESULT_V2",
+                    "resultHashSpecificationVersion" to "TRADING_NORMALIZATION_RESULT_HASH_V2"))))
+        server.expect(requestTo("http://compute.test/trading-review/normalization-jobs/job-1"))
+            .andRespond(withStatus(HttpStatus.OK).contentType(MediaType.APPLICATION_JSON)
+                .body(mapper.writeValueAsString(mapOf(
+                    "jobId" to "job-1", "coreLogicalJobId" to dispatch.id,
+                    "coreNormalizationRunId" to run.id,
+                    "hashSpecificationVersion" to identity.hashSpecificationVersion,
+                    "targetVersionSet" to identity.targetVersionSet.toWireValue(),
+                    "resultSchemaVersion" to "TRADING_NORMALIZATION_RESULT_V2",
+                    "resultHashSpecificationVersion" to "TRADING_NORMALIZATION_RESULT_HASH_V2"))))
+        val client = RestClientTradingNormalizationClient.withClient("test-internal-key", mapper, builder.build())
+        val grants = input.artifacts.map { artifact -> ArtifactReadGrant(
+            artifact.artifactId.value.toString(), artifact.role.name, artifact.sha256,
+            artifact.contentLength, artifact.mediaType, "https://private/${artifact.artifactId.value}",
+            now.plusSeconds(60)) }
+        assertEquals("RESULT_VERSION_PIN_MISMATCH", assertIs<NormalizationSubmission.Rejected>(
+            client.submit(run, dispatch, grants)).code)
+        assertEquals("RESULT_VERSION_PIN_MISMATCH", assertIs<NormalizationStatusLookup.Rejected>(
+            client.status(run, dispatch)).code)
         server.verify()
     }
 
@@ -184,7 +233,7 @@ class RestClientTradingNormalizationClientTest {
             .andExpect { request -> requests.add(request.headers.getFirst("Idempotency-Key") to
                 (request as MockHttpOutputMessage).bodyAsString) }
             .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON)
-                .body("""{"jobId":"job-1","coreLogicalJobId":"$dispatchId"}"""))
+                .body("""{"jobId":"job-1","coreLogicalJobId":"$dispatchId","resultSchemaVersion":"TRADING_NORMALIZATION_RESULT_V1","resultHashSpecificationVersion":"TRADING_NORMALIZATION_RESULT_HASH_V1"}"""))
         server.expect(requestTo("http://compute.test/trading-review/normalization-jobs"))
             .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
                 .body("""{"code":"IDEMPOTENCY_PAYLOAD_CONFLICT"}"""))
@@ -220,6 +269,9 @@ class RestClientTradingNormalizationClientTest {
             val second = mapper.readTree(requests[1].second)
             assertEquals("TRADE_HISTORY", first.path("artifactAccessGrants").path(0).path("role").asText())
             assertEquals(run.inputFingerprint, first.path("expectedInputSetHash").asText())
+            assertEquals(run.resultVersionPin.schemaVersion, first.path("resultSchemaVersion").asText())
+            assertEquals(run.resultVersionPin.hashSpecificationVersion,
+                first.path("resultHashSpecificationVersion").asText())
             assertEquals(first.path("attemptToken").asText(), second.path("attemptToken").asText())
             assertEquals(first.path("expectedInputSetHash").asText(), second.path("expectedInputSetHash").asText())
             assertEquals(first.path("inputIdentity"), second.path("inputIdentity"))

@@ -4,6 +4,7 @@ import com.refinvest.core.tradingreview.domain.NormalizationDispatch
 import com.refinvest.core.tradingreview.domain.NormalizationInputCanonicalizer
 import com.refinvest.core.tradingreview.domain.NormalizationRun
 import com.refinvest.core.tradingreview.domain.NormalizationResultDeliveryPolicy
+import com.refinvest.core.tradingreview.domain.NormalizationResultVersionPin
 import com.refinvest.core.tradingreview.port.*
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.beans.factory.annotation.Autowired
@@ -47,6 +48,8 @@ class RestClientTradingNormalizationClient private constructor(
 
     override fun submit(run: NormalizationRun, dispatch: NormalizationDispatch,
                         grants: List<ArtifactReadGrant>): NormalizationSubmission {
+        if (run.resultVersionPin != dispatch.resultVersionPin)
+            return NormalizationSubmission.Rejected("RESULT_VERSION_PIN_MISMATCH")
         if (apiKey.isBlank()) return NormalizationSubmission.Rejected("INTERNAL_AUTHENTICATION_FAILED")
         val body = try { body(run, dispatch, grants) }
             catch (_: Exception) { return NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID") }
@@ -60,8 +63,11 @@ class RestClientTradingNormalizationClient private constructor(
                         202 -> {
                             val accepted = response.bodyTo(String::class.java)?.let(mapper::readTree)
                             val jobId = accepted?.path("jobId")?.asText()
+                            val pinError = pinFailure(accepted?.path("resultSchemaVersion")?.asText() ?: "",
+                                accepted?.path("resultHashSpecificationVersion")?.asText() ?: "", run)
                             if (jobId.isNullOrBlank() || accepted.path("coreLogicalJobId").asText() != dispatch.id)
                                 NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID")
+                            else if (pinError != null) NormalizationSubmission.Rejected(pinError)
                             else NormalizationSubmission.Accepted(jobId)
                         }
                         503, 429 -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE",
@@ -101,6 +107,9 @@ class RestClientTradingNormalizationClient private constructor(
                                 body.path("hashSpecificationVersion").asText() != identity.hashSpecificationVersion ||
                                 body.path("targetVersionSet") != versions)
                                 return@exchange NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
+                            val pinError = pinFailure(body.path("resultSchemaVersion").asText(),
+                                body.path("resultHashSpecificationVersion").asText(), run)
+                            if (pinError != null) return@exchange NormalizationStatusLookup.Rejected(pinError)
                             NormalizationStatusLookup.Found(NormalizationJobStatus(jobId,
                                 body.path("status").asText(), body.path("attemptToken").asText(),
                                 body.path("deletionGeneration").asLong(), body.path("grantRevision").asLong(),
@@ -109,7 +118,8 @@ class RestClientTradingNormalizationClient private constructor(
                                 body.path("grantAction").asText("NONE"),
                                 body.path("grantRefreshDeadlineAt").takeIf { !it.isNull && !it.isMissingNode }
                                     ?.asText()?.let(java.time.Instant::parse),
-                                body.path("failure").path("code").takeIf { !it.isMissingNode }?.asText()))
+                                body.path("failure").path("code").takeIf { !it.isMissingNode }?.asText(),
+                                run.resultVersionPin))
                         }
                         401, 403 -> NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
                         400, 422 -> NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
@@ -300,6 +310,13 @@ class RestClientTradingNormalizationClient private constructor(
         }
     } catch (_: Exception) { null }
 
+    private fun pinFailure(schema: String, hash: String, run: NormalizationRun): String? = when {
+        !NormalizationResultVersionPin.isSupported(schema, hash) -> "RESULT_SCHEMA_UNSUPPORTED"
+        schema != run.resultVersionPin.schemaVersion ||
+            hash != run.resultVersionPin.hashSpecificationVersion -> "RESULT_VERSION_PIN_MISMATCH"
+        else -> null
+    }
+
     private fun body(run: NormalizationRun, dispatch: NormalizationDispatch,
                      grants: List<ArtifactReadGrant>): Map<String, Any> {
         val input = run.input
@@ -330,6 +347,8 @@ class RestClientTradingNormalizationClient private constructor(
             "pinnedInstrumentTerms" to terms,
             "expectedInputSetHash" to run.inputFingerprint,
             "resultDeliveryPolicy" to deliveryPolicy.toWireValue(),
+            "resultSchemaVersion" to run.resultVersionPin.schemaVersion,
+            "resultHashSpecificationVersion" to run.resultVersionPin.hashSpecificationVersion,
             "retryPolicyVersion" to input.retryPolicyVersion,
             "deletionGeneration" to input.deletionGeneration,
             "attemptToken" to run.attemptToken)

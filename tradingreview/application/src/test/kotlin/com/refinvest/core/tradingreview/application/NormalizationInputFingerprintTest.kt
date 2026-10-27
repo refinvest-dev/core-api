@@ -2,6 +2,7 @@ package com.refinvest.core.tradingreview.application
 
 import com.refinvest.core.tradingreview.domain.NormalizationInputCanonicalizer
 import com.refinvest.core.tradingreview.domain.NormalizationInputIdentity
+import com.refinvest.core.tradingreview.domain.NormalizationResultVersionPin
 import tools.jackson.databind.json.JsonMapper
 import java.nio.charset.StandardCharsets
 import java.util.HexFormat
@@ -36,6 +37,21 @@ class NormalizationInputFingerprintTest {
         assertFalse(bytes.take(3) == listOf(0xef.toByte(), 0xbb.toByte(), 0xbf.toByte()))
         assertFalse(bytes.last() == '\n'.code.toByte())
         assertEquals("TRADING_INPUT_SET_HASH_V1", identity().hashSpecificationVersion)
+    }
+
+    @Test
+    fun resultPairChangesLogicalKeyWithoutChangingInputSetHash() {
+        val inputHash = NormalizationInputCanonicalizer.hash(identity())
+        val v1 = NormalizationInputFingerprint.logicalKey(1, inputHash, 0,
+            NormalizationResultVersionPin.V1, mapper)
+        val v2 = NormalizationInputFingerprint.logicalKey(1, inputHash, 0,
+            NormalizationResultVersionPin.V2, mapper)
+        assertNotEquals(v1, v2)
+        assertEquals(inputHash, NormalizationInputCanonicalizer.hash(identity()))
+        assertFailsWith<IllegalArgumentException> {
+            NormalizationResultVersionPin("TRADING_NORMALIZATION_RESULT_V1",
+                "TRADING_NORMALIZATION_RESULT_HASH_V2")
+        }
     }
 
     @Test
