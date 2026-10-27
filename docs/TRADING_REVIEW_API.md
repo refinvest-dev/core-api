@@ -517,6 +517,14 @@ attempt를 가질 수 있지만 동시에 active Compute job은 하나뿐이다.
 
 ### 10.5 Capacity와 privacy
 
+Normalization 결과 버전 pin 공동 전환 중에는 신규 validation·retry admission과
+durable dispatch의 새 Compute create를 함께 중지한다. 이때 새 공개 validation·retry
+요청은 대기시키지 않고 기존 `503 TEMPORARY_DEPENDENCY_FAILURE`로 응답한다.
+Session 상태와 Run·dispatch·public idempotency record는 바꾸지 않으며, 전환 검증
+후 같은 key로 재시도할 수 있다. 이미 접수된 요청의 조회와 status/terminal 복구는
+계속한다. 재개 조건과 이전 Core 인스턴스 drain은
+[`TRADING_VERSIONING.md`](TRADING_VERSIONING.md)의 공동 전환 절차를 따른다.
+
 ADR-044의 Backtest 20개 pool, `BACKTEST_CAPACITY_EXCEEDED`, 30초 `Retry-After`는
 그대로다. Trading Review normalization/analytics는 Backtest와 분리된 bounded pool을
 공유한다. positive 상한과 재시도 초는 배포 설정이며 `PENDING`/lease 없는

@@ -34,14 +34,33 @@ idempotency migration을 마치거나 drain한 뒤 재전송한다. 검증할 �
 불일치하면 재개/발행을 보류하고 복구한다. 신규 요청의 필드 누락에는 이 legacy
 해석을 적용하지 않는다.
 
-후속 작업 순서는 (1) Context snapshot 동기화, (2) Core pin·전송과 legacy Run
-backfill, (3) Compute V2 생성·저장·조회와 legacy Job backfill, (4) Core V2 publication
-검증·Revision 유일성 제약 반영 및 명시적 V2 선택 활성화다. 실제 배포는 단계 (2)의
-Core 전송을 켜기 전에 Compute가 V1/V1 필드를 수용하도록 호환 경로를 먼저 배포하고,
-Core가 모두 pin을 보내기 전에는 Compute가 새 요청의 필드 누락을 거절하는 strict
-경로를 켜지 않는다. migration과 in-flight Job 재개가 끝나면 strict create를 켠다.
-두 서비스의 저장된 V1 작업이 배포를 가로질러 재개돼도 V1/V1을 유지한다.
-계약 검증만으로 이 runtime 단계가 완료된 것은 아니다.
+후속 작업은 (1) Context snapshot 동기화, (2) Core V1/V1 pin·전송 및 legacy Run
+backfill, (3) Compute의 필수 pin 수용·legacy Job backfill 검증, (4) Core V2 publication
+검증·Revision 유일성 제약 반영, (5) 명시적 V2 선택 활성화로 나눈다. 신규 Compute
+create의 두 결과 버전 필드는 모든 단계에서 필수이며, 누락은 `422 REQUEST_INVALID`다.
+이전 Core의 신규 무필드 create를 Compute가 V1/V1로 해석하는 임시 경로는 두지 않는다.
+
+Core·Compute의 실제 배포는 공동 전환으로 수행한다. 전환 시작 전에 Core의 신규
+Normalization validation·retry admission과 durable dispatch의 새 create 전송을 중지한다.
+공개 validation·retry 신규 접수는 대기시키지 않고 기존
+`503 TEMPORARY_DEPENDENCY_FAILURE`로 거절한다. 이 거절은 Session 상태를 바꾸거나
+Run·dispatch·public idempotency record를 만들지 않으며, 같은 key로 전환 후 재시도할
+수 있다. 이미 접수한 요청의 조회, status/terminal 처리, 삭제·취소와 필요한 복구는
+계속한다. 이 동작은 [`TRADING_REVIEW_API.md`](TRADING_REVIEW_API.md)의 일시적
+의존성 실패 응답과 [`TRADING_REVIEW_ACCEPTANCE.md`](TRADING_REVIEW_ACCEPTANCE.md)의
+validation/retry 상태·멱등성 규칙을 따른다.
+
+중지 상태에서 이미 접수된 V1 Run·Job을 drain하거나 위 provenance 검증을 거쳐
+V1/V1로 backfill한다. 응답이 불명확한 create는 기존 Job ID·idempotency record를
+대조해 같은 Job으로 수렴시킨다. 확인되지 않은 요청은 재전송하지 않고 drain 또는
+복구한다. 이전 Core 인스턴스와 미전송 dispatch가 더 이상 신규 무필드 create를
+보낼 수 없음을 확인한 뒤 검증된 Core·Compute 조합을 배포한다. 분리된 DB와 실제
+HTTP에서 명시적 V1/V1 create, accepted/status, terminal 및 replay를 확인하고,
+성공한 뒤에만 admission·dispatch를 재개한다. 검증이 실패하면 접수 중지를 유지하고
+혼합 버전 인스턴스로 새 create를 보내지 않는다. 저장된 V1 작업의 Run/Job pin과
+기존 Revision/hash 및 발급된 dispatch key는 배포 전후에 유지한다. 계약 snapshot
+검증은 이 runtime gate를 대신하지 않는다. Core V2 검증·불변 저장·발행이 준비된
+뒤 별도 검증과 전환으로 V2 신규 선택을 활성화한다.
 
 `inputIdentity`/`inputSetHash`는 결과 표현 버전과 무관하다. 같은 계산 입력의 V1/V2
 `inputSetHash`는 같을 수 있지만 Core logical normalization key, Compute create
