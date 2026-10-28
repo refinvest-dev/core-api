@@ -125,8 +125,23 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 
 | 단계 | 상태 | 커밋/PR 및 검증 |
 |---|---|---|
-| 0 | 문서 작성 완료, PR 검토 예정 | AGENTS.md 규칙과 실행 계획; 문서 검증 결과는 PR에 기록 |
-| 1a 이후 | 미착수 | 각 PR에서 담당 ID·시나리오·실제 검증 결과 갱신 |
+| 0 | 완료·머지 | [PR #82](https://github.com/refinvest-dev/core-api/pull/82), 규칙과 실행 계획 |
+| 1a | 구현·검증 완료, PR 검토 대상 | `206473c`, R01 발급/사용의 상위 상태·소유권 검증; 아래 검증 기록 참조 |
+| 1b 이후 | 미착수 | 다음 PR은 R02 월간 quota와 사용자별 동시 capacity 분리 |
+
+### 1a 검증 기록
+
+- `TR-ACC-DELETE-006/007`의 즉시 접근 차단·삭제 scope 격리 assertion을 회귀 테스트에 적용했다.
+  삭제 워커가 실행되기 전 `REQUESTED` 상태에서 기존 토큰 사용과 새 발급을 거절한다.
+- 수정 전 실제 PostgreSQL에서 새 회귀 테스트 2개가 모두 실패했다. 삭제 후 토큰 사용이
+  원본 스트림을 반환하는 문제를 재현했다.
+- 수정 후 `:tradingreview:adapter:persistence:test --tests '*PostgresTradingReviewStoreTest'`를
+  실행해 26개 통과, 실패/오류/skip 0개를 확인했다. 대상 외 Book/Account/owner의 토큰과
+  정상 토큰의 single-read 동작도 검증했다.
+- 수정 전후 integration 계약 snapshot 검사를 통과했다. 합성 fixture와 분리된 integration DB의
+  `test-trading-normalization-runtime-contract.ps1`도 통과했다. 로컬 증적은 integration에만 보관한다.
+- API/schema/hash 의미 변경은 없으며 결정론 영향은 없다. 전체 삭제 workflow의 나머지 assertion은
+  4d/5b에서 검증한다.
 
 초기 리뷰에서 전체 `gradlew test` task는 성공했다. 당시 결과는 대부분 UP-TO-DATE였으며
 리포트 합계 248개, 실패 0개, skipped 1개였다. PostgreSQL Store의 이전 실행 결과도 재사용됐고
