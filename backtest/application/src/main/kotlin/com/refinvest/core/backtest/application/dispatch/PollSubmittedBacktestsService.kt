@@ -40,6 +40,7 @@ open class PollSubmittedBacktestsService(
             backtestRunId = dispatch.backtestRunId,
         )
         val failureObservation = transactionTemplate.execute {
+            if (!backtestComputeDispatchStore.lockSubmittedClaim(dispatch)) return@execute null
             applyLookup(dispatch, lookup)
         }
         failureObservation?.let(backtestFailureObserver::recordComputeFailure)

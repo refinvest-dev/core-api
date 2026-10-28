@@ -244,6 +244,7 @@ class PollSubmittedBacktestsServiceTest {
         private val backtestRunId: BacktestRunId,
         private val maxClaims: Int = 1,
     ) : BacktestComputeDispatchStore {
+        override fun lockSubmittedClaim(claim: ClaimedSubmittedBacktestComputeDispatch) = true
         private var claims = 0
         var terminal = false
 

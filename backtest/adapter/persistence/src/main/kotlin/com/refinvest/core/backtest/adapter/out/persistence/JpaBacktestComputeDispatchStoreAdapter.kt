@@ -9,10 +9,13 @@ import com.refinvest.core.backtest.port.outbound.persistence.dispatch.PendingBac
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
 import org.slf4j.LoggerFactory
 import java.time.Duration
+import java.time.Clock
 import java.time.Instant
 import java.util.UUID
 
@@ -20,6 +23,7 @@ import java.util.UUID
 class JpaBacktestComputeDispatchStoreAdapter(
     private val dispatchJpaStore: BacktestComputeDispatchJpaStore,
     private val meterRegistry: MeterRegistry,
+    private val clock: Clock = Clock.systemUTC(),
 ) : BacktestComputeDispatchStore {
     override fun enqueue(dispatch: PendingBacktestComputeDispatch) {
         dispatchJpaStore.save(
@@ -83,6 +87,18 @@ class JpaBacktestComputeDispatchStoreAdapter(
             computeRunId = requireNotNull(dispatch.computeRunId),
             claimToken = claimToken,
         )
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    override fun lockSubmittedClaim(claim: ClaimedSubmittedBacktestComputeDispatch): Boolean {
+        check(TransactionSynchronizationManager.isActualTransactionActive()) {
+            "Polling response validation requires the application transaction"
+        }
+        val dispatch = dispatchJpaStore.findByIdForUpdate(claim.backtestRunId.value) ?: return false
+        // Sample time after obtaining the lock: waiting for another transaction may outlive the lease.
+        return dispatch.status == BacktestComputeDispatchStatusJpa.SUBMITTED &&
+            dispatch.leaseToken == claim.claimToken && dispatch.computeRunId == claim.computeRunId &&
+            dispatch.leaseExpiresAt?.isAfter(clock.instant()) == true
     }
 
     @Transactional
@@ -169,7 +185,7 @@ class JpaBacktestComputeDispatchStoreAdapter(
         claimToken: UUID,
         update: (BacktestComputeDispatchJpaEntity, Instant) -> Unit,
     ) {
-        val dispatch = dispatchJpaStore.findById(backtestRunId.value).orElse(null) ?: return
+        val dispatch = dispatchJpaStore.findByIdForUpdate(backtestRunId.value) ?: return
         if (dispatch.status == BacktestComputeDispatchStatusJpa.SUBMITTED && dispatch.leaseToken == claimToken) {
             update(dispatch, Instant.now())
         }
