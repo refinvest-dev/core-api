@@ -36,7 +36,9 @@ class JpaStrategyReaderAdapter(
         .let { strategies -> StrategyPageReadModel(strategies.content.map { it.toReadModel() }, strategies.totalElements) }
 
     private fun StrategyJpaEntity.toReadModel(): StrategyReadModel {
-        val versions = versions.map { it.toReadModel() }
+        val versions = versions
+            .sortedWith(compareBy<StrategyVersionJpaEntity> { it.createdAt }.thenBy { it.id })
+            .map { it.toReadModel() }
         return StrategyReadModel(
             id = StrategyId(id),
             memberId = MemberId(memberId),

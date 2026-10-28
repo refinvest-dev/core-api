@@ -129,8 +129,29 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 1a | 완료·머지 | [PR #83](https://github.com/refinvest-dev/core-api/pull/83), R01 발급/사용의 상위 상태·소유권 검증 |
 | 1b | 완료·머지 | [PR #84](https://github.com/refinvest-dev/core-api/pull/84), 월간 사용량과 실행 ID별 활성 예약 분리 |
 | 1c | 완료·머지 | [PR #85](https://github.com/refinvest-dev/core-api/pull/85), R04 polling 응답 반영 전 lease 잠금·검증 |
-| 1d | 구현·검증 완료, PR 검토 대상 | `f2e5936`, R03 Strategy 잠금과 immutable version append-only 저장 |
-| 1e 이후 | 미착수 | 다음 PR은 R05 최신 version 기준과 시각 동률의 deterministic 선택 |
+| 1d | 완료·머지 | [PR #86](https://github.com/refinvest-dev/core-api/pull/86), R03 Strategy 잠금과 immutable version append-only 저장 |
+| 1e | 구현·검증 완료, PR 검토 대상 | `73afc42`, R05 생성 시각·숫자 ID 기준 version 정렬과 최신 선택 |
+| 1f 이후 | 미착수 | 다음 PR은 R06 Backtest/Asset HTTP timeout과 retry·lease 정합 |
+
+### 1e 검증 기록
+
+- 정본은 version이 없는 경우의 `latestVersionId=null`을 명시하며, 상세 version 배열의 정렬과
+  생성 시각 동률의 선택 기준은 별도로 지정하지 않는다. Core read model에 `(createdAt, 숫자 ID)`
+  오름차순과 마지막 version을 최신으로 선택하는 기준을 명시했다.
+- 수정 전 회귀 테스트에서 같은 시각의 version이 `[20, 300, 9, 10]` 대신 `[20, 300, 10, 9]`로
+  반환되는 실패를 재현했다. 기존 `lastOrNull` 선택은 이 collection 순서에 의존했다.
+- 상세·목록 Reader의 공통 변환에서 정렬하며, 입력 persistence collection은 변경하지 않는다.
+  ID가 더 커도 생성 시각이 오래된 version은 최신으로 선택하지 않는다.
+- 조회 테스트 3개는 네 version의 24가지 순열, 숫자 `9`/`10`의 시각 동률, 빈 Strategy와 부재를 검증한다.
+  실제 PostgreSQL 테스트 14개는 기존 동시 저장 회귀 11개와 재조회·사용자 격리·새 append 관측 3개를
+  포함하며, version/condition row와 DSL 조건 순서 보존도 확인한다. 임시 schema는 테스트가 정리한다.
+- application 14개와 app 52개를 포함해 관련 테스트 83개가 실제 실행돼 통과했고 실패·오류·skip은 0개다.
+  HTTP 검증은 app의 H2·실제 서버에서 상세·목록의 최신 ID 일치를 확인하며, PostgreSQL 조회 검증과
+  구분한다. app에는 기존 HTTP/모듈 경계 및 실제 PostgreSQL migration 검증도 포함된다.
+- 새 HTTP fixture의 기존 ID 재사용으로 생긴 간섭을 전용 ID와 자체 정리로 해소한 뒤 app 52개를
+  다시 실행해 통과했다. 중간 실패 실행을 성공으로 세지 않는다.
+- 계약 snapshot, 문서 snapshot 24개와 `git diff --check`가 통과했다. 로컬 환경·fixture·실행 로그는
+  커밋하지 않는다. wire schema·저장 데이터·Compute 요청·계산 hash 변경은 없으며 계산 결정론 영향은 없다.
 
 ### 1d 검증 기록
 
