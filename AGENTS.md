@@ -10,6 +10,8 @@
   `docs/GLOSSARY.md`, `docs/ROADMAP.md`, `docs/GIT_WORKFLOW.md`.
 - Trading Review 작업은 `docs/AI_AGENT.md`의 라우팅에 따라 관련 `docs/TRADING_*.md`와
   ADR을 추가로 읽는다.
+- 아키텍처 리팩토링의 작업 순서, 회귀 시나리오와 완료 기준은 Core 로컬 문서
+  [engineering/REFACTORING_PLAN.md](engineering/REFACTORING_PLAN.md)를 따른다.
 - `docs/README.md`에 명시된 문서와 `openapi/`는 context 저장소에서 동기화되는
   파일이다. 이 저장소에서 직접 수정하지 않는다. 변경이 필요하면 context 저장소에서 수정하고 동기화한다.
   `docs/README.md`와 `docs/GIT_WORKFLOW.md`는 Core가 소유하는 로컬 문서다.
@@ -56,6 +58,10 @@
 ## 5. Domain organization
 
 - Domain은 Aggregate 중심으로 구성한다. Aggregate Root는 feature `domain` package 최상위에 둔다.
+- Aggregate Root는 `shared:kernel`의 `AggregateRoot<ID>`를 상속하고, ID는 공통
+  `Identifier`를 구현한 typed ID를 사용한다. 소속 Entity는 정본의 Aggregate 경계를 따른다.
+- 생성·복원·상태 변경에서 불변식을 검증한다. 생성자, setter 또는 `copy`를 통해 허용되지 않은
+  상태를 만들 수 없도록 한다. 복원은 새로운 업무 행위나 Domain Event를 재실행하지 않는다.
 - Value Object, Policy, Domain Service, Event, Exception은 성격별 하위 package로 분리한다.
   독립적인 domain concept는 기본적으로 별도 파일에 두되, 구현에 강하게 결합된 private/helper type은
   같은 파일에 둘 수 있다.
@@ -88,3 +94,31 @@
   커밋하지 않는다.
 - integration harness의 기동 절차·환경 변수·실행 증적은 `../integration/README.md`와
   `../integration/AGENTS.md`를 정본으로 하며, 이 파일에는 중복해서 관리하지 않는다.
+
+## 8. Aggregate persistence and mapping
+
+- Application은 Command를 받아 Aggregate를 생성·변경하고 `{Aggregate}Store`에 저장한다.
+  Command-side 저장과 복원은 Aggregate 단위로 표현하며, 하위 Entity의 업무 변경은 Root의
+  행위를 통해 수행한다. 테이블 개수나 ORM 연관관계가 Aggregate 경계를 결정하지 않는다.
+- Persistence adapter는 Aggregate 또는 독립적인 persistence capability별로 분리한다.
+  여러 Aggregate의 Store와 idempotency 같은 기술 capability를 하나의 어댑터에 모으지 않는다.
+  Spring Data 인터페이스는 기존 `{Aggregate}JpaStore` 명명을 유지한다.
+- Domain과 persistence 모델의 양방향 변환은 persistence adapter 안의 명시적인 Mapper에 둔다.
+  기본 이름은 `{Aggregate}PersistenceMapper`이며, 소속 Entity/Value Object 변환을 함께 구성한다.
+  Store와 Reader에서 동일한 도메인 복원이 필요하면 같은 매핑을 공유한다. 독립적인 조회 projection은
+  해당 read model에 직접 매핑할 수 있다.
+- Mapper는 전달받은 모델을 변환한다. Repository 조회, 외부 I/O, ID 생성, 현재 시각 결정과
+  업무 상태 전이를 수행하지 않는다. 필요한 row/entity는 adapter가 조회한 뒤 Mapper에 전달한다.
+- Domain은 JPA/JDBC/JSON converter를 알지 않는다. Persistence 모델을 만들 때 필드를 컬럼으로
+  분해하는 책임은 adapter에 둔다. ID·owner·page 같은 조회 조건은 Store/Reader 인자로 사용할 수 있다.
+- 일반적인 상태 변경을 개별 컬럼 갱신 포트로 노출하지 않는다. quota 예약, lease claim,
+  refresh 회전, publication처럼 원자성이 필요한 연산은 명시적 capability로 정의하고
+  관련 상태 모델과 expected version/lease token/attempt/deletion generation 등 필요한 조건을 묶어
+  검증한다. stale 요청은 상태·capacity·latest pointer를 변경하지 않는다.
+- Mutable Aggregate 저장은 optimistic locking 또는 동등한 잠금/CAS로 변경 유실을 막는다.
+  Immutable Revision/Result의 append-only 저장, idempotency와 deterministic uniqueness를 보존한다.
+- Aggregate 저장에 JPA 전환이나 모든 하위 row의 메모리 적재를 전제하지 않는다. 대용량 ledger와
+  result는 검증된 발행 모델과 stream/batch 저장을 사용하고, 논리 Aggregate 경계와 publication
+  원자성을 지킨다. 외부 HTTP/object storage 작업은 DB transaction 밖에서 수행한다.
+- Port는 inbound/outbound 계약과 해당 모델을 소유한다. 파일·암호화·HTTP 구현은 technology adapter에,
+  HTTP status 매핑은 web adapter에 둔다. Scheduler와 Controller는 inbound port를 호출한다.
