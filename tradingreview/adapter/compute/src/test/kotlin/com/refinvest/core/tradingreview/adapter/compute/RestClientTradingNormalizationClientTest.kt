@@ -107,6 +107,15 @@ class RestClientTradingNormalizationClientTest {
                     "targetVersionSet" to identity.targetVersionSet.toWireValue(),
                     "resultSchemaVersion" to "TRADING_NORMALIZATION_RESULT_V2",
                     "resultHashSpecificationVersion" to "TRADING_NORMALIZATION_RESULT_HASH_V2"))))
+        for ((status, body) in listOf(
+            HttpStatus.SERVICE_UNAVAILABLE to """{"code":"TRADING_REVIEW_CAPACITY_EXCEEDED"}""",
+            HttpStatus.SERVICE_UNAVAILABLE to "{}",
+            HttpStatus.BAD_GATEWAY to "{}",
+            HttpStatus.TOO_MANY_REQUESTS to "{}")) {
+            server.expect(requestTo("http://compute.test/trading-review/normalization-jobs"))
+                .andRespond(withStatus(status).contentType(MediaType.APPLICATION_JSON)
+                    .header("Retry-After", "1").body(body))
+        }
         val client = RestClientTradingNormalizationClient.withClient("test-internal-key", mapper, builder.build())
         val grants = input.artifacts.map { artifact -> ArtifactReadGrant(
             artifact.artifactId.value.toString(), artifact.role.name, artifact.sha256,
@@ -116,6 +125,10 @@ class RestClientTradingNormalizationClientTest {
             client.submit(run, dispatch, grants)).code)
         assertEquals("RESULT_VERSION_PIN_MISMATCH", assertIs<NormalizationStatusLookup.Rejected>(
             client.status(run, dispatch)).code)
+        for (unknown in listOf(false, true, true, true)) {
+            assertEquals(unknown, assertIs<NormalizationSubmission.Retry>(
+                client.submit(run, dispatch, grants)).outcomeUnknown)
+        }
         server.verify()
     }
 

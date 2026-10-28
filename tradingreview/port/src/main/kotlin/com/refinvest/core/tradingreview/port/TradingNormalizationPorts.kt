@@ -15,6 +15,7 @@ interface TradingNormalizationStore {
     fun insert(run: NormalizationRun, dispatch: NormalizationDispatch)
     fun findRun(id: String): NormalizationRun?
     fun findActive(sessionId: TradingImportSessionId): NormalizationRun?
+    fun holdUnknownCreate(dispatchId: String, leaseOwner: String, now: Instant): Boolean
     fun claimNext(now: Instant, lease: Duration, workerId: String): NormalizationDispatch?
     fun claimSubmitted(now: Instant, lease: Duration, workerId: String): NormalizationDispatch?
     fun schedulePoll(dispatchId: String, leaseOwner: String, next: Instant, now: Instant): Boolean
@@ -56,7 +57,7 @@ interface ArtifactAccessGrantIssuer {
 
 sealed interface NormalizationSubmission {
     data class Accepted(val jobId: String) : NormalizationSubmission
-    data class Retry(val code: String, val retryAfter: Duration? = null) : NormalizationSubmission
+    data class Retry(val code: String, val retryAfter: Duration? = null, val outcomeUnknown: Boolean = false) : NormalizationSubmission
     data class Rejected(val code: String) : NormalizationSubmission
 }
 

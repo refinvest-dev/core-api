@@ -26,6 +26,7 @@ open class TradingNormalizationService(
     private val settings: TradingNormalizationSettings,
     private val mapper: ObjectMapper,
     private val clock: Clock,
+    private val transition: TradingNormalizationTransitionGate,
 ) : TradingNormalizationUseCase {
     private val strictMapper = JsonMapper.builder()
         .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build()
@@ -41,6 +42,7 @@ open class TradingNormalizationService(
                       retry: Boolean): TradingImportSession {
         if (key.length !in 1..128 || !Regex("[A-Za-z0-9._~-]+").matches(key))
             throw TradingFailure("IDEMPOTENCY_KEY_INVALID", 400)
+        transition.requireAdmission()
         val owner = members.currentMemberId()
         val initial = sessions.find(id, owner) ?: throw TradingFailure(
             if (sessions.deleted(id, owner)) "RESOURCE_DELETED" else "RESOURCE_NOT_FOUND",

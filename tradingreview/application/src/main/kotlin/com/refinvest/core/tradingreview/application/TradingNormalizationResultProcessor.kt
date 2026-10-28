@@ -26,6 +26,7 @@ class TradingNormalizationResultProcessor(
     private val clock: Clock,
     private val mapper: ObjectMapper,
     private val jitter: TradingRetryJitter,
+    private val transition: TradingNormalizationTransitionGate,
     @Value("\${refinvest.trading-review.normalization.delivery.parser-max-depth:64}")
     parserMaxDepth: Int = 64,
     @Value("\${refinvest.trading-review.normalization.delivery.parser-max-string-length:1048576}")
@@ -200,7 +201,14 @@ class TradingNormalizationResultProcessor(
                 as Map<String, Any?>
             val independentlyVerified = stagedVerifier.verify(persistedBase, run, dispatch.id)
             comparePayloadDescriptor(independentlyVerified, descriptor)
+            var transitionHeld = false
             val published = transactions.execute {
+                if (!transition.publicationAllowed()) {
+                    transitionHeld = true
+                    results.retryReady(dispatch.id, worker, "NORMALIZATION_TRANSITION_PAUSED",
+                        clock.instant().plusSeconds(5), clock.instant())
+                    return@execute false
+                }
                 val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
                 if (locked == null || !isCurrent(run, locked)) return@execute false
                 if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) return@execute false
@@ -212,7 +220,7 @@ class TradingNormalizationResultProcessor(
                     mapper.writeValueAsString(independentlyVerified.qualityBase),
                     independentlyVerified.ledgerContentHash, clock.instant())
             } == true
-            if (!published && transactions.execute {
+            if (!transitionHeld && !published && transactions.execute {
                     results.hasReadyLease(dispatch.id, worker, clock.instant()) } == true)
                 obsolete(run, dispatch, worker, descriptor)
         } catch (_: LeaseLost) { return true }
