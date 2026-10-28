@@ -10,6 +10,8 @@
   `docs/GLOSSARY.md`, `docs/ROADMAP.md`, `docs/GIT_WORKFLOW.md`.
 - Trading Review 작업은 `docs/AI_AGENT.md`의 라우팅에 따라 관련 `docs/TRADING_*.md`와
   ADR을 추가로 읽는다.
+- 아키텍처 리팩토링의 작업 순서, 회귀 시나리오와 완료 기준은 Core 로컬 문서
+  [engineering/REFACTORING_PLAN.md](engineering/REFACTORING_PLAN.md)를 따른다.
 - `docs/README.md`에 명시된 문서와 `openapi/`는 context 저장소에서 동기화되는
   파일이다. 이 저장소에서 직접 수정하지 않는다. 변경이 필요하면 context 저장소에서 수정하고 동기화한다.
   `docs/README.md`와 `docs/GIT_WORKFLOW.md`는 Core가 소유하는 로컬 문서다.
