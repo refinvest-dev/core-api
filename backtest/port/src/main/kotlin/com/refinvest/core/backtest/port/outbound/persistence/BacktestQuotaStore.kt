@@ -1,17 +1,13 @@
 package com.refinvest.core.backtest.port.outbound.persistence
 
-import com.refinvest.core.shared.kernel.member.MemberId
-import java.time.YearMonth
+import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
 
 interface BacktestQuotaStore {
-    fun reserve(
-        memberId: MemberId,
-        quotaMonth: YearMonth,
-        monthlyExecutionLimit: Int,
-        maxConcurrentRuns: Int,
-    ): BacktestQuotaReservation
+    /** Must commit or roll back with the Run and its durable dispatch. */
+    fun reserve(request: BacktestQuotaRequest): BacktestQuotaReservation
 
-    fun releaseConcurrentCapacity(memberId: MemberId, quotaMonth: YearMonth)
+    /** Idempotently releases only this Run's capacity; monthly usage is retained. */
+    fun releaseConcurrentCapacity(backtestRunId: BacktestRunId)
 }
 
 enum class BacktestQuotaReservation {

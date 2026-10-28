@@ -11,6 +11,7 @@ import com.refinvest.core.backtest.port.outbound.compute.ComputeIdempotencyKeyGe
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchStore
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.PendingBacktestComputeDispatch
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaReservation
+import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaRequest
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaStore
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
 import com.refinvest.core.backtest.port.inbound.run.AssetNotAllowedForPlanException
@@ -63,16 +64,6 @@ open class RunBacktestService(
             throw BacktestPeriodNotAllowedException()
         }
 
-        when (backtestQuotaStore.reserve(
-            memberId = memberId,
-            quotaMonth = YearMonth.now(clock.withZone(ZoneOffset.UTC)),
-            monthlyExecutionLimit = policy.monthlyExecutionLimit,
-            maxConcurrentRuns = policy.maxConcurrentRuns,
-        )) {
-            BacktestQuotaReservation.RESERVED -> Unit
-            BacktestQuotaReservation.MONTHLY_LIMIT_EXCEEDED -> throw BacktestMonthlyLimitExceededException()
-            BacktestQuotaReservation.CONCURRENCY_LIMIT_EXCEEDED -> throw BacktestConcurrencyLimitExceededException()
-        }
         val backtestRun = BacktestRun.createPending(
             id = backtestRunIdGenerator.next(),
             strategyId = StrategyId(strategyVersion.strategyId),
@@ -81,6 +72,17 @@ open class RunBacktestService(
             feeModel = command.feeModel,
             createdAt = clock.instant(),
         )
+        when (backtestQuotaStore.reserve(BacktestQuotaRequest(
+            memberId = memberId,
+            backtestRunId = backtestRun.id,
+            quotaMonth = YearMonth.from(backtestRun.createdAt.atZone(ZoneOffset.UTC)),
+            monthlyExecutionLimit = policy.monthlyExecutionLimit,
+            maxConcurrentRuns = policy.maxConcurrentRuns,
+        ))) {
+            BacktestQuotaReservation.RESERVED -> Unit
+            BacktestQuotaReservation.MONTHLY_LIMIT_EXCEEDED -> throw BacktestMonthlyLimitExceededException()
+            BacktestQuotaReservation.CONCURRENCY_LIMIT_EXCEEDED -> throw BacktestConcurrencyLimitExceededException()
+        }
         backtestRunStore.save(backtestRun)
         backtestComputeDispatchStore.enqueue(
             PendingBacktestComputeDispatch(

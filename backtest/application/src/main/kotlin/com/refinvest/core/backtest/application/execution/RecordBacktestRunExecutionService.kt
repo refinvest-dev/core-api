@@ -8,20 +8,14 @@ import com.refinvest.core.backtest.port.inbound.execution.RecordBacktestRunExecu
 import com.refinvest.core.backtest.port.inbound.execution.StartBacktestRunCommand
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaStore
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
-import com.refinvest.core.backtest.domain.BacktestRun
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
-import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestQuery
-import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.time.YearMonth
-import java.time.ZoneOffset
 
 @Service
 open class RecordBacktestRunExecutionService(
     private val backtestRunStore: BacktestRunStore,
     private val backtestQuotaStore: BacktestQuotaStore,
-    private val lookupStrategyVersionForBacktestUseCase: LookupStrategyVersionForBacktestUseCase,
 ) : RecordBacktestRunExecutionUseCase {
     @Transactional
     override fun execute(command: RecordBacktestRunExecutionCommand): BacktestRunId {
@@ -45,21 +39,9 @@ open class RecordBacktestRunExecutionService(
             command is FailBacktestRunCommand ||
             command is FailBacktestRunWithoutExecutionCommand
         ) {
-            releaseConcurrentCapacity(backtestRun)
+            backtestQuotaStore.releaseConcurrentCapacity(backtestRun.id)
         }
 
         return backtestRun.id
-    }
-
-    private fun releaseConcurrentCapacity(backtestRun: BacktestRun) {
-        val strategyVersion = requireNotNull(
-            lookupStrategyVersionForBacktestUseCase.execute(
-                LookupStrategyVersionForBacktestQuery(backtestRun.strategyVersionId.value),
-            ),
-        ) { "Strategy version not found" }
-        backtestQuotaStore.releaseConcurrentCapacity(
-            memberId = strategyVersion.ownerMemberId,
-            quotaMonth = YearMonth.from(backtestRun.createdAt.atZone(ZoneOffset.UTC)),
-        )
     }
 }
