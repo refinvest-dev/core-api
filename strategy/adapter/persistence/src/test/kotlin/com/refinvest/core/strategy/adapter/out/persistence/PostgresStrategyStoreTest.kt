@@ -31,6 +31,61 @@ import kotlin.test.*
 @EnabledIfEnvironmentVariable(named = "STRATEGY_TEST_JDBC_URL", matches = ".+")
 class PostgresStrategyStoreTest {
     @Test
+    fun readerUsesCreationTimeThenNumericIdentityAfterReload() = withFixture { f ->
+        val aggregate = f.load().apply {
+            addVersion(version(10, createdAt = TIME.plusSeconds(1)))
+            addVersion(version(300, createdAt = TIME.minusSeconds(1)))
+            addVersion(version(9, createdAt = TIME.plusSeconds(1)))
+            addVersion(version(20, createdAt = TIME.minusSeconds(2)))
+        }
+        f.tx.execute { f.store.save(aggregate) }
+        val beforeReading = f.snapshot()
+        repeat(2) {
+            val detail = assertNotNull(f.tx.execute { f.reader.findById(StrategyId(1)) })
+            val listed = assertNotNull(f.tx.execute { f.reader.findByMemberId(MemberId(1), 0, 10) }).items.single()
+            assertEquals(listOf(20L, 300L, 11L, 9L, 10L), detail.versions.map { it.id.value })
+            assertEquals(StrategyVersionId(10), detail.latestVersionId)
+            assertEquals(detail, listed)
+            assertEquals(command().conditions, detail.versions.last().conditions)
+        }
+        assertEquals(beforeReading, f.snapshot(), "Reading must not rewrite persisted versions or conditions")
+    }
+
+    @Test
+    fun readerKeepsEmptyMissingAndMemberScopedResults() = withFixture { f ->
+        f.tx.execute {
+            f.store.save(strategy(2))
+            f.store.save(Strategy.create(StrategyId(3), MemberId(99), "foreign", TIME).apply {
+                addVersion(version(31, strategyId = 3))
+            })
+        }
+        val ownPage = assertNotNull(f.tx.execute { f.reader.findByMemberId(MemberId(1), 0, 10) })
+        assertEquals(2L, ownPage.total)
+        assertEquals(setOf(1L, 2L), ownPage.items.map { it.id.value }.toSet())
+        val empty = ownPage.items.single { it.id == StrategyId(2) }
+        assertNull(empty.latestVersionId)
+        assertEquals(emptyList(), empty.versions)
+        assertEquals(empty, f.tx.execute { f.reader.findById(StrategyId(2)) })
+        assertNull(f.tx.execute { f.reader.findById(StrategyId(999)) })
+        val foreignPage = assertNotNull(f.tx.execute { f.reader.findByMemberId(MemberId(99), 0, 10) })
+        assertEquals(1L, foreignPage.total)
+        assertEquals(StrategyVersionId(31), foreignPage.items.single().latestVersionId)
+    }
+
+    @Test
+    fun readerSeesCommittedAppendsWithoutChangingEarlierVersions() = withFixture { f ->
+        val original = f.snapshot(11)
+        assertEquals(StrategyVersionId(11), f.tx.execute { f.reader.findById(StrategyId(1)) }?.latestVersionId)
+        f.define(12)
+        assertEquals(StrategyVersionId(12), f.tx.execute { f.reader.findById(StrategyId(1)) }?.latestVersionId)
+        val aggregate = f.load().apply { addVersion(version(9, createdAt = TIME.plusSeconds(1))) }
+        f.tx.execute { f.store.save(aggregate) }
+        assertEquals(StrategyVersionId(9), f.tx.execute { f.reader.findById(StrategyId(1)) }?.latestVersionId)
+        assertEquals(StrategyVersionId(9), f.tx.execute { f.reader.findByMemberId(MemberId(1), 0, 10) }?.items?.single()?.latestVersionId)
+        assertEquals(original, f.snapshot(11))
+    }
+
+    @Test
     fun staleAggregateSaveKeepsBothAppendedVersionsAndOriginalConditions() = withFixture { f ->
         val original = f.snapshot()
         val first = f.load()
@@ -221,6 +276,7 @@ class PostgresStrategyStoreTest {
         private val entityManager = SharedEntityManagerCreator.createSharedEntityManager(factory)
         private val repositories = JpaRepositoryFactory(entityManager)
         val store = JpaStrategyStoreAdapter(repositories.getRepository(StrategyJpaStore::class.java), entityManager)
+        val reader = JpaStrategyReaderAdapter(repositories.getRepository(StrategyJpaReader::class.java))
 
         init { tx.execute { store.save(strategy().apply { addVersion(version(11)) }) } }
 

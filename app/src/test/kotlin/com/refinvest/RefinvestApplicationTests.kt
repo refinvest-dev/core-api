@@ -605,6 +605,42 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `strategy detail and list agree on chronological latest version including time ties`() {
+        fun read(path: String) = authenticatedHttpClient().send(
+            authenticatedRequest(URI("http://localhost:$port$path")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        ).let { response ->
+            assertEquals(200, response.statusCode(), response.body())
+            objectMapper.readTree(response.body())
+        }
+
+        seedStrategy(8501L, 1L, "version ordering", "2099-01-01 00:00:00")
+        try {
+            for ((id, timestamp) in listOf(50010L to "2099-01-03 00:00:00", 50300L to "2099-01-02 00:00:00",
+                50009L to "2099-01-03 00:00:00", 50020L to "2099-01-01 00:00:00")) {
+                jdbcTemplate.update("""INSERT INTO strategy_versions
+                    (id,strategy_id,created_at,primary_signal_asset,execution_asset,lag,holding_signal_sessions)
+                    VALUES (?,8501,?,'QQQ','QQQ',0,1)""", id, timestamp)
+                jdbcTemplate.update("""INSERT INTO strategy_version_conditions
+                    (strategy_version_id,condition_order,operator,operand_a_asset,operand_a_metric,operand_a_window,
+                     operand_b_kind,operand_b_literal) VALUES (?,0,'LT','QQQ','RETURN',5,'LITERAL',-0.07)""", id)
+            }
+            val detail = read("/strategies/8501")
+            val listed = read("/strategies?page=0&size=100").get("items").iterator().asSequence()
+                .single { it.get("id").asText() == "8501" }
+            assertEquals("50010", detail.get("latestVersionId").asText())
+            val versionIds = detail.get("versions").iterator().asSequence().map { it.get("id").asText() }.toList()
+            assertEquals(listOf("50020", "50300", "50009", "50010"), versionIds)
+            assertEquals(detail.get("latestVersionId"), listed.get("latestVersionId"))
+            assertEquals(4L, jdbcTemplate.queryForObject("SELECT count(*) FROM strategy_versions WHERE strategy_id=8501", Long::class.java))
+        } finally {
+            jdbcTemplate.update("DELETE FROM strategy_version_conditions WHERE strategy_version_id IN (SELECT id FROM strategy_versions WHERE strategy_id=8501)")
+            jdbcTemplate.update("DELETE FROM strategy_versions WHERE strategy_id=8501")
+            jdbcTemplate.update("DELETE FROM strategies WHERE id=8501")
+        }
+    }
+
+    @Test
     fun `lists the current member's strategies through HTTP with pagination`() {
         seedStrategy(8001L, 1L, "older strategy", "2099-01-01 00:00:00")
         seedStrategy(8002L, 1L, "newer strategy", "2099-02-01 00:00:00")
