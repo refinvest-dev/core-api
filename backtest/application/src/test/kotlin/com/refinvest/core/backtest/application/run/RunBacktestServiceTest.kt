@@ -72,6 +72,7 @@ class RunBacktestServiceTest {
                 override fun releaseConcurrentCapacity(backtestRunId: BacktestRunId) = Unit
             },
             backtestComputeDispatchStore = object : BacktestComputeDispatchStore {
+                override fun lockSubmittedClaim(claim: com.refinvest.core.backtest.port.outbound.persistence.dispatch.ClaimedSubmittedBacktestComputeDispatch) = error("Unused")
                 override fun enqueue(dispatch: PendingBacktestComputeDispatch) { enqueued = dispatch }
                 override fun claimNext(now: Instant, leaseDuration: Duration): ClaimedBacktestComputeDispatch? = null
                 override fun claimNextSubmitted(
