@@ -1490,6 +1490,116 @@ class PostgresTradingReviewStoreTest {
         }
     }
 
+    @Test
+    fun accountDeletionRevokesExistingArtifactGrantsBeforePurge() = verifyParentGrantRevocation(deleteAccount = true)
+
+    @Test
+    fun bookDeletionRevokesExistingArtifactGrantsBeforePurge() = verifyParentGrantRevocation(deleteAccount = false)
+
+    private fun verifyParentGrantRevocation(deleteAccount: Boolean) = withDatabase { connection ->
+        val source = SingleConnectionDataSource(connection, true)
+        val jdbc = JdbcTemplate(source)
+        val tx = TransactionTemplate(DataSourceTransactionManager(source))
+        members(jdbc)
+        val review = JdbcTradingReviewStore(jdbc)
+        val imports = JdbcTradingImportStore(jdbc)
+        var opened = 0
+        val storage = object : RawArtifactStorage by emptyStorage() {
+            override fun exists(key: String) = true
+            override fun open(key: String, wrappedDek: ByteArray, keyVersion: String,
+                              artifactId: TradingSourceArtifactId): java.io.InputStream {
+                opened++
+                return "synthetic raw".byteInputStream()
+            }
+        }
+        val grants = JdbcArtifactAccessGrants(jdbc, storage, Clock.fixed(now, ZoneOffset.UTC),
+            "https://core.test", "synthetic-internal-key")
+        val target = grantSource(jdbc, 3001, MemberId(1))
+        val sibling = grantSource(jdbc, 3011, MemberId(1), target.account)
+        val unrelated = grantSource(jdbc, 3021, MemberId(1))
+        val otherOwner = grantSource(jdbc, 3031, MemberId(2))
+        val fixtures = listOf(target, sibling, unrelated, otherOwner)
+        fun issue(fixture: GrantSource) = grants.issueReadGrant(fixture.artifact,
+            fixture.dispatchId, fixture.sessionId, fixture.attemptToken, 0)
+        val issued = fixtures.associateWith { issue(it).accessUri.substringAfterLast('/') }
+        val ids = object : TradingIdGenerator {
+            override fun accountId() = error("Unused")
+            override fun bookId() = error("Unused")
+            override fun deletionId() = 3900L
+        }
+        val service = TradingReviewService(object : TradingMemberProvider {
+            override fun currentMemberId() = MemberId(1)
+        }, ids, review, review, review, review, Clock.fixed(now, ZoneOffset.UTC))
+        val deletion = assertNotNull(tx.execute {
+            if (deleteAccount) service.delete(target.account.id, "delete-account")
+            else service.delete(target.bookId, "delete-book")
+        })
+        assertEquals("REQUESTED", deletion.state)
+        val revoked = if (deleteAccount) listOf(target, sibling) else listOf(target)
+        for (fixture in revoked) {
+            // The deletion worker has not run: raw metadata and Session are still readable in storage.
+            assertEquals(TradingArtifactRetentionStatus.ACTIVE,
+                imports.find(fixture.artifact.artifactId, MemberId(1))?.retentionStatus)
+            assertEquals(TradingImportStatus.VALIDATING,
+                imports.find(fixture.sessionId, MemberId(1))?.status)
+            val failure = assertFailsWith<TradingFailure> { grants.redeem(issued.getValue(fixture)) }
+            assertEquals("RESOURCE_NOT_FOUND", failure.code)
+            assertEquals(404, failure.httpStatus)
+            val issueFailure = assertFailsWith<TradingFailure> { issue(fixture) }
+            assertEquals("SOURCE_ARTIFACT_EXPIRED", issueFailure.code)
+        }
+        assertEquals(0, opened)
+        assertEquals(4L, jdbc.queryForObject("SELECT count(*) FROM trading_artifact_read_grants", Long::class.java))
+        assertEquals(0L, jdbc.queryForObject(
+            "SELECT count(*) FROM trading_artifact_read_grants WHERE consumed_at IS NOT NULL", Long::class.java))
+        for (fixture in fixtures - revoked.toSet()) {
+            assertEquals("synthetic raw", grants.redeem(issued.getValue(fixture)).input.bufferedReader().use { it.readText() })
+            assertEquals("RESOURCE_NOT_FOUND", assertFailsWith<TradingFailure> {
+                grants.redeem(issued.getValue(fixture))
+            }.code)
+        }
+        assertEquals(fixtures.size - revoked.size, opened)
+    }
+
+    private data class GrantSource(val account: TradingAccount, val bookId: TradingBookId,
+        val sessionId: TradingImportSessionId, val artifact: NormalizationArtifactInput,
+        val dispatchId: String, val attemptToken: String)
+
+    private fun grantSource(jdbc: JdbcTemplate, baseId: Long, owner: MemberId,
+                            existingAccount: TradingAccount? = null): GrantSource {
+        val review = JdbcTradingReviewStore(jdbc)
+        val imports = JdbcTradingImportStore(jdbc)
+        val account = existingAccount ?: TradingAccount.create(TradingAccountId(baseId), owner,
+            TradingVenue.BINANCE, "Synthetic", now).also(review::insert)
+        val book = TradingBook.create(TradingBookId(baseId + 1), account, "Synthetic",
+            TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY,
+            TradingSettlementAsset.USDT, "UTC", now).also(review::insert)
+        val session = TradingImportSession.create(TradingImportSessionId(baseId + 2), book,
+            "UTC", "UTC", TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
+        imports.insert(session)
+        val artifact = TradingSourceArtifact(TradingSourceArtifactId(baseId + 3), session.id,
+            TradingArtifactRole.TRADE_HISTORY, null, "text/csv", 13, "a".repeat(64), "AUTO",
+            "objects/synthetic-$baseId", byteArrayOf(1), "test-key", TradingArtifactRetentionStatus.ACTIVE,
+            now, now.plusSeconds(86400), null, null, 0)
+        imports.insert(artifact)
+        val pinned = NormalizationArtifactInput(artifact.id, artifact.role, artifact.sha256,
+            artifact.byteSize, artifact.contentType, artifact.dialectCandidate)
+        val runId = UUID.randomUUID().toString()
+        val token = UUID.randomUUID().toString()
+        val input = NormalizationInput(book.id, session.id, owner.value, listOf(pinned), "BINANCE",
+            "LINEAR_PERPETUAL", "ONE_WAY", "USDT", "UTC", "UTC", normalizationVersions, "[]",
+            "TRADING_DATA_POLICY_V1", "retry-v1", "{}", 0)
+        val run = NormalizationRun(runId, input, "a".repeat(64), "synthetic-$baseId",
+            NormalizationRunStatus.DISPATCH_PENDING, 1, token, null, null, now, now, null, now, null, 0,
+            resultDeliveryPolicy = deliveryPolicy)
+        val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId,
+            baseId.toString().padStart(64, '0'), NormalizationDispatchStatus.PENDING,
+            0, now, null, null, null, now, now)
+        JdbcTradingNormalizationStore(jdbc, tools.jackson.databind.json.JsonMapper.builder().build()).insert(run, dispatch)
+        assertTrue(imports.update(session.beginValidation(runId, now)))
+        return GrantSource(account, book.id, session.id, pinned, dispatch.id, token)
+    }
+
     private fun emptyStorage() = object : com.refinvest.core.tradingreview.port.RawArtifactStorage {
         override fun putStaging(source: java.io.InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId):
             com.refinvest.core.tradingreview.port.StagedRawArtifact = error("Unused")
