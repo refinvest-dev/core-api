@@ -77,13 +77,13 @@ class RestClientTradingNormalizationClient private constructor(
                                 ?: "IDEMPOTENCY_PAYLOAD_CONFLICT")
                         401, 403 -> NormalizationSubmission.Rejected("INTERNAL_AUTHENTICATION_FAILED")
                         400, 422 -> NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID")
-                        in 500..599 -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+                        in 500..599 -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE", outcomeUnknown = true)
                         else -> NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID")
                     }
                 }
         } catch (_: Exception) {
-            // Never log the request or an exception: transport errors can contain a signed URI.
-            NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+            // The server may have accepted the exact identity before the response was lost.
+            NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE", outcomeUnknown = true)
         }
     }
 

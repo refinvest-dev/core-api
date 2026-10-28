@@ -30,8 +30,11 @@ class TradingNormalizationDispatcher(
     private val transactions: TransactionTemplate,
     private val clock: Clock,
     private val mapper: ObjectMapper,
+    private val transition: TradingNormalizationTransitionGate,
 ) {
-    fun dispatchOne(): Boolean {
+    fun dispatchOne(): Boolean = transition.withCreatePermit { dispatchPermitted() } ?: false
+
+    private fun dispatchPermitted(): Boolean {
         val now = clock.instant()
         val workerId = UUID.randomUUID().toString()
         val dispatch = transactions.execute {
@@ -61,10 +64,10 @@ class TradingNormalizationDispatcher(
             when (error.code) {
                 "SOURCE_ARTIFACT_EXPIRED", "ARTIFACT_IDENTITY_CONFLICT",
                 "INTERNAL_REQUEST_CONTRACT_INVALID" -> NormalizationSubmission.Rejected(error.code)
-                else -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+                else -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE", outcomeUnknown = true)
             }
         } catch (_: Exception) {
-            NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+            NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE", outcomeUnknown = true)
         }
         transactions.execute {
             val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), forUpdate = true)
@@ -78,6 +81,11 @@ class TradingNormalizationDispatcher(
                     runs.markSubmitted(dispatch.id, workerId, run.id, run.input.deletionGeneration,
                         run.attemptToken, submission.jobId, at)
                 is NormalizationSubmission.Retry -> {
+                    if (submission.outcomeUnknown) {
+                        runs.holdUnknownCreate(dispatch.id, workerId, at)
+                        runs.audit(run.id, "CREATE_OUTCOME_UNKNOWN", submission.code, at)
+                        return@execute
+                    }
                     val policy = policy(run)
                     if (dispatch.attemptCount >= policy.maxAttempts ||
                         Duration.between(run.createdAt, at) >= policy.maxElapsedTime)

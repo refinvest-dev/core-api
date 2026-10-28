@@ -365,7 +365,7 @@ class PostgresTradingReviewStoreTest {
             val processor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
                 runs, imports, review, results, client, transactions,
                 Clock.fixed(now, ZoneOffset.UTC), mapper,
-                object : TradingRetryJitter { override fun factor() = 0.5 })
+                object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc))
             assertTrue(processor.processOne())
             assertEquals(1, descriptorCalls)
             assertEquals(if (mismatchedPayload) 1 else 0, downloadCalls)
@@ -390,7 +390,7 @@ class PostgresTradingReviewStoreTest {
         }
         val processor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
             runs, imports, review, interrupted, client, transactions, Clock.fixed(now, ZoneOffset.UTC), mapper,
-            object : TradingRetryJitter { override fun factor() = 0.5 })
+            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc))
         assertTrue(processor.processOne())
         assertEquals(TradingImportStatus.VALIDATING, imports.find(session.id, MemberId(1))?.status)
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
@@ -398,7 +398,7 @@ class PostgresTradingReviewStoreTest {
         val recoveredProcessor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
             runs, imports, review, results, client, transactions,
             Clock.fixed(now.plusSeconds(1), ZoneOffset.UTC), mapper,
-            object : TradingRetryJitter { override fun factor() = 0.5 })
+            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc))
         assertTrue(recoveredProcessor.processOne())
         assertEquals(1, descriptorCalls)
         assertEquals(1, downloadCalls)
@@ -464,7 +464,7 @@ class PostgresTradingReviewStoreTest {
         val ackRecovered = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
             runs, imports, review, results, client, transactions,
             Clock.fixed(now.plusSeconds(47), ZoneOffset.UTC), mapper,
-            object : TradingRetryJitter { override fun factor() = 0.5 })
+            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc))
         assertTrue(ackRecovered.acknowledgeOne())
         assertEquals(2, acknowledgeCalls)
         assertEquals("ACKNOWLEDGED", jdbc.queryForObject(
@@ -522,7 +522,7 @@ class PostgresTradingReviewStoreTest {
         val processor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
             runs, imports, review, JdbcTradingNormalizationResultStore(jdbc, mapper), client,
             transactions, Clock.fixed(now, ZoneOffset.UTC), mapper,
-            object : TradingRetryJitter { override fun factor() = 0.5 })
+            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc))
         assertTrue(processor.processOne())
         assertEquals(TradingImportStatus.PROCESSING_FAILED, imports.find(session.id, MemberId(1))?.status)
         assertEquals("TERMINAL_FAILURE", jdbc.queryForObject(
@@ -775,7 +775,7 @@ class PostgresTradingReviewStoreTest {
     }
 
     @Test
-    fun normalizationDispatchPersistsSnapshotAndRecoversExpiredLease() = withDatabase { connection ->
+    fun normalizationDispatchPersistsSnapshotAndHoldsUncertainExpiredLease() = withDatabase { connection ->
         val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
         members(jdbc)
         val review = JdbcTradingReviewStore(jdbc)
@@ -832,8 +832,7 @@ class PostgresTradingReviewStoreTest {
         assertEquals(null, store.claimNext(now, java.time.Duration.ofSeconds(45), UUID.randomUUID().toString()))
         val recovered = store.claimNext(now.plusSeconds(46), java.time.Duration.ofSeconds(45),
             UUID.randomUUID().toString())
-        assertEquals(dispatch.id, recovered?.id)
-        assertEquals(2, recovered?.attemptCount)
+        assertNull(recovered) // The previous worker may already have reached Compute.
         jdbc.update("""UPDATE trading_normalization_dispatches SET status='SUBMITTED',
             lease_owner=NULL,lease_expires_at=NULL WHERE id=?::uuid""", dispatch.id)
         val pollWorker = UUID.randomUUID().toString()
@@ -884,7 +883,23 @@ class PostgresTradingReviewStoreTest {
                     java.time.Duration.ofSeconds(10), "NONE")
                 override fun instrumentTermsJson() = "[]"
                 override fun resultDeliveryPolicy() = deliveryPolicy
-            }, mapper, Clock.fixed(now, ZoneOffset.UTC))
+            }, mapper, Clock.fixed(now, ZoneOffset.UTC), JdbcTradingNormalizationTransitionGate(jdbc))
+        jdbc.execute("SELECT trading_normalization_transition_control('PAUSE',0,'test-validation')")
+        for (retry in listOf(false, true)) {
+            val failure = assertFailsWith<TradingFailure> {
+                transactions.execute {
+                    if (retry) service.retry(session.id, "same-public-key")
+                    else service.validate(session.id, null, "same-public-key")
+                }
+            }
+            assertEquals("TEMPORARY_DEPENDENCY_FAILURE", failure.code)
+            assertEquals(503, failure.httpStatus)
+        }
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_idempotency", Long::class.java))
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_dispatches", Long::class.java))
+        assertEquals(session, imports.find(session.id, MemberId(1)))
+        jdbc.execute("SELECT trading_normalization_transition_control('VERIFY',1,'test-validation-http')")
+        jdbc.execute("SELECT trading_normalization_transition_control('RESUME',1,'test-validation-http')")
         assertEquals("MISSING_REQUIRED_ARTIFACT", assertFailsWith<TradingFailure> {
             transactions.execute { service.validate(session.id, null, "missing-position") }
         }.code)
@@ -896,7 +911,7 @@ class PostgresTradingReviewStoreTest {
                 "AUTO", "objects/${UUID.randomUUID()}", byteArrayOf(1), "test-v1",
                 TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(3600), null, null, 0))
         }
-        val started = transactions.execute { service.validate(session.id, null, "validate-first") }!!
+        val started = transactions.execute { service.validate(session.id, null, "same-public-key") }!!
         assertEquals(TradingImportStatus.VALIDATING, started.status)
         assertNotNull(started.activeNormalizationRunId)
         val replay = transactions.execute { service.validate(session.id, null, "validate-again") }!!
@@ -942,7 +957,7 @@ class PostgresTradingReviewStoreTest {
         val dispatcher = com.refinvest.core.tradingreview.application.TradingNormalizationDispatcher(
             runs, imports, review, imports, issuer, compute, object : TradingRetryJitter {
                 override fun factor() = 0.5
-            }, transactions, workerClock, mapper)
+            }, transactions, workerClock, mapper, JdbcTradingNormalizationTransitionGate(jdbc))
         assertTrue(dispatcher.dispatchOne())
         assertEquals(TradingImportStatus.VALIDATING, imports.find(session.id, MemberId(1))?.status)
         workerTime.set(now.plusSeconds(1))
@@ -991,7 +1006,7 @@ class PostgresTradingReviewStoreTest {
         val exhausting = com.refinvest.core.tradingreview.application.TradingNormalizationDispatcher(
             runs, imports, review, imports, issuer, alwaysRetry, object : TradingRetryJitter {
                 override fun factor() = 0.5
-            }, transactions, workerClock, mapper)
+            }, transactions, workerClock, mapper, JdbcTradingNormalizationTransitionGate(jdbc))
         for (seconds in listOf(1L, 2L, 4L)) {
             workerTime.set(now.plusSeconds(seconds))
             assertTrue(exhausting.dispatchOne())
@@ -1554,7 +1569,7 @@ class PostgresTradingReviewStoreTest {
                                                 sessionId: TradingImportSessionId, attemptToken: String,
                                                 deletionGeneration: Long): ArtifactReadGrant = error("poll only")
                 }, compute, object : TradingRetryJitter { override fun factor() = 0.5 },
-                transactions, Clock.fixed(now, ZoneOffset.UTC), mapper)
+                transactions, Clock.fixed(now, ZoneOffset.UTC), mapper, JdbcTradingNormalizationTransitionGate(jdbc))
             assertTrue(dispatcher.pollOne(), code)
             val terminal = assertNotNull(imports.find(session.id, MemberId(1)))
             val expected = if (index < 6) TradingImportStatus.REJECTED else TradingImportStatus.PROCESSING_FAILED
@@ -1568,6 +1583,85 @@ class PostgresTradingReviewStoreTest {
                 Long::class.java))
         }
     }
+
+    @Test
+    fun transitionFenceWaitsForAdmissionCommitAndSurvivesNewInstances() = withDatabase { connection ->
+        val source = transitionSource(connection.schema)
+        val jdbc = JdbcTemplate(source)
+        val gate = JdbcTradingNormalizationTransitionGate(jdbc)
+        val tx = TransactionTemplate(DataSourceTransactionManager(source))
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val admission = pool.submit {
+                tx.execute {
+                    gate.requireAdmission()
+                    entered.countDown()
+                    check(release.await(10, TimeUnit.SECONDS))
+                }
+            }
+            assertTrue(entered.await(10, TimeUnit.SECONDS))
+            val pause = pool.submit<Long> {
+                jdbc.queryForObject("SELECT trading_normalization_transition_control('PAUSE',0,'test-admission')", Long::class.java)!!
+            }
+            assertFailsWith<java.util.concurrent.TimeoutException> { pause.get(200, TimeUnit.MILLISECONDS) }
+            release.countDown()
+            admission.get(10, TimeUnit.SECONDS)
+            assertEquals(1L, pause.get(10, TimeUnit.SECONDS))
+            repeat(2) {
+                val restarted = JdbcTradingNormalizationTransitionGate(JdbcTemplate(transitionSource(connection.schema)))
+                val failure = assertFailsWith<TradingFailure> { tx.execute { restarted.requireAdmission() } }
+                assertEquals("TEMPORARY_DEPENDENCY_FAILURE", failure.code)
+                assertEquals(503, failure.httpStatus)
+                assertNull(restarted.withCreatePermit { error("No HTTP send while paused") })
+            }
+            assertFailsWith<org.springframework.dao.DataAccessException> {
+                jdbc.execute("SELECT trading_normalization_transition_control('RESUME',1,'unverified')")
+            }
+            jdbc.execute("SELECT trading_normalization_transition_control('VERIFY',1,'verified-http-evidence')")
+            jdbc.execute("SELECT trading_normalization_transition_control('RESUME',1,'verified-http-evidence')")
+            tx.execute { gate.requireAdmission() }
+            assertEquals(3L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_transition_audit", Long::class.java))
+        } finally { release.countDown(); pool.shutdownNow() }
+    }
+
+    @Test
+    fun transitionFenceWaitsForClaimSendAndReceiptAcrossWorkers() = withDatabase { connection ->
+        val jdbc = JdbcTemplate(transitionSource(connection.schema))
+        val gate = JdbcTradingNormalizationTransitionGate(jdbc)
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val send = pool.submit<Boolean> {
+                gate.withCreatePermit {
+                    entered.countDown()
+                    check(release.await(10, TimeUnit.SECONDS))
+                    true
+                } ?: false
+            }
+            assertTrue(entered.await(10, TimeUnit.SECONDS))
+            val pause = pool.submit<Long> {
+                jdbc.queryForObject("SELECT trading_normalization_transition_control('PAUSE',0,'test-send')", Long::class.java)!!
+            }
+            assertFailsWith<java.util.concurrent.TimeoutException> { pause.get(200, TimeUnit.MILLISECONDS) }
+            release.countDown()
+            assertTrue(send.get(10, TimeUnit.SECONDS))
+            assertEquals(1L, pause.get(10, TimeUnit.SECONDS))
+            val worker2 = JdbcTradingNormalizationTransitionGate(JdbcTemplate(transitionSource(connection.schema)))
+            assertNull(worker2.withCreatePermit { error("Worker 2 must be stopped") })
+            assertNull(gate.withCreatePermit { error("Worker 1 must be stopped") })
+        } finally { release.countDown(); pool.shutdownNow() }
+    }
+
+    private fun transitionSource(schema: String): org.springframework.jdbc.datasource.DriverManagerDataSource =
+        org.springframework.jdbc.datasource.DriverManagerDataSource().apply {
+            setUrl(requireNotNull(System.getenv("TRADING_REVIEW_TEST_JDBC_URL")))
+            setUsername(requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_USER")))
+            setPassword(requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD")))
+            setConnectionProperties(java.util.Properties().apply { setProperty("currentSchema", schema) })
+        }
 
     private fun members(jdbc: JdbcTemplate) {
         jdbc.update("INSERT INTO members(id, role, created_at) VALUES (1, 'USER', CURRENT_TIMESTAMP)")
@@ -1632,6 +1726,14 @@ class PostgresTradingReviewStoreTest {
                         .bufferedReader().use { it.readText() }
                     connection.createStatement().use { statement ->
                         splitSqlStatements(migration9).forEach(statement::execute)
+                    }
+                }
+                if (applyPinMigration) {
+                    connection.createStatement().use { statement ->
+                        val migration10 = javaClass.getResourceAsStream(
+                            "/db/migration/V10__trading_normalization_transition.sql")!!
+                            .bufferedReader().use { it.readText() }
+                        splitSqlStatements(migration10).forEach(statement::execute)
                     }
                 }
                 test(connection)

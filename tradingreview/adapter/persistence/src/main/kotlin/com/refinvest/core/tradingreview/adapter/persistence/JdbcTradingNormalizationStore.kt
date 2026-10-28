@@ -65,19 +65,34 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
         AND status IN ('DISPATCH_PENDING','SUBMITTED','RUNNING','RESULT_READY','PUBLISHING','RETRY_WAIT')
         ORDER BY created_at DESC LIMIT 1""", { rs, _ -> run(rs) }, sessionId.value).firstOrNull()
 
-    override fun claimNext(now: Instant, lease: Duration, workerId: String): NormalizationDispatch? =
-        claim("PENDING", now, lease, workerId)
+    override fun claimNext(now: Instant, lease: Duration, workerId: String): NormalizationDispatch? {
+        // Defense at claim, in addition to the permit held across claim/send/receipt.
+        return org.springframework.transaction.support.TransactionTemplate(
+            org.springframework.jdbc.datasource.DataSourceTransactionManager(requireNotNull(jdbc.dataSource))).execute {
+            jdbc.execute("SELECT pg_advisory_xact_lock_shared(hashtext(current_schema()), 28028)")
+            if (jdbc.queryForObject("SELECT paused FROM trading_normalization_transition WHERE singleton", Boolean::class.java) != false)
+                null
+            else claim("PENDING", now, lease, workerId)
+        }
+    }
+
+    override fun holdUnknownCreate(dispatchId: String, leaseOwner: String, now: Instant): Boolean =
+        jdbc.update("""UPDATE trading_normalization_dispatches SET lease_owner=NULL,
+            lease_expires_at=NULL,last_failure_code='CREATE_OUTCOME_UNKNOWN',updated_at=?
+            WHERE id=?::uuid AND lease_owner=?::uuid AND status='PENDING'""",
+            Timestamp.from(now), dispatchId, leaseOwner) == 1
 
     override fun claimSubmitted(now: Instant, lease: Duration, workerId: String): NormalizationDispatch? =
         claim("SUBMITTED", now, lease, workerId)
 
     private fun claim(status: String, now: Instant, lease: Duration, workerId: String): NormalizationDispatch? =
         jdbc.query("""WITH due AS (SELECT id FROM trading_normalization_dispatches
-            WHERE status=? AND next_attempt_at<=? AND
+            WHERE status=? AND (status<>'PENDING' OR create_started_at IS NULL) AND next_attempt_at<=? AND
               (lease_expires_at IS NULL OR lease_expires_at<=?)
             ORDER BY next_attempt_at,id LIMIT 1 FOR UPDATE SKIP LOCKED)
             UPDATE trading_normalization_dispatches d SET lease_owner=?::uuid,
-            lease_expires_at=?,attempt_count=attempt_count+1,updated_at=?
+            lease_expires_at=?,attempt_count=attempt_count+1,updated_at=?,
+            create_started_at=CASE WHEN d.status='PENDING' THEN clock_timestamp() ELSE d.create_started_at END
             FROM due WHERE d.id=due.id RETURNING d.*""", { rs, _ -> dispatch(rs) },
             status, Timestamp.from(now), Timestamp.from(now), workerId,
             Timestamp.from(now.plus(lease)), Timestamp.from(now)).firstOrNull()
@@ -185,7 +200,7 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
     override fun scheduleRetry(dispatchId: String, leaseOwner: String, code: String,
                                next: Instant, now: Instant): Boolean {
         val count = jdbc.update("""UPDATE trading_normalization_dispatches SET
-            lease_owner=NULL,lease_expires_at=NULL,next_attempt_at=?,last_failure_code=?,updated_at=?
+            lease_owner=NULL,lease_expires_at=NULL,create_started_at=NULL,next_attempt_at=?,last_failure_code=?,updated_at=?
             WHERE id=?::uuid AND lease_owner=?::uuid AND lease_expires_at>? AND status='PENDING'""",
             Timestamp.from(next), code, Timestamp.from(now), dispatchId, leaseOwner, Timestamp.from(now))
         if (count == 1) jdbc.update("""UPDATE trading_normalization_runs SET status='RETRY_WAIT',
