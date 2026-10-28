@@ -70,8 +70,15 @@ class RestClientTradingNormalizationClient private constructor(
                             else if (pinError != null) NormalizationSubmission.Rejected(pinError)
                             else NormalizationSubmission.Accepted(jobId)
                         }
-                        503, 429 -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE",
-                            response.headers.getFirst("Retry-After")?.toLongOrNull()?.let(Duration::ofSeconds))
+                        503, 429 -> {
+                            val failure = response.bodyTo(String::class.java)?.let(mapper::readTree)
+                            val retrySeconds = response.headers.getFirst("Retry-After")?.toLongOrNull()
+                            val definitelyRejected = response.statusCode.value() == 503 &&
+                                failure?.path("code")?.asText() == "TRADING_REVIEW_CAPACITY_EXCEEDED" &&
+                                retrySeconds != null && retrySeconds > 0
+                            NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE",
+                                retrySeconds?.let(Duration::ofSeconds), outcomeUnknown = !definitelyRejected)
+                        }
                         409 -> NormalizationSubmission.Rejected(
                             response.bodyTo(String::class.java)?.let { safeCode(it) }
                                 ?: "IDEMPOTENCY_PAYLOAD_CONFLICT")

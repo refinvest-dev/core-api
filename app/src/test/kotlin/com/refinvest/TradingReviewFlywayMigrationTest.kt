@@ -24,7 +24,7 @@ class TradingReviewFlywayMigrationTest {
                 val flyway = Flyway.configure().dataSource(url, user, password).schemas(schema)
                     .baselineOnMigrate(true).baselineVersion("0")
                     .locations("classpath:db/migration").load()
-                assertEquals(8, flyway.migrate().migrationsExecuted)
+                assertEquals(10, flyway.migrate().migrationsExecuted)
                 connection.schema = schema
                 connection.createStatement().use { statement ->
                     statement.executeQuery("SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name IN ('trading_accounts','trading_books','trading_idempotency','trading_deletion_requests','trading_import_sessions','trading_source_artifacts')")

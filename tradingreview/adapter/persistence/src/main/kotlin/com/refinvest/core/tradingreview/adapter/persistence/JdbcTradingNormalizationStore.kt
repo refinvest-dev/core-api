@@ -69,8 +69,7 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
         // Defense at claim, in addition to the permit held across claim/send/receipt.
         return org.springframework.transaction.support.TransactionTemplate(
             org.springframework.jdbc.datasource.DataSourceTransactionManager(requireNotNull(jdbc.dataSource))).execute {
-            jdbc.execute("SELECT pg_advisory_xact_lock_shared(hashtext(current_schema()), 28028)")
-            if (jdbc.queryForObject("SELECT paused FROM trading_normalization_transition WHERE singleton", Boolean::class.java) != false)
+            if (jdbc.queryForObject("SELECT paused FROM trading_normalization_transition WHERE singleton FOR SHARE", Boolean::class.java) != false)
                 null
             else claim("PENDING", now, lease, workerId)
         }

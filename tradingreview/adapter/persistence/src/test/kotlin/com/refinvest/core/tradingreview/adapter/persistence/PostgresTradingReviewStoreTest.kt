@@ -1638,6 +1638,10 @@ class PostgresTradingReviewStoreTest {
                 gate.withCreatePermit {
                     entered.countDown()
                     check(release.await(10, TimeUnit.SECONDS))
+                    // PAUSE is already queued. Claim uses another connection and must not
+                    // request another advisory lock behind that exclusive waiter.
+                    val store = JdbcTradingNormalizationStore(jdbc, tools.jackson.databind.json.JsonMapper.builder().build())
+                    assertNull(store.claimNext(now, java.time.Duration.ofSeconds(45), UUID.randomUUID().toString()))
                     true
                 } ?: false
             }
