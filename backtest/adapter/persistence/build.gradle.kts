@@ -7,4 +7,5 @@ dependencies {
     implementation(libs.jackson.module.kotlin)
     implementation("io.micrometer:micrometer-core")
     testImplementation(libs.spring.boot.starter.test)
+    testRuntimeOnly(libs.postgresql)
 }

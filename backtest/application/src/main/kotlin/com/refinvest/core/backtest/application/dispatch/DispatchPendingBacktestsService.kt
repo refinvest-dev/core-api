@@ -26,8 +26,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.Duration
-import java.time.YearMonth
-import java.time.ZoneOffset
 
 @Service
 open class DispatchPendingBacktestsService(
@@ -81,10 +79,7 @@ open class DispatchPendingBacktestsService(
                 if (backtestComputeDispatchStore.markRejected(backtestRun.id, dispatch.claimToken)) {
                     backtestRun.failWithoutExecution(submission.reason, submission.errorCode)
                     backtestRunStore.save(backtestRun)
-                    backtestQuotaStore.releaseConcurrentCapacity(
-                        strategyVersion.ownerMemberId,
-                        YearMonth.from(backtestRun.createdAt.atZone(ZoneOffset.UTC)),
-                    )
+                    backtestQuotaStore.releaseConcurrentCapacity(backtestRun.id)
                     ComputeBacktestFailureObservation(
                         backtestRunId = backtestRun.id,
                         strategyId = backtestRun.strategyId,

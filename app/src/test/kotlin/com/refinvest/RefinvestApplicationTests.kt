@@ -155,6 +155,8 @@ class RefinvestApplicationTests(
 
     @BeforeEach
     fun clearBacktestQuotaReservations() {
+        jdbcTemplate.update("delete from backtest_capacity_reservations")
+        jdbcTemplate.update("delete from backtest_capacities")
         jdbcTemplate.update("delete from backtest_quotas")
         assetDataClient.reset()
     }
