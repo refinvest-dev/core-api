@@ -128,8 +128,38 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 0 | 완료·머지 | [PR #82](https://github.com/refinvest-dev/core-api/pull/82), 규칙과 실행 계획 |
 | 1a | 완료·머지 | [PR #83](https://github.com/refinvest-dev/core-api/pull/83), R01 발급/사용의 상위 상태·소유권 검증 |
 | 1b | 완료·머지 | [PR #84](https://github.com/refinvest-dev/core-api/pull/84), 월간 사용량과 실행 ID별 활성 예약 분리 |
-| 1c | 구현·검증 완료, PR 검토 대상 | `1258a2b`, R04 polling 응답 반영 전 lease 잠금·검증 |
-| 1d 이후 | 미착수 | 다음 PR은 R03 Strategy 동시 version 추가와 기존 immutable version 보존 |
+| 1c | 완료·머지 | [PR #85](https://github.com/refinvest-dev/core-api/pull/85), R04 polling 응답 반영 전 lease 잠금·검증 |
+| 1d | 구현·검증 완료, PR 검토 대상 | `f2e5936`, R03 Strategy 잠금과 immutable version append-only 저장 |
+| 1e 이후 | 미착수 | 다음 PR은 R05 최신 version 기준과 시각 동률의 deterministic 선택 |
+
+### 1d 검증 기록
+
+- 수정 전 실제 PostgreSQL·JPA 테스트에서 두 Aggregate snapshot이 각각 version을 추가하면
+  `[11, 12, 13]` 대신 `[11, 13]`만 남는 유실을 재현했다.
+- command-side 조회는 기존 transaction을 필수로 요구하고, version collection을 읽기 전에 Strategy
+  row를 잠근다. 저장도 같은 Root를 잠근 뒤 새 version/condition만 `persist`하며, collection 교체와
+  cascade merge/delete·orphan removal 경로를 제거했다. 누락된 과거 version도 삭제하지 않는다.
+- 기존 version의 정의와 Root metadata 교체, 다른 Strategy의 version ID 재사용을 거절한다.
+  Aggregate도 중복 version ID 추가를 거절한다. 같은 Aggregate 재저장은 기존 row를 다시 쓰지 않는다.
+- Clock의 nanosecond와 PostgreSQL의 microsecond 저장 정밀도 차이로 같은 Aggregate 재저장이 거절되는
+  추가 회귀를 확인하고 비교 정밀도를 보완했다. 저장된 과거 시각이나 API 시각을 다시 쓰지 않는다.
+- 관련 테스트 결과 합계는 domain 13개·application 14개·PostgreSQL Store 11개·app 51개로
+  89개 통과, 실패·오류·skip 0개다. domain/application은 최초 실행 후 후속 실행에서 재사용됐고,
+  PostgreSQL 11개와 app 51개는 최종 수정 후 실제 실행했다. app에는 실제 PostgreSQL migration과
+  기존 HTTP/모듈 경계 검증이 포함된다.
+- PostgreSQL 테스트는 실제 잠금 대기를 `pg_stat_activity`로 확인한다. 동시 정의 둘 다 보존,
+  rollback 뒤 대기 writer 진행, 기존 version/condition row와 참조 보존, 다른 Root의 독립 진행,
+  definition 충돌·소유권·transaction 경계 및 정밀도를 검증하고 자체 임시 schema를 정리한다.
+- Windows Gradle/Kotlin daemon 소켓 오류와 metrics HTTP 테스트 3개의 `Bad address: listen` 실패는
+  성공으로 세지 않았다. 기본 JVM 설정으로 app을 다시 실행해 51개 모두 통과했다.
+- 첫 HTTP smoke는 Strategy 생성·version 저장 뒤 Backtest POST의 로컬 연결 오류로 중단됐다.
+  해당 시도는 성공으로 세지 않으며 전용 프로세스·임시 환경 파일을 정리했다.
+- 새 프로세스의 `run-api-smoke-ci.ps1` 재실행은 실제 PostgreSQL·Core↔Compute HTTP에서 Strategy 생성·
+  version 정의, 정상 Backtest 완료·재실행·계산 실패·다른 사용자 조회 차단을 검증하고 통과했다.
+  기동한 전용 프로세스·임시 환경 파일은 정리했고 로컬 credential·fixture·실행 로그는 커밋하지 않는다.
+- 수정 전후 계약 snapshot 검사, 문서 snapshot 24개 검사와 `git diff --check`도 통과했다.
+- API/schema/hash·계산 의미 변경은 없으며 결정론 영향은 없다. 배포 시 모든 Strategy 쓰기 인스턴스에
+  새 저장 경로를 적용해야 동시 저장 보장을 유지한다. Mapper/Reader 전반 정리는 3a에서 이어간다.
 
 ### 1c 검증 기록
 

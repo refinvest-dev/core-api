@@ -14,9 +14,25 @@ import com.refinvest.core.strategy.domain.valueobject.StrategyVersionId
 import com.refinvest.core.strategy.domain.valueobject.TimeBasedExit
 import java.time.Instant
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class StrategyTest {
+    @Test
+    fun `rejects duplicate version identity without changing the aggregate`() {
+        val strategy = Strategy.create(StrategyId(1), MemberId(2), "strategy", Instant.EPOCH)
+        val version = StrategyVersion.create(
+            StrategyVersionId(3), strategy.id, Instant.EPOCH, AssetSymbol.QQQ,
+            listOf(Condition(ComparisonOperator.GT, operandA = MetricReference(AssetSymbol.QQQ, MetricType.SIMPLE),
+                operandB = LiteralValue(0.0))),
+            AssetSymbol.QQQ, SignalSessions(0), TimeBasedExit(1),
+        )
+        strategy.addVersion(version)
+
+        assertFailsWith<IllegalArgumentException> { strategy.addVersion(version) }
+        assertEquals(listOf(version), strategy.versions)
+    }
+
     @Test
     fun `rejects a version owned by another strategy`() {
         val strategy = Strategy.create(

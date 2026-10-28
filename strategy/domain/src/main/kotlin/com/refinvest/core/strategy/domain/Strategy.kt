@@ -19,6 +19,7 @@ class Strategy private constructor(
 
     fun addVersion(version: StrategyVersion) {
         require(version.strategyId == id) { "StrategyVersion belongs to another Strategy" }
+        require(mutableVersions.none { it.id == version.id }) { "StrategyVersion identity must be unique" }
         mutableVersions += version
     }
 

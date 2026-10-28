@@ -20,11 +20,6 @@ class StrategyJpaEntity(
     var name: String,
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant,
-    @OneToMany(mappedBy = "strategy", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "strategy", cascade = [CascadeType.PERSIST], fetch = FetchType.EAGER)
     var versions: MutableList<StrategyVersionJpaEntity> = mutableListOf(),
-) {
-    fun replaceVersions(newVersions: List<StrategyVersionJpaEntity>) {
-        versions.clear()
-        versions += newVersions
-    }
-}
+)
