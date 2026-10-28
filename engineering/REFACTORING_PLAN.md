@@ -126,8 +126,29 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 단계 | 상태 | 커밋/PR 및 검증 |
 |---|---|---|
 | 0 | 완료·머지 | [PR #82](https://github.com/refinvest-dev/core-api/pull/82), 규칙과 실행 계획 |
-| 1a | 구현·검증 완료, PR 검토 대상 | `206473c`, R01 발급/사용의 상위 상태·소유권 검증; 아래 검증 기록 참조 |
-| 1b 이후 | 미착수 | 다음 PR은 R02 월간 quota와 사용자별 동시 capacity 분리 |
+| 1a | 완료·머지 | [PR #83](https://github.com/refinvest-dev/core-api/pull/83), R01 발급/사용의 상위 상태·소유권 검증 |
+| 1b | 구현·검증 완료, PR 검토 대상 | `27a67b2`, 월간 사용량과 실행 ID별 활성 예약 분리; 아래 검증 기록 참조 |
+| 1c 이후 | 미착수 | 다음 PR은 R04 만료·교체된 polling lease의 상태 반영 차단 |
+
+### 1b 검증 기록과 배포
+
+- 수정 전 실제 PostgreSQL에서 월이 바뀌면 동시 한도가 풀리는 회귀 테스트가 실패했다.
+- 수정 후 persistence/application/app 테스트 96개가 통과했다. PostgreSQL quota 테스트 9개와
+  Flyway migration 테스트도 실제 실행했으며 실패·오류·skip은 0개다.
+- UTC 자정에서 바뀌는 Clock으로 접수 시각과 quota month의 일치를 추가 검증하고 application
+  테스트를 재실행해 통과했다. 월간 거절, 최초 동시 접수, 월을 넘는 동시 예약, 중복 해제,
+  사용자 격리, 접수/종료 rollback과 기존 데이터 backfill·불명 owner 실패를 검증했다.
+- Windows Gradle 소켓 오류로 시작되지 않은 실행은 성공으로 세지 않았다. 숨김 프로세스 실행으로
+  테스트를 완료했다.
+- 계약 snapshot 검사와 실제 Core↔Compute `run-api-smoke-ci.ps1`를 통과했다. 정상 실행·재실행·계산
+  실패·다른 사용자 조회 거절을 확인했다. 로컬 credential/fixture/증적은 커밋하지 않는다.
+- `run-durable-dispatch-reliability.ps1`는 기존 contract 검사의 strict-mode
+  `analyticsInputSupplement` 속성 오류로 서비스 기동 전 중단됐다. 이 장애 복구 harness는 검증 완료로
+  표시하지 않으며, 통과한 일반 API smoke와 구분한다.
+- V11은 기존 월간 사용량과 Run/Result를 보존하며 활성 Run을 새 예약으로 복원한다. 적용 시 이전 Core의
+  접수·dispatch/polling을 중지하고 혼합 버전 기동을 피해야 한다. 상세 순서와 복구 제약은
+  [Backtest capacity 전환 절차](BACKTEST_CAPACITY_ROLLOUT.md)를 따른다.
+- API/Compute 계약과 계산 hash 의미는 변경하지 않았으며 결정론 영향은 없다.
 
 ### 1a 검증 기록
 
