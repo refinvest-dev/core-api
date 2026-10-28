@@ -127,8 +127,30 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 |---|---|---|
 | 0 | 완료·머지 | [PR #82](https://github.com/refinvest-dev/core-api/pull/82), 규칙과 실행 계획 |
 | 1a | 완료·머지 | [PR #83](https://github.com/refinvest-dev/core-api/pull/83), R01 발급/사용의 상위 상태·소유권 검증 |
-| 1b | 구현·검증 완료, PR 검토 대상 | `27a67b2`, 월간 사용량과 실행 ID별 활성 예약 분리; 아래 검증 기록 참조 |
-| 1c 이후 | 미착수 | 다음 PR은 R04 만료·교체된 polling lease의 상태 반영 차단 |
+| 1b | 완료·머지 | [PR #84](https://github.com/refinvest-dev/core-api/pull/84), 월간 사용량과 실행 ID별 활성 예약 분리 |
+| 1c | 구현·검증 완료, PR 검토 대상 | `1258a2b`, R04 polling 응답 반영 전 lease 잠금·검증 |
+| 1d 이후 | 미착수 | 다음 PR은 R03 Strategy 동시 version 추가와 기존 immutable version 보존 |
+
+### 1c 검증 기록
+
+- 수정 전 실제 PostgreSQL·JPA 경로에서 lease를 새 워커가 가져간 뒤 이전 404 응답이 Run을
+  `FAILED`로 바꾸는 회귀 테스트 실패를 확인했다.
+- 응답 반영 transaction의 첫 단계에서 dispatch row를 잠그고 현재 상태·token·Compute job과 lease
+  만료를 검증한다. 잠금을 기다리는 동안 만료될 수 있으므로 시각은 잠금 획득 뒤에 읽는다.
+- 검증은 기존 application transaction을 필수로 요구하며, Run·Result·capacity·dispatch commit까지
+  잠금을 유지한다. 보호된 처리 중 deadline을 지나도 다른 워커는 commit 뒤 상태를 다시 확인한다.
+  Compute HTTP는 transaction 밖에서 수행한다.
+- 관련 persistence/application/app 검증 105개가 통과했다. PostgreSQL lease 테스트 9개는 만료/교체된
+  7가지 응답, 오래된 워커와 정상 완료의 경합, commit까지의 잠금, 잠금 대기 중 만료, 전체 rollback과
+  만료/교체 및 rollback 응답의 실패 observation 미발행을 확인했다. 잠금 대기는 `pg_stat_activity`로 확인한다.
+- PostgreSQL 테스트의 임시 schema와 `@Lob` 대형 객체 정리를 보완하고 lease 테스트 9개를 다시
+  실행해 통과했다. 로컬 환경·fixture·실행 로그는 커밋하지 않는다.
+- HTTP smoke의 첫 실행은 PowerShell 전체 스트림 기록이 Python 경고를 오류로 취급해 사전검사에서
+  중단됐다. 해당 실행은 성공으로 표시하지 않으며, 오류 스트림을 보존해 재실행한다.
+- 재실행한 `run-api-smoke-ci.ps1`는 실제 Core↔Compute HTTP에서 정상 실행·재실행·계산 실패·다른
+  사용자 조회 차단을 검증하고 통과했다. 수정 전후 계약 snapshot과 문서 snapshot 검사도 통과했다.
+- API/schema/hash 의미 변경은 없으며 결정론 영향은 없다. 배포 시 모든 polling 인스턴스에 수정 코드가
+  적용돼야 이 검증 경계를 보장할 수 있다.
 
 ### 1b 검증 기록과 배포
 
