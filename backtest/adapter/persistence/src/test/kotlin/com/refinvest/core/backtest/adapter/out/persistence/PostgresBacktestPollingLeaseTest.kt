@@ -1,6 +1,12 @@
 package com.refinvest.core.backtest.adapter.out.persistence
 
 import com.refinvest.core.backtest.application.dispatch.PollSubmittedBacktestsService
+import com.refinvest.core.backtest.application.dispatch.DispatchPendingBacktestsService
+import com.refinvest.core.backtest.adapter.out.compute.RestClientComputeClient
+import com.refinvest.core.backtest.adapter.out.compute.RestClientComputeBacktestStatusClient
+import com.refinvest.core.strategy.port.inbound.version.backtest.*
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
 import com.refinvest.core.backtest.application.execution.RecordBacktestRunExecutionService
 import com.refinvest.core.backtest.domain.BacktestRun
 import com.refinvest.core.backtest.domain.backtest.*
@@ -18,7 +24,8 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.data.jpa.repository.support.JpaRepositoryFactory
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.jdbc.datasource.DriverManagerDataSource
+import com.zaxxer.hikari.HikariDataSource
+import javax.sql.DataSource
 import org.springframework.orm.jpa.JpaTransactionManager
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean
 import org.springframework.orm.jpa.SharedEntityManagerCreator
@@ -46,6 +53,53 @@ import kotlin.test.assertNull
 
 @EnabledIfEnvironmentVariable(named = "BACKTEST_TEST_JDBC_URL", matches = ".+")
 class PostgresBacktestPollingLeaseTest {
+    @Test
+    fun actualSubmitBodyTimeoutRetriesThePersistedKeyWithoutReservingAgain() = withFixture(submitted = false) { f ->
+        withDelayedResponse(202, """{"runId":"synthetic-compute-job","status":"PENDING"}""") { server, release, requests ->
+            val client = RestClientComputeClient("http://127.0.0.1:${server.address.port}", "synthetic-key", f.registry,
+                Duration.ofSeconds(1), Duration.ofMillis(300))
+            val submission = f.submit(client)
+            assertTrue(submission.execute())
+            assertEquals("PENDING", f.jdbc.queryForObject("SELECT status FROM backtest_compute_dispatches", String::class.java))
+            assertEquals(f.clock.instant().plusSeconds(10), f.jdbc.queryForObject(
+                "SELECT next_attempt_at FROM backtest_compute_dispatches", java.sql.Timestamp::class.java)?.toInstant())
+            assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM backtest_capacity_reservations", Long::class.java))
+            release.countDown()
+            f.clock.advance(Duration.ofSeconds(10))
+            assertTrue(submission.execute())
+            assertEquals(2, requests.size)
+            assertEquals(requests[0], requests[1], "Both the persisted idempotency key and request must be reused")
+            assertEquals("SUBMITTED", f.jdbc.queryForObject("SELECT status FROM backtest_compute_dispatches", String::class.java))
+            assertEquals("synthetic-compute-job", f.jdbc.queryForObject("SELECT compute_run_id FROM backtest_compute_dispatches", String::class.java))
+            assertEquals(1, f.jdbc.queryForObject("SELECT used_count FROM backtest_quotas", Int::class.java))
+            assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM backtest_capacity_reservations", Long::class.java))
+        }
+    }
+
+    @Test
+    fun actualPollBodyTimeoutKeepsRunAndCapacityUntilTerminalCompletion() = withFixture { f ->
+        withDelayedResponse(200, """{"status":"PENDING"}""") { server, release, _ ->
+            val client = RestClientComputeBacktestStatusClient("http://127.0.0.1:${server.address.port}", "synthetic-key",
+                jacksonObjectMapper(), f.registry, Duration.ofSeconds(1), Duration.ofMillis(300))
+            val polling = f.poll { client.getBacktestStatus("synthetic-compute-job", BacktestRunId(1)) }
+            assertTrue(polling.execute())
+            assertEquals("PENDING", f.jdbc.queryForObject("SELECT status FROM backtest_runs", String::class.java))
+            assertEquals("SUBMITTED", f.jdbc.queryForObject("SELECT status FROM backtest_compute_dispatches", String::class.java))
+            assertEquals(f.clock.instant().plusSeconds(10), f.jdbc.queryForObject(
+                "SELECT next_attempt_at FROM backtest_compute_dispatches", java.sql.Timestamp::class.java)?.toInstant())
+            assertEquals(0L, f.jdbc.queryForObject("SELECT count(*) FROM backtest_results", Long::class.java))
+            assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM backtest_capacity_reservations", Long::class.java))
+            release.countDown()
+            f.clock.advance(Duration.ofSeconds(10))
+            assertTrue(polling.execute())
+            f.clock.advance(Duration.ofSeconds(5))
+            assertTrue(f.poll { response(2) }.execute())
+            assertEquals("COMPLETED", f.jdbc.queryForObject("SELECT status FROM backtest_runs", String::class.java))
+            assertEquals(0L, f.jdbc.queryForObject("SELECT count(*) FROM backtest_capacity_reservations", Long::class.java))
+            assertEquals(1, f.jdbc.queryForObject("SELECT used_count FROM backtest_quotas", Int::class.java))
+        }
+    }
+
     @Test
     fun responseFromReplacedLeaseCannotFailRunOrReleaseCapacity() = withFixture { f ->
         val old = f.poll {
@@ -247,8 +301,8 @@ class PostgresBacktestPollingLeaseTest {
         fun advance(duration: Duration) { time.updateAndGet { it.plus(duration) } }
     }
 
-    private class Fixture(source: DriverManagerDataSource, factory: jakarta.persistence.EntityManagerFactory,
-                          private val applicationName: String) {
+    private class Fixture(source: DataSource, factory: jakarta.persistence.EntityManagerFactory,
+                          private val applicationName: String, submitted: Boolean) {
         val clock = MutableClock()
         val jdbc = JdbcTemplate(source)
         val tx = TransactionTemplate(JpaTransactionManager(factory).apply { dataSource = source })
@@ -271,8 +325,10 @@ class PostgresBacktestPollingLeaseTest {
                     Period(LocalDate.parse("2025-01-01"), LocalDate.parse("2025-01-03")),
                     FeeModel(Percent(BigDecimal.ZERO), Percent(BigDecimal.ZERO)), clock.instant()))
                 dispatches.enqueue(PendingBacktestComputeDispatch(BacktestRunId(1), ComputeIdempotencyKey(UUID.randomUUID()), clock.instant()))
-                val claim = assertNotNull(dispatches.claimNext(clock.instant(), Duration.ofMinutes(1)))
-                dispatches.markAccepted(claim.backtestRunId, claim.claimToken, "synthetic-compute-job")
+                if (submitted) {
+                    val claim = assertNotNull(dispatches.claimNext(clock.instant(), Duration.ofMinutes(1)))
+                    dispatches.markAccepted(claim.backtestRunId, claim.claimToken, "synthetic-compute-job")
+                }
             }
         }
 
@@ -296,6 +352,19 @@ class PostgresBacktestPollingLeaseTest {
 
         fun poll(lookup: () -> ComputeBacktestStatusLookup) = poll(lookup, execution)
 
+        fun submit(client: ComputeClient) = DispatchPendingBacktestsService(dispatches, runs, quota,
+            LookupStrategyVersionForBacktestUseCase {
+                LookupStrategyVersionForBacktestResult(11, MemberId(99), setOf("QQQ"), StrategyVersionForBacktest(
+                    "QQQ", listOf(StrategyConditionForBacktest("GT", null,
+                        StrategyMetricReferenceForBacktest("QQQ", "SIMPLE", null), StrategyLiteralOperandForBacktest(0.0))),
+                    "QQQ", 0, 1))
+            }, ComputeClient { request ->
+                check(!TransactionSynchronizationManager.isActualTransactionActive()) { "HTTP must run outside a DB transaction" }
+                client.requestBacktest(request)
+            }, object : BacktestFailureObserver {
+                override fun recordComputeFailure(observation: ComputeBacktestFailureObservation) { observations += observation }
+            }, tx, clock)
+
         fun poll(lookup: () -> ComputeBacktestStatusLookup,
                  executionUseCase: RecordBacktestRunExecutionUseCase) = PollSubmittedBacktestsService(dispatches, runs,
             executionUseCase, ComputeBacktestStatusClient { _, _ ->
@@ -307,7 +376,7 @@ class PostgresBacktestPollingLeaseTest {
             }, tx, clock)
     }
 
-    private fun withFixture(test: (Fixture) -> Unit) {
+    private fun withFixture(submitted: Boolean = true, test: (Fixture) -> Unit) {
         val url = requireNotNull(System.getenv("BACKTEST_TEST_JDBC_URL"))
         val user = requireNotNull(System.getenv("BACKTEST_TEST_DB_USER"))
         val password = requireNotNull(System.getenv("BACKTEST_TEST_DB_PASSWORD"))
@@ -315,21 +384,28 @@ class PostgresBacktestPollingLeaseTest {
         DriverManager.getConnection(url, user, password).use { connection ->
             connection.createStatement().use { it.execute("CREATE SCHEMA $schema") }
             val bean = LocalContainerEntityManagerFactoryBean()
+            val source = HikariDataSource().apply {
+                jdbcUrl = url
+                username = user
+                this.password = password
+                poolName = schema
+                maximumPoolSize = 4
+                minimumIdle = 0
+                connectionTimeout = 5000
+                initializationFailTimeout = 5000
+                addDataSourceProperty("currentSchema", schema)
+                addDataSourceProperty("ApplicationName", schema)
+            }
             try {
-                val source = DriverManagerDataSource(url, user, password).apply {
-                    setConnectionProperties(java.util.Properties().apply {
-                        setProperty("currentSchema", schema)
-                        setProperty("ApplicationName", schema)
-                    })
-                }
                 bean.dataSource = source
                 bean.jpaVendorAdapter = HibernateJpaVendorAdapter()
                 bean.setPackagesToScan("com.refinvest.core.backtest.adapter.out.persistence")
                 bean.setJpaPropertyMap(mapOf("hibernate.hbm2ddl.auto" to "create", "hibernate.jdbc.time_zone" to "UTC"))
                 bean.afterPropertiesSet()
-                test(Fixture(source, requireNotNull(bean.`object`), schema))
+                test(Fixture(source, requireNotNull(bean.`object`), schema, submitted))
             } finally {
                 bean.destroy()
+                source.close()
                 connection.createStatement().use { statement ->
                     // PostgreSQL large objects referenced by @Lob are not removed by DROP SCHEMA.
                     val hasLob = statement.executeQuery("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
@@ -340,5 +416,31 @@ class PostgresBacktestPollingLeaseTest {
                 }
             }
         }
+    }
+
+    private fun withDelayedResponse(status: Int, body: String,
+                                    test: (HttpServer, CountDownLatch, CopyOnWriteArrayList<Pair<String, String>>) -> Unit) {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val release = CountDownLatch(1)
+        val requests = CopyOnWriteArrayList<Pair<String, String>>()
+        val executor = Executors.newVirtualThreadPerTaskExecutor()
+        server.executor = executor
+        server.createContext("/") { exchange ->
+            try {
+                check(!TransactionSynchronizationManager.isActualTransactionActive())
+                requests += (exchange.requestHeaders.getFirst("Idempotency-Key") ?: "") to exchange.requestBody.readAllBytes().toString(Charsets.UTF_8)
+                val bytes = body.toByteArray()
+                exchange.responseHeaders.set("Content-Type", "application/json")
+                exchange.sendResponseHeaders(status, bytes.size.toLong())
+                if (requests.size == 1) {
+                    exchange.responseBody.write(bytes, 0, 1)
+                    exchange.responseBody.flush()
+                    release.await(10, TimeUnit.SECONDS)
+                } else exchange.responseBody.write(bytes)
+            } finally { exchange.close() }
+        }
+        server.start()
+        try { test(server, release, requests) }
+        finally { release.countDown(); server.stop(0); executor.shutdownNow() }
     }
 }

@@ -1,6 +1,7 @@
 plugins { id("spring-adapter-conventions") }
 dependencies {
     implementation(project(":asset:port"))
+    implementation(project(":shared:infrastructure"))
     implementation(libs.spring.boot.starter.web)
     implementation(libs.jackson.databind)
     implementation(libs.jackson.module.kotlin)

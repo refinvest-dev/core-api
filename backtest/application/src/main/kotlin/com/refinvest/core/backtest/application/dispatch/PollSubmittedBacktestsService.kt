@@ -15,6 +15,7 @@ import com.refinvest.core.backtest.port.outbound.observability.BacktestFailureOb
 import com.refinvest.core.backtest.port.outbound.observability.ComputeBacktestFailureObservation
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchStore
+import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchLease
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
@@ -32,7 +33,7 @@ open class PollSubmittedBacktestsService(
 ) : PollSubmittedBacktestsUseCase {
     override fun execute(): Boolean {
         val dispatch = transactionTemplate.execute {
-            backtestComputeDispatchStore.claimNextSubmitted(clock.instant(), POLL_LEASE_DURATION)
+            backtestComputeDispatchStore.claimNextSubmitted(clock.instant(), BacktestComputeDispatchLease.duration)
         } ?: return false
 
         val lookup = computeBacktestStatusClient.getBacktestStatus(
@@ -179,7 +180,6 @@ open class PollSubmittedBacktestsService(
     }
 
     private companion object {
-        val POLL_LEASE_DURATION: Duration = Duration.ofMinutes(1)
         val POLL_INTERVAL: Duration = Duration.ofSeconds(5)
         const val COMPUTE_RUNTIME_STATUS_UNAVAILABLE = "COMPUTE_RUNTIME_STATUS_UNAVAILABLE"
     }

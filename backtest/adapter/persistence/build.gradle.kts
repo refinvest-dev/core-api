@@ -8,5 +8,7 @@ dependencies {
     implementation("io.micrometer:micrometer-core")
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(project(":backtest:application"))
+    testImplementation(project(":backtest:adapter:compute"))
+    testImplementation(project(":strategy:port"))
     testRuntimeOnly(libs.postgresql)
 }

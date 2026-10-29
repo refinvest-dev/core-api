@@ -7,7 +7,8 @@ import com.refinvest.core.shared.kernel.member.MemberId
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
-import org.springframework.jdbc.datasource.DriverManagerDataSource
+import com.zaxxer.hikari.HikariDataSource
+import javax.sql.DataSource
 import org.springframework.transaction.support.TransactionTemplate
 import java.sql.DriverManager
 import java.time.YearMonth
@@ -95,7 +96,7 @@ class PostgresBacktestQuotaStoreTest {
     fun concurrentAdmissionsAcrossMonthsRespectOneMemberCapacity() = withDatabase { source ->
         val jdbc = JdbcTemplate(source)
         migrate(jdbc, TransactionTemplate(DataSourceTransactionManager(source)))
-        val results = concurrently(8) { index ->
+        val results = concurrently(8, source) { index ->
             TransactionTemplate(DataSourceTransactionManager(source)).execute {
                 JdbcBacktestQuotaStoreAdapter(JdbcTemplate(source)).reserve(
                     request(index + 1L, if (index % 2 == 0) "2025-12" else "2026-01").copy(maxConcurrentRuns = 3))
@@ -111,7 +112,7 @@ class PostgresBacktestQuotaStoreTest {
     fun concurrentFirstAdmissionsRespectMonthlyLimit() = withDatabase { source ->
         val jdbc = JdbcTemplate(source)
         migrate(jdbc, TransactionTemplate(DataSourceTransactionManager(source)))
-        val results = concurrently(6) { index ->
+        val results = concurrently(6, source) { index ->
             TransactionTemplate(DataSourceTransactionManager(source)).execute {
                 JdbcBacktestQuotaStoreAdapter(JdbcTemplate(source)).reserve(
                     request(index + 1L, "2026-01").copy(monthlyExecutionLimit = 1, maxConcurrentRuns = 10))
@@ -133,7 +134,7 @@ class PostgresBacktestQuotaStoreTest {
             store.reserve(request(1, "2025-12").copy(maxConcurrentRuns = 2))
             store.reserve(request(2, "2026-01").copy(maxConcurrentRuns = 2))
         }
-        concurrently(4) {
+        concurrently(4, source) {
             TransactionTemplate(DataSourceTransactionManager(source)).execute {
                 JdbcBacktestQuotaStoreAdapter(JdbcTemplate(source)).releaseConcurrentCapacity(BacktestRunId(1))
             }
@@ -209,7 +210,11 @@ class PostgresBacktestQuotaStoreTest {
 
     private fun count(jdbc: JdbcTemplate, table: String) = jdbc.queryForObject("SELECT count(*) FROM $table", Long::class.java)
 
-    private fun <T> concurrently(workers: Int, work: (Int) -> T): List<T> {
+    private fun <T> concurrently(workers: Int, source: DataSource, work: (Int) -> T): List<T> {
+        // Each worker can borrow a separate physical connection when the start barrier opens.
+        val connections = mutableListOf<java.sql.Connection>()
+        try { repeat(workers) { connections += source.connection } }
+        finally { connections.forEach { it.close() } }
         val ready = CountDownLatch(workers)
         val start = CountDownLatch(1)
         val pool = Executors.newFixedThreadPool(workers)
@@ -228,7 +233,7 @@ class PostgresBacktestQuotaStoreTest {
         }
     }
 
-    private fun withDatabase(test: (DriverManagerDataSource) -> Unit) {
+    private fun withDatabase(test: (DataSource) -> Unit) {
         val url = requireNotNull(System.getenv("BACKTEST_TEST_JDBC_URL"))
         val user = requireNotNull(System.getenv("BACKTEST_TEST_DB_USER"))
         val password = requireNotNull(System.getenv("BACKTEST_TEST_DB_PASSWORD"))
@@ -236,9 +241,17 @@ class PostgresBacktestQuotaStoreTest {
         DriverManager.getConnection(url, user, password).use { connection ->
             connection.createStatement().use { it.execute("CREATE SCHEMA $schema") }
             try {
-                test(DriverManagerDataSource(url, user, password).apply {
-                    setConnectionProperties(java.util.Properties().apply { setProperty("currentSchema", schema) })
-                })
+                HikariDataSource().apply {
+                    jdbcUrl = url
+                    username = user
+                    this.password = password
+                    poolName = schema
+                    maximumPoolSize = 8
+                    minimumIdle = 0
+                    connectionTimeout = 5000
+                    initializationFailTimeout = 5000
+                    addDataSourceProperty("currentSchema", schema)
+                }.use { test(it) }
             } finally {
                 connection.createStatement().use { it.execute("DROP SCHEMA $schema CASCADE") }
             }

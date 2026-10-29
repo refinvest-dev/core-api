@@ -41,6 +41,7 @@ dependencies {
     runtimeOnly(libs.flyway.database.postgresql)
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     testImplementation(libs.spring.boot.starter.test)
+    testImplementation(libs.jackson.module.kotlin)
     testImplementation(libs.spring.boot.starter.oauth2.client)
     testImplementation(libs.spring.boot.starter.oauth2.resource.server)
     testImplementation(libs.spring.boot.starter.webmvc.test)
