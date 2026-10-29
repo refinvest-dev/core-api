@@ -133,8 +133,48 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 1e | 완료·머지 | [PR #87](https://github.com/refinvest-dev/core-api/pull/87), R05 생성 시각·숫자 ID 기준 version 정렬과 최신 선택 |
 | 1f | 완료·머지 | [PR #88](https://github.com/refinvest-dev/core-api/pull/88), R06 Backtest/Asset HTTP timeout과 retry·lease 정합 |
 | 2a | 완료·머지 | [PR #89](https://github.com/refinvest-dev/core-api/pull/89), Member/Subscription Mapper와 구독 command 잠금 |
-| 2b | 구현·검증 완료, PR 검토 대상 | [PR #90](https://github.com/refinvest-dev/core-api/pull/90), `67798c2`·`7ab5d1e`, Auth Aggregate·Mapper와 refresh family 경합 수정 |
-| 3a 이후 | 미착수 | 다음 PR은 Strategy 저장·복원 Mapper와 read model 정리, R03/R05 동시 저장·최신 선택 규칙 유지 |
+| 2b | 완료·머지 | [PR #90](https://github.com/refinvest-dev/core-api/pull/90), Auth Aggregate·Mapper와 refresh family 경합 수정 |
+| 3a | 구현·검증 완료, PR 검토 대상 | [PR #91](https://github.com/refinvest-dev/core-api/pull/91), `a824c26`·`270146d`, Strategy 복원·불변성과 저장/조회 Mapper 정리 |
+| 3b 이후 | 미착수 | 다음 PR은 Backtest Run/Result 저장·복원 정리, R02 quota/capacity와 R04 polling lease 보호 유지 |
+
+### 3a 검증 기록과 적용 기준
+
+- ADR-013/018과 `CreateStrategy`·`DefineStrategyVersion`·`GetStrategy`·`ListStrategies`를 기준으로
+  Strategy의 저장·복원과 조회 매핑을 정리했다. 기존 AggregateRoot·typed ID를 유지하며
+  `Strategy.restore`·`StrategyVersion.restore`가 생성/추가 행위를 재실행하지 않고 같은 불변식을
+  검증한다. Root는 이름·child 소유권·버전 ID 중복을 검사하고 입력 버전 목록을 복사한다.
+- 수정 전 Version의 조건 목록을 MutableList로 변환해 변경할 수 있는 회귀 실패를 재현했다.
+  조건은 입력을 복사한 변경 불가 목록으로 보관해 생성·복원된 immutable 정의를 보호한다.
+- `StrategyPersistenceMapper`는 Aggregate·Version·Condition의 양방향 변환과 child 관계를 만든다.
+  새 Aggregate 저장만 전체 그래프를 생성하며 기존 Root는 잠근 뒤 새 버전만 append한다. R03의
+  기존 metadata/definition 변경 거절, 다른 Root의 버전 ID 충돌 거절과 DB timestamp 정밀도 처리를
+  adapter에 보존했다. 기존 버전·조건 collection을 교체하거나 row를 재생성하지 않는다.
+- `StrategyReadModelMapper`는 Root를 복원하지 않고 상세·목록과 Backtest 소비 projection으로
+  직접 변환한다. 독립적인 버전 조회의 owner·조건 row는 adapter가 먼저 준비한다. 조건 순서와
+  생성 시각·숫자 ID 기준 버전 정렬을 명시해 R05의 최신 선택·동률 기준을 유지한다.
+- domain 17개·application 14개·persistence 23개·snowflake 1개와 app 87개, 총 142개가 통과했다.
+  실패·오류·테스트 skip은 0개다. Strategy 대상 55개와 앱의 나머지 40개 통과 결과를 유지하고,
+  최종 실행에서 기존 앱 회귀 47개를 실제 재실행한 합계다. 컴파일 UP-TO-DATE와 테스트 결과
+  재사용 여부를 구분하며, 전체 142개가 한 번의 task 실행에서 통과했다고 표시하지 않는다.
+- Mapper 테스트 5개는 전체 정의·큰 ID·timestamp round-trip, nullable window/combinator,
+  Literal/Metric operand, child 관계·순서와 잘못된 저장 상태의 거절을 검증했다. PostgreSQL
+  Strategy 테스트 15개로 동시 추가·rollback·기존 row/metadata 보존·최신 선택을 재검증했다.
+  이미 로딩된 그래프를 세션 종료 후 변환하고 복원한 Aggregate를 다시 저장해도 row가 바뀌지
+  않는 것도 확인했다. App의 기존 PostgreSQL 검증 23개도 실제 실행했으므로 DB 검증은 총 38개다.
+- PostgreSQL fixture는 작은 연결 풀을 사용하며 경쟁 작업을 시작하기 전에 별도 물리 연결을
+  확보한다. 기존 실제 잠금 대기 assertion을 유지했고 전용 schema와 연결 풀을 정리했다.
+- Windows에서 `Bad address: listen`이 Tomcat 및 Gradle test worker 기동 중 반복됐다. 해당
+  실패·미기동 실행은 성공으로 세지 않았다. 최종 앱 47개는 로컬 프로세스의
+  `SERVER_ADDRESS=127.0.0.1`, `JAVA_TOOL_OPTIONS=-Djava.net.preferIPv4Stack=true`로 검증했다.
+  이 옵션은 로컬 실행 환경에만 적용했다.
+- Strategy domain·port·application·persistence·web·snowflake를 소스 및 실제 Gradle 의존성 경계
+  검사에 추가했다. 실행 진입점은 기존 `verifyAggregateModuleBoundaries`를 사용한다.
+- 계약 snapshot, 문서 snapshot 24개와 git diff 검사를 통과했다. API/schema/hash·계산 입력 및
+  계산 결정론 영향은 없다. Core↔Compute 호출 변경이 없어 해당 E2E는 재실행하지 않았으며
+  Backtest 소비 projection은 회귀 검증에 포함했다. 로컬 credential·fixture·로그는 커밋하지 않는다.
+- domain 복원·불변성 보강(`a824c26`)과 Mapper·조회·회귀/경계 검증(`270146d`)을 나눠 커밋했다.
+  다음 단계는 3b이며, Backtest Run/Result의 저장·복원을 정리하면서 R02 quota/capacity 예약과
+  R04 polling lease의 stale 응답 차단을 유지한다.
 
 ### 2b 검증 기록과 적용 순서
 
