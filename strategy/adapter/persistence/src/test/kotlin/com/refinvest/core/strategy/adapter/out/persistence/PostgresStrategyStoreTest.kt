@@ -11,7 +11,7 @@ import com.refinvest.core.strategy.port.outbound.member.MemberIdProvider
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.data.jpa.repository.support.JpaRepositoryFactory
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.jdbc.datasource.DriverManagerDataSource
+import com.zaxxer.hikari.HikariDataSource
 import org.springframework.orm.jpa.JpaTransactionManager
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean
 import org.springframework.orm.jpa.SharedEntityManagerCreator
@@ -269,7 +269,30 @@ class PostgresStrategyStoreTest {
         assertEquals(original, f.snapshot())
     }
 
-    private class Fixture(source: DriverManagerDataSource, factory: jakarta.persistence.EntityManagerFactory,
+    @Test
+    fun detachedGraphMapsWithoutADatabaseAndTheBacktestProjectionPreservesItsDefinition() = withFixture { f ->
+        val graph = f.detachedGraph()
+        val original = f.snapshot()
+        val restored = StrategyPersistenceMapper.toDomain(graph)
+        assertEquals(listOf(11L), restored.versions.map { it.id.value })
+        assertEquals(command().conditions, restored.versions.single().conditions)
+        val read = StrategyReadModelMapper.toReadModel(graph)
+        assertEquals(StrategyVersionId(11), read.latestVersionId)
+        val backtest = assertNotNull(f.tx.execute { f.backtestReader.findById(11) })
+        assertEquals(1L, backtest.strategyId)
+        assertEquals(MemberId(1), backtest.ownerMemberId)
+        assertEquals(setOf("QQQ", "SPY", "TQQQ"), backtest.assetSymbols)
+        assertEquals("RETURN", backtest.definition.conditions.first().operandA.metric)
+        assertEquals(5, backtest.definition.conditions.first().operandA.window)
+        assertEquals("AND", backtest.definition.conditions.last().logicalCombinator)
+        assertEquals(3, backtest.definition.lag)
+        assertEquals(5, backtest.definition.holdingSignalSessions)
+        assertEquals(original, f.snapshot())
+        f.tx.execute { f.store.save(restored) }
+        assertEquals(original, f.snapshot(), "Restoring and saving must not replace pinned rows")
+    }
+
+    private class Fixture(source: HikariDataSource, private val factory: jakarta.persistence.EntityManagerFactory,
                           private val applicationName: String) {
         val jdbc = JdbcTemplate(source)
         val tx = TransactionTemplate(JpaTransactionManager(factory).apply { dataSource = source })
@@ -277,6 +300,10 @@ class PostgresStrategyStoreTest {
         private val repositories = JpaRepositoryFactory(entityManager)
         val store = JpaStrategyStoreAdapter(repositories.getRepository(StrategyJpaStore::class.java), entityManager)
         val reader = JpaStrategyReaderAdapter(repositories.getRepository(StrategyJpaReader::class.java))
+        val backtestReader = JpaStrategyVersionBacktestReaderAdapter(repositories.getRepository(StrategyVersionJpaReader::class.java))
+        fun detachedGraph(): StrategyJpaEntity = factory.createEntityManager().use { manager ->
+            manager.find(StrategyJpaEntity::class.java, 1L).apply { versions.forEach { it.conditions.toList() } }
+        }
 
         init { tx.execute { store.save(strategy().apply { addVersion(version(11)) }) } }
 
@@ -319,21 +346,28 @@ class PostgresStrategyStoreTest {
         DriverManager.getConnection(url, user, password).use { connection ->
             connection.createStatement().use { it.execute("CREATE SCHEMA $schema") }
             val bean = LocalContainerEntityManagerFactoryBean()
+            val source = HikariDataSource().apply {
+                jdbcUrl = url
+                username = user
+                this.password = password
+                poolName = schema
+                maximumPoolSize = 4
+                minimumIdle = 0
+                connectionTimeout = 5000
+                addDataSourceProperty("currentSchema", schema)
+                addDataSourceProperty("ApplicationName", schema)
+            }
             try {
-                val source = DriverManagerDataSource(url, user, password).apply {
-                    setConnectionProperties(java.util.Properties().apply {
-                        setProperty("currentSchema", schema)
-                        setProperty("ApplicationName", schema)
-                    })
-                }
                 bean.dataSource = source
                 bean.jpaVendorAdapter = HibernateJpaVendorAdapter()
                 bean.setPackagesToScan("com.refinvest.core.strategy.adapter.out.persistence")
                 bean.setJpaPropertyMap(mapOf("hibernate.hbm2ddl.auto" to "create", "hibernate.jdbc.time_zone" to "UTC"))
                 bean.afterPropertiesSet()
+                (1..4).map { source.connection }.forEach { it.close() }
                 test(Fixture(source, requireNotNull(bean.`object`), schema))
             } finally {
                 bean.destroy()
+                source.close()
                 connection.createStatement().use { it.execute("DROP SCHEMA $schema CASCADE") }
             }
         }
