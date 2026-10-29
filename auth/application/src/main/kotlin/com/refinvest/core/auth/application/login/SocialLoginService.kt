@@ -2,6 +2,7 @@ package com.refinvest.core.auth.application.login
 
 import com.refinvest.core.auth.domain.RefreshSession
 import com.refinvest.core.auth.domain.SocialIdentity
+import com.refinvest.core.auth.domain.valueobject.SocialIdentityId
 import com.refinvest.core.auth.port.inbound.login.SocialLoginCommand
 import com.refinvest.core.auth.port.inbound.login.SocialLoginResult
 import com.refinvest.core.auth.port.inbound.login.SocialLoginUseCase
@@ -30,7 +31,7 @@ open class SocialLoginService(
         val member = resolveMember(command)
         val tokens = authenticationTokenIssuer.issue(member.id, member.role.name, null)
         refreshSessionStore.save(
-            RefreshSession(
+            RefreshSession.create(
                 jti = tokens.refreshJti,
                 memberId = member.id,
                 familyId = tokens.refreshFamilyId,
@@ -50,7 +51,7 @@ open class SocialLoginService(
     }
 
     private fun resolveMember(command: SocialLoginCommand): AuthenticatedMember {
-        val memberId = socialIdentityStore.findMemberId(command.provider, command.providerSubject)
+        val memberId = socialIdentityStore.findById(SocialIdentityId(command.provider, command.providerSubject))?.memberId
             ?: return createMember(command)
         val member = requireNotNull(getMemberUseCase.execute(GetMemberQuery(memberId))) {
             "Social identity refers to an unknown member"
@@ -60,7 +61,7 @@ open class SocialLoginService(
 
     private fun createMember(command: SocialLoginCommand): AuthenticatedMember {
         val member = createMemberUseCase.execute(CreateMemberCommand)
-        socialIdentityStore.save(SocialIdentity(command.provider, command.providerSubject, member.memberId))
+        socialIdentityStore.save(SocialIdentity.create(SocialIdentityId(command.provider, command.providerSubject), member.memberId))
         return AuthenticatedMember(member.memberId, member.role)
     }
 

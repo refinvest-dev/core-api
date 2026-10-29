@@ -1,8 +1,11 @@
 package com.refinvest.core.auth.application.login
 
 import com.refinvest.core.auth.domain.RefreshSession
+import com.refinvest.core.auth.domain.valueobject.RefreshSessionRotation
+import com.refinvest.core.auth.domain.valueobject.SocialIdentityId
+import com.refinvest.core.auth.port.outbound.persistence.RefreshFamilyRevocation
 import com.refinvest.core.auth.domain.SocialIdentity
-import com.refinvest.core.auth.domain.SocialProvider
+import com.refinvest.core.auth.domain.valueobject.SocialProvider
 import com.refinvest.core.auth.port.inbound.login.SocialLoginCommand
 import com.refinvest.core.auth.port.outbound.token.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.token.IssuedAuthenticationTokens
@@ -34,7 +37,7 @@ class SocialLoginServiceTest {
         assertEquals(1, fixture.members.createCount)
         assertEquals(
             MemberId(1),
-            fixture.identities.findMemberId(SocialProvider.KAKAO, "kakao-subject"),
+            fixture.identities.findById(SocialIdentityId(SocialProvider.KAKAO, "kakao-subject"))?.memberId,
         )
         assertEquals(1, fixture.refreshSessions.saved.size)
         assertEquals(MemberId(1), fixture.refreshSessions.saved.single().memberId)
@@ -88,8 +91,8 @@ class SocialLoginServiceTest {
         val saved = mutableListOf<SocialIdentity>()
         private val memberIds = mutableMapOf<Pair<SocialProvider, String>, MemberId>()
 
-        override fun findMemberId(provider: SocialProvider, providerSubject: String): MemberId? =
-            memberIds[provider to providerSubject]
+        override fun findById(id: SocialIdentityId): SocialIdentity? =
+            memberIds[id.provider to id.providerSubject]?.let { SocialIdentity.restore(id, it) }
 
         override fun save(identity: SocialIdentity) {
             val key = identity.provider to identity.providerSubject
@@ -107,9 +110,9 @@ class SocialLoginServiceTest {
             saved += session
         }
 
-        override fun rotate(current: RefreshSession, replacement: RefreshSession, revokedAt: Instant): Boolean = false
+        override fun rotate(rotation: RefreshSessionRotation): Boolean = false
 
-        override fun revokeFamily(familyId: UUID, revokedAt: Instant) = Unit
+        override fun revokeFamily(revocation: RefreshFamilyRevocation) = Unit
     }
 
     private class InMemoryMemberUseCases : CreateMemberUseCase, GetMemberUseCase {

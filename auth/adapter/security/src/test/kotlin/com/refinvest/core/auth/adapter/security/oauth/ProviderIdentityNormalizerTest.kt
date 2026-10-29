@@ -1,6 +1,6 @@
 package com.refinvest.core.auth.adapter.security.oauth
 
-import com.refinvest.core.auth.domain.SocialProvider
+import com.refinvest.core.auth.domain.valueobject.SocialProvider
 import org.junit.jupiter.api.Test
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User

@@ -3,6 +3,7 @@ package com.refinvest.core.auth.application.logout
 import com.refinvest.core.auth.port.inbound.logout.LogoutCommand
 import com.refinvest.core.auth.port.inbound.logout.LogoutUseCase
 import com.refinvest.core.auth.port.outbound.persistence.RefreshSessionStore
+import com.refinvest.core.auth.port.outbound.persistence.RefreshFamilyRevocation
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -14,6 +15,6 @@ open class LogoutService(
 ) : LogoutUseCase {
     @Transactional
     override fun execute(command: LogoutCommand) {
-        refreshSessionStore.revokeFamily(command.familyId, clock.instant())
+        refreshSessionStore.revokeFamily(RefreshFamilyRevocation(command.familyId, clock.instant()))
     }
 }

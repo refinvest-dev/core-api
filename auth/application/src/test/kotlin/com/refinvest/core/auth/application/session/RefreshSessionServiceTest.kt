@@ -1,5 +1,7 @@
 package com.refinvest.core.auth.application.session
 
+import com.refinvest.core.auth.domain.valueobject.RefreshSessionRotation
+import com.refinvest.core.auth.port.outbound.persistence.RefreshFamilyRevocation
 import com.refinvest.core.auth.domain.RefreshSession
 import com.refinvest.core.auth.port.inbound.session.RefreshSessionCommand
 import com.refinvest.core.auth.port.outbound.token.AuthenticationTokenIssuer
@@ -97,7 +99,7 @@ class RefreshSessionServiceTest {
         val tokenIssuer = RecordingAuthenticationTokenIssuer(now)
         val service = RefreshSessionService(sessions, members, tokenIssuer, Clock.fixed(now, ZoneOffset.UTC))
 
-        fun activeSession(expiresAt: Instant = now.plusSeconds(3600)): RefreshSession = RefreshSession(
+        fun activeSession(expiresAt: Instant = now.plusSeconds(3600)): RefreshSession = RefreshSession.create(
             jti = UUID.nameUUIDFromBytes("current-jti".toByteArray()),
             memberId = MemberId(1),
             familyId = UUID.nameUUIDFromBytes("family".toByteArray()),
@@ -121,17 +123,17 @@ class RefreshSessionServiceTest {
             sessions[session.jti] = session
         }
 
-        override fun rotate(current: RefreshSession, replacement: RefreshSession, revokedAt: Instant): Boolean {
-            if (!rotationSucceeds || sessions[current.jti] != current || !current.isActive(revokedAt)) return false
-            sessions[current.jti] = current.copy(revokedAt = revokedAt, replacedByJti = replacement.jti)
-            sessions[replacement.jti] = replacement
+        override fun rotate(rotation: RefreshSessionRotation): Boolean {
+            if (!rotationSucceeds || sessions[rotation.expected.jti]?.hasSameStateAs(rotation.expected) != true) return false
+            sessions[rotation.expected.jti] = rotation.rotated
+            sessions[rotation.replacement.jti] = rotation.replacement
             return true
         }
 
-        override fun revokeFamily(familyId: UUID, revokedAt: Instant) {
-            revokedFamilies += familyId
-            sessions.entries.filter { it.value.familyId == familyId }.forEach { (jti, session) ->
-                sessions[jti] = session.copy(revokedAt = revokedAt)
+        override fun revokeFamily(revocation: RefreshFamilyRevocation) {
+            revokedFamilies += revocation.familyId
+            sessions.entries.filter { it.value.familyId == revocation.familyId }.forEach { (jti, session) ->
+                sessions[jti] = session.revoke(revocation.revokedAt)
             }
         }
 
