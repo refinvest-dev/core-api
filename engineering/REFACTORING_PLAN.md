@@ -132,8 +132,54 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 1d | 완료·머지 | [PR #86](https://github.com/refinvest-dev/core-api/pull/86), R03 Strategy 잠금과 immutable version append-only 저장 |
 | 1e | 완료·머지 | [PR #87](https://github.com/refinvest-dev/core-api/pull/87), R05 생성 시각·숫자 ID 기준 version 정렬과 최신 선택 |
 | 1f | 완료·머지 | [PR #88](https://github.com/refinvest-dev/core-api/pull/88), R06 Backtest/Asset HTTP timeout과 retry·lease 정합 |
-| 2a | 구현·검증 완료, PR 검토 대상 | [PR #89](https://github.com/refinvest-dev/core-api/pull/89), `2acf644`·`3c2c4be`, Member/Subscription Mapper와 구독 command 잠금 |
-| 2b 이후 | 미착수 | 다음 PR은 Auth 행위·저장·매핑과 refresh 회전·폐기·replay·경합 원자성 검증 |
+| 2a | 완료·머지 | [PR #89](https://github.com/refinvest-dev/core-api/pull/89), Member/Subscription Mapper와 구독 command 잠금 |
+| 2b | 구현·검증 완료, PR 검토 대상 | [PR #90](https://github.com/refinvest-dev/core-api/pull/90), `67798c2`·`7ab5d1e`, Auth Aggregate·Mapper와 refresh family 경합 수정 |
+| 3a 이후 | 미착수 | 다음 PR은 Strategy 저장·복원 Mapper와 read model 정리, R03/R05 동시 저장·최신 선택 규칙 유지 |
+
+### 2b 검증 기록과 적용 순서
+
+- ADR-018/019와 `SocialLogin`·`RefreshSession`·`Logout`을 기준으로 Auth Aggregate를 정리했다.
+  SocialIdentity는 provider/subject 자연키의 typed ID, RefreshSession은 기존 UUID JTI의 typed ID를
+  사용하며 공통 AggregateRoot를 상속한다. 공개 생성자·copy 대신 생성·복원·행위를 구분하고
+  잘못된 수명·회전 상태, 다른 member/family 또는 같은 JTI의 교체를 거절한다. Domain에서
+  ID나 현재 시각을 생성하지 않으며 저장된 provider/subject·JTI·family를 재발급하지 않는다.
+- 명시적인 두 PersistenceMapper가 전체 상태를 변환한다. SocialIdentity의 DB surrogate ID는
+  persistence 내부에 남기며 typed 자연키로 Aggregate를 조회한다. Application은 Aggregate가 만든
+  검증된 회전 모델을 Store로 전달하고 family 폐기도 요청 모델로 묶는다. Mapper는 I/O·시계·ID
+  생성과 업무 행위를 수행하지 않는다. 현재 Member role의 정본 조회와 provider별 identity
+  유일성을 유지하며, Auth의 기존 Member role 직접 타입 참조 정리는 3c에 남긴다.
+- 수정 전 실제 PostgreSQL에서 회전 transaction이 교체 credential을 저장하는 동안 로그아웃하면
+  family 폐기가 교체 credential을 놓쳐 활성 row 1개가 남는 회귀 실패를 재현했다.
+- V12의 `refresh_session_family_locks`는 별도 domain Aggregate가 아닌 원자적 family capability의
+  기술 잠금·폐기 표식이다. family 사용 시 row를 생성해 최초 저장·회전·폐기를 같은 잠금으로
+  직렬화하고, 폐기된 빈 family에도 새 credential을 추가하지 않는다. 회전은 잠금 대기 후 JPA의
+  관리 중인 세션도 refresh해 expected 상태를 검사하며 JTI 충돌은 overwrite 대신 실패시킨다.
+  family 폐기는 전체 이력을 적재하지 않고 bulk 갱신한다.
+- PostgreSQL Auth 테스트 13개로 회전/로그아웃 양방향 경합, 동일 credential의 중복 refresh와
+  replay에 따른 winner family 폐기, 최초 저장/폐기 경합, 다른 family 격리, 충돌·rollback과
+  stale snapshot을 검증했다. 별도 물리 연결과 실제 DB 잠금 대기를 사용한다. 동시 최초 소셜
+  로그인은 identity 하나만 commit하며 패한 요청의 Member/Subscription이 함께 rollback된다.
+- 기존 Auth schema에 V12를 적용해 모든 기존 session/identity row 보존, Flyway 재실행 0건과
+  Auth entity의 Hibernate validate를 확인했다. 기존 전체 Flyway 경로의 migration 12개 적용도
+  실제 PostgreSQL에서 통과했다. Core 전체 schema 편입·운영 validate 전환은 6a에 남아 있다.
+- 검증 합계는 domain 8개·Mapper 8개·application 18개·security 3개·app 85개로 총 122개 통과다.
+  실패·오류·테스트 skip은 0개다. 앞선 단위 테스트 37개 결과를 유지하고, H2의 native UUID
+  반환형 문제를 JPA entity 잠금 조회로 수정한 뒤 app 85개를 실제 재실행했다. app에는 PostgreSQL
+  Auth Store 13개·Auth migration 1개·Member/Subscription 8개·기존 Flyway 1개, 총 23개의 실제 DB
+  검증과 로그인·쿠키·CSRF·refresh·로그아웃 HTTP 회귀가 포함된다. 실패한 중간 실행을 통과로
+  세지 않으며 컴파일의 UP-TO-DATE와 테스트 실행을 구분한다.
+- 소스 경계와 실제 Gradle project/기술 의존성 검사에 Auth를 추가했다. 실행 진입점은
+  `verifyAggregateModuleBoundaries`이며 기존 `verifyMemberSubscriptionBoundaries`도 alias로 유지한다.
+  security adapter의 사용하지 않는 application 의존성을 제거했다.
+- 적용 순서는 Auth 쓰기(로그인·refresh·로그아웃) 중지 → 기존 transaction 종료 → V12 적용 →
+  모든 Auth writer의 수정 코드 교체 → 쓰기 재개다. 이전 writer와의 혼합 실행은 보호 범위에
+  포함하지 않는다. V12는 기존 Auth 데이터를 변경하지 않으며 코드 rollback 시에도 새 테이블과
+  Flyway 이력을 삭제하지 않는다. 이전 코드는 이번 경합 수정을 포함하지 않으므로 쓰기를 차단한
+  상태에서 복구 코드를 검증하고 재개한다.
+- API/hash·계산 입력 변경과 계산 결정론 영향은 없다. Core↔Compute 호출 변경이 없어 해당 E2E는
+  재실행하지 않았다. 임시 schema·연결 풀을 정리했으며 로컬 credential·fixture·로그는 커밋하지
+  않는다. Aggregate/Mapper 정리(`67798c2`)와 family 경합·migration·회귀 검증(`7ab5d1e`)을 나눠
+  커밋했다. 다음 단계는 기존 R03/R05 수정을 보존하는 3a Strategy 매핑·조회 정리다.
 
 ### 2a 검증 기록과 적용 기준
 
