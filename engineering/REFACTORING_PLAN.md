@@ -135,8 +135,45 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 2a | 완료·머지 | [PR #89](https://github.com/refinvest-dev/core-api/pull/89), Member/Subscription Mapper와 구독 command 잠금 |
 | 2b | 완료·머지 | [PR #90](https://github.com/refinvest-dev/core-api/pull/90), Auth Aggregate·Mapper와 refresh family 경합 수정 |
 | 3a | 완료·머지 | [PR #91](https://github.com/refinvest-dev/core-api/pull/91), `a824c26`·`270146d`, Strategy 복원·불변성과 저장/조회 Mapper 정리 |
-| 3b | 구현·검증 완료, PR 검토 대상 | [PR #92](https://github.com/refinvest-dev/core-api/pull/92), `7483529`·`c5d363b`, Backtest Run/Result 복원·불변성과 저장/조회 Mapper 정리, R02/R04 회귀 검증 |
-| 3c 이후 | 미착수 | 다음 PR은 R12 feature port 경계: Backtest→Strategy/Subscription, Auth→Member domain 직접 참조 제거 |
+| 3b | 완료·머지 | [PR #92](https://github.com/refinvest-dev/core-api/pull/92), `7483529`·`c5d363b`, Backtest Run/Result 복원·불변성과 저장/조회 Mapper 정리, R02/R04 회귀 검증 |
+| 3c | 구현·검증 완료, PR 검토 대상 | [PR #93](https://github.com/refinvest-dev/core-api/pull/93), `ad3af75`·`36db90d`, R12 feature port 계약과 실제 classpath에서 타 feature domain 참조 차단 |
+| 4a 이후 | 미착수 | 다음 PR은 TradingAccount/TradingBook Root·typed ID·Mapper·Store 분리, ownership 보존 |
+
+### 3c 검증 기록과 적용 기준
+
+- ADR-018/019/020과 로그인·refresh·현재 회원 조회, `RunBacktest`·`ListBacktestRuns`를 기준으로
+  R12의 직접 domain 참조를 제거했다. 회원 역할과 구독 tier는 각 feature의 inbound port가
+  소유하는 enum으로 전달하며 application에서 domain 값을 변환한다. MEMBER/ADMIN과
+  FREE/PRO의 외부 값은 유지한다. Domain Aggregate와 command Store/Reader 경계는 유지한다.
+- Backtest 실행은 Subscription의 `GetBacktestPolicyUseCase`를 통해 한도·허용 Asset을 받는다.
+  tier 선택과 구독 부재 시 FREE 기본값, 실제 정책은 Subscription이 소유한다. Backtest는
+  정책 결과로 entitlement·포함 일수·quota/capacity 예약을 검증하고 tier별 수치를 직접 결정하지
+  않는다. 결과 Set은 복사해 소비자의 변경이 이후 정책 결정을 바꾸지 않도록 했다.
+- 실행 이력의 소유권은 `LookupStrategyOwnerUseCase`로 확인한다. JPA의 소유자 컬럼 조회는
+  Strategy 전체 버전·조건을 로딩하지 않는다. 존재하지 않는 전략과 타인 전략 모두 이력을
+  읽기 전에 기존과 같은 not found로 처리한다. 큰 ID와 빈 전략의 소유자도 보존한다.
+- 다른 feature port 의존성은 전이 의존성을 제한해 그 feature의 domain을 compile/test classpath에
+  노출하지 않는다. 기존 Gradle 의존성 검사에 application과 Auth security의 실제 classpath 검사도
+  추가했다. 수정 전 `member:application`에 `subscription:domain`이 유입되는 경계 실패를 확인했고
+  수정 후 통과했다. Backtest/Auth 소스 검사에 있던 domain 타입 예외도 제거했다.
+- feature 간 사용하는 port 계약 7개의 method signature·중첩 모델·generic·sealed 구현 타입을
+  검사한다. 단순히 import를 없애고 domain 모델을 결과 안에 숨기는 변경도 거절한다.
+- Member application 3개·Subscription application 9개·Auth application 11개·Auth security 3개,
+  Strategy application 14개·persistence 24개, Backtest application 30개·persistence 43개와 app
+  90개, 총 227개를 한 번의 실행에서 실제 검증했다. 실패·오류·테스트 skip은 0개다. 선택한
+  모듈의 cleanTest 후 실행한 결과이며 컴파일 UP-TO-DATE를 테스트 실행으로 세지 않는다.
+- 실제 PostgreSQL 검증은 Strategy 16개, Backtest quota/lease/Run 저장 30개와 기존 app DB/
+  migration 23개, 총 69개다. 소유권 조회와 함께 immutable 저장, rollback, 월 경계 capacity,
+  stale polling, refresh 회전·폐기·경합과 회원 생성/구독 업그레이드의 원자성을 재검증했다.
+  소스·실제 Gradle 의존성·계약 모델 검사를 통과했고 실행 JAR도 빌드했다.
+- 역할·구독 값의 JSON 표현, public/Compute API, schema, hash·DSL·계산 결정론에는 영향이 없다.
+  현재 커밋의 실행 JAR와 합성 `integration-e2e-v1` fixture, local integration DB로 실제
+  Core↔Compute HTTP smoke를 통과했다. 정상·재실행·실패 결과·타인 접근 거절과 terminal
+  persistence를 확인했다. JAR artifact identity를 포함한 기존 topology preflight와 smoke
+  assertion을 유지했다. 별도 포트/registry의 프로세스와 임시 환경 파일은 정리했다.
+- 계약 snapshot·문서 snapshot 24개와 context vector 검사도 통과했다. 로컬 IPv4 옵션은 검증
+  프로세스에만 적용하며 credential·fixture·로그는 커밋하지 않는다. 다음 단계는 4a
+  TradingAccount/TradingBook Root·typed ID·Mapper·Store 분리와 ownership 보존이다.
 
 ### 3b 검증 기록과 적용 기준
 
