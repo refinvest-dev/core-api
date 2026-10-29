@@ -13,7 +13,7 @@ class CreateSubscriptionServiceTest {
         val store = RecordingStore()
         val result = CreateSubscriptionService(store).execute(CreateSubscriptionCommand(MemberId(1)))
         assertEquals(MemberId(1), result.memberId)
-        assertEquals(SubscriptionTier.FREE, result.tier)
+        assertEquals("FREE", result.tier.name)
         assertEquals(listOf(SubscriptionTier.FREE), store.saved.map { it.tier })
     }
 
@@ -23,7 +23,7 @@ class CreateSubscriptionServiceTest {
             val store = RecordingStore(Subscription.restore(MemberId(1), tier))
             val result = CreateSubscriptionService(store).execute(CreateSubscriptionCommand(MemberId(1)))
             assertEquals(MemberId(1), result.memberId)
-            assertEquals(tier, result.tier)
+            assertEquals(tier.name, result.tier.name)
             assertTrue(store.saved.isEmpty())
         }
     }

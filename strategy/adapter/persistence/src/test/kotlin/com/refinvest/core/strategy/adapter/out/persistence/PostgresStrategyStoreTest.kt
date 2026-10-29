@@ -31,6 +31,17 @@ import kotlin.test.*
 @EnabledIfEnvironmentVariable(named = "STRATEGY_TEST_JDBC_URL", matches = ".+")
 class PostgresStrategyStoreTest {
     @Test
+    fun ownerLookupKeepsEmptyAndForeignStrategiesScopedWithoutLoadingDefinitions() = withFixture { f ->
+        val foreignId = StrategyId(9007199254740993L)
+        f.tx.execute { f.store.save(Strategy.create(foreignId, MemberId(99), "foreign empty", TIME)) }
+        val before = f.snapshot()
+        assertEquals(MemberId(1), f.ownerReader.findOwnerById(1))
+        assertEquals(MemberId(99), f.ownerReader.findOwnerById(foreignId.value))
+        assertNull(f.ownerReader.findOwnerById(404))
+        assertEquals(before, f.snapshot())
+    }
+
+    @Test
     fun readerUsesCreationTimeThenNumericIdentityAfterReload() = withFixture { f ->
         val aggregate = f.load().apply {
             addVersion(version(10, createdAt = TIME.plusSeconds(1)))
@@ -300,6 +311,7 @@ class PostgresStrategyStoreTest {
         private val repositories = JpaRepositoryFactory(entityManager)
         val store = JpaStrategyStoreAdapter(repositories.getRepository(StrategyJpaStore::class.java), entityManager)
         val reader = JpaStrategyReaderAdapter(repositories.getRepository(StrategyJpaReader::class.java))
+        val ownerReader = JpaStrategyOwnerReaderAdapter(repositories.getRepository(StrategyJpaReader::class.java))
         val backtestReader = JpaStrategyVersionBacktestReaderAdapter(repositories.getRepository(StrategyVersionJpaReader::class.java))
         fun detachedGraph(): StrategyJpaEntity = factory.createEntityManager().use { manager ->
             manager.find(StrategyJpaEntity::class.java, 1L).apply { versions.forEach { it.conditions.toList() } }

@@ -20,10 +20,8 @@ import com.refinvest.core.backtest.port.inbound.run.BacktestMonthlyLimitExceeded
 import com.refinvest.core.backtest.port.inbound.run.BacktestPeriodNotAllowedException
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestQuery
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
-import com.refinvest.core.subscription.domain.policy.BacktestPolicy
-import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
-import com.refinvest.core.subscription.port.inbound.get.GetSubscriptionQuery
-import com.refinvest.core.subscription.port.inbound.get.GetSubscriptionUseCase
+import com.refinvest.core.subscription.port.inbound.policy.GetBacktestPolicyQuery
+import com.refinvest.core.subscription.port.inbound.policy.GetBacktestPolicyUseCase
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -36,7 +34,7 @@ open class RunBacktestService(
     private val backtestRunStore: BacktestRunStore,
     private val backtestRunIdGenerator: BacktestRunIdGenerator,
     private val lookupStrategyVersionForBacktestUseCase: LookupStrategyVersionForBacktestUseCase,
-    private val getSubscriptionUseCase: GetSubscriptionUseCase,
+    private val getBacktestPolicyUseCase: GetBacktestPolicyUseCase,
     private val backtestMemberIdProvider: BacktestMemberIdProvider,
     private val backtestQuotaStore: BacktestQuotaStore,
     private val backtestComputeDispatchStore: BacktestComputeDispatchStore,
@@ -53,9 +51,8 @@ open class RunBacktestService(
             throw NoSuchElementException("Strategy version not found")
         }
 
-        val tier = getSubscriptionUseCase.execute(GetSubscriptionQuery(memberId))?.tier ?: SubscriptionTier.FREE
-        val policy = BacktestPolicy.forTier(tier)
-        if (!policy.allowsAll(strategyVersion.assetSymbols)) {
+        val policy = getBacktestPolicyUseCase.execute(GetBacktestPolicyQuery(memberId))
+        if (!strategyVersion.assetSymbols.all(policy.allowedAssets::contains)) {
             throw AssetNotAllowedForPlanException()
         }
 
