@@ -12,7 +12,7 @@ allprojects {
 }
 
 // Inspect Gradle's dependency model as well as the source checks in :app.
-val memberSubscriptionDependencies = mapOf(
+val aggregateModuleDependencies = mapOf(
     ":member:domain" to setOf(":shared:kernel"),
     ":member:port" to setOf(":member:domain"),
     ":member:application" to setOf(":member:port", ":subscription:port"),
@@ -22,13 +22,18 @@ val memberSubscriptionDependencies = mapOf(
     ":subscription:port" to setOf(":subscription:domain", ":shared:kernel"),
     ":subscription:application" to setOf(":subscription:port", ":backtest:port"),
     ":subscription:adapter:persistence" to setOf(":subscription:port"),
+    ":auth:domain" to setOf(":shared:kernel"),
+    ":auth:port" to setOf(":auth:domain"),
+    ":auth:application" to setOf(":auth:port", ":member:port"),
+    ":auth:adapter:persistence" to setOf(":auth:port"),
+    ":auth:adapter:security" to setOf(":auth:port", ":member:port", ":strategy:port", ":backtest:port"),
 )
 
-tasks.register("verifyMemberSubscriptionBoundaries") {
+tasks.register("verifyAggregateModuleBoundaries") {
     group = "verification"
-    description = "Verifies Member/Subscription production module dependencies and framework boundaries."
+    description = "Verifies the refactored aggregate modules and their framework boundaries."
     doLast {
-        memberSubscriptionDependencies.forEach { (modulePath, allowed) ->
+        aggregateModuleDependencies.forEach { (modulePath, allowed) ->
             val module = project(modulePath)
             val dependencies = module.configurations
                 .filter { it.name in setOf("api", "implementation", "compileOnly", "runtimeOnly") }
@@ -52,3 +57,6 @@ tasks.register("verifyMemberSubscriptionBoundaries") {
         }
     }
 }
+
+// Keep the original entry point for existing local verification scripts.
+tasks.register("verifyMemberSubscriptionBoundaries") { dependsOn("verifyAggregateModuleBoundaries") }

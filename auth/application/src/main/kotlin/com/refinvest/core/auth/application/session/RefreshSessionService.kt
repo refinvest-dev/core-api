@@ -6,6 +6,7 @@ import com.refinvest.core.auth.port.inbound.session.RefreshSessionResult
 import com.refinvest.core.auth.port.inbound.session.RefreshSessionUseCase
 import com.refinvest.core.auth.port.outbound.token.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.persistence.RefreshSessionStore
+import com.refinvest.core.auth.port.outbound.persistence.RefreshFamilyRevocation
 import com.refinvest.core.member.port.inbound.get.GetMemberQuery
 import com.refinvest.core.member.port.inbound.get.GetMemberUseCase
 import org.springframework.stereotype.Service
@@ -25,7 +26,7 @@ open class RefreshSessionService(
     override fun execute(command: RefreshSessionCommand): RefreshSessionResult? {
         val now = clock.instant()
         val current = refreshSessionStore.findByJti(command.jti)
-        if (current == null || current.isInvalidFor(command, now)) return revokeAndReject(command.familyId, now)
+        if (current == null || !current.accepts(command.memberId, command.familyId, command.tokenFingerprint, now)) return revokeAndReject(command.familyId, now)
 
         val member = getMemberUseCase.execute(GetMemberQuery(current.memberId))
         if (member == null) {
@@ -33,7 +34,7 @@ open class RefreshSessionService(
         }
 
         val tokens = authenticationTokenIssuer.issue(member.memberId, member.role.name, current.familyId)
-        val replacement = RefreshSession(
+        val replacement = RefreshSession.create(
             jti = tokens.refreshJti,
             memberId = member.memberId,
             familyId = tokens.refreshFamilyId,
@@ -41,7 +42,7 @@ open class RefreshSessionService(
             issuedAt = tokens.issuedAt,
             expiresAt = tokens.refreshTokenExpiresAt,
         )
-        if (!refreshSessionStore.rotate(current, replacement, now)) {
+        if (!refreshSessionStore.rotate(current.rotate(replacement, now))) {
             return revokeAndReject(current.familyId, now)
         }
 
@@ -53,14 +54,8 @@ open class RefreshSessionService(
         )
     }
 
-    private fun RefreshSession.isInvalidFor(command: RefreshSessionCommand, now: Instant): Boolean =
-        memberId != command.memberId ||
-            familyId != command.familyId ||
-            tokenFingerprint != command.tokenFingerprint ||
-            !isActive(now)
-
     private fun revokeAndReject(familyId: UUID, revokedAt: Instant): RefreshSessionResult? {
-        refreshSessionStore.revokeFamily(familyId, revokedAt)
+        refreshSessionStore.revokeFamily(RefreshFamilyRevocation(familyId, revokedAt))
         return null
     }
 }

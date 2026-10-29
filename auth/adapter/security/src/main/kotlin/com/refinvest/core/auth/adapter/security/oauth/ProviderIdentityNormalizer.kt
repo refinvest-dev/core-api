@@ -1,6 +1,6 @@
 package com.refinvest.core.auth.adapter.security.oauth
 
-import com.refinvest.core.auth.domain.SocialProvider
+import com.refinvest.core.auth.domain.valueobject.SocialProvider
 import com.refinvest.core.auth.port.inbound.login.SocialLoginCommand
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken
 import org.springframework.stereotype.Component

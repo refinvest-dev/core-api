@@ -1284,7 +1284,7 @@ class RefinvestApplicationTests(
         )
         val tokens = authenticationTokenIssuer.issue(MemberId(memberId), "MEMBER", null)
         refreshSessionStore.save(
-            RefreshSession(
+            RefreshSession.create(
                 jti = tokens.refreshJti,
                 memberId = MemberId(memberId),
                 familyId = tokens.refreshFamilyId,
@@ -1305,7 +1305,7 @@ class RefinvestApplicationTests(
         HttpResponse.BodyHandlers.ofString(),
     )
 
-    private fun refreshSession(jti: java.util.UUID): RefreshSession = RefreshSession(
+    private fun refreshSession(jti: java.util.UUID): RefreshSession = RefreshSession.restore(
         jti = jti,
         memberId = MemberId(jdbcTemplate.queryForObject(
             "select member_id from refresh_sessions where jti = ?",
@@ -1337,6 +1337,7 @@ class RefinvestApplicationTests(
             Instant::class.java,
             jti,
         ),
+        replacedByJti = jdbcTemplate.queryForObject("select replaced_by_jti from refresh_sessions where jti = ?", java.util.UUID::class.java, jti),
     )
 
     private fun seedStrategy(id: Long, memberId: Long, name: String, createdAt: String) {
