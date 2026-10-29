@@ -1,5 +1,8 @@
 package com.refinvest.core.tradingreview.adapter.web
 
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
+
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.port.*
 import jakarta.servlet.http.HttpServletRequest

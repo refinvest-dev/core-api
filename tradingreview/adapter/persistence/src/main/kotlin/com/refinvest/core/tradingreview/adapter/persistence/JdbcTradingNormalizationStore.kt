@@ -1,5 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.port.TradingNormalizationStore
 import org.springframework.jdbc.core.JdbcTemplate

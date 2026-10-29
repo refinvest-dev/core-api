@@ -1,5 +1,7 @@
 package com.refinvest.core.tradingreview.domain
 
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+
 import java.time.Instant
 
 enum class NormalizationRunStatus {

@@ -1,5 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.port.ArtifactReadGrant
 import com.refinvest.core.tradingreview.port.NormalizationSubmission
