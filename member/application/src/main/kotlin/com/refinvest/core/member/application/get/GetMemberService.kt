@@ -1,5 +1,6 @@
 package com.refinvest.core.member.application.get
 
+import com.refinvest.core.member.port.inbound.MemberRole
 import com.refinvest.core.member.port.inbound.get.GetMemberQuery
 import com.refinvest.core.member.port.inbound.get.GetMemberResult
 import com.refinvest.core.member.port.inbound.get.GetMemberUseCase
@@ -13,5 +14,5 @@ open class GetMemberService(
 ) : GetMemberUseCase {
     @Transactional(readOnly = true)
     override fun execute(query: GetMemberQuery): GetMemberResult? = memberReader.findById(query.memberId)
-        ?.let { member -> GetMemberResult(member.id, member.role) }
+        ?.let { member -> GetMemberResult(member.id, MemberRole.valueOf(member.role.name)) }
 }

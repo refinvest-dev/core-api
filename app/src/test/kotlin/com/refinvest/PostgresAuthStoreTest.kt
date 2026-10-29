@@ -12,7 +12,7 @@ import com.refinvest.core.auth.port.outbound.token.IssuedAuthenticationTokens
 import com.refinvest.core.member.adapter.out.persistence.*
 import com.refinvest.core.member.application.create.CreateMemberService
 import com.refinvest.core.member.application.get.GetMemberService
-import com.refinvest.core.member.domain.valueobject.MemberRole
+import com.refinvest.core.member.port.inbound.MemberRole
 import com.refinvest.core.member.port.inbound.get.GetMemberResult
 import com.refinvest.core.member.port.inbound.get.GetMemberUseCase
 import com.refinvest.core.member.port.outbound.id.MemberIdGenerator

@@ -21,8 +21,6 @@ class AuthModuleBoundaryTest {
                     if (layer != "domain") add("com.refinvest.core.auth.port.")
                     if (layer == "application") {
                         addAll(listOf("com.refinvest.core.auth.application.", "com.refinvest.core.member.port."))
-                        // Existing cross-feature result type; removal belongs to stage 3c.
-                        add("com.refinvest.core.member.domain.valueobject.MemberRole")
                     }
                     if (layer == "adapter/persistence") add("com.refinvest.core.auth.adapter.out.persistence.")
                 }
