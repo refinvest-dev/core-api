@@ -5,7 +5,7 @@ import com.refinvest.core.auth.port.inbound.session.RefreshSessionCommand
 import com.refinvest.core.auth.port.outbound.token.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.token.IssuedAuthenticationTokens
 import com.refinvest.core.auth.port.outbound.persistence.RefreshSessionStore
-import com.refinvest.core.member.domain.MemberRole
+import com.refinvest.core.member.domain.valueobject.MemberRole
 import com.refinvest.core.member.port.inbound.get.GetMemberQuery
 import com.refinvest.core.member.port.inbound.get.GetMemberResult
 import com.refinvest.core.member.port.inbound.get.GetMemberUseCase
