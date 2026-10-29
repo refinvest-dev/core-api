@@ -12,9 +12,9 @@ import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunPageRead
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunReadModel
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunReader
 import com.refinvest.core.shared.kernel.member.MemberId
-import com.refinvest.core.strategy.domain.valueobject.StrategyId as StrategyIdInStrategy
-import com.refinvest.core.strategy.port.inbound.get.GetStrategyResult
-import com.refinvest.core.strategy.port.inbound.get.GetStrategyUseCase
+import com.refinvest.core.strategy.port.inbound.owner.LookupStrategyOwnerResult
+import com.refinvest.core.backtest.port.outbound.member.BacktestMemberIdProvider
+import com.refinvest.core.strategy.port.inbound.owner.LookupStrategyOwnerUseCase
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -39,7 +39,7 @@ class ListBacktestRunsServiceTest {
                 startInclusive: Instant,
                 endExclusive: Instant,
             ) = error("countByMemberIdAndCreatedAtBetween is not used by ListBacktestRuns")
-        }, existingStrategy())
+        }, existingStrategy(), BacktestMemberIdProvider { MemberId(1) })
 
         val result = service.execute(ListBacktestRunsQuery(strategyId, page = 1, size = 2))
 
@@ -51,28 +51,31 @@ class ListBacktestRunsServiceTest {
     }
 
     @Test
-    fun `rejects a missing strategy`() {
-        val service = ListBacktestRunsService(
-            backtestRunReader = object : BacktestRunReader {
-                override fun findById(id: BacktestRunId): BacktestRunReadModel? = null
+    fun `rejects missing and foreign strategies before reading their history`() {
+        listOf(null, LookupStrategyOwnerResult(MemberId(2))).forEach { owner ->
+            val service = ListBacktestRunsService(
+                backtestRunReader = object : BacktestRunReader {
+                    override fun findById(id: BacktestRunId): BacktestRunReadModel? = null
 
-                override fun findByStrategyId(
-                    strategyId: StrategyId,
-                    page: Int,
-                    size: Int,
-                ) = error("findByStrategyId must not be called for a missing strategy")
+                    override fun findByStrategyId(
+                        strategyId: StrategyId,
+                        page: Int,
+                        size: Int,
+                    ) = error("findByStrategyId must not be called for a missing strategy")
 
-                override fun countByMemberIdAndCreatedAtBetween(
-                    memberId: MemberId,
-                    startInclusive: Instant,
-                    endExclusive: Instant,
-                ) = error("countByMemberIdAndCreatedAtBetween is not used by ListBacktestRuns")
-            },
-            getStrategyUseCase = GetStrategyUseCase { null },
-        )
+                    override fun countByMemberIdAndCreatedAtBetween(
+                        memberId: MemberId,
+                        startInclusive: Instant,
+                        endExclusive: Instant,
+                    ) = error("countByMemberIdAndCreatedAtBetween is not used by ListBacktestRuns")
+                },
+                lookupStrategyOwnerUseCase = LookupStrategyOwnerUseCase { owner },
+                backtestMemberIdProvider = BacktestMemberIdProvider { MemberId(1) },
+            )
 
-        kotlin.test.assertFailsWith<NoSuchElementException> {
-            service.execute(ListBacktestRunsQuery(StrategyId(7L)))
+            kotlin.test.assertFailsWith<NoSuchElementException> {
+                service.execute(ListBacktestRunsQuery(StrategyId(7L)))
+            }
         }
     }
 
@@ -86,13 +89,8 @@ class ListBacktestRunsServiceTest {
         createdAt = Instant.parse("2024-02-01T00:00:00Z"),
     )
 
-    private fun existingStrategy(): GetStrategyUseCase = GetStrategyUseCase { query ->
-        GetStrategyResult(
-            id = StrategyIdInStrategy(query.strategyId.value),
-            name = "strategy",
-            createdAt = Instant.parse("2024-01-01T00:00:00Z"),
-            latestVersionId = null,
-            versions = emptyList(),
-        )
+    private fun existingStrategy(): LookupStrategyOwnerUseCase = LookupStrategyOwnerUseCase { query ->
+        assertEquals(7L, query.strategyId)
+        LookupStrategyOwnerResult(MemberId(1))
     }
 }

@@ -4,6 +4,7 @@ import com.refinvest.core.backtest.port.inbound.usage.GetMonthlyBacktestUsageQue
 import com.refinvest.core.backtest.port.inbound.usage.GetMonthlyBacktestUsageUseCase
 import com.refinvest.core.subscription.domain.policy.BacktestPolicy
 import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
+import com.refinvest.core.subscription.port.inbound.SubscriptionTier as SubscriptionTierResult
 import com.refinvest.core.subscription.port.inbound.usage.GetUsageQuery
 import com.refinvest.core.subscription.port.inbound.usage.GetUsageResult
 import com.refinvest.core.subscription.port.inbound.usage.GetUsageUseCase
@@ -32,7 +33,7 @@ open class GetUsageService(
         ).backtestsUsed
 
         return GetUsageResult(
-            tier = tier,
+            tier = SubscriptionTierResult.valueOf(tier.name),
             backtestsUsedThisMonth = backtestsUsed,
             backtestMonthlyLimit = policy.monthlyExecutionLimit,
             allowedAssets = policy.allowedAssets.sorted(),

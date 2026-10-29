@@ -1,6 +1,7 @@
 import org.gradle.jvm.tasks.Jar
 import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 
 allprojects {
 	group = if (path == ":") "com.refinvest" else "com.refinvest${path.replace(':', '.')}"
@@ -66,6 +67,15 @@ tasks.register("verifyAggregateModuleBoundaries") {
                             (!modulePath.endsWith(":application") && id.group.startsWith("org.springframework"))
                     }
                 check(technology.isEmpty()) { "$modulePath exposes forbidden technology dependencies: $technology" }
+            }
+            if (modulePath.endsWith(":application") || modulePath == ":auth:adapter:security") {
+                val ownDomain = ":${modulePath.split(':')[1]}:domain"
+                listOf("compileClasspath", "testCompileClasspath").forEach { configuration ->
+                    val foreignDomains = module.configurations.getByName(configuration).incoming.resolutionResult
+                        .allComponents.mapNotNull { it.id as? ProjectComponentIdentifier }
+                        .map { it.projectPath }.filter { it.endsWith(":domain") && it != ownDomain }
+                    check(foreignDomains.isEmpty()) { "$modulePath $configuration exposes foreign domains: $foreignDomains" }
+                }
             }
         }
     }

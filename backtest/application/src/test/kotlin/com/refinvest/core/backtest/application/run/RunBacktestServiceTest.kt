@@ -23,9 +23,8 @@ import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestResult
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
-import com.refinvest.core.subscription.domain.Subscription
-import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
-import com.refinvest.core.subscription.port.inbound.get.GetSubscriptionUseCase
+import com.refinvest.core.subscription.port.inbound.policy.GetBacktestPolicyResult
+import com.refinvest.core.subscription.port.inbound.policy.GetBacktestPolicyUseCase
 import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
@@ -59,9 +58,10 @@ class RunBacktestServiceTest {
             lookupStrategyVersionForBacktestUseCase = LookupStrategyVersionForBacktestUseCase {
                 LookupStrategyVersionForBacktestResult(30L, MemberId(1L), setOf("QQQ"))
             },
-            getSubscriptionUseCase = GetSubscriptionUseCase { Subscription.restore(it.memberId, SubscriptionTier.FREE).let { subscription ->
-                com.refinvest.core.subscription.port.inbound.get.GetSubscriptionResult(subscription.id, subscription.tier)
-            } },
+            getBacktestPolicyUseCase = GetBacktestPolicyUseCase { query ->
+                assertEquals(MemberId(1), query.memberId)
+                GetBacktestPolicyResult(17, 2, 365, setOf("QQQ", "SPY", "BTCUSDT"))
+            },
             backtestMemberIdProvider = BacktestMemberIdProvider { MemberId(1L) },
             backtestQuotaStore = object : BacktestQuotaStore {
                 override fun reserve(request: BacktestQuotaRequest): BacktestQuotaReservation {
@@ -115,6 +115,8 @@ class RunBacktestServiceTest {
         assertNull(saved?.datasetSnapshotId)
         assertNull(saved?.engineVersion)
         assertEquals(id, enqueued?.backtestRunId)
+        assertEquals(17, reservation?.monthlyExecutionLimit)
+        assertEquals(2, reservation?.maxConcurrentRuns)
         assertEquals(id, reservation?.backtestRunId)
         assertEquals(YearMonth.of(2025, 12), reservation?.quotaMonth)
         assertEquals(Instant.parse("2025-12-31T23:59:59Z"), saved?.createdAt)

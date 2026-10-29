@@ -66,6 +66,8 @@ class JpaStrategyReaderAdapterTest {
         }
 
     private class StubReader(private val strategy: StrategyJpaEntity?) : StrategyJpaReader {
+        override fun findOwnerById(id: Long): Long? = strategy?.takeIf { it.id == id }?.memberId
+
         override fun findById(id: Long): StrategyJpaEntity? = strategy?.takeIf { it.id == id }
 
         override fun findAllByMemberIdOrderByCreatedAtDesc(memberId: Long, pageable: Pageable): Page<StrategyJpaEntity> {

@@ -27,11 +27,7 @@ class BacktestModuleBoundaryTest {
                         "adapter/snowflake" -> addAll(listOf("com.refinvest.core.backtest.adapter.out.id.", "com.refinvest.core.shared.infrastructure."))
                     }
                 }
-                // Existing result/policy types are explicitly tracked until stage 3c.
-                val pendingPortBoundaries = if (layer == "application") setOf("com.refinvest.core.strategy.domain.valueobject.StrategyId",
-                    "com.refinvest.core.subscription.domain.policy.BacktestPolicy", "com.refinvest.core.subscription.domain.valueobject.SubscriptionTier") else emptySet()
-                assertTrue(references.all { reference -> allowed.any { reference.startsWith(it) || reference == it.removeSuffix(".") } ||
-                    pendingPortBoundaries.any { reference == it || reference.startsWith("$it.") } }, "Forbidden reference in $file: $references")
+                assertTrue(references.all { reference -> allowed.any { reference.startsWith(it) || reference == it.removeSuffix(".") } }, "Forbidden reference in $file: $references")
                 if (layer in listOf("domain", "port")) assertTrue(!source.contains("org.springframework"), "Framework in $file")
                 if (layer in listOf("domain", "port", "application")) assertTrue(!Regex("jakarta\\.(persistence|servlet)|org\\.springframework\\.(data|jdbc|orm|web|boot)").containsMatchIn(source), "Technology in $file")
             }

@@ -1,6 +1,6 @@
 package com.refinvest.core.subscription.port.inbound.usage
 
-import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
+import com.refinvest.core.subscription.port.inbound.SubscriptionTier
 
 data class GetUsageResult(
     val tier: SubscriptionTier,

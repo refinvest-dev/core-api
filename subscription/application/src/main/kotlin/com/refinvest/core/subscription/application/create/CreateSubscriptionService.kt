@@ -1,6 +1,7 @@
 package com.refinvest.core.subscription.application.create
 
 import com.refinvest.core.subscription.domain.Subscription
+import com.refinvest.core.subscription.port.inbound.SubscriptionTier as SubscriptionTierResult
 import com.refinvest.core.subscription.port.inbound.create.CreateSubscriptionCommand
 import com.refinvest.core.subscription.port.inbound.create.CreateSubscriptionResult
 import com.refinvest.core.subscription.port.inbound.create.CreateSubscriptionUseCase
@@ -15,10 +16,10 @@ open class CreateSubscriptionService(
     @Transactional
     override fun execute(command: CreateSubscriptionCommand): CreateSubscriptionResult {
         subscriptionStore.findByMemberId(command.memberId)?.let { existing ->
-            return CreateSubscriptionResult(existing.id, existing.tier)
+            return CreateSubscriptionResult(existing.id, SubscriptionTierResult.valueOf(existing.tier.name))
         }
         val subscription = Subscription.createDefault(command.memberId)
         subscriptionStore.save(subscription)
-        return CreateSubscriptionResult(subscription.id, subscription.tier)
+        return CreateSubscriptionResult(subscription.id, SubscriptionTierResult.valueOf(subscription.tier.name))
     }
 }

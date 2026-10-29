@@ -10,6 +10,7 @@ import com.refinvest.core.subscription.adapter.out.persistence.*
 import com.refinvest.core.subscription.application.create.CreateSubscriptionService
 import com.refinvest.core.subscription.application.upgrade.UpgradeSubscriptionService
 import com.refinvest.core.subscription.domain.valueobject.SubscriptionTier
+import com.refinvest.core.subscription.port.inbound.SubscriptionTier as SubscriptionTierResult
 import com.refinvest.core.subscription.port.inbound.create.CreateSubscriptionCommand
 import com.refinvest.core.subscription.port.inbound.upgrade.UpgradeSubscriptionCommand
 import com.zaxxer.hikari.HikariDataSource
@@ -51,15 +52,15 @@ class PostgresMemberSubscriptionStoreTest {
     @Test
     fun `repeated default creation preserves a paid subscription`() = withFixture { f ->
         f.seedMember()
-        assertEquals(SubscriptionTier.PRO, f.upgrade())
-        assertEquals(SubscriptionTier.PRO, f.create())
+        assertEquals(SubscriptionTierResult.PRO, f.upgrade())
+        assertEquals(SubscriptionTierResult.PRO, f.create())
         assertEquals(SubscriptionTier.PRO, f.reader.findByMemberId(MemberId(1))?.tier)
     }
 
     @Test
     fun `upgrade creates a missing subscription and repeated upgrade stays pro`() = withFixture { f ->
         f.seedMember()
-        repeat(2) { assertEquals(SubscriptionTier.PRO, f.upgrade()) }
+        repeat(2) { assertEquals(SubscriptionTierResult.PRO, f.upgrade()) }
         assertEquals(1, f.jdbc.queryForObject("SELECT count(*) FROM subscriptions", Int::class.java))
     }
 
@@ -101,13 +102,13 @@ class PostgresMemberSubscriptionStoreTest {
                 }
             }
             assertTrue(saved.await(15, TimeUnit.SECONDS))
-            val waiting = pool.submit<SubscriptionTier> { f.create() }
+            val waiting = pool.submit<SubscriptionTierResult> { f.create() }
             f.awaitLockWaiter()
             assertEquals(SubscriptionTier.FREE, f.reader.findByMemberId(MemberId(1))?.tier)
-            assertEquals(SubscriptionTier.FREE, f.create(2))
+            assertEquals(SubscriptionTierResult.FREE, f.create(2))
             release.countDown()
             first.get(15, TimeUnit.SECONDS)
-            assertEquals(SubscriptionTier.PRO, waiting.get(15, TimeUnit.SECONDS))
+            assertEquals(SubscriptionTierResult.PRO, waiting.get(15, TimeUnit.SECONDS))
         } finally {
             release.countDown()
             pool.shutdownNow()
@@ -132,7 +133,7 @@ class PostgresMemberSubscriptionStoreTest {
             f.tx.execute { f.upgrade(); f.flush(); error("Synthetic upgrade failure") }
         }
         assertEquals(SubscriptionTier.FREE, f.reader.findByMemberId(MemberId(1))?.tier)
-        assertEquals(SubscriptionTier.PRO, f.upgrade())
+        assertEquals(SubscriptionTierResult.PRO, f.upgrade())
     }
 
     private fun race(f: Fixture, firstUpgrade: Boolean) {
@@ -140,7 +141,7 @@ class PostgresMemberSubscriptionStoreTest {
         val release = CountDownLatch(1)
         val pool = Executors.newFixedThreadPool(2)
         try {
-            val first = pool.submit<SubscriptionTier> {
+            val first = pool.submit<SubscriptionTierResult> {
                 f.tx.execute {
                     val result = if (firstUpgrade) f.upgrade() else f.create()
                     f.flush()
@@ -150,11 +151,11 @@ class PostgresMemberSubscriptionStoreTest {
                 }!!
             }
             assertTrue(saved.await(15, TimeUnit.SECONDS))
-            val second = pool.submit<SubscriptionTier> { if (firstUpgrade) f.create() else f.upgrade() }
+            val second = pool.submit<SubscriptionTierResult> { if (firstUpgrade) f.create() else f.upgrade() }
             f.awaitLockWaiter()
             release.countDown()
-            assertEquals(if (firstUpgrade) SubscriptionTier.PRO else SubscriptionTier.FREE, first.get(15, TimeUnit.SECONDS))
-            assertEquals(SubscriptionTier.PRO, second.get(15, TimeUnit.SECONDS))
+            assertEquals(if (firstUpgrade) SubscriptionTierResult.PRO else SubscriptionTierResult.FREE, first.get(15, TimeUnit.SECONDS))
+            assertEquals(SubscriptionTierResult.PRO, second.get(15, TimeUnit.SECONDS))
             assertEquals(SubscriptionTier.PRO, f.reader.findByMemberId(MemberId(1))?.tier)
         } finally {
             release.countDown()
@@ -178,8 +179,8 @@ class PostgresMemberSubscriptionStoreTest {
             MemberIdGenerator { MemberId(1) }, createService, Clock.fixed(TIME, ZoneOffset.UTC))
 
         fun seedMember(id: Long = 1) { jdbc.update("INSERT INTO members (id, role, created_at) VALUES (?, 'MEMBER', ?)", id, java.sql.Timestamp.from(TIME)) }
-        fun create(id: Long = 1): SubscriptionTier = tx.execute { createService.execute(CreateSubscriptionCommand(MemberId(id))).tier }!!
-        fun upgrade(): SubscriptionTier = tx.execute { upgradeService.execute(UpgradeSubscriptionCommand(MemberId(1))).tier }!!
+        fun create(id: Long = 1): SubscriptionTierResult = tx.execute { createService.execute(CreateSubscriptionCommand(MemberId(id))).tier }!!
+        fun upgrade(): SubscriptionTierResult = tx.execute { upgradeService.execute(UpgradeSubscriptionCommand(MemberId(1))).tier }!!
         fun flush() = entityManager.flush()
         fun awaitLockWaiter() {
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)

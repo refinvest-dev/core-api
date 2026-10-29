@@ -1,6 +1,7 @@
 package com.refinvest.core.subscription.application.upgrade
 
 import com.refinvest.core.subscription.domain.Subscription
+import com.refinvest.core.subscription.port.inbound.SubscriptionTier as SubscriptionTierResult
 import com.refinvest.core.subscription.port.inbound.upgrade.UpgradeSubscriptionCommand
 import com.refinvest.core.subscription.port.inbound.upgrade.UpgradeSubscriptionResult
 import com.refinvest.core.subscription.port.inbound.upgrade.UpgradeSubscriptionUseCase
@@ -18,6 +19,6 @@ open class UpgradeSubscriptionService(
             ?: Subscription.createDefault(command.memberId)
         val upgradedSubscription = subscription.upgrade()
         subscriptionStore.save(upgradedSubscription)
-        return UpgradeSubscriptionResult(upgradedSubscription.id, upgradedSubscription.tier)
+        return UpgradeSubscriptionResult(upgradedSubscription.id, SubscriptionTierResult.valueOf(upgradedSubscription.tier.name))
     }
 }

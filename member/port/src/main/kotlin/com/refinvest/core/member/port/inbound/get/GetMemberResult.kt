@@ -1,6 +1,6 @@
 package com.refinvest.core.member.port.inbound.get
 
-import com.refinvest.core.member.domain.valueobject.MemberRole
+import com.refinvest.core.member.port.inbound.MemberRole
 import com.refinvest.core.shared.kernel.member.MemberId
 
 data class GetMemberResult(
