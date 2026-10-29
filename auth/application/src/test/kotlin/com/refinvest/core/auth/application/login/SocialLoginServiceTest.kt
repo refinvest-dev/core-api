@@ -8,7 +8,7 @@ import com.refinvest.core.auth.port.outbound.token.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.token.IssuedAuthenticationTokens
 import com.refinvest.core.auth.port.outbound.persistence.RefreshSessionStore
 import com.refinvest.core.auth.port.outbound.persistence.SocialIdentityStore
-import com.refinvest.core.member.domain.MemberRole
+import com.refinvest.core.member.domain.valueobject.MemberRole
 import com.refinvest.core.member.port.inbound.create.CreateMemberCommand
 import com.refinvest.core.member.port.inbound.create.CreateMemberResult
 import com.refinvest.core.member.port.inbound.create.CreateMemberUseCase

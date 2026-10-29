@@ -131,8 +131,41 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 1c | 완료·머지 | [PR #85](https://github.com/refinvest-dev/core-api/pull/85), R04 polling 응답 반영 전 lease 잠금·검증 |
 | 1d | 완료·머지 | [PR #86](https://github.com/refinvest-dev/core-api/pull/86), R03 Strategy 잠금과 immutable version append-only 저장 |
 | 1e | 완료·머지 | [PR #87](https://github.com/refinvest-dev/core-api/pull/87), R05 생성 시각·숫자 ID 기준 version 정렬과 최신 선택 |
-| 1f | 구현·검증 완료, PR 검토 대상 | `0c5c06f`, R06 Backtest/Asset HTTP timeout과 retry·lease 정합 |
-| 2a 이후 | 미착수 | 다음 PR은 Member/Subscription Aggregate Store·Reader·Mapper 기준 구현 |
+| 1f | 완료·머지 | [PR #88](https://github.com/refinvest-dev/core-api/pull/88), R06 Backtest/Asset HTTP timeout과 retry·lease 정합 |
+| 2a | 구현·검증 완료, PR 검토 대상 | [PR #89](https://github.com/refinvest-dev/core-api/pull/89), `2acf644`·`3c2c4be`, Member/Subscription Mapper와 구독 command 잠금 |
+| 2b 이후 | 미착수 | 다음 PR은 Auth 행위·저장·매핑과 refresh 회전·폐기·replay·경합 원자성 검증 |
+
+### 2a 검증 기록과 적용 기준
+
+- 기존 Member/Subscription은 이미 `AggregateRoot<MemberId>`와 private 생성자·`create/restore`를
+  사용하고 있었다. 이번 단계는 이를 유지하면서 순수 `MemberPersistenceMapper`와
+  `SubscriptionPersistenceMapper`에 domain ↔ JPA 변환을 모았다. Store는 Aggregate를 받고,
+  단순 Aggregate 조회인 Reader와 command Store는 같은 복원 Mapper를 사용한다.
+- `MemberRole`은 성격별 `valueobject` package로 이동했다. 신규 회원의 MEMBER 기본값과 DB에
+  저장된 ADMIN 역할 복원을 구분하며, Auth의 직접 domain 타입 참조 정리는 예정된 3c에서 다룬다.
+- 실제 PostgreSQL에서 PRO 업그레이드 후 기본 구독을 재생성하면 FREE로 바뀌는 회귀 실패를
+  재현했다. 수정 후 생성 서비스는 Store로 조회한 기존 Aggregate를 그대로 반환한다.
+- 구독 command는 회원 row를 잠근 뒤 조회·변경·저장한다. 구독 row가 없는 최초 생성도 같은
+  회원 기준으로 직렬화하며 독립 Reader는 잠그지 않는다. command 조회는 활성 transaction이
+  필요하고 조회→행위→저장은 같은 transaction에서 실행한다. 모든 구독 writer에 수정 코드를
+  적용해야 이 규칙을 보장하며, 이전 writer와의 혼합 실행은 보호 범위에 포함하지 않는다.
+- `cleanTest` 후 Mapper 4개·Member application 1개·Subscription application 6개·Auth application
+  11개·app 69개, 총 91개를 실제 실행해 통과했다. 실패·오류·skip은 0개다. 컴파일 일부는
+  UP-TO-DATE였으나 테스트 결과는 재사용하지 않았다.
+- app의 PostgreSQL 테스트 8개로 회원/기본 구독 저장과 ADMIN 복원, PRO 재생성, 누락 구독
+  업그레이드, 최초 생성↔업그레이드 양방향 경합, Reader/다른 회원 격리, command transaction
+  경계와 회원·구독/업그레이드 rollback을 검증했다. 경합은 별도 물리 연결과 실제 잠금 대기로
+  확인하며 전용 임시 schema를 정리했다. 기존 PostgreSQL Flyway 테스트도 실제 실행했다.
+  Member/Subscription의 기존 schema를 Flyway로 편입하는 작업은 6a에 남아 있다.
+- 소스 경계 검사 2개와 실제 Gradle project/기술 의존성 검사
+  `verifyMemberSubscriptionBoundaries`를 추가하고 `:app:test`에 연결했다.
+- 이번 변경은 API/schema/hash·계산 입력과 계산 결정론에 영향을 주지 않는다. Core↔Compute 호출
+  변경이 없어 해당 E2E는 재실행하지 않았다. Windows Gradle 소켓 오류로 시작되지 않은 실행과
+  fixture 준비 중 실패한 실행은 위 통과 결과에 포함하지 않았다. 로컬 credential·fixture·로그는
+  커밋하지 않는다.
+- 구현은 Member 기준 정리(`2acf644`)와 Subscription 매핑·동시성/회귀 검증(`3c2c4be`)으로
+  나누었다. 다음 단계는 2b이며, refresh 회전·폐기·replay 의미와 경합 원자성을 보존하면서 Auth
+  Aggregate 행위와 persistence 매핑을 정리한다.
 
 ### 1f 검증 기록과 운영 설정
 

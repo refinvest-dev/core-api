@@ -50,5 +50,9 @@ dependencies {
     testImplementation(project(":auth:domain"))
     testImplementation(project(":auth:port"))
     testImplementation(project(":member:port"))
+    testImplementation(project(":subscription:port"))
+    testImplementation(libs.spring.boot.starter.data.jpa)
     testRuntimeOnly(libs.h2)
 }
+
+tasks.named("test") { dependsOn(rootProject.tasks.named("verifyMemberSubscriptionBoundaries")) }

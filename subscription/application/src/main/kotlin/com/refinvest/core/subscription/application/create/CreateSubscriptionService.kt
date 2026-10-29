@@ -14,6 +14,9 @@ open class CreateSubscriptionService(
 ) : CreateSubscriptionUseCase {
     @Transactional
     override fun execute(command: CreateSubscriptionCommand): CreateSubscriptionResult {
+        subscriptionStore.findByMemberId(command.memberId)?.let { existing ->
+            return CreateSubscriptionResult(existing.id, existing.tier)
+        }
         val subscription = Subscription.createDefault(command.memberId)
         subscriptionStore.save(subscription)
         return CreateSubscriptionResult(subscription.id, subscription.tier)

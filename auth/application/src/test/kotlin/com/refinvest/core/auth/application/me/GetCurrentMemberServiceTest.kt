@@ -1,7 +1,7 @@
 package com.refinvest.core.auth.application.me
 
 import com.refinvest.core.auth.port.outbound.member.CurrentMemberIdProvider
-import com.refinvest.core.member.domain.MemberRole
+import com.refinvest.core.member.domain.valueobject.MemberRole
 import com.refinvest.core.member.port.inbound.get.GetMemberQuery
 import com.refinvest.core.member.port.inbound.get.GetMemberResult
 import com.refinvest.core.member.port.inbound.get.GetMemberUseCase
