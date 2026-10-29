@@ -12,6 +12,6 @@ class JpaBacktestResultReaderAdapter(
 ) : BacktestResultReader {
     override fun findByBacktestRunId(backtestRunId: BacktestRunId): BacktestResult? =
         backtestResultJpaReader.findById(backtestRunId.value)?.let { entity ->
-            resultPayloadMapper.deserialize(entity.resultPayload)
+            BacktestResultPersistenceMapper.toDomain(entity, resultPayloadMapper)
         }
 }

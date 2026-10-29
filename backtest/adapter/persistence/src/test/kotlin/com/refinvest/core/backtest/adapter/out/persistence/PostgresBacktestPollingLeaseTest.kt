@@ -77,6 +77,20 @@ class PostgresBacktestPollingLeaseTest {
     }
 
     @Test
+    fun permanentSubmissionRejectionReloadsTheRunAndCommitsCapacityRelease() = withFixture(submitted = false) { f ->
+        val submission = f.submit(ComputeClient { ComputeBacktestSubmission.Rejected("synthetic rejection", "DSL_INVALID") })
+        assertTrue(submission.execute())
+        val restored = f.tx.execute { f.runs.findById(BacktestRunId(1)) }!!
+        assertEquals(BacktestRunStatus.FAILED, restored.status)
+        assertNull(restored.actualPeriod)
+        assertEquals("DSL_INVALID", restored.errorCode)
+        assertEquals(0L, f.jdbc.queryForObject("SELECT count(*) FROM backtest_capacity_reservations", Long::class.java))
+        assertEquals(1, f.jdbc.queryForObject("SELECT used_count FROM backtest_quotas", Int::class.java))
+        assertEquals("REJECTED", f.jdbc.queryForObject("SELECT status FROM backtest_compute_dispatches", String::class.java))
+        assertEquals(1, f.observations.size)
+    }
+
+    @Test
     fun actualPollBodyTimeoutKeepsRunAndCapacityUntilTerminalCompletion() = withFixture { f ->
         withDelayedResponse(200, """{"status":"PENDING"}""") { server, release, _ ->
             val client = RestClientComputeBacktestStatusClient("http://127.0.0.1:${server.address.port}", "synthetic-key",
@@ -307,12 +321,13 @@ class PostgresBacktestPollingLeaseTest {
         val jdbc = JdbcTemplate(source)
         val tx = TransactionTemplate(JpaTransactionManager(factory).apply { dataSource = source })
         val registry = SimpleMeterRegistry()
-        private val repositories = JpaRepositoryFactory(SharedEntityManagerCreator.createSharedEntityManager(factory))
+        private val entityManager = SharedEntityManagerCreator.createSharedEntityManager(factory)
+        private val repositories = JpaRepositoryFactory(entityManager)
         val dispatchRepository = repositories.getRepository(BacktestComputeDispatchJpaStore::class.java)
         val dispatches = JpaBacktestComputeDispatchStoreAdapter(dispatchRepository, registry, clock)
         val runs = JpaBacktestRunStoreAdapter(repositories.getRepository(BacktestRunJpaStore::class.java),
             repositories.getRepository(BacktestResultJpaStore::class.java),
-            BacktestResultPayloadMapper(jacksonObjectMapper()), registry)
+            BacktestResultPayloadMapper(jacksonObjectMapper()), registry, entityManager)
         private val quota = JdbcBacktestQuotaStoreAdapter(jdbc)
         val execution = RecordBacktestRunExecutionService(runs, quota)
         val observations = CopyOnWriteArrayList<ComputeBacktestFailureObservation>()

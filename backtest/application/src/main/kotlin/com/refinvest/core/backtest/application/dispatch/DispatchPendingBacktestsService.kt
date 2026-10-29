@@ -44,7 +44,9 @@ open class DispatchPendingBacktestsService(
             backtestComputeDispatchStore.claimNext(now, BacktestComputeDispatchLease.duration)
         } ?: return false
 
-        val backtestRun = backtestRunStore.findById(dispatch.backtestRunId) ?: return false
+        val backtestRun = transactionTemplate.execute {
+            backtestRunStore.findById(dispatch.backtestRunId)
+        } ?: return false
         val strategyVersion = lookupStrategyVersionForBacktestUseCase.execute(
             LookupStrategyVersionForBacktestQuery(backtestRun.strategyVersionId.value),
         ) ?: return false
@@ -77,13 +79,14 @@ open class DispatchPendingBacktestsService(
             }
             is ComputeBacktestSubmission.Rejected -> transactionTemplate.execute {
                 if (backtestComputeDispatchStore.markRejected(backtestRun.id, dispatch.claimToken)) {
-                    backtestRun.failWithoutExecution(submission.reason, submission.errorCode)
-                    backtestRunStore.save(backtestRun)
-                    backtestQuotaStore.releaseConcurrentCapacity(backtestRun.id)
+                    val current = requireNotNull(backtestRunStore.findById(backtestRun.id)) { "Backtest run not found" }
+                    current.failWithoutExecution(submission.reason, submission.errorCode)
+                    backtestRunStore.save(current)
+                    backtestQuotaStore.releaseConcurrentCapacity(current.id)
                     ComputeBacktestFailureObservation(
-                        backtestRunId = backtestRun.id,
-                        strategyId = backtestRun.strategyId,
-                        strategyVersionId = backtestRun.strategyVersionId,
+                        backtestRunId = current.id,
+                        strategyId = current.strategyId,
+                        strategyVersionId = current.strategyVersionId,
                         errorCode = submission.errorCode,
                     )
                 } else {

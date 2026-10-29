@@ -33,6 +33,13 @@ val aggregateModuleDependencies = mapOf(
     ":strategy:adapter:persistence" to setOf(":strategy:port"),
     ":strategy:adapter:web" to setOf(":strategy:port"),
     ":strategy:adapter:snowflake" to setOf(":strategy:port", ":shared:infrastructure"),
+    ":backtest:domain" to setOf(":shared:kernel"),
+    ":backtest:port" to setOf(":backtest:domain"),
+    ":backtest:application" to setOf(":backtest:port", ":strategy:port", ":subscription:port"),
+    ":backtest:adapter:persistence" to setOf(":backtest:port"),
+    ":backtest:adapter:compute" to setOf(":backtest:port", ":shared:infrastructure"),
+    ":backtest:adapter:web" to setOf(":backtest:port"),
+    ":backtest:adapter:snowflake" to setOf(":backtest:port", ":shared:infrastructure"),
 )
 
 tasks.register("verifyAggregateModuleBoundaries") {
