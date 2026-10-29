@@ -16,12 +16,12 @@ import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorCode
 import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorException
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.http.client.JdkClientHttpRequestFactory
+import com.refinvest.core.shared.infrastructure.http.HttpClientTimeouts
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
-import java.net.http.HttpClient
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 
@@ -36,7 +36,9 @@ class RestClientAssetDataClient private constructor(
         @Value("\${refinvest.compute.base-url:http://localhost:8000}") baseUrl: String,
         @Value("\${refinvest.compute.api-key:}") apiKey: String,
         objectMapper: ObjectMapper,
-    ) : this(createRestClient(baseUrl), apiKey, objectMapper)
+        @Value("\${refinvest.compute.connect-timeout:PT2S}") connectTimeout: Duration = Duration.ofSeconds(2),
+        @Value("\${refinvest.compute.read-timeout:PT20S}") readTimeout: Duration = Duration.ofSeconds(20),
+    ) : this(createRestClient(baseUrl, HttpClientTimeouts(connectTimeout, readTimeout)), apiKey, objectMapper)
 
     internal constructor(
         baseUrl: String,
@@ -198,9 +200,9 @@ class RestClientAssetDataClient private constructor(
     private companion object {
         const val INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"
 
-        fun createRestClient(baseUrl: String): RestClient = RestClient.builder()
+        fun createRestClient(baseUrl: String, timeouts: HttpClientTimeouts): RestClient = RestClient.builder()
             .baseUrl(baseUrl)
-            .requestFactory(JdkClientHttpRequestFactory(HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()))
+            .requestFactory(timeouts.requestFactory())
             .build()
     }
 }

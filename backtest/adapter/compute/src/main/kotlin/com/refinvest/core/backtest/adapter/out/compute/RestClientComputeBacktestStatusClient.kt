@@ -20,14 +20,14 @@ import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusLo
 import com.refinvest.core.backtest.port.outbound.compute.ComputeBacktestStatusValue
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.http.client.JdkClientHttpRequestFactory
+import com.refinvest.core.shared.infrastructure.http.HttpClientTimeouts
+import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchLease
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
-import java.net.http.HttpClient
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -44,7 +44,10 @@ class RestClientComputeBacktestStatusClient private constructor(
         @Value("\${refinvest.compute.api-key:}") apiKey: String,
         objectMapper: ObjectMapper,
         registry: MeterRegistry,
-    ) : this(createRestClient(baseUrl, registry), apiKey, objectMapper)
+        @Value("\${refinvest.compute.connect-timeout:PT2S}") connectTimeout: Duration = Duration.ofSeconds(2),
+        @Value("\${refinvest.compute.read-timeout:PT20S}") readTimeout: Duration = Duration.ofSeconds(20),
+    ) : this(createRestClient(baseUrl, registry, HttpClientTimeouts(connectTimeout, readTimeout)
+        .requireBudgetBelow(BacktestComputeDispatchLease.duration)), apiKey, objectMapper)
 
     internal constructor(
         baseUrl: String,
@@ -218,14 +221,10 @@ class RestClientComputeBacktestStatusClient private constructor(
         val RETRY_AFTER_SERVICE_UNAVAILABLE: Duration = Duration.ofSeconds(30)
         val RETRY_AFTER_TRANSIENT_FAILURE: Duration = Duration.ofSeconds(10)
 
-        fun createRestClient(baseUrl: String, registry: MeterRegistry): RestClient = RestClient.builder()
+        fun createRestClient(baseUrl: String, registry: MeterRegistry, timeouts: HttpClientTimeouts): RestClient = RestClient.builder()
             .baseUrl(baseUrl)
             .requestInterceptor(ComputeClientTimingInterceptor(registry, "poll"))
-            .requestFactory(
-                JdkClientHttpRequestFactory(
-                    HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build(),
-                ),
-            )
+            .requestFactory(timeouts.requestFactory())
             .build()
     }
 }
