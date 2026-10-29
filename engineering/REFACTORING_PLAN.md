@@ -130,8 +130,35 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 1b | 완료·머지 | [PR #84](https://github.com/refinvest-dev/core-api/pull/84), 월간 사용량과 실행 ID별 활성 예약 분리 |
 | 1c | 완료·머지 | [PR #85](https://github.com/refinvest-dev/core-api/pull/85), R04 polling 응답 반영 전 lease 잠금·검증 |
 | 1d | 완료·머지 | [PR #86](https://github.com/refinvest-dev/core-api/pull/86), R03 Strategy 잠금과 immutable version append-only 저장 |
-| 1e | 구현·검증 완료, PR 검토 대상 | `73afc42`, R05 생성 시각·숫자 ID 기준 version 정렬과 최신 선택 |
-| 1f 이후 | 미착수 | 다음 PR은 R06 Backtest/Asset HTTP timeout과 retry·lease 정합 |
+| 1e | 완료·머지 | [PR #87](https://github.com/refinvest-dev/core-api/pull/87), R05 생성 시각·숫자 ID 기준 version 정렬과 최신 선택 |
+| 1f | 구현·검증 완료, PR 검토 대상 | `0c5c06f`, R06 Backtest/Asset HTTP timeout과 retry·lease 정합 |
+| 2a 이후 | 미착수 | 다음 PR은 Member/Subscription Aggregate Store·Reader·Mapper 기준 구현 |
+
+### 1f 검증 기록과 운영 설정
+
+- 수정 전 production HTTP constructor를 실제 지연 서버에 연결해, 250ms 설정에도 요청이 3초 검증
+  경계까지 반환하지 못하는 회귀 실패를 재현했다. 수정 후 헤더·본문·계속 전달되는 본문과 TLS
+  handshake 지연, 연결 거절을 실제 소켓으로 검증했다.
+- 공통 기술 구현 `HttpClientTimeouts`는 `shared:infrastructure`에 두고 Backtest 제출·polling 및 Asset
+  조회 adapter에 적용했다. 설정은 `refinvest.compute.connect-timeout` / `read-timeout`이며 환경 변수
+  `COMPUTE_CONNECT_TIMEOUT=PT2S`, `COMPUTE_READ_TIMEOUT=PT20S`가 기본값이다.
+- 두 timeout은 양수여야 하며 Backtest는 합이 dispatch/poll lease 60초 미만이어야 기동한다.
+  application과 HTTP adapter가 같은 port의 lease 값을 참조한다. HTTP I/O는 DB transaction 밖에서 수행한다.
+- 실제 PostgreSQL에서 응답 본문 timeout 뒤 동일한 저장 key·요청으로 제출을 재시도해 acceptance를
+  기록하고, quota 재소비 없이 capacity를 유지함을 확인했다. polling timeout도 Run·Result·capacity를
+  변경하지 않고 10초 뒤 재조회하며, 정상 terminal 완료 뒤 capacity를 해제한다.
+- 관련 결과는 공통 3개·Backtest HTTP 10개·Asset HTTP 5개·Backtest application 29개·persistence 27개·
+  app 59개로 133개 통과, 실패·오류·skip 0개다. 앞선 실행에서 통과한 47개는 재사용됐고, 최종 실행에서
+  persistence 27개와 app 59개를 실제 실행했다. 실제 PG lease/timeout 11개·quota 9개와 app의 실제 PG
+  migration을 포함한다. app의 실제 지연 HTTP 테스트 7개에는 JUnit 실행 목록에서 확인한 본문 진행 기한도 포함한다.
+- 로컬 Gradle 컴파일 정체와 DB `Bad address: connect` 실패 실행은 성공으로 세지 않았다.
+  검증용 compiler 프로세스를 격리하고 heap을 조정했다. PG fixture에는 작은 연결 풀을 적용했으며,
+  quota 경합은 작업자 수만큼 물리 연결을 미리 확보해 동시 transaction 검증을 유지한다.
+- 실제 Core↔Compute `run-api-smoke-ci.ps1`가 정상 Backtest·재실행·계산 실패·다른 사용자 조회 차단을
+  통과했다. 추가 Asset 검증은 처음 쿠키 미전달로 401을 받았고, 쿠키 세션으로 고친 별도 재실행에서
+  `/assets`와 QQQ availability·snapshot metadata를 검증해 통과했다. 전용 서비스·임시 환경 파일을 정리했다.
+- 수정 전후 계약 snapshot, 문서 snapshot 24개와 `git diff --check`가 통과했다. credential·fixture·
+  로그·heap dump는 커밋하지 않는다. wire/schema/hash·계산 입력 변경은 없으며 계산 결정론 영향은 없다.
 
 ### 1e 검증 기록
 
