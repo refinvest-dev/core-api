@@ -17,6 +17,13 @@ class Strategy private constructor(
     val versions: List<StrategyVersion>
         get() = mutableVersions.toList()
 
+    init {
+        require(name.isNotBlank()) { "Strategy name must not be blank" }
+        require(name.length <= MAX_NAME_LENGTH) { "Strategy name must not exceed $MAX_NAME_LENGTH characters" }
+        require(mutableVersions.all { it.strategyId == id }) { "StrategyVersion belongs to another Strategy" }
+        require(mutableVersions.map { it.id }.distinct().size == mutableVersions.size) { "StrategyVersion identity must be unique" }
+    }
+
     fun addVersion(version: StrategyVersion) {
         require(version.strategyId == id) { "StrategyVersion belongs to another Strategy" }
         require(mutableVersions.none { it.id == version.id }) { "StrategyVersion identity must be unique" }
@@ -30,8 +37,6 @@ class Strategy private constructor(
             name: String,
             createdAt: Instant,
         ): Strategy {
-            require(name.isNotBlank()) { "Strategy name must not be blank" }
-            require(name.length <= MAX_NAME_LENGTH) { "Strategy name must not exceed $MAX_NAME_LENGTH characters" }
             return Strategy(
                 id = id,
                 memberId = memberId,
@@ -40,6 +45,9 @@ class Strategy private constructor(
                 versions = emptyList(),
             )
         }
+
+        fun restore(id: StrategyId, memberId: MemberId, name: String, createdAt: Instant,
+                    versions: List<StrategyVersion>): Strategy = Strategy(id, memberId, name, createdAt, versions)
 
         private const val MAX_NAME_LENGTH = 200
     }
