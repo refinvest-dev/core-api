@@ -134,8 +134,56 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 1f | 완료·머지 | [PR #88](https://github.com/refinvest-dev/core-api/pull/88), R06 Backtest/Asset HTTP timeout과 retry·lease 정합 |
 | 2a | 완료·머지 | [PR #89](https://github.com/refinvest-dev/core-api/pull/89), Member/Subscription Mapper와 구독 command 잠금 |
 | 2b | 완료·머지 | [PR #90](https://github.com/refinvest-dev/core-api/pull/90), Auth Aggregate·Mapper와 refresh family 경합 수정 |
-| 3a | 구현·검증 완료, PR 검토 대상 | [PR #91](https://github.com/refinvest-dev/core-api/pull/91), `a824c26`·`270146d`, Strategy 복원·불변성과 저장/조회 Mapper 정리 |
-| 3b 이후 | 미착수 | 다음 PR은 Backtest Run/Result 저장·복원 정리, R02 quota/capacity와 R04 polling lease 보호 유지 |
+| 3a | 완료·머지 | [PR #91](https://github.com/refinvest-dev/core-api/pull/91), `a824c26`·`270146d`, Strategy 복원·불변성과 저장/조회 Mapper 정리 |
+| 3b | 구현·검증 완료, PR 검토 대상 | [PR #92](https://github.com/refinvest-dev/core-api/pull/92), `7483529`·`c5d363b`, Backtest Run/Result 복원·불변성과 저장/조회 Mapper 정리, R02/R04 회귀 검증 |
+| 3c 이후 | 미착수 | 다음 PR은 R12 feature port 경계: Backtest→Strategy/Subscription, Auth→Member domain 직접 참조 제거 |
+
+### 3b 검증 기록과 적용 기준
+
+- ADR-010/018/020과 `RunBacktest`·`GetBacktestResult`·`PollBacktestStatus`·`ListBacktestRuns`를
+  기준으로 BacktestRun의 저장·복원을 정리했다. Root와 typed ID 및 소속 BacktestResult 경계를
+  유지한다. `restore`도 완료 행위와 동일하게 결과의 Run ID·DatasetSnapshot ID를 검증하며,
+  잘못된 errorCode는 상태를 바꾸기 전에 거절한다. 이 불변식과 중첩 목록 변경의 회귀 실패
+  3개를 수정 전에 확인했다. 결과·benchmark curve·delay 분포는 입력 복사와 변경 불가 목록으로
+  보호하며, JSON에 새 Aggregate/Entity ID 필드를 추가하지 않는다.
+- `BacktestRunPersistenceMapper`와 `BacktestResultPersistenceMapper`는 adapter가 조회한
+  Root/Result row를 받아 전체 Aggregate를 복원한다. Repository 조회·시각 결정·업무 전이는
+  Mapper에서 수행하지 않는다. 독립적인 상태·목록 조회는 `BacktestRunReadModelMapper`를
+  사용하고, 결과 Reader는 Store와 같은 결과 매핑을 공유한다. nullable 지표, ZERO sample,
+  optional benchmark, 큰 ID, 소수 정밀도와 기존 legacy 결과 재계산 안내를 보존한다.
+- 이전 adapter로 stale RUNNING 저장이 이미 commit된 COMPLETED를 덮어쓰는 PostgreSQL
+  회귀 실패를 재현했다. command 조회와 저장은 Root row를 잠그고 기존 JPA cache도 새로
+  로딩한다. 요청 입력·execution pin·terminal 상태/결과 변경은 거절하며, 동일 terminal 저장은
+  기존 Result row/OID와 완료 지표를 변경하지 않는다. Result는 append-only로 저장한다.
+  DB timestamp와 fee 컬럼의 기존 정밀도를 고려해 원래 입력의 정상 재저장을 허용한다.
+- Store의 변경용 조회→행위→저장은 같은 command transaction 안에서 수행한다. Dispatch의
+  요청 정보 조회는 짧은 transaction으로 끝내고 Compute HTTP는 transaction 밖에서 호출한다.
+  영구 거절 반영은 현재 Run을 다시 잠가 복원한 후 상태·capacity를 함께 저장한다. 결과 조회는
+  read-only transaction에서 PostgreSQL LOB를 읽고 Run의 snapshot과 결과의 일치를 확인한다.
+- Backtest domain·port·application·persistence·compute·web·snowflake를 소스 및 실제 Gradle
+  project 의존성 경계 검사에 추가했다. R12의 기존 직접 domain 참조 3개 타입만 명시적으로
+  추적하며 3c에서 제거한다. API/schema/hash 및 계산 결정론에는 영향이 없다.
+- domain 10개·application 30개·persistence 43개·compute 10개와 app 89개, 총 182개 테스트의
+  통과를 확인했다. 테스트 skip은 0개다. 한 번의 전체 실행 성공을 뜻하지 않는다. domain/
+  application/compute 통과 결과를 유지하고, 수정 후 persistence 및 app을 재실행했다. Windows
+  `Bad address: listen` 및 DB 연결 소켓 오류로 실패한 실행은 성공으로 세지 않았다. 마지막으로
+  실패했던 HTTP timeout/중복 예약 회귀 1개를 선택 재실행해 Gradle 정상 종료를 확인했다.
+- 실제 PostgreSQL 검증은 quota 9개·polling lease/영구 거절 12개·Aggregate 저장 9개와 기존
+  app DB/migration 23개, 총 53개다. stale 요청의 Run·capacity·dispatch 보존, 실제 row 잠금
+  대기와 cache 갱신, 다른 Root의 독립 저장, rollback과 terminal Result/OID 보존을 확인했다.
+  Mapper 6개는 전체 상태/결과와 불법 저장 상태, JSON shape 및 정밀한 소수 비교를 검증했다.
+- 앱의 Spring 프록시·HTTP 회귀 89개와 실제 Gradle project 의존성 검사를 통과했고 실행 JAR도
+  빌드했다. 컴파일 UP-TO-DATE는 테스트 실제 실행과 구분한다. IPv4 옵션과 loopback bind는
+  로컬 검증 프로세스에만 적용했다. 로컬 credential·fixture·로그는 커밋하지 않는다.
+- domain 보강(`7483529`)과 Mapper·저장 보호·회귀/경계 검증(`c5d363b`)을 나눠 커밋했다.
+  잠금 보장은 모든 writer가 새 저장 경로를 사용할 때 적용된다. 다음 단계는 3c feature port
+  경계 정리다.
+- 계약 snapshot과 문서 snapshot 24개, context vector 검사를 통과했다. 현재 구현의 실행 JAR로
+  local integration DB와 `integration-e2e-v1` 합성 fixture에서 실제 Core↔Compute HTTP smoke를
+  통과했다. 정상 실행·재실행·실패 결과·타인 접근 거절 및 terminal persistence를 확인했다.
+  JAR 실행의 artifact identity를 topology preflight에 전달하고 기존 smoke assertion을 유지했다.
+  별도 포트/registry로 기동한 세 프로세스와 임시 환경 파일은 정리했으며 harness 산출물은
+  커밋하지 않았다. API/schema/hash·계산 입력 및 결정론 영향은 없다.
 
 ### 3a 검증 기록과 적용 기준
 
