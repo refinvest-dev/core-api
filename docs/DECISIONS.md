@@ -1201,3 +1201,31 @@ V1 transport는 한 개의 bounded UTF-8 entity resource, Analytics vendor media
 V1 producer/reader와 V2 producer/reader는 registry의 exact 지원 선언으로 공존한다. V1 Revision/result/hash/vector는 재해석·수정하지 않는다. 보충값이 없는 Revision의 Analytics 접수는 `ANALYTICS_INPUT_UNAVAILABLE`로 실패하며, 명시적 호환 재처리가 새 V2 Revision을 완성한 경우에만 분석한다. V1 신규 생산 종료는 별도 registry retirement/migration 결정으로 진행하며 기존 조회는 보존한다. Core·Compute·Integration 후속 구현과 검증 전에는 V2 동작을 배포 완료로 간주하지 않는다.
 
 **2026-10-26 결과 버전 pin 명확화**: Core는 Normalization Run admission에서 `resultSchemaVersion`/`resultHashSpecificationVersion`의 정확한 V1/V1 또는 V2/V2 쌍을 선택해 불변 pin으로 저장하고 Compute create에 필수로 보낸다. Compute는 같은 쌍을 Job 생성 시 보존하고 accepted 및 모든 status에 반환한다. create 재전송, worker 재시작, attempt 재시도, grant 갱신은 pin을 변경하지 않는다. 생성 fingerprint와 Core logical normalization key에는 두 값을 포함하지만 ADR-065의 `inputIdentity`/`inputSetHash`에는 넣지 않는다. 같은 입력·VersionSet·Book이라도 결과 쌍이 다르면 별도 LedgerRevision을 발행할 수 있다. Core는 terminal descriptor/payload의 쌍을 Run pin 및 Job pin과 각각 대조한 뒤에만 발행한다. 누락된 새 create 필드를 배포 기본값으로 보충하지 않는다. 과거 저장된 V1 Run/Job은 기존 V1 결과 provenance로 V1/V1을 명시적으로 backfill하여 재개·조회하며 기존 Revision/hash는 수정하지 않는다. 정확한 오류·전환 순서는 [`TRADING_VERSIONING.md`](TRADING_VERSIONING.md)와 Compute OpenAPI를 따른다. V1 신규 생산 종료는 별도 결정이다.
+
+---
+
+## ADR-071 — Analytics Attempt Deadline and Process Isolation (DRAFT)
+
+**상태**: 검토 초안. 미승인·미구현이며 기존 ADR-069·API·실행 정책을 변경하지 않는다.
+상세 제안과 미확정 항목은 [Analytics 실행 정책 초안](TRADING_ANALYTICS_EXECUTION_POLICY_DRAFT.md)에 둔다.
+
+**배경**: 현재 Compute Analytics는 부모 프로세스에서 계산하면서 heartbeat를 갱신한다.
+lease는 worker 복구를 위한 소유권 기한이므로 계산의 hard deadline이 아니다. Socket timeout과
+입출력 bytes 상한도 전체 시간·RSS·부분 IPC 수신의 한도를 보장하지 않는다.
+
+**제안**: 부모만 DB 상태를 변경하는 자식 프로세스 격리, 첫 claim에서 고정하고 같은 attempt의
+reclaim에도 유지하는 deadline, 제한된 결과 수신과 별도 publication 예산을 검토한다. Timeout과
+확인된 child 자원 한도 초과는 각각 `ANALYTICS_EXECUTION_TIMEOUT`과
+`ANALYTICS_RESOURCE_LIMIT_EXCEEDED`, retryable=false를 제안한다. 이 이름들은 아직 enum이 아니다.
+취소·lease/token/generation의 기존 CAS와 Core 삭제·completed-only publication은 유지한다.
+
+**승인 조건**: deadline 범위·실패 taxonomy·Core 공개 mapping·runtime policy pin의 리뷰와,
+대표 입력의 시간·메모리·종료·DB·disk·동시성 수치 검증을 요구한다. 수치는 Backtest에서 복사하지
+않는다. 승인 뒤 별도 계약 PR과 AR-09 준비·AR-10 연결/실 DB·Core E2E·배포 gate를 통과하기
+전에는 production 설정이나 실행 경로를 활성화하지 않는다.
+
+**호환성**: Metric 정의·기존 identity/hash projection·완료 결과·벡터는 이 문서에서 바꾸지 않는다.
+새 artifact의 implementationDigest를 과거 값으로 위장하지 않는다. 같은 전체 pin에서의 성공
+결과 보존과, 새 VersionSet을 포함하는 hash의 배포 간 변경을 구분한다.
+
+이번 문서 변경의 Determinism 영향 없음. Point-in-Time 영향 없음.
