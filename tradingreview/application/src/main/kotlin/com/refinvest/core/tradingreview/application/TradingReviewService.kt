@@ -1,21 +1,26 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
-import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
-import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
-import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
-import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
 import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
-
-import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
+import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
+import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
 import com.refinvest.core.tradingreview.port.*
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
+import com.refinvest.core.tradingreview.port.account.TradingAccountReader
+import com.refinvest.core.tradingreview.port.account.TradingAccountStore
+import com.refinvest.core.tradingreview.port.book.TradingAccountBookDeletion
+import com.refinvest.core.tradingreview.port.book.TradingBookDeletionCascade
+import com.refinvest.core.tradingreview.port.book.TradingBookReader
+import com.refinvest.core.tradingreview.port.book.TradingBookStore
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.ZoneId
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 @Service
 open class TradingReviewService(
@@ -26,6 +31,9 @@ open class TradingReviewService(
     private val deletions: TradingDeletionStore,
     private val idempotency: TradingIdempotencyStore,
     private val clock: Clock,
+    private val accountReader: TradingAccountReader,
+    private val bookReader: TradingBookReader,
+    private val bookDeletionCascade: TradingBookDeletionCascade,
 ) : TradingAccountUseCase, TradingBookUseCase, GetTradingDeletionRequestUseCase {
     @Transactional
     override fun create(venue: TradingVenue, displayName: String, key: String): TradingAccount {
@@ -34,6 +42,7 @@ open class TradingReviewService(
         val fingerprint = fingerprint(venue.name, displayName)
         return when (val claim = idempotency.claim(owner, "createTradingAccount", key, fingerprint)) {
             is IdempotencyClaim.Replayed -> accounts.find(TradingAccountId(claim.resourceId), owner)
+                ?.takeIf { it.status == TradingLifecycleStatus.ACTIVE || it.status == TradingLifecycleStatus.ARCHIVED }
                 ?: throw TradingFailure("RESOURCE_DELETED", 410)
             IdempotencyClaim.New -> TradingAccount.create(ids.accountId(), owner, venue, displayName, clock.instant()).also {
                 accounts.insert(it)
@@ -45,7 +54,7 @@ open class TradingReviewService(
     @Transactional(readOnly = true)
     override fun get(id: TradingAccountId): TradingAccount {
         val owner = members.currentMemberId()
-        val account = accounts.find(id, owner) ?: throw missing(accounts.deleted(id, owner))
+        val account = accountReader.find(id, owner) ?: throw missing(accountReader.deleted(id, owner))
         if (account.status == TradingLifecycleStatus.DELETION_PENDING || account.status == TradingLifecycleStatus.DELETION_FAILED)
             throw TradingFailure("RESOURCE_DELETED", 410)
         return account
@@ -54,7 +63,7 @@ open class TradingReviewService(
     @Transactional(readOnly = true)
     override fun list(page: Int, size: Int): TradingPage<TradingAccount> {
         validPage(page, size)
-        return accounts.list(members.currentMemberId(), page, size)
+        return accountReader.list(members.currentMemberId(), page, size)
     }
 
     @Transactional
@@ -70,11 +79,13 @@ open class TradingReviewService(
         if (account.status != TradingLifecycleStatus.ACTIVE && account.status != TradingLifecycleStatus.ARCHIVED)
             throw TradingFailure("RESOURCE_DELETED", 410)
         val now = clock.instant()
-        if (!accounts.update(account.requestDeletion(now))) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
-        val count = books.list(id, owner, 0, 1).total
-        books.markAccountBooksDeleting(id, now)
+        val deletingAccount = account.requestDeletion(now)
+        if (!accounts.update(deletingAccount)) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
+        val count = bookDeletionCascade.markDeleting(TradingAccountBookDeletion(
+            deletingAccount.id, owner, deletingAccount.deletionGeneration, Math.addExact(account.version, 1), now,
+        )) ?: throw TradingFailure("CONCURRENT_MODIFICATION", 409)
         val deletion = TradingDeletion(ids.deletionId(), owner, "TRADING_ACCOUNT", id.value,
-            "ACCOUNT_SUBTREE", "REQUESTED", account.deletionGeneration + 1, 1, count, now, now, now,
+            "ACCOUNT_SUBTREE", "REQUESTED", deletingAccount.deletionGeneration, 1, count, now, now, now,
             now.plusSeconds(30L * 24 * 60 * 60))
         deletions.insert(deletion)
         idempotency.complete(owner, operation, key, deletion.id)
@@ -94,6 +105,7 @@ open class TradingReviewService(
             positionMode.name, settlementAsset.name, reviewTimezone)
         return when (val claim = idempotency.claim(owner, "createTradingBook", key, fingerprint)) {
             is IdempotencyClaim.Replayed -> books.find(TradingBookId(claim.resourceId), owner)
+                ?.takeIf { it.status == TradingLifecycleStatus.ACTIVE }
                 ?: throw TradingFailure("RESOURCE_DELETED", 410)
             IdempotencyClaim.New -> TradingBook.create(ids.bookId(), account, displayName, productFamily,
                 positionMode, settlementAsset, reviewTimezone, clock.instant()).also {
@@ -106,9 +118,9 @@ open class TradingReviewService(
     @Transactional(readOnly = true)
     override fun get(id: TradingBookId): TradingBook {
         val owner = members.currentMemberId()
-        val book = books.find(id, owner) ?: throw missing(books.deleted(id, owner))
+        val book = bookReader.find(id, owner) ?: throw missing(bookReader.deleted(id, owner))
         if (book.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", 410)
-        val account = accounts.find(book.accountId, owner) ?: throw missing(accounts.deleted(book.accountId, owner))
+        val account = accountReader.find(book.accountId, owner) ?: throw missing(accountReader.deleted(book.accountId, owner))
         if (account.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", 410)
         return book
     }
@@ -117,7 +129,7 @@ open class TradingReviewService(
     override fun list(accountId: TradingAccountId, page: Int, size: Int): TradingPage<TradingBook> {
         validPage(page, size)
         get(accountId)
-        return books.list(accountId, members.currentMemberId(), page, size)
+        return bookReader.list(accountId, members.currentMemberId(), page, size)
     }
 
     @Transactional
@@ -135,9 +147,10 @@ open class TradingReviewService(
         val book = books.find(id, owner, forUpdate = true) ?: throw missing(books.deleted(id, owner))
         if (book.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", 410)
         val now = clock.instant()
-        if (!books.update(book.requestDeletion(now))) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
+        val deletingBook = book.requestDeletion(now)
+        if (!books.update(deletingBook)) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
         val deletion = TradingDeletion(ids.deletionId(), owner, "TRADING_BOOK", id.value,
-            "BOOK_SUBTREE", "REQUESTED", book.deletionGeneration + 1, 0, 1, now, now, now,
+            "BOOK_SUBTREE", "REQUESTED", deletingBook.deletionGeneration, 0, 1, now, now, now,
             now.plusSeconds(30L * 24 * 60 * 60))
         deletions.insert(deletion)
         idempotency.complete(owner, operation, key, deletion.id)

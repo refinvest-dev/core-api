@@ -22,23 +22,6 @@ interface TradingIdGenerator {
 
 data class TradingPage<T>(val items: List<T>, val page: Int, val size: Int, val total: Long)
 
-interface TradingAccountStore {
-    fun insert(account: TradingAccount)
-    fun find(id: TradingAccountId, owner: MemberId, forUpdate: Boolean = false): TradingAccount?
-    fun list(owner: MemberId, page: Int, size: Int): TradingPage<TradingAccount>
-    fun update(account: TradingAccount): Boolean
-    fun deleted(id: TradingAccountId, owner: MemberId): Boolean
-}
-
-interface TradingBookStore {
-    fun insert(book: TradingBook)
-    fun find(id: TradingBookId, owner: MemberId, forUpdate: Boolean = false): TradingBook?
-    fun list(accountId: TradingAccountId, owner: MemberId, page: Int, size: Int): TradingPage<TradingBook>
-    fun update(book: TradingBook): Boolean
-    fun markAccountBooksDeleting(accountId: TradingAccountId, now: Instant)
-    fun deleted(id: TradingBookId, owner: MemberId): Boolean
-}
-
 data class TradingDeletion(
     val id: Long, val owner: MemberId, val targetType: String, val targetId: Long,
     val requestedScope: String, val state: String, val deletionGeneration: Long,
