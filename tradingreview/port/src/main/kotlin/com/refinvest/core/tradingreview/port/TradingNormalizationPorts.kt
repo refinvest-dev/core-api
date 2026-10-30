@@ -1,6 +1,7 @@
 package com.refinvest.core.tradingreview.port
 
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path

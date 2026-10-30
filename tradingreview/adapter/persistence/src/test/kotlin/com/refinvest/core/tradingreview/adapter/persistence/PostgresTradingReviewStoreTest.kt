@@ -1,47 +1,53 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
-import com.refinvest.core.tradingreview.port.book.TradingAccountBookDeletion
-
-import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
-import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
-import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
-import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
-import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
-import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
-
 import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.tradingreview.application.NormalizationInputFingerprint
+import com.refinvest.core.tradingreview.application.TradingReviewService
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact
+import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingDataPolicy
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportFailure
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
+import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
+import com.refinvest.core.tradingreview.port.*
 import com.refinvest.core.tradingreview.port.IdempotencyClaim
-import com.refinvest.core.tradingreview.port.TradingFailure
 import com.refinvest.core.tradingreview.port.TradingDeletion
+import com.refinvest.core.tradingreview.port.TradingFailure
 import com.refinvest.core.tradingreview.port.TradingIdGenerator
 import com.refinvest.core.tradingreview.port.TradingMemberProvider
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.application.TradingReviewService
-import com.refinvest.core.tradingreview.application.NormalizationInputFingerprint
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
-import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.jdbc.datasource.SingleConnectionDataSource
-import org.springframework.jdbc.datasource.DataSourceTransactionManager
-import org.springframework.transaction.support.TransactionTemplate
+import com.refinvest.core.tradingreview.port.book.TradingAccountBookDeletion
 import java.sql.Connection
 import java.sql.DriverManager
-import java.time.Instant
 import java.time.Clock
+import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
-import kotlin.test.assertFailsWith
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.datasource.DataSourceTransactionManager
+import org.springframework.jdbc.datasource.SingleConnectionDataSource
+import org.springframework.transaction.support.TransactionTemplate
 
 @EnabledIfEnvironmentVariable(named = "TRADING_REVIEW_TEST_JDBC_URL", matches = ".+")
 class PostgresTradingReviewStoreTest {
@@ -52,6 +58,112 @@ class PostgresTradingReviewStoreTest {
         override fun publishedForSession(sessionId: TradingImportSessionId, owner: MemberId): PublishedLedgerSummary? = null
     }
     private val normalizationVersions = """{"versionSetHash":"${"f".repeat(64)}","normalizer":{"sourceDialectVersionsByArtifactRole":{"TRADE_HISTORY":"TRADE_V1","POSITION_HISTORY":"POSITION_V1"},"adapterVersion":"ADAPTER_V1","normalizerVersion":"NORMALIZER_V1","canonicalSchemaVersion":"CANONICAL_V1","implementationDigest":"normalizer-digest","versionSetHash":"${"d".repeat(64)}"},"reconstruction":{"instrumentTermsVersionByInstrument":{},"reconstructionPolicyVersion":"RECONSTRUCTION_V1","reconciliationVersion":"RECONCILIATION_V1","reviewUnitSchemaVersion":"REVIEW_UNIT_V1","evidenceSchemaVersion":"EVIDENCE_V1","implementationDigest":"reconstruction-digest","versionSetHash":"${"e".repeat(64)}"}}"""
+
+    @Test
+    fun sessionAggregateSaveFencesPinsMissingChildrenAndStaleSnapshots() = withDatabase { connection ->
+        val (service, tx, _) = accountBookFixture(connection)
+        val account = tx.execute { service.create(TradingVenue.BINANCE, "A", "a") }
+        val book = tx.execute { service.create(account.id, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "b") }
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val store = JdbcTradingImportSessionPersistenceAdapter(jdbc)
+        val session = TradingImportSession.create(TradingImportSessionId(30000), book, "UTC", "UTC",
+            TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
+        tx.execute { store.insert(session) }
+        assertFailsWith<IllegalStateException> { store.find(session.id, session.owner, true) }
+        val first = session.recordUpload(TradingSourceArtifactId(30001), TradingArtifactRole.TRADE_HISTORY,
+            "text/csv", 2, "a".repeat(64), "AUTO", "objects/first", byteArrayOf(1), "test", now)
+        assertTrue(tx.execute { store.update(first) })
+        val stale = session.recordUpload(TradingSourceArtifactId(30002), TradingArtifactRole.POSITION_HISTORY,
+            "text/csv", 2, "b".repeat(64), "AUTO", "objects/stale", byteArrayOf(2), "test", now)
+        assertFalse(tx.execute { store.update(stale) })
+        val current = store.find(session.id, session.owner)!!
+        assertEquals(1L, current.version)
+        assertEquals(listOf(TradingSourceArtifactId(30001)), current.artifacts.map { it.id })
+        assertNull(store.find(session.id, MemberId(2)))
+        val record = TradingImportSessionPersistenceMapper.toRecord(current)
+        val before = importRows(jdbc)
+        for (forged in listOf(record.copy(sourceTimezone = "Asia/Seoul"), record.copy(versionSetJson = "changed"),
+            record.copy(artifacts = emptyList()), record.copy(artifacts = record.artifacts.map { it.copy(sha256 = "f".repeat(64)) }),
+            record.copy(artifacts = record.artifacts.map { it.copy(version = 99) }))) {
+            assertFalse(tx.execute { store.update(TradingImportSessionPersistenceMapper.toDomain(forged)) })
+            assertEquals(before, importRows(jdbc))
+        }
+        val second = current.recordUpload(TradingSourceArtifactId(30002), TradingArtifactRole.POSITION_HISTORY,
+            "text/csv", 2, "b".repeat(64), "AUTO", "objects/second", byteArrayOf(2), "test", now)
+        assertTrue(tx.execute { store.update(second) })
+        assertEquals(2, store.find(session.id, session.owner)!!.artifacts.size)
+        val fresh = store.find(session.id, session.owner)!!
+        assertTrue(tx.execute { store.update(fresh.requestDeletion(now.plusSeconds(1))) })
+        val deleting = store.find(session.id, session.owner)!!
+        assertEquals(1L, deleting.deletionGeneration)
+        assertTrue(deleting.artifacts.all { it.retentionStatus == TradingArtifactRetentionStatus.DELETION_PENDING && it.version == 1L })
+        assertFalse(tx.execute { store.update(fresh) })
+    }
+
+    @Test
+    fun sessionAggregateRollbackPreservesSlotsGenerationAndParentLifecycle() = withDatabase { connection ->
+        val (service, tx, _) = accountBookFixture(connection)
+        val account = tx.execute { service.create(TradingVenue.BINANCE, "A", "a") }
+        val book = tx.execute { service.create(account.id, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "b") }
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val store = JdbcTradingImportSessionPersistenceAdapter(jdbc)
+        val session = TradingImportSession.create(TradingImportSessionId(31000), book, "UTC", "UTC",
+            TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
+        tx.execute { store.insert(session) }
+        val withArtifact = session.recordUpload(TradingSourceArtifactId(31001), TradingArtifactRole.TRADE_HISTORY,
+            "text/csv", 2, "a".repeat(64), "AUTO", "objects/rollback", byteArrayOf(1), "test", now)
+        val before = importRows(jdbc)
+        assertFailsWith<IllegalStateException> { tx.execute {
+            assertTrue(store.update(withArtifact))
+            val fresh = store.find(session.id, session.owner, true)!!
+            assertTrue(store.update(fresh.requestDeletion(now.plusSeconds(1))))
+            error("rollback")
+        } }
+        assertEquals(before, importRows(jdbc))
+        assertTrue(tx.execute { store.update(withArtifact) })
+        tx.execute { service.delete(book.id, "delete-book") }
+        val afterDelete = importRows(jdbc)
+        assertFalse(tx.execute { store.update(store.find(session.id, session.owner)!!.requestDeletion(now.plusSeconds(1))) })
+        assertEquals(afterDelete, importRows(jdbc))
+    }
+
+    @Test
+    fun rawPurgeClaimVersionRejectsLateCompletionFailureAndAggregateOverwrite() = withDatabase { connection ->
+        val (service, tx, _) = accountBookFixture(connection)
+        val account = tx.execute { service.create(TradingVenue.BINANCE, "A", "a") }
+        val book = tx.execute { service.create(account.id, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "b") }
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val store = JdbcTradingImportSessionPersistenceAdapter(jdbc)
+        val retention = JdbcTradingArtifactRetentionAdapter(jdbc)
+        val session = TradingImportSession.create(TradingImportSessionId(32000), book, "UTC", "UTC",
+            TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
+        tx.execute { store.insert(session) }
+        assertTrue(tx.execute { store.update(session.recordUpload(TradingSourceArtifactId(32001),
+            TradingArtifactRole.TRADE_HISTORY, "text/csv", 2, "a".repeat(64), "AUTO", "objects/claim", byteArrayOf(1), "test", now)) })
+        val old = store.find(session.id, session.owner)!!
+        val firstClaim = retention.claimDue(Instant.now(), 1).single()
+        assertFalse(tx.execute { store.update(old.requestArtifactDeletion(firstClaim.id, now.plusSeconds(1))) })
+        jdbc.update("UPDATE trading_source_artifacts SET deletion_claim_until=CURRENT_TIMESTAMP - INTERVAL '1 second'")
+        val nextClaim = retention.claimDue(Instant.now(), 1).single()
+        val before = importRows(jdbc)
+        assertFalse(retention.markDeleted(firstClaim, Instant.now()))
+        retention.markDeletionFailed(firstClaim, "LATE_FAILURE", Instant.now())
+        assertEquals(before, importRows(jdbc))
+        assertTrue(retention.markDeleted(nextClaim, Instant.now()))
+        val deleted = store.find(session.id, session.owner)!!.artifacts.single()
+        assertEquals(TradingArtifactRetentionStatus.DELETED, deleted.retentionStatus)
+        assertNull(deleted.objectKey)
+        assertNull(deleted.wrappedDek)
+        assertFalse(deleted.rawReparseAvailable(Instant.now()))
+    }
+
+    private fun importRows(jdbc: JdbcTemplate) = listOf(
+        jdbc.queryForList("SELECT row_to_json(s)::text FROM trading_import_sessions s ORDER BY id", String::class.java),
+        jdbc.queryForList("SELECT row_to_json(a)::text FROM trading_source_artifacts a ORDER BY id", String::class.java),
+    )
 
     @Test
     fun accountCreationReplayAfterDeletionIsGone() = withDatabase { connection ->
@@ -267,7 +379,7 @@ class PostgresTradingReviewStoreTest {
             val session = TradingImportSession.create(TradingImportSessionId(3003), book,
                 "UTC", "UTC", TradingPositionMode.ONE_WAY, TradingDataPolicy(),
                 normalizationVersions, now)
-            JdbcTradingImportStore(jdbc).insert(session)
+            TradingImportTestStores(jdbc).insert(session)
             val runId = UUID.randomUUID().toString()
             val dispatchId = UUID.randomUUID().toString()
             val token = UUID.randomUUID().toString()
@@ -343,7 +455,7 @@ class PostgresTradingReviewStoreTest {
         review.insert(book)
         val session = TradingImportSession.create(TradingImportSessionId(1203), book, "UTC", "UTC",
             TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
-        JdbcTradingImportStore(jdbc).insert(session)
+        TradingImportTestStores(jdbc).insert(session)
         val inputs = TradingArtifactRole.entries.mapIndexed { index, role ->
             NormalizationArtifactInput(TradingSourceArtifactId(1204L + index), role,
                 (if (role == TradingArtifactRole.TRADE_HISTORY) "a" else "b").repeat(64),
@@ -452,14 +564,14 @@ class PostgresTradingReviewStoreTest {
         val payload = mapper.readValue(mapper.writeValueAsString(vector.getValue("terminalPayload")),
             Map::class.java) as MutableMap<String, Any?>
         val versions = mapper.writeValueAsString(payload.getValue("targetVersionSet"))
-        val imports = JdbcTradingImportStore(jdbc)
+        val imports = TradingImportTestStores(jdbc)
         val session = TradingImportSession.create(TradingImportSessionId(973), book, "UTC", "UTC",
             TradingPositionMode.ONE_WAY, TradingDataPolicy(), versions, now)
         imports.insert(session)
         val inputs = TradingArtifactRole.entries.mapIndexed { index, role ->
             val id = 974L + index
             val sha = (if (role == TradingArtifactRole.TRADE_HISTORY) "a" else "b").repeat(64)
-            imports.insert(TradingSourceArtifact(TradingSourceArtifactId(id), session.id, role,
+            imports.seedArtifact(TradingSourceArtifact.restore(TradingSourceArtifactId(id), session.id, role,
                 null, "text/csv", 20, sha, "AUTO", "objects/" + UUID.randomUUID(),
                 byteArrayOf(1), "test-v1", TradingArtifactRetentionStatus.ACTIVE,
                 now, now.plusSeconds(3600), null, null, 0))
@@ -486,7 +598,7 @@ class PostgresTradingReviewStoreTest {
         val runs = JdbcTradingNormalizationStore(jdbc, mapper)
         runs.insert(run, dispatch)
         assertEquals(deliveryPolicy, runs.findRun(runId)?.resultDeliveryPolicy)
-        assertTrue(imports.update(session.beginValidation(runId, now)))
+        assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
         jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-synthetic-1' WHERE id=?::uuid", runId)
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY' WHERE id=?::uuid", dispatch.id)
 
@@ -692,7 +804,7 @@ class PostgresTradingReviewStoreTest {
             TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY,
             TradingSettlementAsset.USDT, "UTC", now)
         review.insert(book)
-        val imports = JdbcTradingImportStore(jdbc)
+        val imports = TradingImportTestStores(jdbc)
         val session = TradingImportSession.create(TradingImportSessionId(953), book, "UTC", "UTC",
             TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
         imports.insert(session)
@@ -715,7 +827,7 @@ class PostgresTradingReviewStoreTest {
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
         val runs = JdbcTradingNormalizationStore(jdbc, mapper)
         runs.insert(run, dispatch)
-        assertTrue(imports.update(session.beginValidation(runId, now)))
+        assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
         jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-timeout' WHERE id=?::uuid", runId)
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY' WHERE id=?::uuid", dispatch.id)
         val client = object : TradingNormalizationResultClient {
@@ -757,7 +869,7 @@ class PostgresTradingReviewStoreTest {
             TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY,
             TradingSettlementAsset.USDT, "UTC", now)
         review.insert(book)
-        val imports = JdbcTradingImportStore(jdbc)
+        val imports = TradingImportTestStores(jdbc)
         val session = TradingImportSession.create(TradingImportSessionId(903), book, "UTC", "UTC",
             TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
         imports.insert(session)
@@ -781,7 +893,7 @@ class PostgresTradingReviewStoreTest {
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
         val runs = JdbcTradingNormalizationStore(jdbc, mapper)
         runs.insert(run, dispatch)
-        assertTrue(imports.update(session.beginValidation(runId, now)))
+        assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
         jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-stale' WHERE id=?::uuid", runId)
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY',attempt_count=10 WHERE id=?::uuid", dispatch.id)
         val current = assertNotNull(runs.findRun(runId))
@@ -829,13 +941,13 @@ class PostgresTradingReviewStoreTest {
             TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY,
             TradingSettlementAsset.USDT, "UTC", now)
         review.insert(book)
-        val imports = JdbcTradingImportStore(jdbc)
+        val imports = TradingImportTestStores(jdbc)
         val session = TradingImportSession.create(TradingImportSessionId(993), book, "UTC", "UTC",
             TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
         imports.insert(session)
         val inputs = TradingArtifactRole.entries.mapIndexed { index, role ->
             val id = 994L + index
-            imports.insert(TradingSourceArtifact(TradingSourceArtifactId(id), session.id, role,
+            imports.seedArtifact(TradingSourceArtifact.restore(TradingSourceArtifactId(id), session.id, role,
                 null, "text/csv", 20, (if (index == 0) "a" else "b").repeat(64), "AUTO",
                 "objects/${UUID.randomUUID()}", byteArrayOf(1), "test-v1",
                 TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(3600), null, null, 0))
@@ -858,7 +970,7 @@ class PostgresTradingReviewStoreTest {
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
         val runs = JdbcTradingNormalizationStore(jdbc, mapper)
         runs.insert(run, dispatch)
-        assertTrue(imports.update(session.beginValidation(runId, now)))
+        assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
         jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-1' WHERE id=?::uuid", runId)
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY' WHERE id=?::uuid", dispatch.id)
         val current = assertNotNull(runs.findRun(runId))
@@ -1003,7 +1115,7 @@ class PostgresTradingReviewStoreTest {
         review.insert(book)
         val session = TradingImportSession.create(TradingImportSessionId(903), book, "UTC", "UTC",
             TradingPositionMode.ONE_WAY, TradingDataPolicy(), "{}", now)
-        JdbcTradingImportStore(jdbc).insert(session)
+        TradingImportTestStores(jdbc).insert(session)
         val store = JdbcTradingNormalizationStore(jdbc, tools.jackson.databind.json.JsonMapper.builder().build())
         val runId = UUID.randomUUID().toString()
         val token = UUID.randomUUID().toString()
@@ -1076,7 +1188,7 @@ class PostgresTradingReviewStoreTest {
         val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
         members(jdbc)
         val review = TradingReviewTestStores(jdbc)
-        val imports = JdbcTradingImportStore(jdbc)
+        val imports = TradingImportTestStores(jdbc)
         val runs = JdbcTradingNormalizationStore(jdbc, mapper)
         val account = TradingAccount.create(TradingAccountId(911), MemberId(1), TradingVenue.BINANCE, "A", now)
         review.insert(account)
@@ -1088,6 +1200,12 @@ class PostgresTradingReviewStoreTest {
         val session = TradingImportSession.create(TradingImportSessionId(913), book, "UTC", "UTC",
             TradingPositionMode.ONE_WAY, TradingDataPolicy(), versions, now)
         imports.insert(session)
+        val workerTime = java.util.concurrent.atomic.AtomicReference(now)
+        val workerClock = object : Clock() {
+            override fun instant() = workerTime.get()
+            override fun getZone() = ZoneOffset.UTC
+            override fun withZone(zone: java.time.ZoneId) = this
+        }
         val service = com.refinvest.core.tradingreview.application.TradingNormalizationService(
             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
             review, review, imports, imports, review, runs,
@@ -1099,7 +1217,7 @@ class PostgresTradingReviewStoreTest {
                     java.time.Duration.ofSeconds(10), "NONE")
                 override fun instrumentTermsJson() = "[]"
                 override fun resultDeliveryPolicy() = deliveryPolicy
-            }, mapper, Clock.fixed(now, ZoneOffset.UTC), JdbcTradingNormalizationTransitionGate(jdbc))
+            }, mapper, workerClock, JdbcTradingNormalizationTransitionGate(jdbc))
         jdbc.execute("SELECT trading_normalization_transition_control('PAUSE',0,'test-validation')")
         for (retry in listOf(false, true)) {
             val failure = assertFailsWith<TradingFailure> {
@@ -1113,7 +1231,7 @@ class PostgresTradingReviewStoreTest {
         }
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_idempotency", Long::class.java))
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_dispatches", Long::class.java))
-        assertEquals(session, imports.find(session.id, MemberId(1)))
+        assertEquals(session.id, imports.find(session.id, MemberId(1))?.id)
         jdbc.execute("SELECT trading_normalization_transition_control('VERIFY',1,'test-validation-http')")
         jdbc.execute("SELECT trading_normalization_transition_control('RESUME',1,'test-validation-http')")
         assertEquals("MISSING_REQUIRED_ARTIFACT", assertFailsWith<TradingFailure> {
@@ -1122,7 +1240,7 @@ class PostgresTradingReviewStoreTest {
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
         assertEquals(TradingImportStatus.RECEIVED, imports.find(session.id, MemberId(1))?.status)
         for ((index, role) in TradingArtifactRole.entries.withIndex()) {
-            imports.insert(TradingSourceArtifact(TradingSourceArtifactId(914L + index), session.id,
+            imports.seedArtifact(TradingSourceArtifact.restore(TradingSourceArtifactId(914L + index), session.id,
                 role, null, "text/csv", 20, (if (index == 0) "a" else "b").repeat(64),
                 "AUTO", "objects/${UUID.randomUUID()}", byteArrayOf(1), "test-v1",
                 TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(3600), null, null, 0))
@@ -1136,12 +1254,6 @@ class PostgresTradingReviewStoreTest {
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_dispatches", Long::class.java))
         assertEquals(started.activeNormalizationRunId, imports.find(session.id, MemberId(1))?.activeNormalizationRunId)
         val active = assertNotNull(runs.findRun(started.activeNormalizationRunId!!))
-        val workerTime = java.util.concurrent.atomic.AtomicReference(now)
-        val workerClock = object : Clock() {
-            override fun instant() = workerTime.get()
-            override fun getZone() = ZoneOffset.UTC
-            override fun withZone(zone: java.time.ZoneId) = this
-        }
         var grantNumber = 0
         val submittedKeys = mutableListOf<String>()
         val submittedLocators = mutableListOf<List<String>>()
@@ -1233,8 +1345,8 @@ class PostgresTradingReviewStoreTest {
         assertTrue(exhausted.failure?.retryable == true)
         assertEquals(NormalizationRunStatus.TERMINAL_FAILURE,
             runs.findRun(retried.activeNormalizationRunId!!)?.status)
-        jdbc.update("UPDATE trading_source_artifacts SET raw_expires_at=? WHERE import_session_id=?",
-            java.sql.Timestamp.from(now.minusSeconds(1)), session.id.value)
+        jdbc.update("UPDATE trading_source_artifacts SET raw_expires_at=?, uploaded_at=? WHERE import_session_id=?",
+            java.sql.Timestamp.from(now.minusSeconds(1)), java.sql.Timestamp.from(now.minusSeconds(86401)), session.id.value)
         assertEquals("SOURCE_ARTIFACT_EXPIRED", assertFailsWith<TradingFailure> {
             transactions.execute { service.retry(session.id, "retry-expired") }
         }.code)
@@ -1246,7 +1358,7 @@ class PostgresTradingReviewStoreTest {
         assertEquals(retried.activeNormalizationRunId, runs.findRun(again.activeNormalizationRunId!!)?.retryOfRunId)
         assertEquals(NormalizationResultVersionPin.V1,
             runs.findRun(again.activeNormalizationRunId!!)?.resultVersionPin)
-        val staleDispatch = assertNotNull(runs.claimNext(now, java.time.Duration.ofSeconds(45),
+        val staleDispatch = assertNotNull(runs.claimNext(workerTime.get(), java.time.Duration.ofSeconds(45),
             UUID.randomUUID().toString()))
         val staleRun = assertNotNull(runs.findRun(again.activeNormalizationRunId!!))
         jdbc.update("UPDATE trading_import_sessions SET deletion_generation=deletion_generation+1 WHERE id=?",
@@ -1428,7 +1540,7 @@ class PostgresTradingReviewStoreTest {
         val dataSource = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(dataSource)
         val accountStore = TradingReviewTestStores(jdbc)
-        val importStore = JdbcTradingImportStore(jdbc)
+        val importStore = TradingImportTestStores(jdbc)
         val transactions = TransactionTemplate(DataSourceTransactionManager(dataSource))
         members(jdbc)
         val account = TradingAccount.create(TradingAccountId(601), MemberId(1), TradingVenue.BINANCE, "A", now)
@@ -1450,7 +1562,7 @@ class PostgresTradingReviewStoreTest {
             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) }, ids, accountStore, accountStore, importStore, importStore,
             accountStore, accountStore, storage, object : com.refinvest.core.tradingreview.port.TradingVersionPins {
                 override fun currentJson() = "{\"versionSetHash\":\"exact\"}"
-            }, transactions, Clock.fixed(now, ZoneOffset.UTC), noPublished)
+            }, transactions, Clock.fixed(now, ZoneOffset.UTC), noPublished, importStore)
         val session = transactions.execute { service.create(book.id, "UTC", "UTC", TradingPositionMode.ONE_WAY,
             null, null, "create-import") }
         assertEquals(session.id, transactions.execute { service.create(book.id, "UTC", "UTC", TradingPositionMode.ONE_WAY,
@@ -1510,7 +1622,7 @@ class PostgresTradingReviewStoreTest {
         baseStore.insert(book)
         val session = TradingImportSession.create(TradingImportSessionId(703), book, "UTC", "UTC",
             TradingPositionMode.ONE_WAY, TradingDataPolicy(), "{}", now)
-        JdbcTradingImportStore(jdbc).insert(session)
+        TradingImportTestStores(jdbc).insert(session)
         val storage = com.refinvest.core.tradingreview.adapter.storage.LocalEncryptedRawArtifactStorage(root,
             javax.crypto.spec.SecretKeySpec(ByteArray(32) { it.toByte() }, "AES"), "test-v1")
         val nextId = java.util.concurrent.atomic.AtomicLong(704)
@@ -1526,7 +1638,7 @@ class PostgresTradingReviewStoreTest {
                         val dataSource = SingleConnectionDataSource(connection, true)
                         val workerJdbc = JdbcTemplate(dataSource)
                         val reviewStore = TradingReviewTestStores(workerJdbc)
-                        val importStore = JdbcTradingImportStore(workerJdbc)
+                        val importStore = TradingImportTestStores(workerJdbc)
                         val ids = object : TradingIdGenerator {
                             override fun accountId() = TradingAccountId(nextId.getAndIncrement())
                             override fun bookId() = TradingBookId(nextId.getAndIncrement())
@@ -1539,7 +1651,7 @@ class PostgresTradingReviewStoreTest {
                             storage, object : com.refinvest.core.tradingreview.port.TradingVersionPins {
                                 override fun currentJson() = "{}"
                             }, TransactionTemplate(DataSourceTransactionManager(dataSource)),
-                            Clock.fixed(now, ZoneOffset.UTC), noPublished)
+                            Clock.fixed(now, ZoneOffset.UTC), noPublished, importStore)
                         val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
                             .joinToString("") { "%02x".format(it) }
                         start.await(10, TimeUnit.SECONDS)
@@ -1572,7 +1684,7 @@ class PostgresTradingReviewStoreTest {
         val jdbc = JdbcTemplate(dataSource)
         members(jdbc)
         val reviewStore = TradingReviewTestStores(jdbc)
-        val importStore = JdbcTradingImportStore(jdbc)
+        val importStore = TradingImportTestStores(jdbc)
         val account = TradingAccount.create(TradingAccountId(801), MemberId(1), TradingVenue.BINANCE, "A", now)
         reviewStore.insert(account)
         val book = TradingBook.create(TradingBookId(802), account, "B", TradingProductFamily.LINEAR_PERPETUAL,
@@ -1588,7 +1700,7 @@ class PostgresTradingReviewStoreTest {
             val source = SingleConnectionDataSource(connection, true)
             val connectionJdbc = JdbcTemplate(source)
             val reviews = TradingReviewTestStores(connectionJdbc)
-            val imports = JdbcTradingImportStore(connectionJdbc)
+            val imports = TradingImportTestStores(connectionJdbc)
             val ids = object : TradingIdGenerator {
                 override fun accountId() = TradingAccountId(nextId.getAndIncrement())
                 override fun bookId() = TradingBookId(nextId.getAndIncrement())
@@ -1600,7 +1712,7 @@ class PostgresTradingReviewStoreTest {
                 reviews, reviews, imports, imports, reviews, reviews, storage,
                 object : com.refinvest.core.tradingreview.port.TradingVersionPins { override fun currentJson() = "{}" },
                 TransactionTemplate(DataSourceTransactionManager(source)), Clock.fixed(now, ZoneOffset.UTC),
-                noPublished)
+                noPublished, imports)
         }
         val reading = java.util.concurrent.CountDownLatch(1)
         val resume = java.util.concurrent.CountDownLatch(1)
@@ -1670,7 +1782,7 @@ class PostgresTradingReviewStoreTest {
                         val dataSource = SingleConnectionDataSource(connection, true)
                         val workerJdbc = JdbcTemplate(dataSource)
                         val reviews = TradingReviewTestStores(workerJdbc)
-                        val imports = JdbcTradingImportStore(workerJdbc)
+                        val imports = TradingImportTestStores(workerJdbc)
                         val ids = object : TradingIdGenerator {
                             override fun accountId() = TradingAccountId(9999)
                             override fun bookId() = TradingBookId(9999)
@@ -1684,7 +1796,7 @@ class PostgresTradingReviewStoreTest {
                             object : com.refinvest.core.tradingreview.port.TradingVersionPins {
                                 override fun currentJson() = "{}"
                             }, TransactionTemplate(DataSourceTransactionManager(dataSource)),
-                            Clock.fixed(now, ZoneOffset.UTC), noPublished)
+                            Clock.fixed(now, ZoneOffset.UTC), noPublished, imports)
                         started.countDown()
                         runCatching { TransactionTemplate(DataSourceTransactionManager(dataSource)).execute {
                             service.create(bookId, "UTC", "UTC", TradingPositionMode.ONE_WAY, null, null,
@@ -1719,7 +1831,7 @@ class PostgresTradingReviewStoreTest {
         val tx = TransactionTemplate(DataSourceTransactionManager(source))
         members(jdbc)
         val review = TradingReviewTestStores(jdbc)
-        val imports = JdbcTradingImportStore(jdbc)
+        val imports = TradingImportTestStores(jdbc)
         var opened = 0
         val storage = object : RawArtifactStorage by emptyStorage() {
             override fun exists(key: String) = true
@@ -1786,7 +1898,7 @@ class PostgresTradingReviewStoreTest {
     private fun grantSource(jdbc: JdbcTemplate, baseId: Long, owner: MemberId,
                             existingAccount: TradingAccount? = null): GrantSource {
         val review = TradingReviewTestStores(jdbc)
-        val imports = JdbcTradingImportStore(jdbc)
+        val imports = TradingImportTestStores(jdbc)
         val account = existingAccount ?: TradingAccount.create(TradingAccountId(baseId), owner,
             TradingVenue.BINANCE, "Synthetic", now).also(review::insert)
         val book = TradingBook.create(TradingBookId(baseId + 1), account, "Synthetic",
@@ -1795,11 +1907,11 @@ class PostgresTradingReviewStoreTest {
         val session = TradingImportSession.create(TradingImportSessionId(baseId + 2), book,
             "UTC", "UTC", TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
         imports.insert(session)
-        val artifact = TradingSourceArtifact(TradingSourceArtifactId(baseId + 3), session.id,
+        val artifact = TradingSourceArtifact.restore(TradingSourceArtifactId(baseId + 3), session.id,
             TradingArtifactRole.TRADE_HISTORY, null, "text/csv", 13, "a".repeat(64), "AUTO",
             "objects/synthetic-$baseId", byteArrayOf(1), "test-key", TradingArtifactRetentionStatus.ACTIVE,
             now, now.plusSeconds(86400), null, null, 0)
-        imports.insert(artifact)
+        imports.seedArtifact(artifact)
         val pinned = NormalizationArtifactInput(artifact.id, artifact.role, artifact.sha256,
             artifact.byteSize, artifact.contentType, artifact.dialectCandidate)
         val runId = UUID.randomUUID().toString()
@@ -1814,7 +1926,7 @@ class PostgresTradingReviewStoreTest {
             baseId.toString().padStart(64, '0'), NormalizationDispatchStatus.PENDING,
             0, now, null, null, null, now, now)
         JdbcTradingNormalizationStore(jdbc, tools.jackson.databind.json.JsonMapper.builder().build()).insert(run, dispatch)
-        assertTrue(imports.update(session.beginValidation(runId, now)))
+        assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
         return GrantSource(account, book.id, session.id, pinned, dispatch.id, token)
     }
 
@@ -1838,7 +1950,7 @@ class PostgresTradingReviewStoreTest {
         val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
         members(jdbc)
         val review = TradingReviewTestStores(jdbc)
-        val imports = JdbcTradingImportStore(jdbc)
+        val imports = TradingImportTestStores(jdbc)
         val runs = JdbcTradingNormalizationStore(jdbc, mapper)
         val account = TradingAccount.create(TradingAccountId(2001), MemberId(1), TradingVenue.BINANCE, "A", now)
         review.insert(account)
@@ -1857,7 +1969,7 @@ class PostgresTradingReviewStoreTest {
             val artifactInputs = TradingArtifactRole.entries.mapIndexed { roleIndex, role ->
                 val artifactId = TradingSourceArtifactId(2100L + index * 2 + roleIndex)
                 val sha = (if (roleIndex == 0) "a" else "b").repeat(64)
-                imports.insert(TradingSourceArtifact(artifactId, session.id, role, null, "text/csv",
+                imports.seedArtifact(TradingSourceArtifact.restore(artifactId, session.id, role, null, "text/csv",
                     20, sha, "AUTO", "objects/${UUID.randomUUID()}", byteArrayOf(1), "test-v1",
                     TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(3600), null, null, 0))
                 NormalizationArtifactInput(artifactId, role, sha, 20, "text/csv", "AUTO")
@@ -1879,7 +1991,7 @@ class PostgresTradingReviewStoreTest {
                 index.toString(16).padStart(64, 'c'), NormalizationDispatchStatus.SUBMITTED, 0, now,
                 null, null, null, now, now)
             runs.insert(run, dispatch)
-            assertTrue(imports.update(session.beginValidation(runId, now)))
+            assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
             val compute = object : TradingNormalizationComputeClient {
                 override fun submit(run: NormalizationRun, dispatch: NormalizationDispatch,
                                     grants: List<ArtifactReadGrant>): NormalizationSubmission = error("poll only")

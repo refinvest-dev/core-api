@@ -1,22 +1,25 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
+import com.refinvest.core.tradingreview.port.*
 import com.refinvest.core.tradingreview.port.account.TradingAccountStore
 import com.refinvest.core.tradingreview.port.book.TradingBookStore
-
-import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
-
-import com.refinvest.core.shared.kernel.member.MemberId
-import com.refinvest.core.tradingreview.domain.*
-import com.refinvest.core.tradingreview.port.*
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
-import tools.jackson.databind.ObjectMapper
-import tools.jackson.databind.json.JsonMapper
-import tools.jackson.core.StreamReadFeature
+import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
+import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactReader
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
 import java.util.UUID
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import tools.jackson.core.StreamReadFeature
+import tools.jackson.databind.ObjectMapper
+import tools.jackson.databind.json.JsonMapper
 
 @Service
 open class TradingNormalizationService(
@@ -24,7 +27,7 @@ open class TradingNormalizationService(
     private val accounts: TradingAccountStore,
     private val books: TradingBookStore,
     private val sessions: TradingImportSessionStore,
-    private val artifacts: TradingSourceArtifactStore,
+    private val artifacts: TradingSourceArtifactReader,
     private val idempotency: TradingIdempotencyStore,
     private val runs: TradingNormalizationStore,
     private val versions: TradingVersionPins,

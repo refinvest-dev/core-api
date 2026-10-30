@@ -1,22 +1,22 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.NormalizationDispatch
 import com.refinvest.core.tradingreview.domain.NormalizationDispatchStatus
-import com.refinvest.core.tradingreview.domain.NormalizationRun
 import com.refinvest.core.tradingreview.domain.NormalizationResultVersionPin
-import com.refinvest.core.tradingreview.domain.TradingImportSessionId
-import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.tradingreview.domain.NormalizationRun
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import com.refinvest.core.tradingreview.port.*
-import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.stereotype.Repository
-import tools.jackson.databind.ObjectMapper
+import java.nio.charset.StandardCharsets
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.Duration
 import java.time.Instant
-import java.nio.charset.StandardCharsets
 import java.util.HexFormat
 import java.util.UUID
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.stereotype.Repository
+import tools.jackson.databind.ObjectMapper
 
 @Repository
 class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, private val mapper: ObjectMapper) :

@@ -1,18 +1,34 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
-
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import com.refinvest.core.tradingreview.port.ArtifactReadGrant
-import com.refinvest.core.tradingreview.port.NormalizationSubmission
-import com.refinvest.core.tradingreview.port.NormalizationStatusLookup
+import com.refinvest.core.tradingreview.port.NormalizationAckOutcome
 import com.refinvest.core.tradingreview.port.NormalizationGrantUpdate
 import com.refinvest.core.tradingreview.port.NormalizationJobStatus
-import com.refinvest.core.tradingreview.port.NormalizationResultLookup
-import com.refinvest.core.tradingreview.port.NormalizationPayloadLookup
 import com.refinvest.core.tradingreview.port.NormalizationPayloadAcknowledgement
-import com.refinvest.core.tradingreview.port.NormalizationAckOutcome
-import org.yaml.snakeyaml.Yaml
+import com.refinvest.core.tradingreview.port.NormalizationPayloadLookup
+import com.refinvest.core.tradingreview.port.NormalizationResultLookup
+import com.refinvest.core.tradingreview.port.NormalizationStatusLookup
+import com.refinvest.core.tradingreview.port.NormalizationSubmission
+import java.io.File
+import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+import java.security.MessageDigest
+import java.time.Instant
+import java.util.Collections
+import java.util.HexFormat
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+import org.junit.jupiter.api.io.TempDir
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.mock.http.MockHttpOutputMessage
@@ -21,23 +37,9 @@ import org.springframework.test.web.client.MockRestServiceServer
 import org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo
 import org.springframework.test.web.client.response.MockRestResponseCreators.withStatus
 import org.springframework.web.client.RestClient
-import java.time.Instant
-import java.net.URI
-import java.io.File
-import java.util.Collections
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import tools.jackson.databind.json.JsonMapper
+import org.yaml.snakeyaml.Yaml
 import tools.jackson.databind.JsonNode
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
-import java.security.MessageDigest
-import java.util.HexFormat
-import java.nio.file.Files
-import java.nio.file.attribute.FileTime
-import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Path
+import tools.jackson.databind.json.JsonMapper
 
 class RestClientTradingNormalizationClientTest {
     private val mapper = JsonMapper.builder().build()

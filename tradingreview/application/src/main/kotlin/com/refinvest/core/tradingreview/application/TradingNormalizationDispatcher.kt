@@ -1,21 +1,23 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.book.TradingBookStore
-
-import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
-
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportFailure
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
 import com.refinvest.core.tradingreview.port.*
-import org.springframework.stereotype.Service
-import org.springframework.transaction.support.TransactionTemplate
+import com.refinvest.core.tradingreview.port.book.TradingBookStore
+import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
+import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactReader
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
-import tools.jackson.databind.ObjectMapper
 import kotlin.math.min
 import kotlin.random.Random
+import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionTemplate
+import tools.jackson.databind.ObjectMapper
 
 @Service
 class DefaultTradingRetryJitter : TradingRetryJitter {
@@ -27,7 +29,7 @@ class TradingNormalizationDispatcher(
     private val runs: TradingNormalizationStore,
     private val sessions: TradingImportSessionStore,
     private val books: TradingBookStore,
-    private val artifacts: TradingSourceArtifactStore,
+    private val artifacts: TradingSourceArtifactReader,
     private val grants: ArtifactAccessGrantIssuer,
     private val compute: TradingNormalizationComputeClient,
     private val jitter: TradingRetryJitter,
