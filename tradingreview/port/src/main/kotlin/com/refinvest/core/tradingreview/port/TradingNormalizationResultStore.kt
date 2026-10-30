@@ -41,10 +41,6 @@ interface TradingNormalizationResultStore {
     fun discardStage(runId: String)
     fun cleanupObsoleteStages(limit: Int): Int
     fun cleanupAcknowledgementsForDeletedSessions(limit: Int): Int
-    fun publish(run: NormalizationRun, dispatch: NormalizationDispatch, workerId: String,
-                descriptor: NormalizationResultDescriptor, manifestJson: String, coverageJson: String,
-                capabilityJson: String, qualityJson: String, ledgerContentHash: String,
-                now: Instant): Boolean
     /** Records a deletion-generation tombstone and its durable discard ACK in one transaction. */
     fun discardStale(run: NormalizationRun, dispatch: NormalizationDispatch, workerId: String,
                      descriptor: NormalizationResultDescriptor, now: Instant): Boolean

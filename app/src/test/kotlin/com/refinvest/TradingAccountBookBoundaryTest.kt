@@ -54,7 +54,7 @@ class TradingAccountBookBoundaryTest {
         }
         assertFalse(Files.exists(persistence.resolve("JdbcTradingReviewStore.kt")))
         assertFalse(Files.exists(persistence.resolve("JdbcTradingImportStore.kt")))
-        listOf("account", "book", "importsession", "normalization").forEach { aggregate ->
+        listOf("account", "book", "importsession", "normalization", "ledger").forEach { aggregate ->
             Files.walk(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/$aggregate")).use { files ->
                 files.filter { it.toString().endsWith(".kt") }.forEach { file ->
                     assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|java\\.nio\\.file|javax\\.crypto").containsMatchIn(Files.readString(file)))
@@ -98,6 +98,25 @@ class TradingAccountBookBoundaryTest {
         assertTrue(application.contains("session.admitNormalization("))
         assertTrue(application.contains("admissions.admit(NormalizationAdmission("))
         assertFalse(application.contains("runs.insert(") || application.contains("UUID.randomUUID"))
+    }
+
+    @Test
+    fun ledgerPublicationUsesAnImmutableAggregateAndBoundedPureMapping() {
+        val root = workspaceRoot()
+        val domain = Files.readString(root.resolve("tradingreview/domain/src/main/kotlin/com/refinvest/core/tradingreview/domain/LedgerRevision.kt"))
+        assertTrue(domain.contains("class LedgerRevision private constructor(") && domain.contains("AggregateRoot<LedgerRevisionId>"))
+        assertFalse(domain.contains("fun copy(") || domain.contains("JdbcTemplate"))
+        val persistence = root.resolve("tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence")
+        val mapper = Files.readString(persistence.resolve("LedgerRevisionPersistenceMapper.kt"))
+        assertTrue(mapper.contains("LedgerRevision.restore("))
+        assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|\\.publish\\(").containsMatchIn(mapper))
+        val staging = Files.readString(persistence.resolve("JdbcTradingNormalizationResultStore.kt"))
+        assertFalse(staging.contains("override fun publish(") || staging.contains("TradingLedgerPublicationReader"))
+        val rows = Files.readString(persistence.resolve("LedgerRevisionRows.kt"))
+        assertTrue(rows.contains("- 'reviewUnits'") && rows.contains("- 'validationIssues'"))
+        val application = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/TradingNormalizationResultProcessor.kt"))
+        assertTrue(application.contains("LedgerRevision.prepare(") && application.contains("publications.publish(LedgerPublication("))
+        assertFalse(application.contains("results.publish("))
     }
 
     private fun workspaceRoot(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
