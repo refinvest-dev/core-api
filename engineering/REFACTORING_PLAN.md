@@ -136,8 +136,61 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 2b | 완료·머지 | [PR #90](https://github.com/refinvest-dev/core-api/pull/90), Auth Aggregate·Mapper와 refresh family 경합 수정 |
 | 3a | 완료·머지 | [PR #91](https://github.com/refinvest-dev/core-api/pull/91), `a824c26`·`270146d`, Strategy 복원·불변성과 저장/조회 Mapper 정리 |
 | 3b | 완료·머지 | [PR #92](https://github.com/refinvest-dev/core-api/pull/92), `7483529`·`c5d363b`, Backtest Run/Result 복원·불변성과 저장/조회 Mapper 정리, R02/R04 회귀 검증 |
-| 3c | 구현·검증 완료, PR 검토 대상 | [PR #93](https://github.com/refinvest-dev/core-api/pull/93), `ad3af75`·`36db90d`, R12 feature port 계약과 실제 classpath에서 타 feature domain 참조 차단 |
-| 4a 이후 | 미착수 | 다음 PR은 TradingAccount/TradingBook Root·typed ID·Mapper·Store 분리, ownership 보존 |
+| 3c | 완료·머지 | [PR #93](https://github.com/refinvest-dev/core-api/pull/93), `ad3af75`·`36db90d`, R12 feature port 계약과 실제 classpath에서 타 feature domain 참조 차단 |
+| 4a | 구현·검증 완료, PR 검토 대상 | [PR #94](https://github.com/refinvest-dev/core-api/pull/94), `96a1a6c`·`47d85c5`·`12aba18`, Account/Book Root·Mapper·Store/Reader와 삭제 cascade fence |
+| 4b 이후 | 미착수 | 다음 PR은 TradingImportSession과 소속 Artifact/NormalizationRun 정리, 입력 pin·재시도·원자적 admission 보존 |
+
+### 4a 검증 기록과 적용 기준
+
+- ADR-018/061/063, `Create/Get/List/DeleteTradingAccount`·`Create/Get/List/DeleteTradingBook`과
+  `TR-I01`·`TR-I02`·`TR-I14`~`TR-I16`·`TR-I19`·`TR-I24`를 기준으로 정리했다. Account와 Book은
+  각각 독립 AggregateRoot이며 소속 Book 전체를 Account의 메모리 collection으로 적재하지 않는다.
+  ID는 Identifier 기반 value object로 분리하고 Root 생성자를 private으로 유지한다.
+- 생성·복원 모두 이름, timezone, version, deletion generation·상태 조합과 timestamp 순서를
+  검증한다. 수정 전 공통 기반 누락과 잘못된 복원 허용의 회귀 실패 3개를 확인했다. 복원은
+  새 업무 행위나 이벤트를 실행하지 않는다. rename·삭제는 기존처럼 새로운 불변 snapshot을 반환한다.
+- JDBC는 유지했다. Account/Book별 Store·Reader와 PersistenceMapper/Record를 분리했으며
+  삭제 journal과 idempotency adapter도 각각 독립시켰다. Mapper는 준비된 record만 변환하고
+  조회·시각 결정·ID 생성·상태 전이는 수행하지 않는다. Book의 기존 latest Ledger reference도
+  typed ID로 복원하며 Ledger body나 전체 하위 row를 조회하지 않는다.
+- 일반 저장은 기존 version CAS에 immutable identity·현재 lifecycle·generation·timestamp와
+  Book pointer 조건을 더했다. 과거 snapshot이나 복원된 다른 parent/timezone·terminal 상태로
+  저장할 수 없다. Book 생성은 현재 Account를 잠가 ACTIVE·owner·venue를 검증한다. 일반 저장은
+  publication pointer를 갱신하지 않으며 기존 streaming publication/ACK/purge 경로를 보존한다.
+- Account 삭제의 일괄 Book 차단은 owner·generation·저장 후 version·요청 시각을 묶은 원자적
+  capability로 분리했다. 같은 transaction의 Account fence를 잠가 검증하고 stale 요청은 아무것도
+  바꾸지 않는다. 이미 삭제 중인 Book의 generation은 재증가시키지 않으며 affected count는 archived/
+  deleting Book도 포함한 요청 scope를 센다. 시계 차이로 자식 updatedAt이 역전되는 실패도 재현했고
+  기존 시각과 요청 시각 중 늦은 값을 유지해 복원 가능한 상태를 보존했다.
+- 실제 PostgreSQL에서 삭제 중인 Account/Book이 같은 생성 키 재전송으로 반환되는 실패 2개를
+  재현하고 `410 RESOURCE_DELETED`로 차단했다. 외부 owner의 `404`와 기존 정상 replay는 유지한다.
+  `TR-ACC-DELETE-006/007/011`의 접근 차단·scope·중복 generation 부분을 검증했다. 전체 purge
+  workflow와 DeletionRequest 모델 분리는 4d/5b에 남아 있으며 이 단계가 모두 완료했다는 뜻은 아니다.
+- Domain 9개·application 26개·persistence 36개·web 8개·compute 8개·storage 8개와 app 92개,
+  총 187개의 통과 결과를 확인했다. PostgreSQL은 Trading Review 33개와 기존 app DB/migration
+  23개, 총 56개다. 초기 전체 실행의 DB 연결/worker 종료 `Bad address: connect/listen` 실패는
+  성공으로 세지 않았다. 기존 통과 결과를 유지하고 해당 항목을 선택 재실행했으며 최종 변경 후
+  persistence 36개와 실행 JAR를 다시 검증했다. 테스트 skip은 0개이고 컴파일 UP-TO-DATE는
+  테스트 실행으로 세지 않는다. Security/Snowflake는 테스트 source가 없어 컴파일·경계만 확인했다.
+- PostgreSQL 회귀는 실제 row 잠금 대기, owner 격리, immutable parent/timezone, stale 저장·cascade,
+  rollback 시 Root/child/journal/idempotency 동시 복구와 삭제 generation 1회 증가를 확인했다.
+  기존 실제 publication/purge 테스트에 latest pointer 복원·유지와 stale 저장 거절을 추가했다.
+- Trading Review 9개 모듈의 소스 및 실제 Gradle 의존성 검사를 추가했다. security의 Member port
+  전이 의존성을 제한하며 BOM metadata와 framework 구현 JAR를 구분한다. 기존 Compute scheduler의
+  application 구현체 두 참조는 정확한 타입으로 추적하고 5a에서 제거한다. 새 Account/Book port와
+  Mapper는 I/O 구현을 허용하지 않는다. 기존 port의 파일/암호화 구현과 inbound/HTTP 경계는 5a/5c다.
+- schema·API 필드·hash·DSL·계산 결정론 변경은 없다. 정상 저장 데이터·idempotency·publication을
+  유지한다. 최종 코드 `12aba18`의 실행 JAR로 합성 CSV 업로드부터 실제 Compute normalization,
+  결과 무결성·Ledger 발행·latest pointer·ACK 장애/복구·재조회 idempotency의 원본 runtime assertion을
+  통과했다. evidence의 Core commit과 JAR SHA-256도 현재 구현과 일치했다. 계약·문서 snapshot
+  24개·Web snapshot과 context vector 검사도 통과했다.
+- 최초 ACK 장애 주입 창을 놓친 실행과 DB/Compute 기동의 Windows 소켓 오류 실행은 성공으로
+  세지 않았다. 로컬 harness의 ACK 주기를 20초에서 60초로 늘려 장애/복구와 원본 assertion을
+  확인했다. ACK 이후 관찰도 62초로 맞춘 추가 실행은 Compute의 `WinError 10014` 기동·재기동
+  실패로 끝났으며 통과로 기록하지 않는다. 이 추가 관찰은 환경이 안정된 곳에서 재검증할 수 있다.
+  제품 코드는 검증을 위해 변경하지 않았고 assertion을 제거하지 않았다. 검증용 프로세스·임시
+  환경 파일은 각 실행 후 정리했으며 credential·fixture·로그는 커밋하지 않는다. 다음 단계는
+  4b ImportSession과 소속 Artifact/NormalizationRun이다.
 
 ### 3c 검증 기록과 적용 기준
 
