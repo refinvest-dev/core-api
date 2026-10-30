@@ -139,8 +139,8 @@ class JdbcTradingNormalizationStore(private val jdbc: JdbcTemplate, private val 
             WHERE run_id=?::uuid AND attempt_token=?::uuid AND completed_at IS NULL""",
             Timestamp.from(now), runId, expectedToken)
         jdbc.update("""INSERT INTO trading_normalization_attempts
-            (run_id,attempt_number,attempt_token,started_at)
-            SELECT id,current_attempt,attempt_token,? FROM trading_normalization_runs WHERE id=?::uuid""",
+            (run_id,attempt_number,attempt_token,started_at,compute_job_id)
+            SELECT id,current_attempt,attempt_token,?,compute_job_id FROM trading_normalization_runs WHERE id=?::uuid""",
             Timestamp.from(now), runId)
         audit(runId, "GRANT_RETRY_ATTEMPT", null, now)
         return true

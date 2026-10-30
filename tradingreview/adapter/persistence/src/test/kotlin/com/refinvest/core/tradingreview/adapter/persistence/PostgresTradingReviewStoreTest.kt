@@ -1178,6 +1178,46 @@ class PostgresTradingReviewStoreTest {
             pollAt.plusSeconds(1)))
         assertEquals(0, jdbc.queryForObject("""SELECT poll_failure_count FROM
             trading_normalization_dispatches WHERE id=?::uuid""", Int::class.java, dispatch.id))
+
+        // A grant refresh changes the attempt token while retaining the same Compute job.
+        jdbc.update("UPDATE trading_normalization_runs SET status='SUBMITTED',compute_job_id='same-job' WHERE id=?::uuid", runId)
+        jdbc.update("UPDATE trading_normalization_attempts SET compute_job_id='same-job' WHERE run_id=?::uuid", runId)
+        val refreshAt = pollAt.plusSeconds(2)
+        val refreshWorker = UUID.randomUUID().toString()
+        assertNotNull(store.claimSubmitted(refreshAt, java.time.Duration.ofSeconds(45), refreshWorker))
+        val transactions = TransactionTemplate(DataSourceTransactionManager(requireNotNull(jdbc.dataSource)))
+        val nextToken = UUID.randomUUID().toString()
+        assertFalse(transactions.execute { store.advanceAttempt(runId, dispatch.id, UUID.randomUUID().toString(),
+            token, nextToken, refreshAt) })
+        assertFalse(transactions.execute { store.advanceAttempt(runId, dispatch.id, refreshWorker,
+            token, nextToken, refreshAt.plusSeconds(45)) })
+        assertTrue(transactions.execute { store.advanceAttempt(runId, dispatch.id, refreshWorker, token, nextToken, refreshAt) })
+        val refreshed = assertNotNull(store.findRun(runId))
+        assertEquals(2, refreshed.currentAttempt)
+        assertEquals(nextToken, refreshed.attemptToken)
+        assertEquals("same-job", refreshed.computeJobId)
+        assertEquals(listOf("same-job", "same-job"), jdbc.queryForList("""SELECT compute_job_id
+            FROM trading_normalization_attempts WHERE run_id=?::uuid ORDER BY attempt_number""", String::class.java, runId))
+        assertEquals(run.inputFingerprint, refreshed.inputFingerprint)
+        assertEquals(run.resultVersionPin, refreshed.resultVersionPin)
+        assertFalse(transactions.execute { store.advanceAttempt(runId, dispatch.id, refreshWorker, token,
+            UUID.randomUUID().toString(), refreshAt) })
+        assertFailsWith<IllegalStateException> { transactions.execute {
+            assertTrue(store.advanceAttempt(runId, dispatch.id, refreshWorker, nextToken,
+                UUID.randomUUID().toString(), refreshAt))
+            error("rollback grant attempt")
+        } }
+        assertEquals(2, store.findRun(runId)?.currentAttempt)
+        assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_attempts WHERE run_id=?::uuid", Long::class.java, runId))
+        assertEquals(1L, jdbc.queryForObject("""SELECT count(*) FROM trading_normalization_audit
+            WHERE run_id=?::uuid AND event='GRANT_RETRY_ATTEMPT'""", Long::class.java, runId))
+        val newJobToken = UUID.randomUUID().toString()
+        val newDispatch = dispatch.copy(id = UUID.randomUUID().toString(), computeKey = "e".repeat(64))
+        assertTrue(transactions.execute { store.restartAfterJobFailure(runId, dispatch.id, refreshWorker,
+            newDispatch, newJobToken, "TEMPORARY_DEPENDENCY_FAILURE", refreshAt) })
+        assertNull(store.findRun(runId)?.computeJobId)
+        assertNull(jdbc.queryForObject("""SELECT compute_job_id FROM trading_normalization_attempts
+            WHERE run_id=?::uuid AND attempt_number=3""", String::class.java, runId))
     }
 
     @Test
