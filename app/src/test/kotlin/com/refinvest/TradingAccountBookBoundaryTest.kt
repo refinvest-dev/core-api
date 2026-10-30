@@ -11,7 +11,7 @@ class TradingAccountBookBoundaryTest {
     fun tradingReviewSourcesRespectFeatureLayersAndKeepExistingSchedulerDebtExplicit() {
         val root = workspaceRoot()
         listOf("domain", "port", "application", "adapter/persistence", "adapter/web", "adapter/compute",
-            "adapter/storage", "adapter/security", "adapter/snowflake").forEach { layer ->
+            "adapter/storage", "adapter/security", "adapter/snowflake", "adapter/uuid").forEach { layer ->
             val files = Files.walk(root.resolve("tradingreview/$layer/src/main/kotlin")).use {
                 it.filter { path -> path.toString().endsWith(".kt") }.toList()
             }
@@ -54,7 +54,7 @@ class TradingAccountBookBoundaryTest {
         }
         assertFalse(Files.exists(persistence.resolve("JdbcTradingReviewStore.kt")))
         assertFalse(Files.exists(persistence.resolve("JdbcTradingImportStore.kt")))
-        listOf("account", "book", "importsession").forEach { aggregate ->
+        listOf("account", "book", "importsession", "normalization").forEach { aggregate ->
             Files.walk(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/$aggregate")).use { files ->
                 files.filter { it.toString().endsWith(".kt") }.forEach { file ->
                     assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|java\\.nio\\.file|javax\\.crypto").containsMatchIn(Files.readString(file)))
@@ -79,6 +79,25 @@ class TradingAccountBookBoundaryTest {
         val service = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/TradingImportService.kt"))
         assertTrue(service.contains("session.recordUpload("))
         assertFalse(service.contains("artifacts.insert(") || service.contains("markDeletionPending("))
+    }
+
+    @Test
+    fun normalizationCreationAndRestorationRespectTheOwningRootAndPureMapper() {
+        val root = workspaceRoot()
+        val domain = root.resolve("tradingreview/domain/src/main/kotlin/com/refinvest/core/tradingreview/domain")
+        val run = Files.readString(domain.resolve("importsession/NormalizationRun.kt"))
+        assertTrue(run.contains("class NormalizationRun private constructor("))
+        assertTrue(run.contains("DomainEntity<NormalizationRunId>"))
+        assertFalse(run.contains("AggregateRoot") || run.contains("fun copy("))
+        val persistence = root.resolve("tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence")
+        val mapper = Files.readString(persistence.resolve("NormalizationRunPersistenceMapper.kt"))
+        assertTrue(mapper.contains("NormalizationRun.restore("))
+        assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|admitNormalization").containsMatchIn(mapper))
+        assertFalse(Files.exists(persistence.resolve("JdbcTradingNormalizationStore.kt")))
+        val application = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/TradingNormalizationService.kt"))
+        assertTrue(application.contains("session.admitNormalization("))
+        assertTrue(application.contains("admissions.admit(NormalizationAdmission("))
+        assertFalse(application.contains("runs.insert(") || application.contains("UUID.randomUUID"))
     }
 
     private fun workspaceRoot(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }

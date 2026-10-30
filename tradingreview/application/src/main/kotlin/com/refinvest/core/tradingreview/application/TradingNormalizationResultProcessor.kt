@@ -1,5 +1,9 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
+import com.refinvest.core.tradingreview.port.normalization.TradingNormalizationRuntime
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportFailure
@@ -22,7 +26,7 @@ import tools.jackson.databind.json.JsonMapper
 
 @Service
 class TradingNormalizationResultProcessor(
-    private val runs: TradingNormalizationStore,
+    private val runs: TradingNormalizationRuntime,
     private val sessions: TradingImportSessionStore,
     private val books: TradingBookStore,
     private val results: TradingNormalizationResultStore,
@@ -56,7 +60,7 @@ class TradingNormalizationResultProcessor(
         val dispatch = transactions.execute {
             results.claimReady(clock.instant(), Duration.ofMinutes(15), worker)
         } ?: return false
-        val run = runs.findRun(dispatch.runId) ?: return true
+        val run = runs.findRun(NormalizationRunId(dispatch.runId)) ?: return true
         val session = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId))
         if (session == null || !isCurrent(run, session)) {
             obsolete(run, dispatch, worker)
@@ -66,13 +70,13 @@ class TradingNormalizationResultProcessor(
             terminal(run, dispatch, worker, "RESULT_SCHEMA_UNSUPPORTED")
             return true
         }
-        val savedBase = results.loadStageBase(run.id)
+        val savedBase = results.loadStageBase(run.id.value)
         val currentStageFormat = savedBase?.let {
             strictResultMapper.readTree(it).path(NormalizationResultStreamingReader.STAGE_FORMAT_FIELD)
                 .asText() == NormalizationResultStreamingReader.STREAM_STAGE_FORMAT
         } == true
         val locallyStaged = results.loadStageDescriptor(run, dispatch)
-            ?.takeIf { currentStageFormat && stageComplete(run.id, it) }
+            ?.takeIf { currentStageFormat && stageComplete(run.id.value, it) }
         val descriptor = locallyStaged ?: when (val lookup = compute.descriptor(jobId)) {
             is NormalizationResultLookup.Found -> lookup.descriptor
             is NormalizationResultLookup.Retry -> {
@@ -96,13 +100,13 @@ class TradingNormalizationResultProcessor(
         if (savedBase != null && !currentStageFormat) {
             val cleared = transactions.execute {
                 if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) false
-                else { results.discardStage(run.id); true }
+                else { results.discardStage(run.id.value); true }
             } == true
             if (!cleared) return true
         }
         var verified: VerifiedStagedResult? = null
         var failure: String? = null
-        if (currentStageFormat && savedBase != null && stageComplete(run.id, descriptor)) {
+        if (currentStageFormat && savedBase != null && stageComplete(run.id.value, descriptor)) {
             try {
                 @Suppress("UNCHECKED_CAST")
                 val base = strictResultMapper.readValue(savedBase, Map::class.java) as Map<String, Any?>
@@ -141,7 +145,7 @@ class TradingNormalizationResultProcessor(
                                 transactions.execute {
                                     if (!results.hasReadyLease(dispatch.id, worker, clock.instant()))
                                         throw LeaseLost()
-                                    results.stageItems(run.id, batch)
+                                    results.stageItems(run.id.value, batch)
                                 }
                                 batch.clear()
                             }
@@ -164,7 +168,7 @@ class TradingNormalizationResultProcessor(
                             transactions.execute {
                                 if (!results.hasReadyLease(dispatch.id, worker, clock.instant()))
                                     throw LeaseLost()
-                                results.saveStageBase(run.id, mapper.writeValueAsString(base))
+                                results.saveStageBase(run.id.value, mapper.writeValueAsString(base))
                             }
                             val result = stagedVerifier.verify(base, run, dispatch.id)
                             comparePayloadDescriptor(result, descriptor)
@@ -199,7 +203,7 @@ class TradingNormalizationResultProcessor(
         }
         if (verified == null) return true
         try {
-            val persistedBaseJson = results.loadStageBase(run.id)
+            val persistedBaseJson = results.loadStageBase(run.id.value)
                 ?: throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
             @Suppress("UNCHECKED_CAST")
             val persistedBase = strictResultMapper.readValue(persistedBaseJson, Map::class.java)
@@ -217,7 +221,7 @@ class TradingNormalizationResultProcessor(
                 val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
                 if (locked == null || !isCurrent(run, locked)) return@execute false
                 if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) return@execute false
-                results.markValidated(run.id, clock.instant())
+                results.markValidated(run.id.value, clock.instant())
                 results.publish(run, dispatch, worker, descriptor,
                     mapper.writeValueAsString(independentlyVerified.manifestBase),
                     mapper.writeValueAsString(independentlyVerified.coverages),
@@ -291,7 +295,7 @@ class TradingNormalizationResultProcessor(
             descriptor.resultHashSpecificationVersion != run.resultVersionPin.hashSpecificationVersion)
             throw ResultIntegrityFailure("RESULT_VERSION_PIN_MISMATCH")
         if (descriptor.jobId != run.computeJobId || descriptor.logicalJobId != dispatch.id ||
-            descriptor.runId != run.id || descriptor.attemptToken != run.attemptToken ||
+            descriptor.runId != run.id.value || descriptor.attemptToken != run.attemptToken ||
             descriptor.deletionGeneration != run.input.deletionGeneration ||
             descriptor.inputSetHash != run.inputFingerprint ||
             !same(identity.targetVersionSet.toWireValue(), descriptor.targetVersionSet))
@@ -412,11 +416,11 @@ class TradingNormalizationResultProcessor(
     private fun failLocked(run: NormalizationRun, dispatch: NormalizationDispatch,
                            session: TradingImportSession, worker: String, code: String, now: Instant) {
         if (!runs.markTerminal(dispatch.id, worker, code, now)) return
-        results.discardStage(run.id)
+        results.discardStage(run.id.value)
         val failure = TradingImportFailure(code, false, "WAIT_FOR_RECOVERY", now)
-        val failed = session.failValidation(run.id, run.input.deletionGeneration, failure, now) ?: return
+        val failed = session.failValidation(run.id.value, run.input.deletionGeneration, failure, now) ?: return
         check(sessions.update(failed))
-        runs.audit(run.id, "PROCESSING_FAILED", code, now)
+        runs.audit(run.id.value, "PROCESSING_FAILED", code, now)
     }
 
     private fun isCurrent(run: NormalizationRun, session: TradingImportSession): Boolean =
@@ -459,7 +463,7 @@ class TradingNormalizationResultProcessor(
             val now = clock.instant()
             if (verifiedDescriptor == null ||
                 !results.discardStale(run, dispatch, worker, verifiedDescriptor, now)) {
-                if (runs.markObsolete(dispatch.id, worker, now)) results.discardStage(run.id)
+                if (runs.markObsolete(dispatch.id, worker, now)) results.discardStage(run.id.value)
             }
         }
     }

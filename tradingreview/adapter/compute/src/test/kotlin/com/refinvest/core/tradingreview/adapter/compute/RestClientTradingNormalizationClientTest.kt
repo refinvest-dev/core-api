@@ -1,5 +1,15 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
+import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultDeliveryPolicy
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationInputIdentity
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationDispatchStatus
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunStatus
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationInput
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
 import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
@@ -87,12 +97,12 @@ class RestClientTradingNormalizationClientTest {
             "[]", "TRADING_DATA_POLICY_V1", "retry-v1", "{}", 0)
         val identity = NormalizationInputIdentity.fromPinnedInput(input,
             mapper.readValue(input.versionSetJson, Map::class.java))
-        val run = NormalizationRun("00000000-0000-0000-0000-000000000001", input,
+        val run = NormalizationRun.restore(NormalizationRunId("00000000-0000-0000-0000-000000000001"), input,
             NormalizationInputCanonicalizer.hash(identity), "a".repeat(64),
             NormalizationRunStatus.SUBMITTED, 1, "00000000-0000-0000-0000-000000000003",
             "job-1", null, now, now, null, now, null, 0,
             inputIdentity = identity, resultDeliveryPolicy = deliveryPolicy)
-        val dispatch = NormalizationDispatch("00000000-0000-0000-0000-000000000002", run.id,
+        val dispatch = NormalizationDispatch("00000000-0000-0000-0000-000000000002", run.id.value,
             "b".repeat(64), NormalizationDispatchStatus.SUBMITTED, 0, now, null, null, null, now, now)
         val builder = RestClient.builder().baseUrl("http://compute.test")
         val server = MockRestServiceServer.bindTo(builder).build()
@@ -106,7 +116,7 @@ class RestClientTradingNormalizationClientTest {
             .andRespond(withStatus(HttpStatus.OK).contentType(MediaType.APPLICATION_JSON)
                 .body(mapper.writeValueAsString(mapOf(
                     "jobId" to "job-1", "coreLogicalJobId" to dispatch.id,
-                    "coreNormalizationRunId" to run.id,
+                    "coreNormalizationRunId" to run.id.value,
                     "hashSpecificationVersion" to identity.hashSpecificationVersion,
                     "targetVersionSet" to identity.targetVersionSet.toWireValue(),
                     "resultSchemaVersion" to "TRADING_NORMALIZATION_RESULT_V2",
@@ -266,12 +276,12 @@ class RestClientTradingNormalizationClientTest {
                 "TRADING_DATA_POLICY_V1", "retry-v1", "{}", 0)
             val identity = NormalizationInputIdentity.fromPinnedInput(input,
                 mapper.readValue(input.versionSetJson, Map::class.java))
-            val run = NormalizationRun("00000000-0000-0000-0000-000000000001", input,
+            val run = NormalizationRun.restore(NormalizationRunId("00000000-0000-0000-0000-000000000001"), input,
                 NormalizationInputCanonicalizer.hash(identity), "e".repeat(64),
                 NormalizationRunStatus.DISPATCH_PENDING, 1,
                 "00000000-0000-0000-0000-000000000003", null, null, now, now, null, now, null, 0,
                 inputIdentity = identity, resultDeliveryPolicy = deliveryPolicy)
-            val dispatch = NormalizationDispatch(dispatchId, run.id, "f".repeat(64),
+            val dispatch = NormalizationDispatch(dispatchId, run.id.value, "f".repeat(64),
                 NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
             fun grants(uri: String) = input.artifacts.reversed().map {
                 ArtifactReadGrant(it.artifactId.value.toString(), it.role.name, it.sha256,
@@ -296,7 +306,7 @@ class RestClientTradingNormalizationClientTest {
             assertEquals("RESULT_DELIVERY_V1", first.path("resultDeliveryPolicy")
                 .path("policyVersion").asText())
             assertEquals(identity.tradingBookId, first.path("inputIdentity").path("tradingBookId").asText())
-            assertEquals(run.id, first.path("coreNormalizationRunId").asText())
+            assertEquals(run.id.value, first.path("coreNormalizationRunId").asText())
             assertEquals("retry-v1", first.path("retryPolicyVersion").asText())
             assertEquals("d".repeat(64), first.path("inputIdentity").path("targetVersionSet")
                 .path("normalizer").path("versionSetHash").asText())
@@ -313,7 +323,10 @@ class RestClientTradingNormalizationClientTest {
                     if (index == 0) grant.copy(rawSha256 = "0".repeat(64)) else grant
                 })).code)
             assertEquals("INTERNAL_REQUEST_CONTRACT_INVALID", assertIs<NormalizationSubmission.Rejected>(
-                client.submit(run.copy(inputIdentity = null), dispatch,
+                client.submit(NormalizationRun.restore(run.id, run.input, run.inputFingerprint, run.logicalKey, run.status,
+                    run.currentAttempt, run.attemptToken, run.computeJobId, run.lastFailureCode, run.nextAttemptAt,
+                    run.createdAt, run.startedAt, run.updatedAt, run.completedAt, run.version, run.retryOfRunId,
+                    null, run.resultDeliveryPolicy, run.resultVersionPin), dispatch,
                     grants("https://private/legacy/"))).code)
             val status = NormalizationJobStatus("job-1", "PENDING", run.attemptToken, 0, 0,
                 run.inputFingerprint, identity.targetVersionSet.versionSetHash,

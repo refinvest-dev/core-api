@@ -1,5 +1,10 @@
 package com.refinvest.core.tradingreview.port
 
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultDeliveryPolicy
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import java.io.InputStream
@@ -11,30 +16,6 @@ import javax.crypto.Cipher
 import javax.crypto.CipherInputStream
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
-
-interface TradingNormalizationStore {
-    fun insert(run: NormalizationRun, dispatch: NormalizationDispatch)
-    fun findRun(id: String): NormalizationRun?
-    fun findActive(sessionId: TradingImportSessionId): NormalizationRun?
-    fun holdUnknownCreate(dispatchId: String, leaseOwner: String, now: Instant): Boolean
-    fun claimNext(now: Instant, lease: Duration, workerId: String): NormalizationDispatch?
-    fun claimSubmitted(now: Instant, lease: Duration, workerId: String): NormalizationDispatch?
-    fun schedulePoll(dispatchId: String, leaseOwner: String, next: Instant, now: Instant): Boolean
-    fun schedulePollFailure(dispatchId: String, leaseOwner: String, code: String,
-                            next: Instant, now: Instant): Boolean
-    fun markResultReady(dispatchId: String, leaseOwner: String, now: Instant): Boolean
-    fun advanceAttempt(runId: String, dispatchId: String, leaseOwner: String,
-                       expectedToken: String, nextToken: String, now: Instant): Boolean
-    fun restartAfterJobFailure(runId: String, dispatchId: String, leaseOwner: String,
-                               nextDispatch: NormalizationDispatch, nextToken: String,
-                               failureCode: String, now: Instant): Boolean
-    fun markSubmitted(dispatchId: String, leaseOwner: String, runId: String, generation: Long,
-                      attemptToken: String, jobId: String, now: Instant): Boolean
-    fun scheduleRetry(dispatchId: String, leaseOwner: String, code: String, next: Instant, now: Instant): Boolean
-    fun markTerminal(dispatchId: String, leaseOwner: String, code: String, now: Instant): Boolean
-    fun markObsolete(dispatchId: String, leaseOwner: String, now: Instant): Boolean
-    fun audit(runId: String, event: String, code: String?, now: Instant)
-}
 
 data class ArtifactReadGrant(
     val coreArtifactId: String,

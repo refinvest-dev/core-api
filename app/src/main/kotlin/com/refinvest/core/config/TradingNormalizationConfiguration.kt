@@ -1,9 +1,9 @@
 package com.refinvest.core.config
 
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultDeliveryPolicy
 import com.refinvest.core.tradingreview.port.TradingFailure
 import com.refinvest.core.tradingreview.port.TradingNormalizationRetryPolicy
 import com.refinvest.core.tradingreview.port.TradingNormalizationSettings
-import com.refinvest.core.tradingreview.domain.NormalizationResultDeliveryPolicy
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.time.Duration

@@ -1,5 +1,13 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
+import com.refinvest.core.tradingreview.port.normalization.*
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationInputIdentity
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationDispatchStatus
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationInput
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
@@ -10,11 +18,9 @@ import com.refinvest.core.tradingreview.port.*
 import com.refinvest.core.tradingreview.port.account.TradingAccountStore
 import com.refinvest.core.tradingreview.port.book.TradingBookStore
 import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
-import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactReader
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
-import java.util.UUID
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tools.jackson.core.StreamReadFeature
@@ -27,14 +33,15 @@ open class TradingNormalizationService(
     private val accounts: TradingAccountStore,
     private val books: TradingBookStore,
     private val sessions: TradingImportSessionStore,
-    private val artifacts: TradingSourceArtifactReader,
     private val idempotency: TradingIdempotencyStore,
-    private val runs: TradingNormalizationStore,
+    private val runs: TradingNormalizationRunReader,
     private val versions: TradingVersionPins,
     private val settings: TradingNormalizationSettings,
     private val mapper: ObjectMapper,
     private val clock: Clock,
     private val transition: TradingNormalizationTransitionGate,
+    private val admissions: TradingNormalizationAdmission,
+    private val identifiers: TradingNormalizationIdGenerator,
 ) : TradingNormalizationUseCase {
     private val strictMapper = JsonMapper.builder()
         .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build()
@@ -94,7 +101,7 @@ open class TradingNormalizationService(
         // The version pin must still be executable. Retry never silently moves to a newer version.
         if (canonical(versions.currentJson()) != pinnedVersions) throw TradingFailure("VERSION_UNAVAILABLE", 422)
         val now = clock.instant()
-        val source = artifacts.list(id)
+        val source = session.artifacts
         val prepared = TradingArtifactRole.entries.map { role ->
             val matches = source.filter { it.role == role && it.retentionStatus == TradingArtifactRetentionStatus.ACTIVE }
             if (matches.isEmpty()) throw TradingFailure(
@@ -120,17 +127,19 @@ open class TradingNormalizationService(
             "maxElapsedTime" to policy.maxElapsedTime.toString(),
             "initialDelay" to policy.initialDelay.toString(),
             "maxDelay" to policy.maxDelay.toString(), "jitter" to policy.jitter))
-        val terms = canonical(settings.instrumentTermsJson())
+        val terms = if (retry) session.normalizationRun?.input?.instrumentTermsJson
+            ?: throw TradingFailure("RESOURCE_STATE_CONFLICT", 409)
+        else canonical(settings.instrumentTermsJson())
         val input = NormalizationInput(book.id, session.id, owner.value, prepared, book.venue.name,
             book.productFamily.name, book.positionMode.name, book.settlementAsset.name,
-            session.sourceTimezone, session.reviewTimezone, pinnedVersions, terms,
+            session.sourceTimezone, session.reviewTimezone, session.versionSetJson, terms,
             session.dataPolicyVersion, policy.version, policyJson, session.deletionGeneration)
         val identity = try {
             NormalizationInputIdentity.fromPinnedInput(input, mapper.readValue(pinnedVersions, Map::class.java))
         } catch (_: Exception) { throw TradingFailure("VERSION_UNAVAILABLE", 422) }
         val hash = NormalizationInputCanonicalizer.hash(identity)
         val previous = if (retry) {
-            val previous = session.activeNormalizationRunId?.let(runs::findRun)
+            val previous = session.normalizationRun
                 ?: throw TradingFailure("RESOURCE_STATE_CONFLICT", 409)
             val previousIdentity = previous.inputIdentity
                 ?: throw TradingFailure("VERSION_UNAVAILABLE", 422)
@@ -142,25 +151,24 @@ open class TradingNormalizationService(
                 throw TradingFailure("ARTIFACT_IDENTITY_CONFLICT", 409)
             previous
         } else null
-        val runId = UUID.randomUUID().toString()
-        val dispatchId = UUID.randomUUID().toString()
-        val attemptToken = UUID.randomUUID().toString()
+        val runId = identifiers.runId()
+        val dispatchId = identifiers.dispatchId()
+        val attemptToken = identifiers.attemptToken()
         val resultPin = previous?.resultVersionPin ?: NormalizationResultVersionPin.V1
         val logicalKey = NormalizationInputFingerprint.logicalKey(owner.value, hash,
             input.deletionGeneration, resultPin, mapper)
-        val run = NormalizationRun(runId, input, hash, logicalKey,
-            NormalizationRunStatus.DISPATCH_PENDING, 1, attemptToken, null, null,
-            now, now, null, now, null, 0, previous?.id, identity, deliveryPolicy, resultPin)
-        val dispatch = NormalizationDispatch(dispatchId, runId,
-            NormalizationInputFingerprint.dispatchKey(runId, logicalKey, attemptToken,
+        val admitted = session.admitNormalization(runId, input, logicalKey, attemptToken,
+            identity, mapper.readValue(session.versionSetJson, Map::class.java), deliveryPolicy, resultPin, now)
+        val run = requireNotNull(admitted.normalizationRun)
+        val dispatch = NormalizationDispatch(dispatchId, runId.value,
+            NormalizationInputFingerprint.dispatchKey(runId.value, logicalKey, attemptToken,
                 input.versionSetJson, input.deletionGeneration, mapper),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now,
             resultVersionPin = resultPin)
-        runs.insert(run, dispatch)
-        if (!sessions.update(session.beginValidation(runId, now))) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
-        runs.audit(runId, if (retry) "EXPLICIT_RETRY" else "VALIDATION_ADMITTED", null, now)
+        if (!admissions.admit(NormalizationAdmission(session, admitted, dispatch)))
+            throw TradingFailure("CONCURRENT_MODIFICATION", 409)
         idempotency.complete(owner, operation, key, id.value)
-        return session.beginValidation(runId, now)
+        return admitted
     }
 
     private fun canonical(raw: String): String = try {
@@ -182,28 +190,13 @@ object NormalizationInputFingerprint {
 
     fun logicalKey(ownerId: Long, inputSetHash: String, deletionGeneration: Long,
                    resultPin: NormalizationResultVersionPin, mapper: ObjectMapper): String {
-        val body = mapOf(
-            "ownerScope" to ownerId.toString(),
-            "inputSetHash" to inputSetHash,
-            "deletionGeneration" to deletionGeneration,
-            "resultSchemaVersion" to resultPin.schemaVersion,
-            "resultHashSpecificationVersion" to resultPin.hashSpecificationVersion,
-        )
-        return sha256(canonical(body, mapper))
+        return NormalizationInputCanonicalizer.logicalKey(ownerId, inputSetHash, deletionGeneration, resultPin)
     }
 
     fun dispatchKey(runId: String, logicalKey: String, initialAttemptToken: String,
-                    versionSetJson: String, deletionGeneration: Long, mapper: ObjectMapper): String {
-        val versionHash = mapper.readTree(versionSetJson).path("versionSetHash").asText()
-        return sha256(canonical(mapOf(
-            "operationKind" to "NORMALIZATION",
-            "coreLogicalAggregateId" to runId,
-            "logicalRequestKey" to logicalKey,
-            "initialAttemptToken" to initialAttemptToken,
-            "targetVersionSetHash" to versionHash,
-            "deletionGeneration" to deletionGeneration,
-        ), mapper))
-    }
+                    versionSetJson: String, deletionGeneration: Long, mapper: ObjectMapper): String =
+        NormalizationInputCanonicalizer.dispatchKey(runId, logicalKey, initialAttemptToken,
+            mapper.readTree(versionSetJson).path("versionSetHash").asText(), deletionGeneration)
 
     fun hashParts(vararg parts: String): String = sha256(parts.joinToString("") {
         val bytes = it.toByteArray(StandardCharsets.UTF_8)

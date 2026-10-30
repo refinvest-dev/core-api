@@ -1,5 +1,6 @@
 package com.refinvest.core.tradingreview.domain
 
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact
 import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
@@ -71,7 +72,11 @@ class TradingImportSessionTest {
         assertTrue(session.artifacts.isEmpty())
         assertEquals(1, received.artifacts.size)
         assertFailsWith<IllegalArgumentException> { upload(received, 5, TradingArtifactRole.TRADE_HISTORY) }
-        val validating = received.beginValidation("run-1", now)
+        val validating = TradingImportSession.restore(received.id, received.bookId, received.owner, received.sourceTimezone,
+            received.reviewTimezone, received.declaredPositionMode, received.dataPolicyVersion, received.retentionPolicy,
+            received.maskingPolicyVersion, received.evidenceRetention, received.deletionPolicyVersion, received.versionSetJson,
+            TradingImportStatus.VALIDATING, 0, false, now, now, 0, now,
+            NormalizationRunId("00000000-0000-0000-0000-000000000001"), artifacts = received.artifacts)
         assertFailsWith<IllegalArgumentException> { upload(validating, 5, TradingArtifactRole.POSITION_HISTORY) }
         val deleted = validating.requestArtifactDeletion(TradingSourceArtifactId(4), now.plusSeconds(1))
         assertEquals(TradingImportStatus.PROCESSING_FAILED, deleted.status)
@@ -81,7 +86,7 @@ class TradingImportSessionTest {
         assertEquals(TradingArtifactRetentionStatus.DELETION_PENDING, deleted.artifacts.single().retentionStatus)
         assertEquals(validating.versionSetJson, deleted.versionSetJson)
         assertEquals(validating.activeNormalizationRunId, deleted.activeNormalizationRunId)
-        assertEquals(null, deleted.failValidation("run-1", 0, TradingImportFailure("LATE", true, "RETRY", now), now))
+        assertEquals(null, deleted.failValidation("00000000-0000-0000-0000-000000000001", 0, TradingImportFailure("LATE", true, "RETRY", now), now))
         assertFailsWith<IllegalArgumentException> { received.requestArtifactDeletion(TradingSourceArtifactId(999), now) }
     }
 

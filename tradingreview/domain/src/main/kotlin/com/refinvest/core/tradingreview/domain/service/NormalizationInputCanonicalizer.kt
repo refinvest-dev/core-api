@@ -1,5 +1,6 @@
-package com.refinvest.core.tradingreview.domain
+package com.refinvest.core.tradingreview.domain.service
 
+import com.refinvest.core.tradingreview.domain.valueobject.*
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.HexFormat
@@ -12,9 +13,23 @@ object NormalizationInputCanonicalizer {
     fun hash(identity: NormalizationInputIdentity): String = HexFormat.of().formatHex(
         MessageDigest.getInstance("SHA-256").digest(canonicalize(identity)))
 
+    fun logicalKey(ownerId: Long, inputSetHash: String, generation: Long, pin: NormalizationResultVersionPin): String =
+        hashValue(mapOf("ownerScope" to ownerId.toString(), "inputSetHash" to inputSetHash,
+            "deletionGeneration" to generation, "resultSchemaVersion" to pin.schemaVersion,
+            "resultHashSpecificationVersion" to pin.hashSpecificationVersion))
+
+    fun dispatchKey(runId: String, logicalKey: String, token: String, versionSetHash: String, generation: Long): String =
+        hashValue(mapOf("operationKind" to "NORMALIZATION", "coreLogicalAggregateId" to runId,
+            "logicalRequestKey" to logicalKey, "initialAttemptToken" to token,
+            "targetVersionSetHash" to versionSetHash, "deletionGeneration" to generation))
+
+    private fun hashValue(value: Any): String = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+        .digest(buildString { appendValue(value) }.toByteArray(StandardCharsets.UTF_8)))
+
     private fun StringBuilder.appendValue(value: Any) {
         when (value) {
             is String -> appendQuoted(value)
+            is Long -> append(value.toString())
             is Map<*, *> -> {
                 append('{')
                 value.entries.sortedWith { left, right ->

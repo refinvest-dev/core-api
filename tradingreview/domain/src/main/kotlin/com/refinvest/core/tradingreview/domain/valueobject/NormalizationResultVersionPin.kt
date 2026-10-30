@@ -1,4 +1,4 @@
-package com.refinvest.core.tradingreview.domain
+package com.refinvest.core.tradingreview.domain.valueobject
 
 /** Result wire provenance is independent of the ADR-065 input identity. */
 data class NormalizationResultVersionPin(

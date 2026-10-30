@@ -58,7 +58,7 @@ class JdbcTradingImportSessionPersistenceAdapter(private val jdbc: JdbcTemplate)
         val record = jdbc.query("SELECT * FROM trading_import_sessions WHERE id=? AND owner_member_id=?" +
             if (forUpdate) " FOR UPDATE" else "", { rs, _ -> TradingImportRows.session(rs) }, id.value, owner.value).firstOrNull()
             ?: return null
-        return TradingImportSessionPersistenceMapper.toDomain(record.copy(artifacts = artifactRecords(id)))
+        return TradingImportSessionPersistenceMapper.toDomain(complete(record))
     }
 
     override fun list(bookId: TradingBookId, owner: MemberId, page: Int, size: Int): TradingPage<TradingImportSession> {
@@ -67,7 +67,7 @@ class JdbcTradingImportSessionPersistenceAdapter(private val jdbc: JdbcTemplate)
             Long::class.java, bookId.value, owner.value) ?: 0L
         val items = jdbc.query("""SELECT * FROM trading_import_sessions WHERE trading_book_id=?
             AND owner_member_id=? AND deletion_pending=false ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?""",
-            { rs, _ -> TradingImportSessionPersistenceMapper.toDomain(TradingImportRows.session(rs).let { it.copy(artifacts = artifactRecords(TradingImportSessionId(it.id))) }) }, bookId.value, owner.value, size, page.toLong() * size)
+            { rs, _ -> TradingImportSessionPersistenceMapper.toDomain(complete(TradingImportRows.session(rs))) }, bookId.value, owner.value, size, page.toLong() * size)
         return TradingPage(items, page, size, total)
     }
 
@@ -82,7 +82,7 @@ class JdbcTradingImportSessionPersistenceAdapter(private val jdbc: JdbcTemplate)
         if (before.copy(status = after.status, deletionGeneration = after.deletionGeneration,
                 deletionPending = after.deletionPending, updatedAt = after.updatedAt,
                 validationStartedAt = after.validationStartedAt, activeNormalizationRunId = after.activeNormalizationRunId,
-                failure = after.failure, artifacts = emptyList()) != after.copy(artifacts = emptyList())) return false
+                failure = after.failure, artifacts = emptyList(), normalizationRun = null) != after.copy(artifacts = emptyList(), normalizationRun = null)) return false
         val generationAdvanced = before.deletionGeneration < Long.MAX_VALUE && after.deletionGeneration == before.deletionGeneration + 1
         val stateAllowed = when {
             after.deletionPending -> generationAdvanced && after.status == before.status &&
@@ -93,7 +93,7 @@ class JdbcTradingImportSessionPersistenceAdapter(private val jdbc: JdbcTemplate)
             after.deletionGeneration != before.deletionGeneration -> false
             before.status == after.status -> after.activeNormalizationRunId == before.activeNormalizationRunId &&
                 after.validationStartedAt == before.validationStartedAt && after.failure == before.failure
-            after.status == "VALIDATING" -> before.status in setOf("RECEIVED", "PROCESSING_FAILED")
+            after.status == "VALIDATING" -> false // New run admission owns this transition.
             before.status == "VALIDATING" -> after.status in setOf("REJECTED", "PROCESSING_FAILED") &&
                 before.activeNormalizationRunId == after.activeNormalizationRunId && before.validationStartedAt == after.validationStartedAt
             else -> false
@@ -135,6 +135,13 @@ class JdbcTradingImportSessionPersistenceAdapter(private val jdbc: JdbcTemplate)
                 next.retentionStatus, next.id, next.version) == 1)
         }
         return true
+    }
+
+    private fun complete(record: TradingImportSessionRecord): TradingImportSessionRecord {
+        val run = record.activeNormalizationRunId?.let { id -> jdbc.query(
+            "SELECT * FROM trading_normalization_runs WHERE id=?::uuid AND import_session_id=? AND owner_member_id=?",
+            { rs, _ -> NormalizationRunRows.record(rs) }, id, record.id, record.owner).firstOrNull() }
+        return record.copy(artifacts = artifactRecords(TradingImportSessionId(record.id)), normalizationRun = run)
     }
 
     private fun sameArtifact(left: TradingSourceArtifactRecord, right: TradingSourceArtifactRecord) =
