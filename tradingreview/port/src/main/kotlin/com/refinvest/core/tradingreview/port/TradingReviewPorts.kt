@@ -1,5 +1,12 @@
 package com.refinvest.core.tradingreview.port
 
+import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
+import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
+import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import java.time.Instant
@@ -14,23 +21,6 @@ interface TradingIdGenerator {
 }
 
 data class TradingPage<T>(val items: List<T>, val page: Int, val size: Int, val total: Long)
-
-interface TradingAccountStore {
-    fun insert(account: TradingAccount)
-    fun find(id: TradingAccountId, owner: MemberId, forUpdate: Boolean = false): TradingAccount?
-    fun list(owner: MemberId, page: Int, size: Int): TradingPage<TradingAccount>
-    fun update(account: TradingAccount): Boolean
-    fun deleted(id: TradingAccountId, owner: MemberId): Boolean
-}
-
-interface TradingBookStore {
-    fun insert(book: TradingBook)
-    fun find(id: TradingBookId, owner: MemberId, forUpdate: Boolean = false): TradingBook?
-    fun list(accountId: TradingAccountId, owner: MemberId, page: Int, size: Int): TradingPage<TradingBook>
-    fun update(book: TradingBook): Boolean
-    fun markAccountBooksDeleting(accountId: TradingAccountId, now: Instant)
-    fun deleted(id: TradingBookId, owner: MemberId): Boolean
-}
 
 data class TradingDeletion(
     val id: Long, val owner: MemberId, val targetType: String, val targetId: Long,

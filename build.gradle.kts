@@ -41,6 +41,16 @@ val aggregateModuleDependencies = mapOf(
     ":backtest:adapter:compute" to setOf(":backtest:port", ":shared:infrastructure"),
     ":backtest:adapter:web" to setOf(":backtest:port"),
     ":backtest:adapter:snowflake" to setOf(":backtest:port", ":shared:infrastructure"),
+    ":tradingreview:domain" to setOf(":shared:kernel"),
+    ":tradingreview:port" to setOf(":tradingreview:domain"),
+    ":tradingreview:application" to setOf(":tradingreview:port"),
+    ":tradingreview:adapter:persistence" to setOf(":tradingreview:port"),
+    ":tradingreview:adapter:web" to setOf(":tradingreview:port"),
+    // R10 / stage 5a: existing normalization scheduler implementation calls remain explicitly tracked.
+    ":tradingreview:adapter:compute" to setOf(":tradingreview:port", ":tradingreview:application"),
+    ":tradingreview:adapter:storage" to setOf(":tradingreview:port"),
+    ":tradingreview:adapter:security" to setOf(":tradingreview:port", ":member:port"),
+    ":tradingreview:adapter:snowflake" to setOf(":tradingreview:port", ":shared:infrastructure"),
 )
 
 tasks.register("verifyAggregateModuleBoundaries") {
@@ -62,13 +72,13 @@ tasks.register("verifyAggregateModuleBoundaries") {
                     .filter { id ->
                         id.group.startsWith("org.springframework.data") || id.group.startsWith("org.hibernate") ||
                             id.group.startsWith("jakarta.persistence") || id.group == "org.postgresql" ||
-                            id.group.startsWith("org.springframework.boot") ||
+                            (id.group.startsWith("org.springframework.boot") && id.module != "spring-boot-dependencies") ||
                             (id.group == "org.springframework" && id.module in setOf("spring-web", "spring-webmvc", "spring-jdbc", "spring-orm")) ||
                             (!modulePath.endsWith(":application") && id.group.startsWith("org.springframework"))
                     }
                 check(technology.isEmpty()) { "$modulePath exposes forbidden technology dependencies: $technology" }
             }
-            if (modulePath.endsWith(":application") || modulePath == ":auth:adapter:security") {
+            if (modulePath.endsWith(":application") || modulePath.endsWith(":adapter:security")) {
                 val ownDomain = ":${modulePath.split(':')[1]}:domain"
                 listOf("compileClasspath", "testCompileClasspath").forEach { configuration ->
                     val foreignDomains = module.configurations.getByName(configuration).incoming.resolutionResult
