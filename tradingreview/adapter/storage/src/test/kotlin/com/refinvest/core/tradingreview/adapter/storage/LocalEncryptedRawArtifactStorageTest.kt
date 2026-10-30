@@ -1,8 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
-import com.refinvest.core.tradingreview.domain.TradingSourceArtifactId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import com.refinvest.core.tradingreview.port.TradingFailure
-import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -14,9 +13,10 @@ import javax.crypto.spec.SecretKeySpec
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlin.test.assertFailsWith
+import org.junit.jupiter.api.io.TempDir
 
 class LocalEncryptedRawArtifactStorageTest {
     @TempDir lateinit var root: Path

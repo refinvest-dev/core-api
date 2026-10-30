@@ -1,23 +1,24 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.book.TradingBookStore
-
-import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
-
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportFailure
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
 import com.refinvest.core.tradingreview.port.*
-import org.springframework.stereotype.Service
-import org.springframework.beans.factory.annotation.Value
-import org.springframework.transaction.support.TransactionTemplate
-import tools.jackson.databind.ObjectMapper
-import tools.jackson.databind.json.JsonMapper
-import tools.jackson.core.StreamReadFeature
+import com.refinvest.core.tradingreview.port.book.TradingBookStore
+import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import kotlin.math.min
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionTemplate
+import tools.jackson.core.StreamReadFeature
+import tools.jackson.databind.ObjectMapper
+import tools.jackson.databind.json.JsonMapper
 
 @Service
 class TradingNormalizationResultProcessor(

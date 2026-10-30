@@ -1,24 +1,30 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingDataPolicy
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
+import com.refinvest.core.tradingreview.port.*
 import com.refinvest.core.tradingreview.port.account.TradingAccountStore
 import com.refinvest.core.tradingreview.port.book.TradingBookStore
-
-import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
-import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
-import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
-
-import com.refinvest.core.shared.kernel.member.MemberId
-import com.refinvest.core.tradingreview.domain.*
-import com.refinvest.core.tradingreview.port.*
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
-import org.springframework.transaction.support.TransactionTemplate
+import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionReader
+import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
+import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactReader
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.ZoneId
 import java.util.UUID
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 
 @Service
 open class TradingImportService(
@@ -27,7 +33,7 @@ open class TradingImportService(
     private val accounts: TradingAccountStore,
     private val books: TradingBookStore,
     private val sessions: TradingImportSessionStore,
-    private val artifacts: TradingSourceArtifactStore,
+    private val artifacts: TradingSourceArtifactReader,
     private val deletions: TradingDeletionStore,
     private val idempotency: TradingIdempotencyStore,
     private val storage: RawArtifactStorage,
@@ -35,6 +41,7 @@ open class TradingImportService(
     private val transactions: TransactionTemplate,
     private val clock: Clock,
     private val revisions: TradingLedgerPublicationReader,
+    private val reader: TradingImportSessionReader,
 ) : TradingImportUseCase {
     @Transactional
     override fun create(bookId: TradingBookId, sourceTimezone: String, reviewTimezone: String,
@@ -60,6 +67,7 @@ open class TradingImportService(
             POLICY.dataPolicyVersion, clientRequestReference ?: "")
         return when (val claim = idempotency.claim(owner, "createTradingImportSession", key, fingerprint)) {
             is IdempotencyClaim.Replayed -> sessions.find(TradingImportSessionId(claim.resourceId), owner)
+                ?.takeUnless { it.deletionPending }
                 ?: throw TradingFailure("RESOURCE_DELETED", 410)
             IdempotencyClaim.New -> {
                 val session = TradingImportSession.create(ids.importSessionId(), book, sourceTimezone,
@@ -74,13 +82,13 @@ open class TradingImportService(
     @Transactional(readOnly = true)
     override fun get(id: TradingImportSessionId): TradingImportSessionView {
         val owner = members.currentMemberId()
-        val session = sessions.find(id, owner) ?: throw missing(sessions.deleted(id, owner))
+        val session = reader.find(id, owner) ?: throw missing(reader.deleted(id, owner))
         if (session.deletionPending) throw TradingFailure("RESOURCE_DELETED", 410)
         val book = books.find(session.bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
         val account = accounts.find(book.accountId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
         if (book.status != TradingLifecycleStatus.ACTIVE || account.status != TradingLifecycleStatus.ACTIVE)
             throw TradingFailure("RESOURCE_DELETED", 410)
-        return TradingImportSessionView(session, artifacts.list(id),
+        return TradingImportSessionView(session, session.artifacts,
             if (session.status == TradingImportStatus.ACCEPTED)
                 revisions.publishedForSession(id, owner) else null)
     }
@@ -93,9 +101,9 @@ open class TradingImportService(
         val account = accounts.find(book.accountId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
         if (book.status != TradingLifecycleStatus.ACTIVE || account.status != TradingLifecycleStatus.ACTIVE)
             throw TradingFailure("RESOURCE_DELETED", 410)
-        val result = sessions.list(bookId, owner, page, size)
+        val result = reader.list(bookId, owner, page, size)
         return TradingPage(result.items.map { session -> TradingImportSessionView(session,
-            artifacts.list(session.id), if (session.status == TradingImportStatus.ACCEPTED)
+            session.artifacts, if (session.status == TradingImportStatus.ACCEPTED)
                 revisions.publishedForSession(session.id, owner) else null) }, page, size, result.total)
     }
 
@@ -161,7 +169,7 @@ open class TradingImportService(
                         ?: throw TradingFailure("RESOURCE_DELETED", 410)
                     return@execute UploadArtifactResult(existing, false)
                 }
-                val existing = artifacts.findByRole(id, role)
+                val existing = session.artifacts.singleOrNull { it.role == role }
                 if (existing != null) {
                     if (existing.sha256 != staged.sha256) throw TradingFailure("ARTIFACT_ROLE_CONFLICT", 409)
                     if (existing.retentionStatus != TradingArtifactRetentionStatus.ACTIVE)
@@ -170,11 +178,10 @@ open class TradingImportService(
                     return@execute UploadArtifactResult(existing, false)
                 }
                 val now = clock.instant()
-                val artifact = TradingSourceArtifact(artifactId, id, role, null, contentType,
-                    staged.byteSize, staged.sha256, dialectCandidate, finalKey, staged.wrappedDek,
-                    staged.keyVersion, TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(24 * 60 * 60),
-                    null, null, 0)
-                artifacts.insert(artifact)
+                val changed = session.recordUpload(artifactId, role, contentType, staged.byteSize, staged.sha256,
+                    dialectCandidate, finalKey, staged.wrappedDek, staged.keyVersion, now)
+                if (!sessions.update(changed)) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
+                val artifact = changed.artifacts.single { it.id == artifactId }
                 idempotency.complete(owner, "uploadTradingImportArtifact", key, artifactId.value)
                 UploadArtifactResult(artifact, true)
             } ?: throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
@@ -215,11 +222,11 @@ open class TradingImportService(
             throw TradingFailure("RESOURCE_DELETED", 410)
         if (session.deletionPending) throw TradingFailure("RESOURCE_DELETED", 410)
         val now = clock.instant()
-        if (!sessions.update(session.requestDeletion(now))) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
-        val count = artifacts.list(id).size.toLong()
-        artifacts.markDeletionPending(id, now)
+        val changed = session.requestDeletion(now)
+        if (!sessions.update(changed)) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
+        val count = session.artifacts.size.toLong()
         val deletion = TradingDeletion(ids.deletionId(), owner, "TRADING_IMPORT_SESSION", id.value,
-            "IMPORT_SESSION_SUBTREE", "REQUESTED", session.deletionGeneration + 1, 0, 0,
+            "IMPORT_SESSION_SUBTREE", "REQUESTED", changed.deletionGeneration, 0, 0,
             now, now, now, now.plusSeconds(30L * 24 * 60 * 60), importSessionCount = 1, artifactCount = count)
         deletions.insert(deletion)
         idempotency.complete(owner, operation, key, deletion.id)
@@ -249,17 +256,18 @@ open class TradingImportService(
             ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
         val session = sessions.find(initialSession.id, owner, forUpdate = true)
             ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
-        val artifact = artifacts.find(id, owner, forUpdate = true) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+        val artifact = session.artifacts.singleOrNull { it.id == id } ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
         if (account.status != TradingLifecycleStatus.ACTIVE || book.status != TradingLifecycleStatus.ACTIVE ||
             session.deletionPending) throw TradingFailure("RESOURCE_DELETED", 410)
         if (artifact.retentionStatus != TradingArtifactRetentionStatus.ACTIVE &&
             artifact.retentionStatus != TradingArtifactRetentionStatus.RETENTION_SCHEDULED)
             throw TradingFailure("RESOURCE_DELETED", 410)
         val now = clock.instant()
-        if (!sessions.update(session.requestRawDeletion(now)) || !artifacts.markDeletionPending(id, now))
+        val changed = session.requestArtifactDeletion(id, now)
+        if (!sessions.update(changed))
             throw TradingFailure("CONCURRENT_MODIFICATION", 409)
         val deletion = TradingDeletion(ids.deletionId(), owner, "TRADING_SOURCE_ARTIFACT", id.value,
-            "RAW_ONLY", "REQUESTED", session.deletionGeneration + 1, 0, 0,
+            "RAW_ONLY", "REQUESTED", changed.deletionGeneration, 0, 0,
             now, now, now, now.plusSeconds(30L * 24 * 60 * 60), artifactCount = 1)
         deletions.insert(deletion)
         idempotency.complete(owner, operation, key, deletion.id)

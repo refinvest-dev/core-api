@@ -1,19 +1,12 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
-import com.refinvest.core.tradingreview.domain.TradingSourceArtifactId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import com.refinvest.core.tradingreview.port.RawArtifactStorage
 import com.refinvest.core.tradingreview.port.StagedRawArtifact
 import com.refinvest.core.tradingreview.port.TradingFailure
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.beans.factory.annotation.Value
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Configuration
 import java.io.InputStream
-import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.security.KeyStore
 import java.security.MessageDigest
@@ -26,6 +19,11 @@ import javax.crypto.CipherOutputStream
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
 
 class LocalEncryptedRawArtifactStorage(
     rootPath: Path,

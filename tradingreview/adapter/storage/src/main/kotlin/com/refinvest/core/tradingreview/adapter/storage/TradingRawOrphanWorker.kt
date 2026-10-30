@@ -1,19 +1,19 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
 import com.refinvest.core.tradingreview.port.RawArtifactStorage
-import com.refinvest.core.tradingreview.port.TradingSourceArtifactStore
+import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactReader
+import java.time.Clock
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.core.env.Environment
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import java.time.Clock
 
 @Component
 @ConditionalOnProperty(prefix = "refinvest.trading-review.raw", name = ["root", "keystore-path", "keystore-password", "key-alias"])
 class TradingRawOrphanWorker(
     private val storage: RawArtifactStorage,
-    private val artifacts: TradingSourceArtifactStore,
+    private val artifacts: TradingSourceArtifactReader,
     private val environment: Environment,
     private val clock: Clock,
 ) {

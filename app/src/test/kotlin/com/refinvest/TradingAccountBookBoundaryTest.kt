@@ -43,7 +43,7 @@ class TradingAccountBookBoundaryTest {
     fun aggregateMappersAndPortsArePureAndPersistenceCapabilitiesStaySeparate() {
         val root = workspaceRoot()
         val persistence = root.resolve("tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence")
-        listOf("TradingAccount", "TradingBook").forEach { aggregate ->
+        listOf("TradingAccount", "TradingBook", "TradingImportSession").forEach { aggregate ->
             val mapper = Files.readString(persistence.resolve("${aggregate}PersistenceMapper.kt"))
             assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|\\.create\\(|\\.rename\\(|\\.requestDeletion\\(").containsMatchIn(mapper))
             assertTrue(mapper.contains("$aggregate.restore("))
@@ -53,13 +53,32 @@ class TradingAccountBookBoundaryTest {
             assertFalse(adapter.contains(foreign) || adapter.contains("TradingIdempotencyStore") || adapter.contains("TradingDeletionStore"))
         }
         assertFalse(Files.exists(persistence.resolve("JdbcTradingReviewStore.kt")))
-        listOf("account", "book").forEach { aggregate ->
+        assertFalse(Files.exists(persistence.resolve("JdbcTradingImportStore.kt")))
+        listOf("account", "book", "importsession").forEach { aggregate ->
             Files.walk(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/$aggregate")).use { files ->
                 files.filter { it.toString().endsWith(".kt") }.forEach { file ->
                     assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|java\\.nio\\.file|javax\\.crypto").containsMatchIn(Files.readString(file)))
                 }
             }
         }
+    }
+
+    @Test
+    fun importChildrenStayInsideRootAndCommandPortsAcceptAggregates() {
+        val root = workspaceRoot()
+        val domain = root.resolve("tradingreview/domain/src/main/kotlin/com/refinvest/core/tradingreview/domain")
+        val source = Files.readString(domain.resolve("TradingImportSession.kt"))
+        assertTrue(source.contains("class TradingImportSession private constructor("))
+        assertTrue(source.contains("AggregateRoot<TradingImportSessionId>"))
+        assertFalse(Regex("(?m)^    fun copy\\(").containsMatchIn(source))
+        val child = Files.readString(domain.resolve("importsession/TradingSourceArtifact.kt"))
+        assertTrue(child.contains("DomainEntity<TradingSourceArtifactId>"))
+        assertFalse(child.contains("AggregateRoot") || child.contains("data class TradingSourceArtifact"))
+        val store = Files.readString(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/importsession/TradingImportSessionStore.kt"))
+        assertTrue(store.contains("update(session: TradingImportSession)"))
+        val service = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/TradingImportService.kt"))
+        assertTrue(service.contains("session.recordUpload("))
+        assertFalse(service.contains("artifacts.insert(") || service.contains("markDeletionPending("))
     }
 
     private fun workspaceRoot(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }

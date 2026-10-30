@@ -1,20 +1,20 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
 import com.refinvest.core.tradingreview.port.RawArtifactStorage
-import com.refinvest.core.tradingreview.port.TradingSourceArtifactStore
+import com.refinvest.core.tradingreview.port.importsession.TradingArtifactRetention
 import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
+import java.time.Clock
+import java.util.concurrent.atomic.AtomicLong
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import java.time.Clock
-import java.util.concurrent.atomic.AtomicLong
 
 @Component
 @ConditionalOnProperty(prefix = "refinvest.trading-review", name = ["retention-enabled"], havingValue = "true", matchIfMissing = true)
 class TradingRawRetentionWorker(
-    private val artifacts: TradingSourceArtifactStore,
+    private val artifacts: TradingArtifactRetention,
     private val storage: RawArtifactStorage,
     private val clock: Clock,
     private val jdbc: JdbcTemplate,
@@ -35,11 +35,11 @@ class TradingRawRetentionWorker(
                 val key = artifact.objectKey ?: throw IllegalStateException("Missing raw object descriptor")
                 storage.delete(key)
                 if (storage.exists(key)) throw IllegalStateException("Raw object still exists")
-                if (!artifacts.markDeleted(artifact.id, clock.instant()))
+                if (!artifacts.markDeleted(artifact, clock.instant()))
                     throw IllegalStateException("Raw retention state changed")
             } catch (_: Exception) {
                 deletionFailures.increment()
-                artifacts.markDeletionFailed(artifact.id, "ARTIFACT_DELETION_FAILED", clock.instant())
+                artifacts.markDeletionFailed(artifact, "ARTIFACT_DELETION_FAILED", clock.instant())
             }
         }
     }

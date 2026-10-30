@@ -1,33 +1,14 @@
 package com.refinvest.core.tradingreview.port
 
-import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
-import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
-
-import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import java.io.InputStream
 import java.time.Instant
-
-interface TradingImportSessionStore {
-    fun insert(session: TradingImportSession)
-    fun find(id: TradingImportSessionId, owner: MemberId, forUpdate: Boolean = false): TradingImportSession?
-    fun list(bookId: TradingBookId, owner: MemberId, page: Int, size: Int): TradingPage<TradingImportSession>
-    fun update(session: TradingImportSession): Boolean
-    fun deleted(id: TradingImportSessionId, owner: MemberId): Boolean
-}
-
-interface TradingSourceArtifactStore {
-    fun insert(artifact: TradingSourceArtifact)
-    fun find(id: TradingSourceArtifactId, owner: MemberId, forUpdate: Boolean = false): TradingSourceArtifact?
-    fun findByRole(sessionId: TradingImportSessionId, role: TradingArtifactRole): TradingSourceArtifact?
-    fun list(sessionId: TradingImportSessionId): List<TradingSourceArtifact>
-    fun markDeletionPending(sessionId: TradingImportSessionId, now: Instant)
-    fun markDeletionPending(id: TradingSourceArtifactId, now: Instant): Boolean
-    fun markDeleted(id: TradingSourceArtifactId, now: Instant): Boolean
-    fun markDeletionFailed(id: TradingSourceArtifactId, code: String, now: Instant)
-    fun claimDue(now: Instant, limit: Int): List<TradingSourceArtifact>
-    fun referencesObjectKey(key: String): Boolean
-}
 
 data class StagedRawArtifact(val stagingKey: String, val sha256: String, val byteSize: Long,
                              val wrappedDek: ByteArray, val keyVersion: String)

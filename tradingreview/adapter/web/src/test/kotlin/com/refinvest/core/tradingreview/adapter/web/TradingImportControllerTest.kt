@@ -1,18 +1,17 @@
 package com.refinvest.core.tradingreview.adapter.web
 
-import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
-import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
-
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportFailure
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import com.refinvest.core.tradingreview.port.*
-import org.springframework.test.web.servlet.setup.MockMvcBuilders
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
-import tools.jackson.databind.json.JsonMapper
 import java.io.InputStream
 import java.security.MessageDigest
 import java.time.Clock
@@ -20,11 +19,18 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.test.web.servlet.setup.MockMvcBuilders
+import tools.jackson.databind.json.JsonMapper
 
 class TradingImportControllerTest {
     private val now = Instant.parse("2026-01-01T00:00:00Z")
     private val mapper = JsonMapper.builder().build()
-    private val session = TradingImportSession(TradingImportSessionId(10), TradingBookId(20), MemberId(30),
+    private val session = TradingImportSession.restore(TradingImportSessionId(10), TradingBookId(20), MemberId(30),
         "UTC", "Asia/Seoul", TradingPositionMode.ONE_WAY, "TRADING_DATA_POLICY_V1", "TRADING_RETENTION_V1",
         "SOURCE_EVIDENCE_MASK_V1", "BOOK_LIFECYCLE", "TRADING_DELETION_V1",
         "{\"versionSetHash\":\"exact\"}", TradingImportStatus.RECEIVED, 0, false, now, now, 0)
@@ -53,7 +59,7 @@ class TradingImportControllerTest {
             assertEquals(10L, id.value)
             assertEquals(bytes.size.toLong(), value.byteSize)
             assertEquals(sha(bytes), value.sha256)
-            val artifact = TradingSourceArtifact(TradingSourceArtifactId(40 + artifacts.size.toLong()), id,
+            val artifact = TradingSourceArtifact.restore(TradingSourceArtifactId(40 + artifacts.size.toLong()), id,
                 value.role, value.filename, value.contentType, value.byteSize, value.sha256, value.dialectCandidate,
                 "objects/00000000-0000-0000-0000-000000000040", byteArrayOf(1), "test-v1",
                 TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(86400), null, null, 0)
@@ -71,6 +77,12 @@ class TradingImportControllerTest {
         }, mapper, Clock.fixed(now, ZoneOffset.UTC)),
         TradingSourceArtifactController(imports),
     ).setControllerAdvice(TradingReviewExceptionHandler()).build()
+
+    private fun restoreSession(status: TradingImportStatus, failure: TradingImportFailure? = null) =
+        TradingImportSession.restore(session.id, session.bookId, session.owner, session.sourceTimezone,
+            session.reviewTimezone, session.declaredPositionMode, session.dataPolicyVersion, session.retentionPolicy,
+            session.maskingPolicyVersion, session.evidenceRetention, session.deletionPolicyVersion,
+            session.versionSetJson, status, 0, false, now, now, 0, failure = failure)
 
     @Test
     fun createListGetAndDeleteFollowPublicShape() {
@@ -90,7 +102,7 @@ class TradingImportControllerTest {
 
     @Test
     fun terminalImportResponsesPreserveQualityNullAndAcceptedReport() {
-        currentSession = session.copy(status = TradingImportStatus.REJECTED,
+        currentSession = restoreSession(status = TradingImportStatus.REJECTED,
             failure = TradingImportFailure("REQUIRED_COLUMN_MISSING", false, "NONE", now))
         val rejected = mapper.readTree(mvc.perform(get("/trading-import-sessions/10"))
             .andExpect(status().isOk).andReturn().response.contentAsString)
@@ -101,7 +113,7 @@ class TradingImportControllerTest {
         assertEquals(true, rejected.hasNonNull("completedAt"))
         assertEquals(false, rejected.hasNonNull("createdLedgerRevisionId"))
 
-        currentSession = session.copy(status = TradingImportStatus.PROCESSING_FAILED,
+        currentSession = restoreSession(status = TradingImportStatus.PROCESSING_FAILED,
             failure = TradingImportFailure("RESULT_HASH_MISMATCH", false, "WAIT_FOR_RECOVERY", now))
         val failed = mapper.readTree(mvc.perform(get("/trading-import-sessions/10"))
             .andExpect(status().isOk).andReturn().response.contentAsString)
@@ -110,7 +122,7 @@ class TradingImportControllerTest {
         assertEquals(false, failed.hasNonNull("qualitySummary"))
         assertEquals(false, failed.hasNonNull("createdLedgerRevisionId"))
 
-        currentSession = session.copy(status = TradingImportStatus.ACCEPTED)
+        currentSession = restoreSession(status = TradingImportStatus.ACCEPTED)
         published = PublishedLedgerSummary("revision-1",
             """{"qualityStatus":"ACCEPTABLE","rowCountsByArtifactRole":{"TRADE_HISTORY":1},"ignoredNonTradingRowCounts":{},"validationIssues":[],"reconciliationStatusCounts":{},"excludedReasonCounts":{}}""",
             """["CLOSED_OUTCOME"]""", now)

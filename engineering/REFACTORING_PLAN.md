@@ -89,7 +89,8 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | 3b | Backtest Aggregate 저장/복원 정리 | Run/Result 완전한 복원, R02/R04 수정 유지 |
 | 3c | R12 feature port 경계 | 직접 domain 참조 제거, 실제 의존성 검사 |
 | 4a | TradingAccount/TradingBook | Root/typed ID/Mapper/Store 분리, ownership 보존 |
-| 4b | TradingImportSession 및 소속 모델 | artifact/run 행위·입력 pin·재시도·원자적 admission 보존 |
+| 4b-1 | TradingImportSession 및 소속 Artifact | Root·typed ID·Mapper·Aggregate 저장, 업로드·삭제·retention CAS 보존 |
+| 4b-2 | Session 소속 NormalizationRun | 소속 모델·Mapper·입력 pin·재시도·원자적 admission 보존 |
 | 4c | LedgerRevision 및 publication | immutable 발행 모델, membership/hash/generation gate, bounded 저장 |
 | 4d | DeletionRequest | 명시적 상태 모델, scope/checklist/실패·완료 규칙 |
 | 5a | Dispatch/polling/result/ACK 진입점 | inbound use case, port의 기술 구현 이동, ACK commit 순서 보존 |
@@ -137,8 +138,66 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 3a | 완료·머지 | [PR #91](https://github.com/refinvest-dev/core-api/pull/91), `a824c26`·`270146d`, Strategy 복원·불변성과 저장/조회 Mapper 정리 |
 | 3b | 완료·머지 | [PR #92](https://github.com/refinvest-dev/core-api/pull/92), `7483529`·`c5d363b`, Backtest Run/Result 복원·불변성과 저장/조회 Mapper 정리, R02/R04 회귀 검증 |
 | 3c | 완료·머지 | [PR #93](https://github.com/refinvest-dev/core-api/pull/93), `ad3af75`·`36db90d`, R12 feature port 계약과 실제 classpath에서 타 feature domain 참조 차단 |
-| 4a | 구현·검증 완료, PR 검토 대상 | [PR #94](https://github.com/refinvest-dev/core-api/pull/94), `96a1a6c`·`47d85c5`·`12aba18`, Account/Book Root·Mapper·Store/Reader와 삭제 cascade fence |
-| 4b 이후 | 미착수 | 다음 PR은 TradingImportSession과 소속 Artifact/NormalizationRun 정리, 입력 pin·재시도·원자적 admission 보존 |
+| 4a | 완료·머지 | [PR #94](https://github.com/refinvest-dev/core-api/pull/94), `96a1a6c`·`47d85c5`·`12aba18`, Account/Book Root·Mapper·Store/Reader와 삭제 cascade fence |
+| 4b-1 | 구현·검증 완료, PR 검토 대상 | [PR #95](https://github.com/refinvest-dev/core-api/pull/95), `5771f96`·`5f66b63`·`f5ac6df`, Session Root·Artifact 슬롯 저장·순수 Mapper·retention CAS와 삭제 replay·grant retry 이력 보강 |
+| 4b-2 이후 | 미착수 | 다음 PR은 Session 소속 NormalizationRun의 행위·Mapper·입력 pin·재시도·원자적 admission 정리 |
+
+### 4b-1 검증 기록과 후속 범위
+
+- 4b를 Session·Artifact의 업로드/삭제 저장 경계와 NormalizationRun의 admission/재시도 경계로
+  나눴다. 두 소속 모델을 독립 Aggregate로 승격하지 않는다. 4b 전체 완료는 4b-2까지 포함한다.
+- ADR-018/061/063/064와 `TR-I03`~`TR-I06`·`TR-I14`~`TR-I24`를 기준으로 Session을
+  `AggregateRoot<TradingImportSessionId>`, Artifact를 소속 `DomainEntity`로 정리했다. 공개 생성자와
+  `copy`를 제거하고 생성·복원의 상태/시간/policy·version pin, role·ID 중복과 소속을 검증한다.
+  raw descriptor의 키와 Artifact collection은 외부 변경을 차단한다. 복원은 업무 행위·이벤트를 재실행하지 않는다.
+- Application은 Root의 `recordUpload`·`requestArtifactDeletion`·`requestDeletion` 뒤 Session Store를
+  호출한다. Root와 최대 두 Artifact를 같은 transaction에서 저장하며 하위 Entity를 직접 저장하는
+  command port를 제거했다. Store/Reader는 같은 순수 `TradingImportSessionPersistenceMapper`를
+  사용하고 JDBC row 추출과 SQL 컬럼 분해는 adapter가 소유한다. 기존 JDBC와 대용량 result 저장을 유지한다.
+- 새 Session 저장은 Account→Book 순서로 잠그고 활성 parent·owner·mode를 검사한다. 변경 저장은
+  Session 잠금·expected Root/Artifact version, immutable metadata·입력 pin·created Revision pointer와
+  허용된 상태/generation을 검사한다. stale 저장은 Root·Artifact 모두 변경하지 않는다. 빈 collection을
+  저장해 기존 Artifact를 지우거나 일반 저장으로 발행 pointer를 바꿀 수 없다.
+- Raw purge는 별도 capability/adapter로 분리했다. 갱신된 claim의 Artifact version과 다른 늦은
+  완료·실패 응답은 상태나 실패 횟수를 바꾸지 않는다. 기존 idempotency·원자적 admission/publication,
+  삭제 generation과 DB transaction 밖의 object I/O를 보존한다.
+- 실제 PostgreSQL에서 삭제 요청 직후 생성 key를 재전송하면 삭제 대기 Root를 반환하는 회귀를
+  재현했다. 수정 후 요청 직후와 purge 이후 모두 `410 RESOURCE_DELETED`를 검증했다.
+- 실제 HTTP smoke에서 ADR-064의 grant retry가 새 attempt에 기존 Compute job ID를 보존하지 않는
+  `CORE_ATTEMPT_DRIFT`도 발견했다. PostgreSQL 회귀는 `[same-job, same-job]` 대신
+  `[same-job, null]`로 실패했다. 같은 job의 grant 갱신에서만 현재 job ID를 새 attempt에 저장하도록
+  수정했다. 새 Compute job을 만드는 재시도는 ID를 상속하지 않으며, 잘못된/만료 lease·stale token
+  거절과 Run/attempt/audit rollback을 함께 검증한다. 과거 attempt 이력의 자동 보정은 포함하지 않는다.
+- 전체 관련 테스트는 domain 12개·application 26개·persistence 41개·web 8개·compute 8개·storage
+  8개·app 93개로 196개 통과, 실패·오류·skip 0개다. security/snowflake는 테스트 source가 없다.
+  재전송 수정 후 application·persistence·app 160개를 다시 실행했고 나머지 36개는 앞선 성공 결과를
+  재사용했다. 실제 PostgreSQL 59개(Trading Review 36개·app 23개)를 포함한다. 소스 경계와 실제
+  Gradle 의존성 검사, bootJar도 통과했다.
+- grant retry 이력 수정 뒤 persistence 41개·Gradle 경계·bootJar를 추가 실행해 통과했다. 나머지
+  155개는 앞선 성공 결과를 재사용했다. 관련 테스트 합계는 중복 실행을 합산하지 않은 196개다.
+- 새 회귀는 immutable pin·Artifact identity 변경/누락 거절, stale snapshot 슬롯 보존, parent 삭제,
+  Root/Artifact 전체 rollback과 purge claim 교체를 검증한다. 기존 업로드 경합·replay, admission·retry,
+  삭제 후 grant 차단, V1/V2 publication·ACK 회귀도 통과했다. 기존 만료 fixture의 시간 역전과
+  service/worker Clock 불일치는 유효한 시간 흐름으로 수정했다. Windows Gradle 소켓 bind 오류로
+  테스트가 시작되지 않은 실행과 수정 전 실패는 성공으로 세지 않았다.
+- 실제 Core↔Compute `test-trading-normalization-runtime-contract.ps1 -Publication`의 업로드·정규화,
+  result 무결성, Ledger 발행, Compute 중단/재기동 뒤 ACK 재전송과 한 scheduler 주기 뒤 재조회가
+  통과했다. `primary`·`result_integrity`·`ledger_publication` 모두 PASS이며 ACK는
+  `ACKNOWLEDGED_AFTER_RETRY`, idempotency는 PASS다. membership/hash·evidence reference·건수,
+  latest pointer와 staging 정리를 확인했다. 검증한 bootJar의 SHA-256은 실행 증적과 일치한다.
+- 검증 runner는 이미 빌드한 JAR를 사용하고 ACK fault를 설치할 수 있도록 scheduler 주기를
+  로컬에서 60초로, 후속 확인 대기를 62초로 맞췄다. 원래 assertion은 유지했다. 장시간 실행 중단 뒤
+  인증 만료로 마지막 조회가 401이 된 실행, grant retry 이력 수정 전 실패와 Windows 소켓 오류로
+  기동되지 못한 실행은 통과로 세지 않았다. 전용 프로세스·임시 환경 파일을 정리했다.
+- PR #96의 최신 정본 문서 동기화는 main 병합으로 반영했다. 실행 코드는 HTTP 검증 커밋
+  `f5ac6df`와 같으며 이후 변경은 문서뿐이다. 병합 후 계약·정본 문서 25개 동기화와
+  `git diff --check`도 통과했다. API·schema·Compute 요청과 계산 hash 의미 변경은
+  없으며 계산 결정론 영향은 없다. 새 저장/CAS 검증이 유지되도록 쓰기·retention 워커 인스턴스를 함께
+  갱신한다. credential·fixture·로그·검증 runner는 커밋하지 않는다.
+- 다음 4b-2에서는 NormalizationRun을 Session 소속 모델로 정리하고 Root를 통한 생성/재시도,
+  pure Mapper와 명시적 admission capability를 구현한다. exact input·result/version pin,
+  active Run uniqueness와 attempt/lease/deletion generation fence를 유지한다. 4c 발행 모델과
+  5a scheduler·파일/암호화 port 구현 이동은 후속 단계다.
 
 ### 4a 검증 기록과 적용 기준
 
