@@ -67,6 +67,7 @@ open class TradingImportService(
             POLICY.dataPolicyVersion, clientRequestReference ?: "")
         return when (val claim = idempotency.claim(owner, "createTradingImportSession", key, fingerprint)) {
             is IdempotencyClaim.Replayed -> sessions.find(TradingImportSessionId(claim.resourceId), owner)
+                ?.takeUnless { it.deletionPending }
                 ?: throw TradingFailure("RESOURCE_DELETED", 410)
             IdempotencyClaim.New -> {
                 val session = TradingImportSession.create(ids.importSessionId(), book, sourceTimezone,

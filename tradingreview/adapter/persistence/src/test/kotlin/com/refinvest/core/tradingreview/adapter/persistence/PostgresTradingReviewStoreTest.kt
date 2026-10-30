@@ -1603,11 +1603,21 @@ class PostgresTradingReviewStoreTest {
         val deletion = transactions.execute { service.delete(session.id, "delete-import") }
         assertEquals(deletion.id, transactions.execute { service.delete(session.id, "delete-import-again") }.id)
         assertEquals(410, assertFailsWith<TradingFailure> { service.get(session.id) }.httpStatus)
+        fun assertCreateReplayIsGone() {
+            val failure = assertFailsWith<TradingFailure> {
+                transactions.execute { service.create(book.id, "UTC", "UTC", TradingPositionMode.ONE_WAY,
+                    null, null, "create-import") }
+            }
+            assertEquals(410, failure.httpStatus)
+            assertEquals("RESOURCE_DELETED", failure.code)
+        }
+        assertCreateReplayIsGone()
         TradingDeletionWorker(jdbc, transactions, storage, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
         assertEquals("COMPLETED", accountStore.find(deletion.id, MemberId(1))?.state)
         assertFalse(storage.exists(trade.artifact.objectKey!!))
         assertFalse(storage.exists(position.artifact.objectKey!!))
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
+        assertCreateReplayIsGone()
     }
 
     @Test
