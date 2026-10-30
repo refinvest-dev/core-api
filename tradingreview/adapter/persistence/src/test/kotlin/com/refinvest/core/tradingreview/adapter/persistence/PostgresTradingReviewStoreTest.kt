@@ -1463,6 +1463,7 @@ class PostgresTradingReviewStoreTest {
             override fun getZone() = ZoneOffset.UTC
             override fun withZone(zone: java.time.ZoneId) = this
         }
+        var currentInstrumentTerms = "[]"
         val service = com.refinvest.core.tradingreview.application.TradingNormalizationService(
             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
             review, review, imports, review, runs,
@@ -1472,7 +1473,7 @@ class PostgresTradingReviewStoreTest {
                 override fun retryPolicy() = com.refinvest.core.tradingreview.port.TradingNormalizationRetryPolicy(
                     "retry-v1", 3, java.time.Duration.ofMinutes(1), java.time.Duration.ofSeconds(1),
                     java.time.Duration.ofSeconds(10), "NONE")
-                override fun instrumentTermsJson() = "[]"
+                override fun instrumentTermsJson() = currentInstrumentTerms
                 override fun resultDeliveryPolicy() = deliveryPolicy
             }, mapper, workerClock, JdbcTradingNormalizationTransitionGate(jdbc),
             JdbcTradingNormalizationAdmissionAdapter(jdbc, imports, workerClock, JdbcTradingNormalizationTransitionGate(jdbc)), normalizationIds)
@@ -1566,8 +1567,10 @@ class PostgresTradingReviewStoreTest {
         }
         assertEquals(TradingImportStatus.PROCESSING_FAILED, imports.find(session.id, MemberId(1))?.status)
         assertEquals("TEMPORARY_DEPENDENCY_FAILURE", runs.findRun(active.id.value)?.lastFailureCode)
+        currentInstrumentTerms = """[{"instrumentId":"CHANGED_CURRENT_CONFIGURATION"}]"""
         val retried = transactions.execute { service.retry(session.id, "retry-once") }!!
         assertEquals(TradingImportStatus.VALIDATING, retried.status)
+        assertEquals(active.input.instrumentTermsJson, retried.normalizationRun?.input?.instrumentTermsJson)
         assertTrue(retried.activeNormalizationRunId != active.id)
         assertEquals(active.id, runs.findRun(retried.activeNormalizationRunId!!.value)?.retryOfRunId)
         assertEquals(NormalizationResultVersionPin.V1,

@@ -127,7 +127,9 @@ open class TradingNormalizationService(
             "maxElapsedTime" to policy.maxElapsedTime.toString(),
             "initialDelay" to policy.initialDelay.toString(),
             "maxDelay" to policy.maxDelay.toString(), "jitter" to policy.jitter))
-        val terms = canonical(settings.instrumentTermsJson())
+        val terms = if (retry) session.normalizationRun?.input?.instrumentTermsJson
+            ?: throw TradingFailure("RESOURCE_STATE_CONFLICT", 409)
+        else canonical(settings.instrumentTermsJson())
         val input = NormalizationInput(book.id, session.id, owner.value, prepared, book.venue.name,
             book.productFamily.name, book.positionMode.name, book.settlementAsset.name,
             session.sourceTimezone, session.reviewTimezone, session.versionSetJson, terms,

@@ -98,6 +98,8 @@ class NormalizationAdmissionTest {
         assertEquals(first.logicalKey, retry.logicalKey)
         assertEquals(NormalizationResultVersionPin.V2, retry.resultVersionPin)
         assertFailsWith<IllegalArgumentException> { admit(failed, secondId, at = now.plusSeconds(2)) }
+        assertFailsWith<IllegalArgumentException> { admit(failed, secondId, NormalizationResultVersionPin.V2,
+            prepared = input(failed).copy(instrumentTermsJson = "changed-terms"), at = now.plusSeconds(2)) }
         assertFailsWith<IllegalArgumentException> { admit(restoreFailed(terminal,
             failure.copy(retryable = false)), secondId, NormalizationResultVersionPin.V2, at = now.plusSeconds(2)) }
         assertFailsWith<IllegalArgumentException> { admit(restoreFailed(first, failure), secondId,

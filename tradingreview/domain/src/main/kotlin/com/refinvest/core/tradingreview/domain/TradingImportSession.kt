@@ -114,6 +114,7 @@ class TradingImportSession private constructor(
                 NormalizationInputCanonicalizer.canonicalize(previous.inputIdentity).contentEquals(
                     NormalizationInputCanonicalizer.canonicalize(identity)) &&
                 previous.input.artifacts.sortedBy { it.role.name } == expectedArtifacts &&
+                previous.input.instrumentTermsJson == pinnedInput.instrumentTermsJson &&
                 previous.input.deletionGeneration == deletionGeneration && previous.resultVersionPin == resultPin && previous.logicalKey == logicalKey) { "Changed retry pin" }
             require(previous.id != runId)
         } else require(previous == null && activeNormalizationRunId == null)
