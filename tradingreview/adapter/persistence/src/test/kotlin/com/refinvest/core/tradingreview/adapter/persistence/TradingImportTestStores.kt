@@ -27,6 +27,11 @@ internal class TradingImportTestStores(
         if (jdbc.execute(ConnectionCallback { !it.autoCommit }) == true) aggregate.update(session)
         else TransactionTemplate(DataSourceTransactionManager(requireNotNull(jdbc.dataSource))).execute { aggregate.update(session) }!!
 
+    fun seedValidation(id: TradingImportSessionId, runId: String, now: java.time.Instant): Boolean = jdbc.update(
+        """UPDATE trading_import_sessions SET status='VALIDATING',active_normalization_run_id=?::uuid,
+            validation_started_at=?,updated_at=?,version=version+1 WHERE id=?""",
+        runId, Timestamp.from(now), Timestamp.from(now), id.value) == 1
+
     fun seedArtifact(artifact: TradingSourceArtifact) {
         val record = TradingImportSessionPersistenceMapper.toRecord(artifact)
         jdbc.update("""INSERT INTO trading_source_artifacts (id, import_session_id, artifact_role, filename,

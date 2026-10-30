@@ -26,10 +26,11 @@ internal object TradingImportSessionPersistenceMapper {
         updatedAt = domain.updatedAt,
         version = domain.version,
         validationStartedAt = domain.validationStartedAt,
-        activeNormalizationRunId = domain.activeNormalizationRunId,
+        activeNormalizationRunId = domain.activeNormalizationRunId?.value,
         failure = domain.failure?.let { TradingImportFailureRecord(it.code, it.retryable, it.userAction, it.occurredAt) },
         createdLedgerRevisionId = domain.createdLedgerRevisionId?.value,
         artifacts = domain.artifacts.map(::toRecord),
+        normalizationRun = domain.normalizationRun?.let(NormalizationRunPersistenceMapper::toRecord),
     )
 
     fun toDomain(record: TradingImportSessionRecord): TradingImportSession = TradingImportSession.restore(
@@ -52,10 +53,11 @@ internal object TradingImportSessionPersistenceMapper {
         updatedAt = record.updatedAt,
         version = record.version,
         validationStartedAt = record.validationStartedAt,
-        activeNormalizationRunId = record.activeNormalizationRunId,
+        activeNormalizationRunId = record.activeNormalizationRunId?.let(::NormalizationRunId),
         failure = record.failure?.let { TradingImportFailure(it.code, it.retryable, it.userAction, it.occurredAt) },
         createdLedgerRevisionId = record.createdLedgerRevisionId?.let(::LedgerRevisionId),
         artifacts = record.artifacts.map(::toDomain),
+        normalizationRun = record.normalizationRun?.let(NormalizationRunPersistenceMapper::toDomain),
     )
 
     fun toRecord(domain: TradingSourceArtifact): TradingSourceArtifactRecord = TradingSourceArtifactRecord(

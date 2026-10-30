@@ -1,10 +1,10 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import com.refinvest.core.tradingreview.domain.NormalizationDispatch
-import com.refinvest.core.tradingreview.domain.NormalizationInputCanonicalizer
-import com.refinvest.core.tradingreview.domain.NormalizationRun
-import com.refinvest.core.tradingreview.domain.NormalizationResultDeliveryPolicy
-import com.refinvest.core.tradingreview.domain.NormalizationResultVersionPin
+import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultDeliveryPolicy
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.tradingreview.port.*
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.beans.factory.annotation.Autowired
@@ -110,7 +110,7 @@ class RestClientTradingNormalizationClient private constructor(
                                 identity.targetVersionSet.toWireValue())
                             if (body.path("jobId").asText() != jobId ||
                                 body.path("coreLogicalJobId").asText() != dispatch.id ||
-                                body.path("coreNormalizationRunId").asText() != run.id ||
+                                body.path("coreNormalizationRunId").asText() != run.id.value ||
                                 body.path("hashSpecificationVersion").asText() != identity.hashSpecificationVersion ||
                                 body.path("targetVersionSet") != versions)
                                 return@exchange NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
@@ -347,7 +347,7 @@ class RestClientTradingNormalizationClient private constructor(
         })
         return mapOf(
             "coreLogicalJobId" to dispatch.id,
-            "coreNormalizationRunId" to run.id,
+            "coreNormalizationRunId" to run.id.value,
             "coreImportSessionId" to input.importSessionId.value.toString(),
             "inputIdentity" to identity.toWireValue(),
             "artifactAccessGrants" to grantValues,

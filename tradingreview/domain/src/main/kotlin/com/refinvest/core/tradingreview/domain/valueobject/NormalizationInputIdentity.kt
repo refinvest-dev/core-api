@@ -1,5 +1,6 @@
-package com.refinvest.core.tradingreview.domain
+package com.refinvest.core.tradingreview.domain.valueobject
 
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationInput
 import java.time.ZoneId
 import java.util.Collections
 

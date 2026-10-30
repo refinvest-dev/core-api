@@ -1,6 +1,6 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.domain.NormalizationRun
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.tradingreview.port.NormalizationStagedItem
 import com.refinvest.core.tradingreview.port.TradingNormalizationResultStore
 import tools.jackson.databind.ObjectMapper
@@ -36,7 +36,7 @@ internal class NormalizationStagedResultVerifier(
         val sections = if (v2) NormalizationResultVerifier.sectionsV2 else NormalizationResultVerifier.sections
         val collections = sections - setOf("QUALITY_REPORT", "RECONCILIATION_MANIFEST",
             "ANALYTICS_INPUT_SUPPLEMENT")
-        val runId = run?.id ?: root["coreNormalizationRunId"] as? String
+        val runId = run?.id?.value ?: root["coreNormalizationRunId"] as? String
             ?: throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
         if (base[NormalizationResultStreamingReader.STAGE_FORMAT_FIELD] !=
                 NormalizationResultStreamingReader.STREAM_STAGE_FORMAT ||

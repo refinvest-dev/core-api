@@ -1,4 +1,4 @@
-package com.refinvest.core.tradingreview.domain
+package com.refinvest.core.tradingreview.domain.valueobject
 
 import java.math.BigDecimal
 

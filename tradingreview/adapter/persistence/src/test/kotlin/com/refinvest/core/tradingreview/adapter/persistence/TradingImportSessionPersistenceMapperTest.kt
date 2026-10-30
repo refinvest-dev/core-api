@@ -22,14 +22,14 @@ class TradingImportSessionPersistenceMapperTest {
         val record = TradingImportSessionPersistenceMapper.toRecord(session)
         for (status in TradingImportStatus.entries) {
             val published = if (status == TradingImportStatus.ACCEPTED) UUID.randomUUID() else null
-            val stored = record.copy(status = status.name, version = 17, activeNormalizationRunId = if (status == TradingImportStatus.RECEIVED) null else "stored-run",
+            val stored = record.copy(status = status.name, version = 17, activeNormalizationRunId = if (status == TradingImportStatus.RECEIVED) null else "00000000-0000-0000-0000-000000000001",
                 validationStartedAt = if (status == TradingImportStatus.RECEIVED) null else now, createdLedgerRevisionId = published,
                 failure = if (status in setOf(TradingImportStatus.REJECTED, TradingImportStatus.PROCESSING_FAILED))
                     TradingImportFailureRecord("STORED", false, "WAIT_FOR_RECOVERY", now) else null)
             val restored = TradingImportSessionPersistenceMapper.toDomain(stored)
             assertEquals(status, restored.status)
             assertEquals(17L, restored.version)
-            assertEquals(stored.activeNormalizationRunId, restored.activeNormalizationRunId)
+            assertEquals(stored.activeNormalizationRunId, restored.activeNormalizationRunId?.value)
             assertEquals(record.versionSetJson, restored.versionSetJson)
             assertEquals(published, restored.createdLedgerRevisionId?.value)
             val roundTrip = TradingImportSessionPersistenceMapper.toRecord(restored)

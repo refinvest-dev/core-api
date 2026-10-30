@@ -49,6 +49,7 @@ val aggregateModuleDependencies = mapOf(
     // R10 / stage 5a: existing normalization scheduler implementation calls remain explicitly tracked.
     ":tradingreview:adapter:compute" to setOf(":tradingreview:port", ":tradingreview:application"),
     ":tradingreview:adapter:storage" to setOf(":tradingreview:port"),
+    ":tradingreview:adapter:uuid" to setOf(":tradingreview:port"),
     ":tradingreview:adapter:security" to setOf(":tradingreview:port", ":member:port"),
     ":tradingreview:adapter:snowflake" to setOf(":tradingreview:port", ":shared:infrastructure"),
 )

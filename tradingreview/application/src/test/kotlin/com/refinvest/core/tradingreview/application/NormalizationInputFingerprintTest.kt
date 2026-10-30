@@ -1,8 +1,8 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.domain.NormalizationInputCanonicalizer
-import com.refinvest.core.tradingreview.domain.NormalizationInputIdentity
-import com.refinvest.core.tradingreview.domain.NormalizationResultVersionPin
+import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationInputIdentity
 import tools.jackson.databind.json.JsonMapper
 import java.nio.charset.StandardCharsets
 import java.util.HexFormat

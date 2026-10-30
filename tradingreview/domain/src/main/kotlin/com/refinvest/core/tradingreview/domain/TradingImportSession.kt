@@ -1,8 +1,9 @@
 package com.refinvest.core.tradingreview.domain
 
+import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
 import com.refinvest.core.common.domain.AggregateRoot
 import com.refinvest.core.shared.kernel.member.MemberId
-import com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact
+import com.refinvest.core.tradingreview.domain.importsession.*
 import com.refinvest.core.tradingreview.domain.valueobject.*
 import java.time.Instant
 import java.time.ZoneId
@@ -27,10 +28,11 @@ class TradingImportSession private constructor(
     val updatedAt: Instant,
     val version: Long,
     val validationStartedAt: Instant? = null,
-    val activeNormalizationRunId: String? = null,
+    val activeNormalizationRunId: NormalizationRunId? = null,
     val failure: TradingImportFailure? = null,
     artifacts: List<TradingSourceArtifact> = emptyList(),
     val createdLedgerRevisionId: LedgerRevisionId? = null,
+    val normalizationRun: NormalizationRun? = null,
 ) : AggregateRoot<TradingImportSessionId>(id) {
     val artifacts: List<TradingSourceArtifact> = java.util.Collections.unmodifiableList(artifacts.toList())
 
@@ -49,7 +51,9 @@ class TradingImportSession private constructor(
         require(status !in setOf(TradingImportStatus.REJECTED, TradingImportStatus.PROCESSING_FAILED) || failure != null)
         require(status != TradingImportStatus.RECEIVED || (activeNormalizationRunId == null && validationStartedAt == null))
         require(status != TradingImportStatus.VALIDATING || (activeNormalizationRunId != null && validationStartedAt != null && failure == null)) { "Incomplete validation state" }
-        require(activeNormalizationRunId == null || activeNormalizationRunId.isNotBlank())
+        require(normalizationRun == null || (normalizationRun.id == activeNormalizationRunId &&
+            normalizationRun.input.importSessionId == id && normalizationRun.input.tradingBookId == bookId &&
+            normalizationRun.input.ownerId == owner.value)) { "Foreign normalization run" }
         require(validationStartedAt == null || !validationStartedAt.isBefore(createdAt))
         require(createdLedgerRevisionId == null || status == TradingImportStatus.ACCEPTED) { "Only accepted imports have a Revision" }
     }
@@ -82,21 +86,50 @@ class TradingImportSession private constructor(
         artifacts.all { it.sessionId == id } && artifacts.map { it.role }.distinct().size == artifacts.size &&
         missingArtifactRoles(artifacts).isEmpty()
 
-    fun beginValidation(runId: String, now: Instant): TradingImportSession {
-        require(status == TradingImportStatus.RECEIVED || status == TradingImportStatus.PROCESSING_FAILED)
-        require(!deletionPending && runId.isNotBlank())
-        require(status != TradingImportStatus.PROCESSING_FAILED || failure?.retryable == true) { "Failure is not retryable" }
+    fun admitNormalization(
+        runId: NormalizationRunId, input: NormalizationInput, logicalKey: String, attemptToken: String,
+        identity: NormalizationInputIdentity, pinnedVersions: Map<*, *>,
+        deliveryPolicy: NormalizationResultDeliveryPolicy, resultPin: NormalizationResultVersionPin, now: Instant,
+    ): TradingImportSession {
+        val pinnedInput = input.copy(artifacts = input.artifacts.toList())
+        require(!deletionPending && status in setOf(TradingImportStatus.RECEIVED, TradingImportStatus.PROCESSING_FAILED))
+        require(pinnedInput.importSessionId == id && pinnedInput.tradingBookId == bookId && pinnedInput.ownerId == owner.value)
+        require(pinnedInput.deletionGeneration == deletionGeneration && pinnedInput.positionMode == declaredPositionMode.name &&
+            pinnedInput.sourceTimezone == sourceTimezone && pinnedInput.reviewTimezone == reviewTimezone &&
+            pinnedInput.dataPolicyVersion == dataPolicyVersion && pinnedInput.versionSetJson == versionSetJson) { "Changed session input pin" }
+        require(artifacts.size == 2 && artifacts.all { it.rawReparseAvailable(now) }) { "Active source artifacts required" }
+        val expectedArtifacts = artifacts.map { NormalizationArtifactInput(it.id, it.role, it.sha256,
+            it.byteSize, it.contentType, it.dialectCandidate) }.sortedBy { it.role.name }
+        require(pinnedInput.artifacts.sortedBy { it.role.name } == expectedArtifacts) { "Changed artifact identity" }
+        val expected = NormalizationInputIdentity.fromPinnedInput(pinnedInput, pinnedVersions)
+        require(NormalizationInputCanonicalizer.canonicalize(expected).contentEquals(
+            NormalizationInputCanonicalizer.canonicalize(identity))) { "Changed normalization identity" }
+        require(logicalKey == NormalizationInputCanonicalizer.logicalKey(owner.value,
+            NormalizationInputCanonicalizer.hash(identity), deletionGeneration, resultPin)) { "Changed logical key" }
+        val previous = normalizationRun
+        if (status == TradingImportStatus.PROCESSING_FAILED) {
+            require(failure?.retryable == true && previous != null && previous.id == activeNormalizationRunId &&
+                previous.status == NormalizationRunStatus.TERMINAL_FAILURE) { "No retryable terminal run" }
+            require(previous.inputIdentity != null && previous.inputFingerprint == NormalizationInputCanonicalizer.hash(identity) &&
+                NormalizationInputCanonicalizer.canonicalize(previous.inputIdentity).contentEquals(
+                    NormalizationInputCanonicalizer.canonicalize(identity)) &&
+                previous.input.artifacts.sortedBy { it.role.name } == expectedArtifacts &&
+                previous.input.deletionGeneration == deletionGeneration && previous.resultVersionPin == resultPin && previous.logicalKey == logicalKey) { "Changed retry pin" }
+            require(previous.id != runId)
+        } else require(previous == null && activeNormalizationRunId == null)
+        val run = NormalizationRun.create(runId, pinnedInput, NormalizationInputCanonicalizer.hash(identity), logicalKey,
+            attemptToken, identity, deliveryPolicy, resultPin, previous?.id, now)
         return copy(status = TradingImportStatus.VALIDATING, activeNormalizationRunId = runId,
-            validationStartedAt = now, failure = null, updatedAt = now)
+            validationStartedAt = now, failure = null, updatedAt = now, normalizationRun = run)
     }
 
     fun failValidation(runId: String, generation: Long, cause: TradingImportFailure, now: Instant): TradingImportSession? =
-        if (status == TradingImportStatus.VALIDATING && activeNormalizationRunId == runId &&
+        if (status == TradingImportStatus.VALIDATING && activeNormalizationRunId?.value == runId &&
             deletionGeneration == generation && !deletionPending)
             copy(status = TradingImportStatus.PROCESSING_FAILED, failure = cause, updatedAt = now) else null
 
     fun rejectValidation(runId: String, generation: Long, cause: TradingImportFailure, now: Instant): TradingImportSession? =
-        if (status == TradingImportStatus.VALIDATING && activeNormalizationRunId == runId &&
+        if (status == TradingImportStatus.VALIDATING && activeNormalizationRunId?.value == runId &&
             deletionGeneration == generation && !deletionPending)
             copy(status = TradingImportStatus.REJECTED, failure = cause, updatedAt = now) else null
 
@@ -122,13 +155,14 @@ class TradingImportSession private constructor(
         deletionPending: Boolean = this.deletionPending,
         updatedAt: Instant = this.updatedAt,
         validationStartedAt: Instant? = this.validationStartedAt,
-        activeNormalizationRunId: String? = this.activeNormalizationRunId,
+        activeNormalizationRunId: NormalizationRunId? = this.activeNormalizationRunId,
         failure: TradingImportFailure? = this.failure,
         artifacts: List<TradingSourceArtifact> = this.artifacts,
+        normalizationRun: NormalizationRun? = this.normalizationRun,
     ) = TradingImportSession(id, bookId, owner, sourceTimezone, reviewTimezone, declaredPositionMode,
         dataPolicyVersion, retentionPolicy, maskingPolicyVersion, evidenceRetention, deletionPolicyVersion,
         versionSetJson, status, deletionGeneration, deletionPending, createdAt, updatedAt, version,
-        validationStartedAt, activeNormalizationRunId, failure, artifacts, createdLedgerRevisionId)
+        validationStartedAt, activeNormalizationRunId, failure, artifacts, createdLedgerRevisionId, normalizationRun)
 
     companion object {
         fun restore(
@@ -151,14 +185,15 @@ class TradingImportSession private constructor(
             updatedAt: Instant,
             version: Long,
             validationStartedAt: Instant? = null,
-            activeNormalizationRunId: String? = null,
+            activeNormalizationRunId: NormalizationRunId? = null,
             failure: TradingImportFailure? = null,
             artifacts: List<TradingSourceArtifact> = emptyList(),
             createdLedgerRevisionId: LedgerRevisionId? = null,
+            normalizationRun: NormalizationRun? = null,
         ) = TradingImportSession(id, bookId, owner, sourceTimezone, reviewTimezone, declaredPositionMode,
             dataPolicyVersion, retentionPolicy, maskingPolicyVersion, evidenceRetention, deletionPolicyVersion,
             versionSetJson, status, deletionGeneration, deletionPending, createdAt, updatedAt, version,
-            validationStartedAt, activeNormalizationRunId, failure, artifacts, createdLedgerRevisionId)
+            validationStartedAt, activeNormalizationRunId, failure, artifacts, createdLedgerRevisionId, normalizationRun)
 
         fun create(id: TradingImportSessionId, book: TradingBook, sourceTimezone: String,
                    reviewTimezone: String, mode: TradingPositionMode, policy: TradingDataPolicy,

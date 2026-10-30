@@ -28,6 +28,7 @@ dependencies {
     implementation(project(":tradingreview:adapter:persistence"))
     implementation(project(":tradingreview:adapter:web"))
     implementation(project(":tradingreview:adapter:snowflake"))
+    implementation(project(":tradingreview:adapter:uuid"))
     implementation(project(":tradingreview:adapter:security"))
     implementation(project(":tradingreview:adapter:storage"))
     implementation(project(":tradingreview:adapter:compute"))

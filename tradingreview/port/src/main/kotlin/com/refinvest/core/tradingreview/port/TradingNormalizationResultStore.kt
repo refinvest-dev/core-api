@@ -1,7 +1,7 @@
 package com.refinvest.core.tradingreview.port
 
-import com.refinvest.core.tradingreview.domain.NormalizationDispatch
-import com.refinvest.core.tradingreview.domain.NormalizationRun
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import java.time.Duration
 import java.time.Instant
 

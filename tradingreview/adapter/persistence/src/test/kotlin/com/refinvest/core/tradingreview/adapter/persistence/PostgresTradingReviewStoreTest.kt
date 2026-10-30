@@ -1,5 +1,17 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.normalization.*
+import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultDeliveryPolicy
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationInputIdentity
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationDispatchStatus
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunStatus
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationInput
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.application.NormalizationInputFingerprint
 import com.refinvest.core.tradingreview.application.TradingReviewService
@@ -20,11 +32,6 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsse
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
 import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.IdempotencyClaim
-import com.refinvest.core.tradingreview.port.TradingDeletion
-import com.refinvest.core.tradingreview.port.TradingFailure
-import com.refinvest.core.tradingreview.port.TradingIdGenerator
-import com.refinvest.core.tradingreview.port.TradingMemberProvider
 import com.refinvest.core.tradingreview.port.book.TradingAccountBookDeletion
 import java.sql.Connection
 import java.sql.DriverManager
@@ -57,7 +64,222 @@ class PostgresTradingReviewStoreTest {
     private val noPublished = object : TradingLedgerPublicationReader {
         override fun publishedForSession(sessionId: TradingImportSessionId, owner: MemberId): PublishedLedgerSummary? = null
     }
+    private val normalizationIds = object : com.refinvest.core.tradingreview.port.normalization.TradingNormalizationIdGenerator {
+        override fun runId() = NormalizationRunId(UUID.randomUUID().toString())
+        override fun dispatchId() = UUID.randomUUID().toString()
+        override fun attemptToken() = UUID.randomUUID().toString()
+    }
     private val normalizationVersions = """{"versionSetHash":"${"f".repeat(64)}","normalizer":{"sourceDialectVersionsByArtifactRole":{"TRADE_HISTORY":"TRADE_V1","POSITION_HISTORY":"POSITION_V1"},"adapterVersion":"ADAPTER_V1","normalizerVersion":"NORMALIZER_V1","canonicalSchemaVersion":"CANONICAL_V1","implementationDigest":"normalizer-digest","versionSetHash":"${"d".repeat(64)}"},"reconstruction":{"instrumentTermsVersionByInstrument":{},"reconstructionPolicyVersion":"RECONSTRUCTION_V1","reconciliationVersion":"RECONCILIATION_V1","reviewUnitSchemaVersion":"REVIEW_UNIT_V1","evidenceSchemaVersion":"EVIDENCE_V1","implementationDigest":"reconstruction-digest","versionSetHash":"${"e".repeat(64)}"}}"""
+
+    @Test
+    fun admissionPersistsOneOwnedRunAndRejectsStaleOrForgedSnapshotsWithoutChanges() = withDatabase { connection ->
+        val f = normalizationAdmissionFixture(connection)
+        val first = prepareAdmission(f.current)
+        assertFailsWith<IllegalStateException> { f.admission.admit(first) }
+        assertTrue(f.tx.execute { f.store.update(f.current) })
+        val unchanged = normalizationAdmissionRows(f.jdbc)
+        assertFalse(f.tx.execute { f.admission.admit(first) })
+        assertEquals(unchanged, normalizationAdmissionRows(f.jdbc))
+        val current = f.store.find(f.current.id, f.current.owner)!!
+        val request = prepareAdmission(current)
+        val record = TradingImportSessionPersistenceMapper.toRecord(request.admitted)
+        val run = requireNotNull(record.normalizationRun)
+        for (forged in listOf(record.copy(artifacts = emptyList()))) {
+            assertFalse(f.tx.execute { f.admission.admit(request.copy(
+                admitted = TradingImportSessionPersistenceMapper.toDomain(forged))) })
+            assertEquals(unchanged, normalizationAdmissionRows(f.jdbc))
+        }
+        assertFailsWith<IllegalArgumentException> { f.tx.execute { f.admission.admit(request.copy(admitted =
+            TradingImportSessionPersistenceMapper.toDomain(record.copy(normalizationRun = run.copy(deletionGeneration = 1))))) } }
+        assertEquals(unchanged, normalizationAdmissionRows(f.jdbc))
+        assertFailsWith<IllegalArgumentException> { f.tx.execute { f.admission.admit(request.copy(admitted =
+            TradingImportSessionPersistenceMapper.toDomain(record.copy(normalizationRun = run.copy(
+                inputJson = run.inputJson.replace("BINANCE", "OTHER")))))) } }
+        assertEquals(unchanged, normalizationAdmissionRows(f.jdbc))
+        assertFailsWith<IllegalArgumentException> { f.tx.execute { f.admission.admit(request.copy(
+            dispatch = request.dispatch.copy(runId = UUID.randomUUID().toString()))) } }
+        assertEquals(unchanged, normalizationAdmissionRows(f.jdbc))
+        assertTrue(f.tx.execute { f.admission.admit(request) })
+        val admitted = f.store.find(current.id, current.owner)!!
+        assertEquals(TradingImportStatus.VALIDATING, admitted.status)
+        assertEquals(request.admitted.normalizationRun?.id, admitted.activeNormalizationRunId)
+        assertEquals(request.admitted.normalizationRun?.inputFingerprint, admitted.normalizationRun?.inputFingerprint)
+        assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
+        assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_normalization_attempts", Long::class.java))
+        assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_normalization_dispatches", Long::class.java))
+        assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_normalization_audit", Long::class.java))
+        val saved = normalizationAdmissionRows(f.jdbc)
+        assertFalse(f.tx.execute { f.admission.admit(request) })
+        assertEquals(saved, normalizationAdmissionRows(f.jdbc))
+    }
+
+    @Test
+    fun admissionRollbackExpiryAndDeletedParentsPreserveAllAdmissionRows() = withDatabase { connection ->
+        val f = normalizationAdmissionFixture(connection)
+        val request = prepareAdmission(f.current)
+        val before = normalizationAdmissionRows(f.jdbc)
+        assertFailsWith<IllegalStateException> { f.tx.execute {
+            assertTrue(f.admission.admit(request))
+            assertNotNull(f.store.find(f.current.id, f.current.owner, true)?.normalizationRun)
+            error("rollback whole admission")
+        } }
+        assertEquals(before, normalizationAdmissionRows(f.jdbc))
+        f.time.set(now.plusSeconds(86400))
+        assertFalse(f.tx.execute { f.admission.admit(request) })
+        assertEquals(before, normalizationAdmissionRows(f.jdbc))
+        f.time.set(now)
+        f.jdbc.execute("SELECT trading_normalization_transition_control('PAUSE',0,'direct-admission')")
+        assertEquals(503, assertFailsWith<TradingFailure> { f.tx.execute { f.admission.admit(request) } }.httpStatus)
+        assertEquals(before, normalizationAdmissionRows(f.jdbc))
+        f.jdbc.execute("SELECT trading_normalization_transition_control('VERIFY',1,'direct-admission')")
+        f.jdbc.execute("SELECT trading_normalization_transition_control('RESUME',1,'direct-admission')")
+        f.tx.execute { f.review.delete(f.current.bookId, "delete-admission-parent") }
+        val afterDelete = normalizationAdmissionRows(f.jdbc)
+        assertFalse(f.tx.execute { f.admission.admit(request) })
+        assertEquals(afterDelete, normalizationAdmissionRows(f.jdbc))
+    }
+
+    @Test
+    fun competingAdmissionsWaitForTheRootAndCommitOrRollbackExactlyOneRun() {
+        for (commitFirst in listOf(true, false)) withDatabase { connection ->
+            val f = normalizationAdmissionFixture(connection)
+            val first = prepareAdmission(f.current)
+            val second = prepareAdmission(f.current)
+            DriverManager.getConnection(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"),
+                System.getenv("TRADING_REVIEW_TEST_DB_USER"), System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD")).use { other ->
+                other.schema = connection.schema
+                val source = SingleConnectionDataSource(other, true)
+                val jdbc = JdbcTemplate(source)
+                val store = JdbcTradingImportSessionPersistenceAdapter(jdbc)
+                val admission = JdbcTradingNormalizationAdmissionAdapter(jdbc, store, Clock.fixed(now, ZoneOffset.UTC), JdbcTradingNormalizationTransitionGate(jdbc))
+                val tx = TransactionTemplate(DataSourceTransactionManager(source))
+                val backend = jdbc.queryForObject("SELECT pg_backend_pid()", Int::class.java)!!
+                val executor = Executors.newSingleThreadExecutor()
+                var future: java.util.concurrent.Future<Boolean>? = null
+                try {
+                    f.tx.execute { status ->
+                        assertTrue(f.admission.admit(first))
+                        future = executor.submit<Boolean> { tx.execute { admission.admit(second) }!! }
+                        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+                        var waited = false
+                        while (System.nanoTime() < deadline) {
+                            f.jdbc.execute("SELECT pg_stat_clear_snapshot()")
+                            if (f.jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=? AND wait_event_type='Lock')",
+                                    Boolean::class.java, backend) == true) { waited = true; break }
+                            Thread.sleep(25)
+                        }
+                        assertTrue(waited, "The competing admission must wait on an actual database lock")
+                        if (!commitFirst) status.setRollbackOnly()
+                    }
+                    assertEquals(!commitFirst, future!!.get(10, TimeUnit.SECONDS))
+                    val winner = if (commitFirst) first else second
+                    val current = f.store.find(f.current.id, f.current.owner)!!
+                    assertEquals(winner.admitted.normalizationRun?.id, current.activeNormalizationRunId)
+                    assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
+                    assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_normalization_attempts", Long::class.java))
+                    assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_normalization_dispatches", Long::class.java))
+                    assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_normalization_audit", Long::class.java))
+                } finally { executor.shutdownNow() }
+            }
+        }
+    }
+
+    @Test
+    fun explicitRetryPreservesV2PinAndRejectsAChangedPreviousRunVersion() = withDatabase { connection ->
+        val f = normalizationAdmissionFixture(connection)
+        val first = prepareAdmission(f.current, NormalizationResultVersionPin.V2)
+        assertTrue(f.tx.execute { f.admission.admit(first) })
+        val run = first.admitted.normalizationRun!!
+        val runtime = JdbcTradingNormalizationRuntimeAdapter(f.jdbc)
+        val submitWorker = UUID.randomUUID().toString()
+        val claimed = assertNotNull(runtime.claimNext(now, java.time.Duration.ofSeconds(45), submitWorker))
+        assertTrue(f.tx.execute { runtime.markSubmitted(NormalizationSubmissionReceipt(run.id,
+            NormalizationDispatchLease(claimed.id, submitWorker, now), 0, run.attemptToken, "retry-job")) })
+        val pollWorker = UUID.randomUUID().toString()
+        val polled = assertNotNull(runtime.claimSubmitted(now, java.time.Duration.ofSeconds(45), pollWorker))
+        f.tx.execute {
+            assertTrue(runtime.markTerminal(polled.id, pollWorker, "TEMPORARY_DEPENDENCY_FAILURE", now))
+            val current = f.store.find(f.current.id, f.current.owner, true)!!
+            val failed = current.failValidation(run.id.value, 0,
+                TradingImportFailure("TEMPORARY_DEPENDENCY_FAILURE", true, "RETRY", now), now)!!
+            assertTrue(f.store.update(failed))
+        }
+        val failed = f.store.find(f.current.id, f.current.owner)!!
+        assertEquals(NormalizationRunStatus.TERMINAL_FAILURE, failed.normalizationRun?.status)
+        assertFailsWith<IllegalArgumentException> { prepareAdmission(failed, NormalizationResultVersionPin.V1) }
+        val stale = prepareAdmission(failed, NormalizationResultVersionPin.V2)
+        f.jdbc.update("UPDATE trading_normalization_runs SET version=version+1 WHERE id=?::uuid", run.id.value)
+        val before = normalizationAdmissionRows(f.jdbc)
+        assertFalse(f.tx.execute { f.admission.admit(stale) })
+        assertEquals(before, normalizationAdmissionRows(f.jdbc))
+        val retry = prepareAdmission(f.store.find(f.current.id, f.current.owner)!!, NormalizationResultVersionPin.V2)
+        assertTrue(f.tx.execute { f.admission.admit(retry) })
+        val current = f.store.find(f.current.id, f.current.owner)!!.normalizationRun!!
+        assertEquals(run.id, current.retryOfRunId)
+        assertEquals(run.inputFingerprint, current.inputFingerprint)
+        assertEquals(run.logicalKey, current.logicalKey)
+        assertEquals(NormalizationResultVersionPin.V2, current.resultVersionPin)
+        assertEquals(2L, f.jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
+    }
+
+    private data class AdmissionFixture(
+        val jdbc: JdbcTemplate, val store: JdbcTradingImportSessionPersistenceAdapter,
+        val admission: JdbcTradingNormalizationAdmissionAdapter, val tx: TransactionTemplate,
+        val current: TradingImportSession, val time: java.util.concurrent.atomic.AtomicReference<Instant>,
+        val review: TradingReviewService,
+    )
+
+    private fun normalizationAdmissionFixture(connection: Connection): AdmissionFixture {
+        val (review, tx, _) = accountBookFixture(connection)
+        val account = tx.execute { review.create(TradingVenue.BINANCE, "A", "a") }
+        val book = tx.execute { review.create(account.id, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "b") }
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val store = JdbcTradingImportSessionPersistenceAdapter(jdbc)
+        val session = TradingImportSession.create(TradingImportSessionId(40000), book, "UTC", "UTC",
+            TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
+        tx.execute { store.insert(session) }
+        val ready = session.recordUpload(TradingSourceArtifactId(40001), TradingArtifactRole.TRADE_HISTORY,
+            "text/csv", 10, "a".repeat(64), "AUTO", "objects/admission-trade", byteArrayOf(1), "test", now)
+            .recordUpload(TradingSourceArtifactId(40002), TradingArtifactRole.POSITION_HISTORY,
+                "text/csv", 20, "b".repeat(64), "AUTO", "objects/admission-position", byteArrayOf(2), "test", now)
+        assertTrue(tx.execute { store.update(ready) })
+        val time = java.util.concurrent.atomic.AtomicReference(now)
+        val clock = object : Clock() {
+            override fun instant() = time.get()
+            override fun getZone() = ZoneOffset.UTC
+            override fun withZone(zone: java.time.ZoneId) = this
+        }
+        return AdmissionFixture(jdbc, store, JdbcTradingNormalizationAdmissionAdapter(jdbc, store, clock, JdbcTradingNormalizationTransitionGate(jdbc)), tx,
+            store.find(session.id, session.owner)!!, time, review)
+    }
+
+    private fun prepareAdmission(expected: TradingImportSession,
+                                 pin: NormalizationResultVersionPin = NormalizationResultVersionPin.V1): NormalizationAdmission {
+        val input = NormalizationInput(expected.bookId, expected.id, expected.owner.value,
+            expected.artifacts.sortedBy { it.role.ordinal }.map { NormalizationArtifactInput(it.id, it.role,
+                it.sha256, it.byteSize, it.contentType, it.dialectCandidate) }, "BINANCE", "LINEAR_PERPETUAL",
+            "ONE_WAY", "USDT", expected.sourceTimezone, expected.reviewTimezone, expected.versionSetJson, "[]",
+            expected.dataPolicyVersion, "retry-v1", """{"policyVersion":"retry-v1","maxAttempts":3,"maxElapsedTime":"PT1M","initialDelay":"PT1S","maxDelay":"PT10S","jitter":"NONE"}""", expected.deletionGeneration)
+        val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
+        val versions = mapper.readValue(expected.versionSetJson, Map::class.java)
+        val identity = NormalizationInputIdentity.fromPinnedInput(input, versions)
+        val id = NormalizationRunId(UUID.randomUUID().toString())
+        val token = UUID.randomUUID().toString()
+        val logical = NormalizationInputCanonicalizer.logicalKey(expected.owner.value,
+            NormalizationInputCanonicalizer.hash(identity), expected.deletionGeneration, pin)
+        val admitted = expected.admitNormalization(id, input, logical, token, identity, versions, deliveryPolicy, pin, now)
+        val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), id.value,
+            NormalizationInputCanonicalizer.dispatchKey(id.value, logical, token, "f".repeat(64), expected.deletionGeneration),
+            NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now, resultVersionPin = pin)
+        return NormalizationAdmission(expected, admitted, dispatch)
+    }
+
+    private fun normalizationAdmissionRows(jdbc: JdbcTemplate) = listOf("trading_import_sessions",
+        "trading_source_artifacts", "trading_normalization_runs", "trading_normalization_attempts",
+        "trading_normalization_dispatches", "trading_normalization_audit").map { table ->
+        jdbc.queryForList("SELECT row_to_json(r)::text FROM $table r ORDER BY row_to_json(r)::text", String::class.java)
+    }
 
     @Test
     fun sessionAggregateSaveFencesPinsMissingChildrenAndStaleSnapshots() = withDatabase { connection ->
@@ -431,7 +653,7 @@ class PostgresTradingReviewStoreTest {
             assertEquals(resultHash, jdbc.queryForObject("""SELECT result_hash FROM
                 trading_ledger_revisions WHERE run_id=?::uuid""", String::class.java, runId))
             assertEquals(NormalizationResultVersionPin.V1,
-                JdbcTradingNormalizationStore(jdbc, mapper).findRun(runId)?.resultVersionPin)
+                TradingNormalizationTestRuntime(jdbc, mapper).findRun(runId)?.resultVersionPin)
             assertEquals(NormalizationResultVersionPin.V1.schemaVersion,
                 jdbc.queryForObject("""SELECT result_schema_version FROM
                     trading_normalization_dispatches WHERE id=?::uuid""", String::class.java, dispatchId))
@@ -469,7 +691,7 @@ class PostgresTradingReviewStoreTest {
             mapper.readValue(normalizationVersions, Map::class.java))
         val runId = UUID.randomUUID().toString()
         val token = UUID.randomUUID().toString()
-        val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
+        val run = NormalizationRun.restore(NormalizationRunId(runId), input, NormalizationInputCanonicalizer.hash(identity),
             "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1, token,
             null, null, now, now, null, now, null, 0, inputIdentity = identity,
             resultDeliveryPolicy = deliveryPolicy,
@@ -477,7 +699,7 @@ class PostgresTradingReviewStoreTest {
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now,
             resultVersionPin = NormalizationResultVersionPin.V2)
-        JdbcTradingNormalizationStore(jdbc, mapper).insert(run, dispatch)
+        TradingNormalizationTestRuntime(jdbc, mapper).seed(run, dispatch)
         val fixture = generateSequence(java.io.File(System.getProperty("user.dir"))) { it.parentFile }
             .map { java.io.File(it,
                 "tradingreview/application/src/test/resources/trading-normalization/result-integrity-v2.json") }
@@ -586,7 +808,7 @@ class PostgresTradingReviewStoreTest {
             mapper.readValue(versions, Map::class.java))
         val runId = UUID.randomUUID().toString()
         val attemptToken = UUID.randomUUID().toString()
-        val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
+        val run = NormalizationRun.restore(NormalizationRunId(runId), input, NormalizationInputCanonicalizer.hash(identity),
             "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1, attemptToken,
             null, null, now, now, null, now, null, 0, inputIdentity = identity,
             resultDeliveryPolicy = deliveryPolicy,
@@ -595,10 +817,10 @@ class PostgresTradingReviewStoreTest {
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now,
             resultVersionPin = run.resultVersionPin)
-        val runs = JdbcTradingNormalizationStore(jdbc, mapper)
-        runs.insert(run, dispatch)
+        val runs = TradingNormalizationTestRuntime(jdbc, mapper)
+        runs.seed(run, dispatch)
         assertEquals(deliveryPolicy, runs.findRun(runId)?.resultDeliveryPolicy)
-        assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
+        assertTrue(imports.seedValidation(session.id, runId, now))
         jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-synthetic-1' WHERE id=?::uuid", runId)
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY' WHERE id=?::uuid", dispatch.id)
 
@@ -819,15 +1041,15 @@ class PostgresTradingReviewStoreTest {
         val identity = NormalizationInputIdentity.fromPinnedInput(input,
             mapper.readValue(normalizationVersions, Map::class.java))
         val runId = UUID.randomUUID().toString()
-        val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
+        val run = NormalizationRun.restore(NormalizationRunId(runId), input, NormalizationInputCanonicalizer.hash(identity),
             "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1,
             UUID.randomUUID().toString(), null, null, now, now, null, now, null, 0,
             inputIdentity = identity, resultDeliveryPolicy = deliveryPolicy)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
-        val runs = JdbcTradingNormalizationStore(jdbc, mapper)
-        runs.insert(run, dispatch)
-        assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
+        val runs = TradingNormalizationTestRuntime(jdbc, mapper)
+        runs.seed(run, dispatch)
+        assertTrue(imports.seedValidation(session.id, runId, now))
         jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-timeout' WHERE id=?::uuid", runId)
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY' WHERE id=?::uuid", dispatch.id)
         val client = object : TradingNormalizationResultClient {
@@ -885,15 +1107,15 @@ class PostgresTradingReviewStoreTest {
             mapper.readValue(normalizationVersions, Map::class.java))
         val runId = UUID.randomUUID().toString()
         val token = UUID.randomUUID().toString()
-        val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
+        val run = NormalizationRun.restore(NormalizationRunId(runId), input, NormalizationInputCanonicalizer.hash(identity),
             "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1, token, null, null,
             now, now, null, now, null, 0, inputIdentity = identity,
             resultDeliveryPolicy = deliveryPolicy)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
-        val runs = JdbcTradingNormalizationStore(jdbc, mapper)
-        runs.insert(run, dispatch)
-        assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
+        val runs = TradingNormalizationTestRuntime(jdbc, mapper)
+        runs.seed(run, dispatch)
+        assertTrue(imports.seedValidation(session.id, runId, now))
         jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-stale' WHERE id=?::uuid", runId)
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY',attempt_count=10 WHERE id=?::uuid", dispatch.id)
         val current = assertNotNull(runs.findRun(runId))
@@ -962,15 +1184,15 @@ class PostgresTradingReviewStoreTest {
             mapper.readValue(normalizationVersions, Map::class.java))
         val runId = UUID.randomUUID().toString()
         val token = UUID.randomUUID().toString()
-        val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
+        val run = NormalizationRun.restore(NormalizationRunId(runId), input, NormalizationInputCanonicalizer.hash(identity),
             "b".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1, token, null, null,
             now, now, null, now, null, 0, inputIdentity = identity,
             resultDeliveryPolicy = deliveryPolicy)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
-        val runs = JdbcTradingNormalizationStore(jdbc, mapper)
-        runs.insert(run, dispatch)
-        assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
+        val runs = TradingNormalizationTestRuntime(jdbc, mapper)
+        runs.seed(run, dispatch)
+        assertTrue(imports.seedValidation(session.id, runId, now))
         jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-1' WHERE id=?::uuid", runId)
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY' WHERE id=?::uuid", dispatch.id)
         val current = assertNotNull(runs.findRun(runId))
@@ -1116,7 +1338,7 @@ class PostgresTradingReviewStoreTest {
         val session = TradingImportSession.create(TradingImportSessionId(903), book, "UTC", "UTC",
             TradingPositionMode.ONE_WAY, TradingDataPolicy(), "{}", now)
         TradingImportTestStores(jdbc).insert(session)
-        val store = JdbcTradingNormalizationStore(jdbc, tools.jackson.databind.json.JsonMapper.builder().build())
+        val store = TradingNormalizationTestRuntime(jdbc, tools.jackson.databind.json.JsonMapper.builder().build())
         val runId = UUID.randomUUID().toString()
         val token = UUID.randomUUID().toString()
         val pinnedArtifacts = TradingArtifactRole.entries.mapIndexed { index, role ->
@@ -1130,13 +1352,13 @@ class PostgresTradingReviewStoreTest {
         val identity = NormalizationInputIdentity.fromPinnedInput(input,
             tools.jackson.databind.json.JsonMapper.builder().build().readValue(
                 normalizationVersions, Map::class.java))
-        val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity), "b".repeat(64),
+        val run = NormalizationRun.restore(NormalizationRunId(runId), input, NormalizationInputCanonicalizer.hash(identity), "b".repeat(64),
             NormalizationRunStatus.DISPATCH_PENDING, 1, token, null, null,
             now, now, null, now, null, 0, inputIdentity = identity,
             resultDeliveryPolicy = deliveryPolicy)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId, "c".repeat(64),
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now)
-        store.insert(run, dispatch)
+        store.seed(run, dispatch)
         val restored = assertNotNull(store.findRun(runId)?.input)
         assertEquals(input.copy(retryPolicyJson = restored.retryPolicyJson,
             versionSetJson = restored.versionSetJson), restored)
@@ -1153,7 +1375,7 @@ class PostgresTradingReviewStoreTest {
             run.inputFingerprint, runId)
         assertEquals(tools.jackson.databind.json.JsonMapper.builder().build().readTree(input.retryPolicyJson),
             tools.jackson.databind.json.JsonMapper.builder().build().readTree(restored.retryPolicyJson))
-        assertFailsWith<Exception> { store.insert(run.copy(id = UUID.randomUUID().toString()),
+        assertFailsWith<Exception> { store.seed(NormalizationRunPersistenceMapper.toDomain(NormalizationRunPersistenceMapper.toRecord(run).copy(id = UUID.randomUUID().toString())),
             dispatch.copy(id = UUID.randomUUID().toString(), runId = runId)) }
         val first = store.claimNext(now, java.time.Duration.ofSeconds(45), UUID.randomUUID().toString())
         assertEquals(dispatch.id, first?.id)
@@ -1187,11 +1409,9 @@ class PostgresTradingReviewStoreTest {
         assertNotNull(store.claimSubmitted(refreshAt, java.time.Duration.ofSeconds(45), refreshWorker))
         val transactions = TransactionTemplate(DataSourceTransactionManager(requireNotNull(jdbc.dataSource)))
         val nextToken = UUID.randomUUID().toString()
-        assertFalse(transactions.execute { store.advanceAttempt(runId, dispatch.id, UUID.randomUUID().toString(),
-            token, nextToken, refreshAt) })
-        assertFalse(transactions.execute { store.advanceAttempt(runId, dispatch.id, refreshWorker,
-            token, nextToken, refreshAt.plusSeconds(45)) })
-        assertTrue(transactions.execute { store.advanceAttempt(runId, dispatch.id, refreshWorker, token, nextToken, refreshAt) })
+        assertFalse(transactions.execute { store.advanceAttempt(NormalizationGrantAttemptAdvance(NormalizationRunId(runId), NormalizationDispatchLease(dispatch.id, UUID.randomUUID().toString(), refreshAt), token, nextToken)) })
+        assertFalse(transactions.execute { store.advanceAttempt(NormalizationGrantAttemptAdvance(NormalizationRunId(runId), NormalizationDispatchLease(dispatch.id, refreshWorker, refreshAt.plusSeconds(45)), token, nextToken)) })
+        assertTrue(transactions.execute { store.advanceAttempt(NormalizationGrantAttemptAdvance(NormalizationRunId(runId), NormalizationDispatchLease(dispatch.id, refreshWorker, refreshAt), token, nextToken)) })
         val refreshed = assertNotNull(store.findRun(runId))
         assertEquals(2, refreshed.currentAttempt)
         assertEquals(nextToken, refreshed.attemptToken)
@@ -1200,11 +1420,9 @@ class PostgresTradingReviewStoreTest {
             FROM trading_normalization_attempts WHERE run_id=?::uuid ORDER BY attempt_number""", String::class.java, runId))
         assertEquals(run.inputFingerprint, refreshed.inputFingerprint)
         assertEquals(run.resultVersionPin, refreshed.resultVersionPin)
-        assertFalse(transactions.execute { store.advanceAttempt(runId, dispatch.id, refreshWorker, token,
-            UUID.randomUUID().toString(), refreshAt) })
+        assertFalse(transactions.execute { store.advanceAttempt(NormalizationGrantAttemptAdvance(NormalizationRunId(runId), NormalizationDispatchLease(dispatch.id, refreshWorker, refreshAt), token, UUID.randomUUID().toString())) })
         assertFailsWith<IllegalStateException> { transactions.execute {
-            assertTrue(store.advanceAttempt(runId, dispatch.id, refreshWorker, nextToken,
-                UUID.randomUUID().toString(), refreshAt))
+            assertTrue(store.advanceAttempt(NormalizationGrantAttemptAdvance(NormalizationRunId(runId), NormalizationDispatchLease(dispatch.id, refreshWorker, refreshAt), nextToken, UUID.randomUUID().toString())))
             error("rollback grant attempt")
         } }
         assertEquals(2, store.findRun(runId)?.currentAttempt)
@@ -1213,8 +1431,7 @@ class PostgresTradingReviewStoreTest {
             WHERE run_id=?::uuid AND event='GRANT_RETRY_ATTEMPT'""", Long::class.java, runId))
         val newJobToken = UUID.randomUUID().toString()
         val newDispatch = dispatch.copy(id = UUID.randomUUID().toString(), computeKey = "e".repeat(64))
-        assertTrue(transactions.execute { store.restartAfterJobFailure(runId, dispatch.id, refreshWorker,
-            newDispatch, newJobToken, "TEMPORARY_DEPENDENCY_FAILURE", refreshAt) })
+        assertTrue(transactions.execute { store.restartAfterJobFailure(NormalizationJobRetry(NormalizationRunId(runId), NormalizationDispatchLease(dispatch.id, refreshWorker, refreshAt), newDispatch, newJobToken, "TEMPORARY_DEPENDENCY_FAILURE")) })
         assertNull(store.findRun(runId)?.computeJobId)
         assertNull(jdbc.queryForObject("""SELECT compute_job_id FROM trading_normalization_attempts
             WHERE run_id=?::uuid AND attempt_number=3""", String::class.java, runId))
@@ -1229,7 +1446,7 @@ class PostgresTradingReviewStoreTest {
         members(jdbc)
         val review = TradingReviewTestStores(jdbc)
         val imports = TradingImportTestStores(jdbc)
-        val runs = JdbcTradingNormalizationStore(jdbc, mapper)
+        val runs = TradingNormalizationTestRuntime(jdbc, mapper)
         val account = TradingAccount.create(TradingAccountId(911), MemberId(1), TradingVenue.BINANCE, "A", now)
         review.insert(account)
         val book = TradingBook.create(TradingBookId(912), account, "B",
@@ -1248,7 +1465,7 @@ class PostgresTradingReviewStoreTest {
         }
         val service = com.refinvest.core.tradingreview.application.TradingNormalizationService(
             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
-            review, review, imports, imports, review, runs,
+            review, review, imports, review, runs,
             object : com.refinvest.core.tradingreview.port.TradingVersionPins {
                 override fun currentJson() = versions
             }, object : com.refinvest.core.tradingreview.port.TradingNormalizationSettings {
@@ -1257,7 +1474,8 @@ class PostgresTradingReviewStoreTest {
                     java.time.Duration.ofSeconds(10), "NONE")
                 override fun instrumentTermsJson() = "[]"
                 override fun resultDeliveryPolicy() = deliveryPolicy
-            }, mapper, workerClock, JdbcTradingNormalizationTransitionGate(jdbc))
+            }, mapper, workerClock, JdbcTradingNormalizationTransitionGate(jdbc),
+            JdbcTradingNormalizationAdmissionAdapter(jdbc, imports, workerClock, JdbcTradingNormalizationTransitionGate(jdbc)), normalizationIds)
         jdbc.execute("SELECT trading_normalization_transition_control('PAUSE',0,'test-validation')")
         for (retry in listOf(false, true)) {
             val failure = assertFailsWith<TradingFailure> {
@@ -1293,7 +1511,7 @@ class PostgresTradingReviewStoreTest {
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_dispatches", Long::class.java))
         assertEquals(started.activeNormalizationRunId, imports.find(session.id, MemberId(1))?.activeNormalizationRunId)
-        val active = assertNotNull(runs.findRun(started.activeNormalizationRunId!!))
+        val active = assertNotNull(runs.findRun(started.activeNormalizationRunId!!.value))
         var grantNumber = 0
         val submittedKeys = mutableListOf<String>()
         val submittedLocators = mutableListOf<List<String>>()
@@ -1334,29 +1552,29 @@ class PostgresTradingReviewStoreTest {
         assertEquals(submittedKeys[0], submittedKeys[1])
         assertTrue(submittedLocators[0] != submittedLocators[1])
         assertFalse(jdbc.queryForObject("SELECT input_json::text FROM trading_normalization_runs WHERE id=?::uuid",
-            String::class.java, active.id)!!.contains("https://grant.test"))
-        assertEquals("job-1", runs.findRun(active.id)?.computeJobId)
+            String::class.java, active.id.value)!!.contains("https://grant.test"))
+        assertEquals("job-1", runs.findRun(active.id.value)?.computeJobId)
         val polling = assertNotNull(runs.claimSubmitted(now.plusSeconds(1), java.time.Duration.ofSeconds(45),
             UUID.randomUUID().toString()))
         transactions.execute {
             val locked = assertNotNull(imports.find(session.id, MemberId(1), true))
             assertTrue(runs.markTerminal(polling.id, polling.leaseOwner!!,
                 "TEMPORARY_DEPENDENCY_FAILURE", now))
-            val failed = assertNotNull(locked.failValidation(active.id, active.input.deletionGeneration,
+            val failed = assertNotNull(locked.failValidation(active.id.value, active.input.deletionGeneration,
                 TradingImportFailure("TEMPORARY_DEPENDENCY_FAILURE", true, "RETRY", now), now))
             assertTrue(imports.update(failed))
         }
         assertEquals(TradingImportStatus.PROCESSING_FAILED, imports.find(session.id, MemberId(1))?.status)
-        assertEquals("TEMPORARY_DEPENDENCY_FAILURE", runs.findRun(active.id)?.lastFailureCode)
+        assertEquals("TEMPORARY_DEPENDENCY_FAILURE", runs.findRun(active.id.value)?.lastFailureCode)
         val retried = transactions.execute { service.retry(session.id, "retry-once") }!!
         assertEquals(TradingImportStatus.VALIDATING, retried.status)
         assertTrue(retried.activeNormalizationRunId != active.id)
-        assertEquals(active.id, runs.findRun(retried.activeNormalizationRunId!!)?.retryOfRunId)
+        assertEquals(active.id, runs.findRun(retried.activeNormalizationRunId!!.value)?.retryOfRunId)
         assertEquals(NormalizationResultVersionPin.V1,
-            runs.findRun(retried.activeNormalizationRunId!!)?.resultVersionPin)
+            runs.findRun(retried.activeNormalizationRunId!!.value)?.resultVersionPin)
         assertEquals(NormalizationResultVersionPin.V1.schemaVersion,
             jdbc.queryForObject("""SELECT result_schema_version FROM trading_normalization_dispatches
-                WHERE run_id=?::uuid""", String::class.java, retried.activeNormalizationRunId!!))
+                WHERE run_id=?::uuid""", String::class.java, retried.activeNormalizationRunId!!.value))
         assertEquals(retried.activeNormalizationRunId,
             transactions.execute { service.retry(session.id, "retry-once") }!!.activeNormalizationRunId)
         assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
@@ -1384,7 +1602,7 @@ class PostgresTradingReviewStoreTest {
         assertEquals("TEMPORARY_DEPENDENCY_FAILURE", exhausted.failure?.code)
         assertTrue(exhausted.failure?.retryable == true)
         assertEquals(NormalizationRunStatus.TERMINAL_FAILURE,
-            runs.findRun(retried.activeNormalizationRunId!!)?.status)
+            runs.findRun(retried.activeNormalizationRunId!!.value)?.status)
         jdbc.update("UPDATE trading_source_artifacts SET raw_expires_at=?, uploaded_at=? WHERE import_session_id=?",
             java.sql.Timestamp.from(now.minusSeconds(1)), java.sql.Timestamp.from(now.minusSeconds(86401)), session.id.value)
         assertEquals("SOURCE_ARTIFACT_EXPIRED", assertFailsWith<TradingFailure> {
@@ -1403,8 +1621,7 @@ class PostgresTradingReviewStoreTest {
         val staleRun = assertNotNull(runs.findRun(again.activeNormalizationRunId!!))
         jdbc.update("UPDATE trading_import_sessions SET deletion_generation=deletion_generation+1 WHERE id=?",
             session.id.value)
-        assertFalse(runs.markSubmitted(staleDispatch.id, staleDispatch.leaseOwner!!, staleRun.id,
-            staleRun.input.deletionGeneration, staleRun.attemptToken, "late-job", now))
+        assertFalse(runs.markSubmitted(NormalizationSubmissionReceipt(NormalizationRunId(staleRun.id.value), NormalizationDispatchLease(staleDispatch.id, staleDispatch.leaseOwner!!, now), staleRun.input.deletionGeneration, staleRun.attemptToken, "late-job")))
     }
 
     @Test
@@ -1969,14 +2186,14 @@ class PostgresTradingReviewStoreTest {
         val input = NormalizationInput(book.id, session.id, owner.value, listOf(pinned), "BINANCE",
             "LINEAR_PERPETUAL", "ONE_WAY", "USDT", "UTC", "UTC", normalizationVersions, "[]",
             "TRADING_DATA_POLICY_V1", "retry-v1", "{}", 0)
-        val run = NormalizationRun(runId, input, "a".repeat(64), "synthetic-$baseId",
+        val run = NormalizationRun.restore(NormalizationRunId(runId), input, "a".repeat(64), "synthetic-$baseId",
             NormalizationRunStatus.DISPATCH_PENDING, 1, token, null, null, now, now, null, now, null, 0,
             resultDeliveryPolicy = deliveryPolicy)
         val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId,
             baseId.toString().padStart(64, '0'), NormalizationDispatchStatus.PENDING,
             0, now, null, null, null, now, now)
-        JdbcTradingNormalizationStore(jdbc, tools.jackson.databind.json.JsonMapper.builder().build()).insert(run, dispatch)
-        assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
+        TradingNormalizationTestRuntime(jdbc, tools.jackson.databind.json.JsonMapper.builder().build()).seed(run, dispatch)
+        assertTrue(imports.seedValidation(session.id, runId, now))
         return GrantSource(account, book.id, session.id, pinned, dispatch.id, token)
     }
 
@@ -2001,7 +2218,7 @@ class PostgresTradingReviewStoreTest {
         members(jdbc)
         val review = TradingReviewTestStores(jdbc)
         val imports = TradingImportTestStores(jdbc)
-        val runs = JdbcTradingNormalizationStore(jdbc, mapper)
+        val runs = TradingNormalizationTestRuntime(jdbc, mapper)
         val account = TradingAccount.create(TradingAccountId(2001), MemberId(1), TradingVenue.BINANCE, "A", now)
         review.insert(account)
         val book = TradingBook.create(TradingBookId(2002), account, "B",
@@ -2033,15 +2250,15 @@ class PostgresTradingReviewStoreTest {
             val runId = UUID.randomUUID().toString()
             val attemptToken = UUID.randomUUID().toString()
             val jobId = "job-$index"
-            val run = NormalizationRun(runId, input, NormalizationInputCanonicalizer.hash(identity),
+            val run = NormalizationRun.restore(NormalizationRunId(runId), input, NormalizationInputCanonicalizer.hash(identity),
                 UUID.randomUUID().toString().replace("-", "").repeat(2), NormalizationRunStatus.SUBMITTED,
                 1, attemptToken, jobId, null, now, now, now, now, null, 0,
                 inputIdentity = identity, resultDeliveryPolicy = deliveryPolicy)
             val dispatch = NormalizationDispatch(UUID.randomUUID().toString(), runId,
                 index.toString(16).padStart(64, 'c'), NormalizationDispatchStatus.SUBMITTED, 0, now,
                 null, null, null, now, now)
-            runs.insert(run, dispatch)
-            assertTrue(imports.update(imports.find(session.id, session.owner)!!.beginValidation(runId, now)))
+            runs.seed(run, dispatch)
+            assertTrue(imports.seedValidation(session.id, runId, now))
             val compute = object : TradingNormalizationComputeClient {
                 override fun submit(run: NormalizationRun, dispatch: NormalizationDispatch,
                                     grants: List<ArtifactReadGrant>): NormalizationSubmission = error("poll only")
@@ -2130,7 +2347,7 @@ class PostgresTradingReviewStoreTest {
                     check(release.await(10, TimeUnit.SECONDS))
                     // PAUSE is already queued. Claim uses another connection and must not
                     // request another advisory lock behind that exclusive waiter.
-                    val store = JdbcTradingNormalizationStore(jdbc, tools.jackson.databind.json.JsonMapper.builder().build())
+                    val store = TradingNormalizationTestRuntime(jdbc, tools.jackson.databind.json.JsonMapper.builder().build())
                     assertNull(store.claimNext(now, java.time.Duration.ofSeconds(45), UUID.randomUUID().toString()))
                     true
                 } ?: false

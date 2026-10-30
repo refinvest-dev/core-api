@@ -1,5 +1,10 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.port.normalization.*
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationDispatchStatus
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportFailure
@@ -26,7 +31,7 @@ class DefaultTradingRetryJitter : TradingRetryJitter {
 
 @Service
 class TradingNormalizationDispatcher(
-    private val runs: TradingNormalizationStore,
+    private val runs: TradingNormalizationRuntime,
     private val sessions: TradingImportSessionStore,
     private val books: TradingBookStore,
     private val artifacts: TradingSourceArtifactReader,
@@ -46,7 +51,7 @@ class TradingNormalizationDispatcher(
         val dispatch = transactions.execute {
             runs.claimNext(now, Duration.ofSeconds(45), workerId)
         } ?: return false
-        val run = runs.findRun(dispatch.runId) ?: return true
+        val run = runs.findRun(NormalizationRunId(dispatch.runId)) ?: return true
         val session = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId))
         if (session == null || !isCurrent(run, session)) {
             transactions.execute { runs.markObsolete(dispatch.id, workerId, clock.instant()) }
@@ -84,12 +89,11 @@ class TradingNormalizationDispatcher(
             }
             when (submission) {
                 is NormalizationSubmission.Accepted ->
-                    runs.markSubmitted(dispatch.id, workerId, run.id, run.input.deletionGeneration,
-                        run.attemptToken, submission.jobId, at)
+                    runs.markSubmitted(NormalizationSubmissionReceipt(NormalizationRunId(run.id.value), NormalizationDispatchLease(dispatch.id, workerId, at), run.input.deletionGeneration, run.attemptToken, submission.jobId))
                 is NormalizationSubmission.Retry -> {
                     if (submission.outcomeUnknown) {
                         runs.holdUnknownCreate(dispatch.id, workerId, at)
-                        runs.audit(run.id, "CREATE_OUTCOME_UNKNOWN", submission.code, at)
+                        runs.audit(run.id.value, "CREATE_OUTCOME_UNKNOWN", submission.code, at)
                         return@execute
                     }
                     val policy = policy(run)
@@ -101,7 +105,7 @@ class TradingNormalizationDispatcher(
                         if (at.plus(delay).isAfter(run.createdAt.plus(policy.maxElapsedTime)))
                             fail(run, dispatch, locked, workerId, "TEMPORARY_DEPENDENCY_FAILURE", at)
                         else if (runs.scheduleRetry(dispatch.id, workerId, submission.code, at.plus(delay), at))
-                            runs.audit(run.id, "DISPATCH_RETRY", submission.code, at)
+                            runs.audit(run.id.value, "DISPATCH_RETRY", submission.code, at)
                     }
                 }
                 is NormalizationSubmission.Rejected -> fail(run, dispatch, locked, workerId,
@@ -117,7 +121,7 @@ class TradingNormalizationDispatcher(
         val dispatch = transactions.execute {
             runs.claimSubmitted(now, Duration.ofSeconds(45), workerId)
         } ?: return false
-        val run = runs.findRun(dispatch.runId) ?: return true
+        val run = runs.findRun(NormalizationRunId(dispatch.runId)) ?: return true
         val session = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId))
         if (session == null || !isCurrent(run, session)) {
             transactions.execute { runs.markObsolete(dispatch.id, workerId, clock.instant()) }
@@ -192,7 +196,7 @@ class TradingNormalizationDispatcher(
                 val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
                 if (locked != null && isCurrent(run, locked)) {
                     if (runs.markResultReady(dispatch.id, workerId, clock.instant()))
-                        runs.audit(run.id, "RESULT_READY", null, clock.instant())
+                        runs.audit(run.id.value, "RESULT_READY", null, clock.instant())
                 } else runs.markObsolete(dispatch.id, workerId, clock.instant())
             }
             "FAILED", "CANCELLED" -> handleTerminalJob(run, dispatch, workerId,
@@ -237,12 +241,11 @@ class TradingNormalizationDispatcher(
                     fail(run, dispatch, session, workerId, "TEMPORARY_DEPENDENCY_FAILURE", now)
                     return@execute false
                 }
-                runs.advanceAttempt(run.id, dispatch.id, workerId, status.attemptToken,
-                    UUID.randomUUID().toString(), now)
+                runs.advanceAttempt(NormalizationGrantAttemptAdvance(NormalizationRunId(run.id.value), NormalizationDispatchLease(dispatch.id, workerId, now), status.attemptToken, UUID.randomUUID().toString()))
             } else true
         } ?: false
         if (!locked) return
-        val currentRun = runs.findRun(run.id) ?: return
+        val currentRun = runs.findRun(NormalizationRunId(run.id.value)) ?: return
         val update = try {
             val issued = currentRun.input.artifacts.map { grants.issueReadGrant(it, dispatch.id,
                 currentRun.input.importSessionId, currentRun.attemptToken,
@@ -277,10 +280,10 @@ class TradingNormalizationDispatcher(
             if (code !in RETRYABLE_JOB_CODES && code != "SOURCE_ARTIFACT_EXPIRED") {
                 if (code in SOURCE_REJECTION_CODES) {
                     if (!runs.markTerminal(dispatch.id, workerId, code, now)) return@execute
-                    val rejected = session.rejectValidation(run.id, run.input.deletionGeneration,
+                    val rejected = session.rejectValidation(run.id.value, run.input.deletionGeneration,
                         TradingImportFailure(code, false, "NONE", now), now) ?: return@execute
                     check(sessions.update(rejected))
-                    runs.audit(run.id, "SOURCE_REJECTED", code, now)
+                    runs.audit(run.id.value, "SOURCE_REJECTED", code, now)
                 } else fail(run, dispatch, session, workerId,
                     code.takeIf { it in NON_RETRYABLE_COMPUTE_CODES } ?: "INTERNAL_ERROR", now)
                 return@execute
@@ -291,14 +294,13 @@ class TradingNormalizationDispatcher(
                 val nextAt = now.plus(delay(policy, run.currentAttempt, null))
                 if (nextAt.isBefore(run.createdAt.plus(policy.maxElapsedTime))) {
                     val nextToken = UUID.randomUUID().toString()
-                    val next = NormalizationDispatch(UUID.randomUUID().toString(), run.id,
-                        NormalizationInputFingerprint.dispatchKey(run.id, run.logicalKey, nextToken,
+                    val next = NormalizationDispatch(UUID.randomUUID().toString(), run.id.value,
+                        NormalizationInputFingerprint.dispatchKey(run.id.value, run.logicalKey, nextToken,
                             run.input.versionSetJson, run.input.deletionGeneration, mapper),
                         NormalizationDispatchStatus.PENDING, 0,
                         nextAt, null, null, code, now, now,
                         resultVersionPin = run.resultVersionPin)
-                    runs.restartAfterJobFailure(run.id, dispatch.id, workerId, next,
-                        nextToken, code, now)
+                    runs.restartAfterJobFailure(NormalizationJobRetry(NormalizationRunId(run.id.value), NormalizationDispatchLease(dispatch.id, workerId, now), next, nextToken, code))
                     return@execute
                 }
             }
@@ -325,10 +327,10 @@ class TradingNormalizationDispatcher(
             else -> "WAIT_FOR_RECOVERY"
         }
         val failure = TradingImportFailure(safeCode, retryable, action, now)
-        val failed = session.failValidation(run.id, run.input.deletionGeneration, failure, now)
+        val failed = session.failValidation(run.id.value, run.input.deletionGeneration, failure, now)
             ?: return
         if (!sessions.update(failed)) throw IllegalStateException("Session transition raced")
-        runs.audit(run.id, "PROCESSING_FAILED", safeCode, now)
+        runs.audit(run.id.value, "PROCESSING_FAILED", safeCode, now)
     }
 
     private fun isCurrent(run: NormalizationRun, session: TradingImportSession): Boolean =
