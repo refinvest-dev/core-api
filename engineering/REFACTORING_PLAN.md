@@ -139,8 +139,47 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 3b | 완료·머지 | [PR #92](https://github.com/refinvest-dev/core-api/pull/92), `7483529`·`c5d363b`, Backtest Run/Result 복원·불변성과 저장/조회 Mapper 정리, R02/R04 회귀 검증 |
 | 3c | 완료·머지 | [PR #93](https://github.com/refinvest-dev/core-api/pull/93), `ad3af75`·`36db90d`, R12 feature port 계약과 실제 classpath에서 타 feature domain 참조 차단 |
 | 4a | 완료·머지 | [PR #94](https://github.com/refinvest-dev/core-api/pull/94), `96a1a6c`·`47d85c5`·`12aba18`, Account/Book Root·Mapper·Store/Reader와 삭제 cascade fence |
-| 4b-1 | 구현·검증 완료, PR 검토 대상 | [PR #95](https://github.com/refinvest-dev/core-api/pull/95), `5771f96`·`5f66b63`·`f5ac6df`, Session Root·Artifact 슬롯 저장·순수 Mapper·retention CAS와 삭제 replay·grant retry 이력 보강 |
-| 4b-2 이후 | 미착수 | 다음 PR은 Session 소속 NormalizationRun의 행위·Mapper·입력 pin·재시도·원자적 admission 정리 |
+| 4b-1 | 완료·머지 | [PR #95](https://github.com/refinvest-dev/core-api/pull/95), `5771f96`·`5f66b63`·`f5ac6df`, Session Root·Artifact 슬롯 저장·순수 Mapper·retention CAS와 삭제 replay·grant retry 이력 보강 |
+| 4b-2 | 구현·검증 완료, PR 검토 대상 | [PR #97](https://github.com/refinvest-dev/core-api/pull/97), `ce42b14`·`e4e4b38`, Session 소속 NormalizationRun·순수 Mapper·명시적 admission과 재시도 입력 고정 |
+| 4c 이후 | 미착수 | 다음 PR은 immutable LedgerRevision·publication 경계와 bounded 저장 정리 |
+
+### 4b-2 검증 기록과 후속 범위
+
+- NormalizationRun은 Session 소속 `DomainEntity<NormalizationRunId>`다. Root의
+  `admitNormalization`이 최초 생성·명시적 재시도와 입력/결과 pin을 검증한다. 공개 생성·복사와
+  일반 Run 삽입 포트를 제거했고, Session 복원은 현재 Run 하나만 적재한다.
+- `NormalizationRunPersistenceMapper`는 로드한 row와 소속 입력을 양방향 변환한다. Store/Reader는
+  같은 매핑을 공유한다. 과거 identity·delivery policy·완료 시각 누락을 현재 값으로 추정하지 않으며,
+  복원 중 업무 행위를 재실행하지 않는다. 새 실행의 상태·identity·descriptor 불변식은 검증한다.
+- 명시적 admission capability는 Account→Book→Session 잠금과 transition gate, expected Session·이전
+  Run 버전, raw 보관 만료와 삭제 generation을 확인한다. Session 포인터·Run·attempt·dispatch·감사
+  이력을 같은 transaction에 저장하며 stale 요청과 rollback은 어느 row도 남기지 않는다.
+- worker의 lease·attempt·receipt 전이는 별도 runtime capability로 유지하고 조건을 모델로 묶었다.
+  UUID 생성은 순수 feature port와 `adapter:uuid`로 분리했으며 실제 Gradle 의존성 검사에 포함했다.
+- 명시적 재시도가 저장된 instrument terms 대신 현재 설정을 사용하던 문제를 PostgreSQL 회귀
+  테스트로 재현했다. 기존 설정과 결과 V1/V2 pin을 유지하도록 수정하고 Root에서도 변경을 거절한다.
+- 최종 코드에서 cleanTest 후 관련 테스트 209건을 한 실행으로 통과했다(실패·skip 0).
+  Domain 17, Application 26, Persistence 48, Web·Compute·Storage 각 8, App 94건이다.
+  실제 PostgreSQL 검증은 Persistence 40건과 App 23건이며, admission의 실제 잠금 대기·commit/rollback
+  경합, stale 이전 Run, 만료·삭제·pause gate와 V2 재시도를 포함한다. source 경계 검사와
+  `verifyAggregateModuleBoundaries`, `verifyMemberSubscriptionBoundaries`, `bootJar`도 통과했다.
+- 수정 전 검증 중 Windows 소켓의 `Bad address`로 실패한 실행은 통과 기록에 포함하지 않는다.
+  최종 위 실행은 재시도 결과를 합산한 수치가 아니다. 원격 CI 통과를 뜻하지 않는다.
+- 최종 코드 `e4e4b38`의 검증 JAR로 Core↔Compute 실제 runtime 검증을 통과했다.
+  `primary`·`result_integrity`·`ledger_publication`은 PASS, publication의 identity·evidence references·
+  idempotency는 PASS, ACK는 `ACKNOWLEDGED_AFTER_RETRY`다. 검증 증적의 source commit과 artifact
+  SHA-256이 테스트한 JAR와 일치한다. 로컬 증적은 integration의
+  `.integration-data/trading-normalization/cfa135385a684f8183951b59d073c37a/evidence.json`이다.
+- runtime 첫 실행은 Compute 준비 단계의 Windows `WinError 10014`로 실패했으며 통과로 계산하지
+  않는다. 같은 제품 코드·JAR·assertion으로 재실행해 통과했다. 검증 wrapper에서 ACK 간격을
+  20초→60초, 후속 전체 주기 대기를 22초→62초로 조정했으며 검증 assertion을 제거하지 않았다.
+  실행 프로세스와 임시 환경 파일은 정리했다. credential·fixture·로그·runner는 커밋하지 않는다.
+- 구현 전후 계약/OpenAPI·V1/V2 hash vector·context 문서 25개 동기화 검사를 통과했다.
+  API·schema·계산 hash 의미 변경은 없으며 계산 결정론 영향은 없다.
+- 구현(`ce42b14`)과 재현 후 입력 고정 수정(`e4e4b38`), 로컬 검증 기록을 나눠 커밋한다.
+  다음 4c에서는 immutable LedgerRevision과 publication capability·Mapper를 정리하고 membership,
+  hash, generation, latest pointer 원자성과 stream/batch 저장을 유지한다. scheduler 진입점과
+  파일·암호화·HTTP 기술 구현 이동은 5a 범위로 남긴다.
 
 ### 4b-1 검증 기록과 후속 범위
 
