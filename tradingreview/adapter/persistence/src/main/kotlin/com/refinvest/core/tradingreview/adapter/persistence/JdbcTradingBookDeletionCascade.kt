@@ -19,7 +19,7 @@ class JdbcTradingBookDeletionCascade(private val jdbc: JdbcTemplate) : TradingBo
         val total = jdbc.queryForObject("SELECT count(*) FROM trading_books WHERE account_id=? AND owner_member_id=?",
             Long::class.java, current, deletion.owner.value) ?: 0L
         jdbc.update("""UPDATE trading_books SET status='DELETION_PENDING', deletion_generation=deletion_generation+1,
-            updated_at=?,version=version+1 WHERE account_id=? AND owner_member_id=? AND status IN ('ACTIVE','ARCHIVED')""",
+            updated_at=GREATEST(updated_at,?),version=version+1 WHERE account_id=? AND owner_member_id=? AND status IN ('ACTIVE','ARCHIVED')""",
             Timestamp.from(deletion.requestedAt), current, deletion.owner.value)
         return total
     }

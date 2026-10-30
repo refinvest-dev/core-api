@@ -118,6 +118,24 @@ class PostgresTradingReviewStoreTest {
     }
 
     @Test
+    fun cascadeKeepsChildStateRestorableWhenTheRequestClockIsBehind() = withDatabase { connection ->
+        val (_, tx, stores) = accountBookFixture(connection)
+        val account = TradingAccount.create(TradingAccountId(1), MemberId(1), TradingVenue.BINANCE, "A", now)
+        val book = TradingBook.create(TradingBookId(2), account, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", now.plusSeconds(1))
+        stores.insert(account); stores.insert(book)
+        tx.execute {
+            assertTrue(stores.update(account.requestDeletion(now)))
+            assertEquals(1L, stores.bookDeletionCascade.markDeleting(TradingAccountBookDeletion(
+                account.id, account.owner, 1, 1, now)))
+        }
+        val restored = assertNotNull(stores.find(book.id, book.owner))
+        assertEquals(TradingLifecycleStatus.DELETION_PENDING, restored.status)
+        assertEquals(1L, restored.deletionGeneration)
+        assertEquals(book.updatedAt, restored.updatedAt)
+    }
+
+    @Test
     fun staleCascadeFencesLeaveOtherOwnersAndAlreadyDeletingBooksUnchanged() = withDatabase { connection ->
         val (_, tx, stores) = accountBookFixture(connection)
         val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
