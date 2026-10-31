@@ -92,7 +92,8 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | 4b-1 | TradingImportSession 및 소속 Artifact | Root·typed ID·Mapper·Aggregate 저장, 업로드·삭제·retention CAS 보존 |
 | 4b-2 | Session 소속 NormalizationRun | 소속 모델·Mapper·입력 pin·재시도·원자적 admission 보존 |
 | 4c | LedgerRevision 및 publication | immutable 발행 모델, membership/hash/generation gate, bounded 저장 |
-| 4d | DeletionRequest | 명시적 상태 모델, scope/checklist/실패·완료 규칙 |
+| 4d-1 | DeletionRequest 모델·저장 경계 | Root/typed ID·scope/checklist 정의·순수 Mapper·Aggregate 단위 요청 저장/복원 |
+| 4d-2 | DeletionRequest 상태 전이·진행 증명 | worker 전이 CAS·component별 durable checkpoint·실패/완료 규칙 연결 |
 | 5a | Dispatch/polling/result/ACK 진입점 | inbound use case, port의 기술 구현 이동, ACK commit 순서 보존 |
 | 5b | 삭제/retention 실행 흐름 | application orchestration, component별 durable 처리와 복구 |
 | 5c | 실패/조회/web 경계 | 의미 기반 실패, web DTO, 정확한 purge read model |
@@ -141,8 +142,44 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 4a | 완료·머지 | [PR #94](https://github.com/refinvest-dev/core-api/pull/94), `96a1a6c`·`47d85c5`·`12aba18`, Account/Book Root·Mapper·Store/Reader와 삭제 cascade fence |
 | 4b-1 | 완료·머지 | [PR #95](https://github.com/refinvest-dev/core-api/pull/95), `5771f96`·`5f66b63`·`f5ac6df`, Session Root·Artifact 슬롯 저장·순수 Mapper·retention CAS와 삭제 replay·grant retry 이력 보강 |
 | 4b-2 | 완료·머지 | [PR #97](https://github.com/refinvest-dev/core-api/pull/97), `ce42b14`·`e4e4b38`, Session 소속 NormalizationRun·순수 Mapper·명시적 admission과 재시도 입력 고정 |
-| 4c | 구현·검증 완료, PR 검토 대상 | [PR #98](https://github.com/refinvest-dev/core-api/pull/98), `d6df0c0`·`fd03cf3`, immutable LedgerRevision·순수 Mapper·전용 publication capability와 bounded 저장 |
-| 4d 이후 | 미착수 | 다음 PR은 DeletionRequest 상태 모델·scope/checklist와 실패·완료 규칙 정리 |
+| 4c | 완료·머지 | [PR #98](https://github.com/refinvest-dev/core-api/pull/98), `d6df0c0`·`fd03cf3`, immutable LedgerRevision·순수 Mapper·전용 publication capability와 bounded 저장 |
+| 4d-1 | 구현·검증 완료, PR 검토 대상 | [PR #99](https://github.com/refinvest-dev/core-api/pull/99), `e02feae`·`7107bf6`, DeletionRequest Root·typed scope/checklist 정의·Mapper·Aggregate 요청 저장/복원 |
+| 4d-2 이후 | 미착수 | worker 상태 전이 CAS와 실제 component 진행 증명 연결, 이후 5a/5b/5c 순서 |
+
+### 4d-1 범위와 후속 경계
+
+- 기존 삭제 모델은 port의 문자열 기반 결과 DTO였으며 worker가 SQL로 상태를 전이했다. 4d를
+  모델/저장 경계와 실행 상태/CAS 연결로 나눴다. 4d 전체 완료는 4d-2까지 포함한다.
+- `DeletionRequest`는 `AggregateRoot<DeletionRequestId>`다. `DeletionScope`가 target type과 typed ID,
+  requested scope를 묶고, 생성 시 scope별 영향 집계·owner·generation·초기 상태/시각을 검증한다.
+  복원은 terminal metadata·failure code·attempt·시각의 일관성을 검증하며 업무 행위를 재실행하지 않는다.
+- `DeletionPurgeChecklist`는 해당 scope에서 필요한 live component의 정의다. raw-only와 subtree의
+  primary/derived 삭제 범위를 구분하고 object·key·temporary copy·Compute runtime을 포함한다.
+  전체 request 상태나 resource count를 component 완료의 증거로 사용하지 않는다. backup deadline은
+  별도 저장값을 유지하며, checklist가 실제 purge 진행이나 부재 검증을 수행했다는 뜻은 아니다.
+- `DeletionRequestPersistenceMapper`는 로드된 row와 Domain을 순수 변환한다. Store의 ID/target 조회가
+  같은 복원을 공유하며 이전 mapper가 결과 DTO에서 누락하던 attempt count도 Root에 보존한다.
+  과거 `IMPORT_SUBTREE` label과 미집계 0 count를 현재 값으로 추정하거나 수정하지 않는다.
+- Application은 검증된 Root를 생성해 `DeletionRequestStore`에 저장하고 기존 `TradingDeletion` inbound
+  결과 DTO로 변환한다. Snowflake adapter와 generator port도 typed deletion ID를 사용한다. 새 Store는
+  초기 REQUESTED 저장과 복원만 제공하고, 일반적인 상태 overwrite API를 추가하지 않는다.
+- Worker의 기존 SQL 전이, component 진행 정보 부재와 public DTO의 전체 상태 기반 추정은 이번 단계에서
+  해결됐다고 표시하지 않는다. 4d-2에서 전이/CAS·체크포인트·완료 증명을 연결하고, 5b에서 외부 I/O의
+  transaction 분리와 durable 복구를 다룬다. read model/HTTP 실패 의미 정리는 5c 범위도 따른다.
+- 관련 테스트 227건을 전체 실행으로 통과했다(실패·skip 0). Domain 24, Application 26,
+  Persistence 57, Web·Compute·Storage 각 8, App 96건이며 실제 PostgreSQL은 Persistence 43건과
+  App 23건이다. Domain 4건·Mapper 3건·실제 DB 1건·source 경계 1건을 추가했다.
+- checklist에서 불필요한 backup 추정 보조 속성을 제거한 뒤 Domain 24건과 Persistence 57건을
+  재검증했다. 이 추가 실행 중 기존 `bookCreationReplayAfterDeletionIsGone` 한 건이 test DB 연결
+  단계의 Windows `Bad address: connect`로 실패했으며, 같은 최종 코드로 해당 항목을 별도 재실행해
+  통과했다. 실패한 실행을 성공으로 계산하지 않으며, 최종 227개 고유 항목은 실패·skip 0이다.
+  `verifyAggregateModuleBoundaries`·`verifyMemberSubscriptionBoundaries`와 `bootJar`도 통과했다.
+- API·schema·계산 hash 의미와 계산 결정론 영향은 없다. 계약·hash vector·context 문서 25개
+  동기화 검사를 통과했다. Worker와 Compute I/O 변경이 없어 실제 Core↔Compute runtime E2E는
+  재실행하지 않았다. 기존 삭제·scope/owner 격리·idempotency·rollback·부분 실패/재시도·stale ACK
+  DB 회귀는 포함한다. 원격 CI 결과는 별도 확인 대상이며 credential·fixture·로그·runner는 커밋하지 않는다.
+- 도메인·순수 매핑(`e02feae`), Aggregate Store·typed generator·서비스/결과 경계와 DB 회귀
+  (`7107bf6`), 로컬 검증 기록을 별도 커밋으로 나눴다. 다음 단계는 4d-2다.
 
 ### 4c 검증 기록과 후속 범위
 
