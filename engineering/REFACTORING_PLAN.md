@@ -143,8 +143,60 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 4b-1 | 완료·머지 | [PR #95](https://github.com/refinvest-dev/core-api/pull/95), `5771f96`·`5f66b63`·`f5ac6df`, Session Root·Artifact 슬롯 저장·순수 Mapper·retention CAS와 삭제 replay·grant retry 이력 보강 |
 | 4b-2 | 완료·머지 | [PR #97](https://github.com/refinvest-dev/core-api/pull/97), `ce42b14`·`e4e4b38`, Session 소속 NormalizationRun·순수 Mapper·명시적 admission과 재시도 입력 고정 |
 | 4c | 완료·머지 | [PR #98](https://github.com/refinvest-dev/core-api/pull/98), `d6df0c0`·`fd03cf3`, immutable LedgerRevision·순수 Mapper·전용 publication capability와 bounded 저장 |
-| 4d-1 | 구현·검증 완료, PR 검토 대상 | [PR #99](https://github.com/refinvest-dev/core-api/pull/99), `e02feae`·`7107bf6`, DeletionRequest Root·typed scope/checklist 정의·Mapper·Aggregate 요청 저장/복원 |
-| 4d-2 이후 | 미착수 | worker 상태 전이 CAS와 실제 component 진행 증명 연결, 이후 5a/5b/5c 순서 |
+| 4d-1 | 완료·머지 | [PR #99](https://github.com/refinvest-dev/core-api/pull/99), `e02feae`·`7107bf6`, DeletionRequest Root·typed scope/checklist 정의·Mapper·Aggregate 요청 저장/복원 |
+| 4d-2 | 구현·로컬 회귀 검증 완료, 추가 E2E 미완료 | [Draft PR #100](https://github.com/refinvest-dev/core-api/pull/100), `36a5e94`·`3e34350`, worker CAS·durable checkpoint·opaque cleanup workset |
+| 5a 이후 | 미착수 | dispatch/polling/result/ACK 진입점, 5b 외부 삭제 검증·복구, 5c read model/HTTP 순서 |
+
+### 4d-2 범위와 후속 경계
+
+- `DeletionRequest`의 행위로 시작·primary/object purge·부분 진행·실패·완료를 표현한다.
+  `verifiedAbsent`는 실제 component 확인 시각이며 전체 상태·영향 개수에서 만들지 않는다.
+  복원은 과거 `COMPLETED`의 빈 증거를 그대로 보존하지만, 새 완료 저장에는 모든 필수 증거가 필요하다.
+  terminal 요청은 재실행하거나 뒤로 전이하지 않는다. live 완료 후 backup 제거 기한은 별도로 추적한다.
+- `DeletionRequestExecution`은 Store와 분리된 원자적 실행 capability다. 활성 transaction의
+  `FOR UPDATE SKIP LOCKED`로 요청을 선택하고 owner/scope/generation/state/version CAS와 checkpoint를
+  함께 저장한다. 부분 object item의 완료와 workset 확보도 version을 증가시킨다. stale 실패는 요청과
+  artifact 상태를 바꾸지 않는다. Store의 조회는 같은 DB statement에서 Root와 checkpoint를 읽고
+  순수 Mapper로 복원한다.
+- V13은 기존 row와 terminal 기록을 보존하고 checkpoint를 추정해 backfill하지 않는다. primary purge
+  전 opaque object locator와 Session/Book/Account 관계, Compute job/attempt·dispatch key·원래/현재
+  generation·Revision ID를 별도 control workset에 보존한다. 객체별 삭제·부재 확인은 개별 transaction으로
+  commit하므로 다음 객체에서 실패하거나 worker가 재시작해도 성공 item과 나머지 locator가 남는다.
+  기존 `PURGING_OBJECTS`도 상태를 되돌리지 않고 workset 확보 후 진행한다.
+- 삭제 tombstone 아래의 local dispatch를 중단하고 read grant를 폐기한다. 기존 stale payload ACK는
+  primary purge 뒤에도 남기며, DB child 삭제와 unaffected latest pointer 정합을 유지한다. 미완료인
+  하위 삭제의 row가 사라졌다는 이유로 상위 scope를 완료하지 않는다.
+- **미완료 외부 실행 경계:** 현재 Compute port에는 cancellation/runtime 부재 확인이 없고 Core의
+  임시 spool은 scope별 추적을 제공하지 않는다. published analytics 파일도 삭제 호출만 있고 부재 조회가
+  없다. 따라서 해당 데이터가 있었을 수 있는 요청은 그 component를 완료하지 않는다. 확인 가능한
+  primary/object/key 진행을 보존하면서 `PURGING_OBJECTS`에 머물고 기존 5회 실패 예산 소진 시
+  `FAILED/DELETION_PARTIALLY_COMPLETED`가 된다. 단순 DB 삭제·TTL·전체 상태로 외부 부재를 추정하지 않는다.
+  이는 모든 삭제 scope의 정상 완료나 외부 runtime purge를 구현했다는 뜻이 아니다.
+- 5b는 보존한 workset을 소비하는 외부 취소·부재 검증, scope별 temporary cleanup, transaction 밖의
+  I/O·backoff·remediation을 연결해야 한다. 과거 완료 기록의 실제 외부 부재를 이번 migration으로
+  재증명하지 않는다. public component read model의 전체 상태 기반 추정 제거는 5c에 남아 있다.
+- 수정 전 기존 worker에서 외부 부재를 확인하지 않고 `COMPLETED`로 표시하는 회귀 실패를 재현했다.
+  같은 최종 코드에서 전체 실행과 대상 재실행을 합쳐 고유 테스트 239건을 통과했다. Domain 27,
+  Application 26, Persistence 66, Web·Compute·Storage 각 8, App 96건이며 최종 실패·skip은 0개다.
+  실제 PostgreSQL은 Persistence 51건과 App 23건, 총 74건이다. 컴파일의 UP-TO-DATE와 테스트 실행을
+  구분하며, 최종 전체 실행의 Windows 소켓 오류로 Domain 실행 일부·기존 DB 테스트 1건·HTTP timeout
+  테스트 2건이 중단된 실행은 통과로 세지 않았다. 같은 코드의 Domain 및 대상 재실행으로 보완했다.
+  중간 SQL·fixture 오류도 수정 후 검증했으며 실패한 실행을 통과로 합산하지 않는다.
+- 실제 DB에서 stale owner/generation/version·완료 뒤 실패 거절, 독립 연결의 SKIP LOCKED claim과
+  rollback, checkpoint 원자성, primary purge 후 객체별 복구, legacy subtree/raw-only 복구, V13 기존
+  terminal 데이터 보존과 하위 삭제 격리를 검증했다. 모듈 경계 두 진입점·bootJar와 계약·hash vector·
+  context 문서 25개 동기화 검사도 통과했다. API·계산 hash 계약과 계산 결정론 영향은 없다.
+- 분리된 integration Core/Compute schema의 실제 HTTP에서 기본 정규화·결과 무결성·LedgerRevision
+  publication과 V1 pin 024~026을 통과했다. 첫 시도는 psql Windows 소켓 오류로 V9 inspection 중단,
+  재시도는 추가 cutover 028의 `CUTOVER_PROCESS_CONTROL_FAILED`로 실패했으며 027 migration rehearsal은
+  미실행이다. 전체 E2E 통과로 표시하지 않으며 PR은 Draft로 둔다. 실패 원인은 harness 프로세스 제어
+  단계까지 확인했고 그 하위 원인은 확정하지 않았다. 해당 실행의 main·second·canary 서비스 registry는
+  모두 비어 있음을 확인했다. 자격 정보·fixture·증적·runner는 로컬에만 보관하고 커밋하지 않는다.
+- Domain·Mapper·실행 port(`36a5e94`)와 worker·CAS·V13·DB 회귀(`3e34350`)를 나누어 커밋했다.
+- 적용 시 삭제 worker를 중지하고 기존 transaction을 종료한 뒤 V13을 적용하고 모든 worker를 교체한다.
+  이전 worker는 version/checkpoint를 갱신하지 않으므로 혼합 실행은 지원하지 않는다. rollback 시 control
+  workset·checkpoint·migration 이력을 삭제하지 않으며, 구 worker의 완료 추정으로 복귀하지 않도록
+  삭제 worker를 중지한 상태에서 복구한다. 다음 순서는 5a이며 5b의 외부 검증 연결을 함께 추적한다.
 
 ### 4d-1 범위와 후속 경계
 
