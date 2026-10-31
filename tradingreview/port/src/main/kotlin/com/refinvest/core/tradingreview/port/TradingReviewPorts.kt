@@ -1,5 +1,7 @@
 package com.refinvest.core.tradingreview.port
 
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
@@ -18,7 +20,7 @@ interface TradingIdGenerator {
     fun bookId(): TradingBookId
     fun importSessionId(): TradingImportSessionId = error("Import ID generator is not configured")
     fun sourceArtifactId(): TradingSourceArtifactId = error("Artifact ID generator is not configured")
-    fun deletionId(): Long
+    fun deletionId(): DeletionRequestId
 }
 
 data class TradingPage<T>(val items: List<T>, val page: Int, val size: Int, val total: Long)
@@ -32,12 +34,16 @@ data class TradingDeletion(
     val completedAt: Instant? = null,
     val failureCode: String? = null,
     val importSessionCount: Long = 0, val artifactCount: Long = 0,
-)
-
-interface TradingDeletionStore {
-    fun insert(deletion: TradingDeletion)
-    fun find(id: Long, owner: MemberId): TradingDeletion?
-    fun findByTarget(owner: MemberId, targetType: String, targetId: Long): TradingDeletion? = null
+) {
+    companion object {
+        fun fromDomain(request: DeletionRequest): TradingDeletion {
+            val resources = request.affectedResources
+            return TradingDeletion(request.id.value, request.owner, request.scope.targetType.name,
+                request.scope.target.value, request.scope.requestedScope, request.state.name, request.deletionGeneration,
+                resources.accounts, resources.books, request.revokedAt, request.requestedAt, request.updatedAt,
+                request.backupPurgeDueAt, request.completedAt, request.failureCode, resources.importSessions, resources.artifacts)
+        }
+    }
 }
 
 sealed interface IdempotencyClaim {

@@ -11,6 +11,10 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatu
 import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import com.refinvest.core.tradingreview.port.*
+import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionScope
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionAffectedResources
 import com.refinvest.core.tradingreview.port.account.TradingAccountStore
 import com.refinvest.core.tradingreview.port.book.TradingBookStore
 import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionReader
@@ -34,7 +38,7 @@ open class TradingImportService(
     private val books: TradingBookStore,
     private val sessions: TradingImportSessionStore,
     private val artifacts: TradingSourceArtifactReader,
-    private val deletions: TradingDeletionStore,
+    private val deletions: DeletionRequestStore,
     private val idempotency: TradingIdempotencyStore,
     private val storage: RawArtifactStorage,
     private val versions: TradingVersionPins,
@@ -206,11 +210,11 @@ open class TradingImportService(
         val operation = "deleteTradingImportSession"
         val fingerprint = fingerprint(id.value.toString())
         val claim = idempotency.claim(owner, operation, key, fingerprint)
-        if (claim is IdempotencyClaim.Replayed) return deletions.find(claim.resourceId, owner)
+        if (claim is IdempotencyClaim.Replayed) return deletions.find(DeletionRequestId(claim.resourceId), owner)?.let(TradingDeletion::fromDomain)
             ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
-        deletions.findByTarget(owner, "TRADING_IMPORT_SESSION", id.value)?.let { existing ->
-            idempotency.complete(owner, operation, key, existing.id)
-            return existing
+        deletions.findByTarget(owner, DeletionScope.importSession(id))?.let { existing ->
+            idempotency.complete(owner, operation, key, existing.id.value)
+            return TradingDeletion.fromDomain(existing)
         }
         val initial = sessions.find(id, owner) ?: throw missing(sessions.deleted(id, owner))
         val account = accounts.find((books.find(initial.bookId, owner)
@@ -225,12 +229,11 @@ open class TradingImportService(
         val changed = session.requestDeletion(now)
         if (!sessions.update(changed)) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
         val count = session.artifacts.size.toLong()
-        val deletion = TradingDeletion(ids.deletionId(), owner, "TRADING_IMPORT_SESSION", id.value,
-            "IMPORT_SESSION_SUBTREE", "REQUESTED", changed.deletionGeneration, 0, 0,
-            now, now, now, now.plusSeconds(30L * 24 * 60 * 60), importSessionCount = 1, artifactCount = count)
+        val deletion = DeletionRequest.request(ids.deletionId(), owner, DeletionScope.importSession(id),
+            changed.deletionGeneration, DeletionAffectedResources(0, 0, 1, count), now)
         deletions.insert(deletion)
-        idempotency.complete(owner, operation, key, deletion.id)
-        return deletion
+        idempotency.complete(owner, operation, key, deletion.id.value)
+        return TradingDeletion.fromDomain(deletion)
     }
 
     @Transactional
@@ -240,11 +243,11 @@ open class TradingImportService(
         val operation = "deleteTradingSourceArtifact"
         val fingerprint = fingerprint(id.value.toString())
         val claim = idempotency.claim(owner, operation, key, fingerprint)
-        if (claim is IdempotencyClaim.Replayed) return deletions.find(claim.resourceId, owner)
+        if (claim is IdempotencyClaim.Replayed) return deletions.find(DeletionRequestId(claim.resourceId), owner)?.let(TradingDeletion::fromDomain)
             ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
-        deletions.findByTarget(owner, "TRADING_SOURCE_ARTIFACT", id.value)?.let { existing ->
-            idempotency.complete(owner, operation, key, existing.id)
-            return existing
+        deletions.findByTarget(owner, DeletionScope.rawArtifact(id))?.let { existing ->
+            idempotency.complete(owner, operation, key, existing.id.value)
+            return TradingDeletion.fromDomain(existing)
         }
         val initialArtifact = artifacts.find(id, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
         val initialSession = sessions.find(initialArtifact.sessionId, owner)
@@ -266,12 +269,11 @@ open class TradingImportService(
         val changed = session.requestArtifactDeletion(id, now)
         if (!sessions.update(changed))
             throw TradingFailure("CONCURRENT_MODIFICATION", 409)
-        val deletion = TradingDeletion(ids.deletionId(), owner, "TRADING_SOURCE_ARTIFACT", id.value,
-            "RAW_ONLY", "REQUESTED", changed.deletionGeneration, 0, 0,
-            now, now, now, now.plusSeconds(30L * 24 * 60 * 60), artifactCount = 1)
+        val deletion = DeletionRequest.request(ids.deletionId(), owner, DeletionScope.rawArtifact(id),
+            changed.deletionGeneration, DeletionAffectedResources(0, 0, 0, 1), now)
         deletions.insert(deletion)
-        idempotency.complete(owner, operation, key, deletion.id)
-        return deletion
+        idempotency.complete(owner, operation, key, deletion.id.value)
+        return TradingDeletion.fromDomain(deletion)
     }
 
     private fun missing(deleted: Boolean) = TradingFailure(if (deleted) "RESOURCE_DELETED" else "RESOURCE_NOT_FOUND",

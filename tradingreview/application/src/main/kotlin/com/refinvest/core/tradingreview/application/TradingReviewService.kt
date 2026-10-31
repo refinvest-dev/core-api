@@ -9,6 +9,10 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
 import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
 import com.refinvest.core.tradingreview.port.*
+import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionScope
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionAffectedResources
 import com.refinvest.core.tradingreview.port.account.TradingAccountReader
 import com.refinvest.core.tradingreview.port.account.TradingAccountStore
 import com.refinvest.core.tradingreview.port.book.TradingAccountBookDeletion
@@ -28,7 +32,7 @@ open class TradingReviewService(
     private val ids: TradingIdGenerator,
     private val accounts: TradingAccountStore,
     private val books: TradingBookStore,
-    private val deletions: TradingDeletionStore,
+    private val deletions: DeletionRequestStore,
     private val idempotency: TradingIdempotencyStore,
     private val clock: Clock,
     private val accountReader: TradingAccountReader,
@@ -73,7 +77,7 @@ open class TradingReviewService(
         val operation = "deleteTradingAccount"
         val fingerprint = fingerprint(id.value.toString())
         val existing = idempotency.claim(owner, operation, key, fingerprint)
-        if (existing is IdempotencyClaim.Replayed) return deletions.find(existing.resourceId, owner)
+        if (existing is IdempotencyClaim.Replayed) return deletions.find(DeletionRequestId(existing.resourceId), owner)?.let(TradingDeletion::fromDomain)
             ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
         val account = accounts.find(id, owner, forUpdate = true) ?: throw missing(accounts.deleted(id, owner))
         if (account.status != TradingLifecycleStatus.ACTIVE && account.status != TradingLifecycleStatus.ARCHIVED)
@@ -84,12 +88,11 @@ open class TradingReviewService(
         val count = bookDeletionCascade.markDeleting(TradingAccountBookDeletion(
             deletingAccount.id, owner, deletingAccount.deletionGeneration, Math.addExact(account.version, 1), now,
         )) ?: throw TradingFailure("CONCURRENT_MODIFICATION", 409)
-        val deletion = TradingDeletion(ids.deletionId(), owner, "TRADING_ACCOUNT", id.value,
-            "ACCOUNT_SUBTREE", "REQUESTED", deletingAccount.deletionGeneration, 1, count, now, now, now,
-            now.plusSeconds(30L * 24 * 60 * 60))
+        val deletion = DeletionRequest.request(ids.deletionId(), owner, DeletionScope.account(id),
+            deletingAccount.deletionGeneration, DeletionAffectedResources(1, count), now)
         deletions.insert(deletion)
-        idempotency.complete(owner, operation, key, deletion.id)
-        return deletion
+        idempotency.complete(owner, operation, key, deletion.id.value)
+        return TradingDeletion.fromDomain(deletion)
     }
 
     @Transactional
@@ -139,7 +142,7 @@ open class TradingReviewService(
         val operation = "deleteTradingBook"
         val fingerprint = fingerprint(id.value.toString())
         val existing = idempotency.claim(owner, operation, key, fingerprint)
-        if (existing is IdempotencyClaim.Replayed) return deletions.find(existing.resourceId, owner)
+        if (existing is IdempotencyClaim.Replayed) return deletions.find(DeletionRequestId(existing.resourceId), owner)?.let(TradingDeletion::fromDomain)
             ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
         val initialBook = books.find(id, owner) ?: throw missing(books.deleted(id, owner))
         val account = accounts.find(initialBook.accountId, owner, forUpdate = true) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
@@ -149,16 +152,15 @@ open class TradingReviewService(
         val now = clock.instant()
         val deletingBook = book.requestDeletion(now)
         if (!books.update(deletingBook)) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
-        val deletion = TradingDeletion(ids.deletionId(), owner, "TRADING_BOOK", id.value,
-            "BOOK_SUBTREE", "REQUESTED", deletingBook.deletionGeneration, 0, 1, now, now, now,
-            now.plusSeconds(30L * 24 * 60 * 60))
+        val deletion = DeletionRequest.request(ids.deletionId(), owner, DeletionScope.book(id),
+            deletingBook.deletionGeneration, DeletionAffectedResources(0, 1), now)
         deletions.insert(deletion)
-        idempotency.complete(owner, operation, key, deletion.id)
-        return deletion
+        idempotency.complete(owner, operation, key, deletion.id.value)
+        return TradingDeletion.fromDomain(deletion)
     }
 
     @Transactional(readOnly = true)
-    override fun get(id: Long): TradingDeletion = deletions.find(id, members.currentMemberId())
+    override fun get(id: Long): TradingDeletion = deletions.find(DeletionRequestId(id), members.currentMemberId())?.let(TradingDeletion::fromDomain)
         ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
 
     private fun missing(deleted: Boolean): TradingFailure =
