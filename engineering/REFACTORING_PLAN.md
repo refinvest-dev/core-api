@@ -144,7 +144,7 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 4b-2 | 완료·머지 | [PR #97](https://github.com/refinvest-dev/core-api/pull/97), `ce42b14`·`e4e4b38`, Session 소속 NormalizationRun·순수 Mapper·명시적 admission과 재시도 입력 고정 |
 | 4c | 완료·머지 | [PR #98](https://github.com/refinvest-dev/core-api/pull/98), `d6df0c0`·`fd03cf3`, immutable LedgerRevision·순수 Mapper·전용 publication capability와 bounded 저장 |
 | 4d-1 | 완료·머지 | [PR #99](https://github.com/refinvest-dev/core-api/pull/99), `e02feae`·`7107bf6`, DeletionRequest Root·typed scope/checklist 정의·Mapper·Aggregate 요청 저장/복원 |
-| 4d-2 | 구현·로컬 회귀 검증 완료, 추가 E2E 미완료 | [Draft PR #100](https://github.com/refinvest-dev/core-api/pull/100), `36a5e94`·`3e34350`, worker CAS·durable checkpoint·opaque cleanup workset |
+| 4d-2 | 진행 중·머지 차단 | [Draft PR #100](https://github.com/refinvest-dev/core-api/pull/100), worker CAS·checkpoint 구현과 별개로 정상 삭제 완료 경로 미완성, 추가 E2E 미완료 |
 | 5a 이후 | 미착수 | dispatch/polling/result/ACK 진입점, 5b 외부 삭제 검증·복구, 5c read model/HTTP 순서 |
 
 ### 4d-2 범위와 후속 경계
@@ -172,6 +172,10 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
   primary/object/key 진행을 보존하면서 `PURGING_OBJECTS`에 머물고 기존 5회 실패 예산 소진 시
   `FAILED/DELETION_PARTIALLY_COMPLETED`가 된다. 단순 DB 삭제·TTL·전체 상태로 외부 부재를 추정하지 않는다.
   이는 모든 삭제 scope의 정상 완료나 외부 runtime purge를 구현했다는 뜻이 아니다.
+- **머지 차단:** 실제 삭제 요청의 정상 완료가 막히는 기능 제약은 단순한 후속 작업으로 넘기지 않는다.
+  외부 확인 기능을 연결하거나 정상 삭제 흐름을 보존하도록 PR 범위를 다시 나누고 검증해야 한다.
+  로컬 테스트 통과는 이 기능 제약의 해소를 증명하지 않는다. 4d-2 완료 보고를 정정하며, 이 조건과
+  E2E 검증 공백을 해결하기 전에는 Draft를 해제하거나 다음 구조 단계로 넘어가지 않는다.
 - 5b는 보존한 workset을 소비하는 외부 취소·부재 검증, scope별 temporary cleanup, transaction 밖의
   I/O·backoff·remediation을 연결해야 한다. 과거 완료 기록의 실제 외부 부재를 이번 migration으로
   재증명하지 않는다. public component read model의 전체 상태 기반 추정 제거는 5c에 남아 있다.
@@ -196,7 +200,8 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 - 적용 시 삭제 worker를 중지하고 기존 transaction을 종료한 뒤 V13을 적용하고 모든 worker를 교체한다.
   이전 worker는 version/checkpoint를 갱신하지 않으므로 혼합 실행은 지원하지 않는다. rollback 시 control
   workset·checkpoint·migration 이력을 삭제하지 않으며, 구 worker의 완료 추정으로 복귀하지 않도록
-  삭제 worker를 중지한 상태에서 복구한다. 다음 순서는 5a이며 5b의 외부 검증 연결을 함께 추적한다.
+  삭제 worker를 중지한 상태에서 복구한다. 먼저 이 PR의 정상 완료 경로와 E2E 차단 사항을 해결하고,
+  이후 5a와 5b의 의존 관계를 다시 맞춘다.
 
 ### 4d-1 범위와 후속 경계
 
