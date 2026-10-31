@@ -24,7 +24,8 @@ class TradingReviewFlywayMigrationTest {
                 val flyway = Flyway.configure().dataSource(url, user, password).schemas(schema)
                     .baselineOnMigrate(true).baselineVersion("0")
                     .locations("classpath:db/migration").load()
-                assertEquals(12, flyway.migrate().migrationsExecuted)
+                assertEquals(13, flyway.migrate().migrationsExecuted)
+                assertEquals(0, flyway.migrate().migrationsExecuted)
                 connection.schema = schema
                 connection.createStatement().use { statement ->
                     statement.executeQuery("SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name='refresh_session_family_locks'")

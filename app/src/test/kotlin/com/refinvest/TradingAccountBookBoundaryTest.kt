@@ -131,14 +131,18 @@ class TradingAccountBookBoundaryTest {
         assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|\\.request\\(").containsMatchIn(mapper))
         assertFalse(Files.exists(persistence.resolve("JdbcTradingDeletionStoreAdapter.kt")))
         val adapter = Files.readString(persistence.resolve("JdbcDeletionRequestPersistenceAdapter.kt"))
-        assertTrue(adapter.contains("insert(request: DeletionRequest)") && adapter.contains("DeletionRequestPersistenceMapper.toDomain("))
+        val queries = Files.readString(persistence.resolve("DeletionRequestQueries.kt"))
+        assertTrue(adapter.contains("insert(request: DeletionRequest)") && queries.contains("DeletionRequestPersistenceMapper.toDomain("))
         assertFalse(adapter.contains("TradingIdempotencyStore") || adapter.contains("TradingAccountStore"))
         listOf("TradingReviewService.kt", "TradingImportService.kt").forEach { name ->
             val source = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/$name"))
             assertTrue(source.contains("DeletionRequest.request(") && source.contains("TradingDeletion.fromDomain("))
             assertFalse(source.contains("val deletion = TradingDeletion(") || source.contains("DeletionRequest.restore("))
         }
-        // Worker state CAS and persisted component progress are the next 4d-2 boundary.
+        val worker = Files.readString(persistence.resolve("TradingDeletionWorker.kt"))
+        assertFalse(worker.contains("UPDATE trading_deletion_requests"))
+        val execution = Files.readString(persistence.resolve("JdbcDeletionRequestExecution.kt"))
+        assertFalse(execution.contains("TradingIdempotencyStore") || execution.contains("TradingAccountStore"))
     }
 
     private fun workspaceRoot(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
