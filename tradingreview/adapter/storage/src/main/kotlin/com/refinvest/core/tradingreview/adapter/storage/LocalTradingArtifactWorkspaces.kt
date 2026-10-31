@@ -9,6 +9,7 @@ import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
 import java.nio.file.*
 import java.security.MessageDigest
+import java.time.Instant
 import java.util.HexFormat
 import java.util.concurrent.ConcurrentHashMap
 import java.lang.ref.ReferenceQueue
@@ -22,7 +23,11 @@ class LocalTradingArtifactWorkspaces(rootPath: Path) : TradingArtifactWorkspaces
     init { require(!Files.isSymbolicLink(controls) && !Files.isSymbolicLink(data)) }
 
     override fun acquire(scope: TradingArtifactScope): LocalLease {
-        val key = key(scope)
+        return acquireKey(key(scope))
+    }
+
+    internal fun acquireKey(key: String): LocalLease {
+        require(Regex("[0-9a-f]{64}").matches(key))
         val control = state(controls.resolve("$key.lock"))
         synchronized(control) {
             requireLive(key)
@@ -83,8 +88,9 @@ class LocalTradingArtifactWorkspaces(rootPath: Path) : TradingArtifactWorkspaces
             throw TradingFailure("RESOURCE_DELETED", 410)
     }
 
-    private fun key(scope: TradingArtifactScope): String {
+    internal fun key(scope: TradingArtifactScope): String {
         val identity = when (scope) {
+            is TradingArtifactScope.SessionUploads -> "UPLOADS:${scope.sessionId.value}"
             is TradingArtifactScope.RawSlot -> "RAW:${scope.sessionId.value}:${scope.role.name}"
             is TradingArtifactScope.LegacyArtifact -> "ARTIFACT:${scope.artifactId.value}"
             is TradingArtifactScope.Run -> "RUN:${scope.runId.value}"
@@ -100,7 +106,50 @@ class LocalTradingArtifactWorkspaces(rootPath: Path) : TradingArtifactWorkspaces
         var lock: FileLock? = null
     }
 
-    inner class LocalLease internal constructor(private val key: String, private val state: State) : TradingArtifactLease {
+    override fun cleanupOrphans(olderThan: Instant, limit: Int): Int {
+        require(limit > 0)
+        var removed = 0
+        Files.newDirectoryStream(data).use { directories ->
+            for (directory in directories) {
+                if (removed >= limit) break
+                val key = directory.fileName.toString()
+                require(Regex("[0-9a-f]{64}").matches(key) && !Files.isSymbolicLink(directory))
+                exclusive(key) {
+                    if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) return@exclusive
+                    Files.newDirectoryStream(directory).use { files ->
+                        for (file in files) {
+                            if (removed >= limit) break
+                            require(Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS))
+                            if (Files.getLastModifiedTime(file).toInstant().isBefore(olderThan)) {
+                                Files.deleteIfExists(file)
+                                removed++
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return removed
+    }
+
+    internal fun <T> exclusive(key: String, operation: () -> T): T? {
+        require(Regex("[0-9a-f]{64}").matches(key))
+        val control = state(controls.resolve("$key.lock"))
+        synchronized(control) {
+            if (control.readers > 0 || control.writing) return null
+            control.writing = true
+            try {
+                FileChannel.open(controls.resolve("$key.lock"), StandardOpenOption.CREATE,
+                    StandardOpenOption.READ, StandardOpenOption.WRITE).use { channel ->
+                    val lock = try { channel.tryLock() } catch (_: OverlappingFileLockException) { null }
+                        ?: return null
+                    lock.use { return operation() }
+                }
+            } finally { control.writing = false }
+        }
+    }
+
+    inner class LocalLease internal constructor(internal val key: String, private val state: State) : TradingArtifactLease {
         private var closed = false
         override fun checkActive() = synchronized(state) {
             check(!closed)

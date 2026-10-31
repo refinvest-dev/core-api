@@ -2643,7 +2643,9 @@ class PostgresTradingReviewStoreTest {
     }
 
     private fun emptyStorage() = object : com.refinvest.core.tradingreview.port.RawArtifactStorage {
-        override fun putStaging(source: java.io.InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId):
+        override fun preparePublication(staged: com.refinvest.core.tradingreview.port.StagedRawArtifact, role: TradingArtifactRole) = error("not used")
+        override fun purgeCopies(scope: com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope) = true
+        override fun putStaging(source: java.io.InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId, sessionId: TradingImportSessionId):
             com.refinvest.core.tradingreview.port.StagedRawArtifact = error("Unused")
         override fun promote(staged: com.refinvest.core.tradingreview.port.StagedRawArtifact, finalKey: String) = Unit
         override fun completePublication(finalKey: String) = Unit
