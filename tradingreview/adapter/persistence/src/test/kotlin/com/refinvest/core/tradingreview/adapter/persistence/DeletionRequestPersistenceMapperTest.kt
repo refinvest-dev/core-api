@@ -43,4 +43,16 @@ class DeletionRequestPersistenceMapperTest {
             assertFailsWith<IllegalArgumentException> { DeletionRequestPersistenceMapper.toDomain(row) }
         }
     }
+    @Test
+    fun partialDurableEvidenceAndVersionRoundTripWithoutUsingStateAsProof() {
+        val row = initial.copy(state = "PURGING_OBJECTS", version = 17, updatedAt = now.plusSeconds(20),
+            verifiedAbsent = mapOf("PRIMARY_DATA" to now.plusSeconds(1), "RAW_OBJECTS" to now.plusSeconds(20)))
+        val root = DeletionRequestPersistenceMapper.toDomain(row)
+        assertEquals(row, DeletionRequestPersistenceMapper.toRecord(root))
+        assertFailsWith<IllegalArgumentException> { root.complete(now.plusSeconds(20)) }
+        assertFailsWith<IllegalArgumentException> {
+            DeletionRequestPersistenceMapper.toDomain(row.copy(verifiedAbsent = mapOf("RAW_KEYS" to now.plusSeconds(21))))
+        }
+    }
+
 }
