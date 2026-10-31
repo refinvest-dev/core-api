@@ -54,7 +54,7 @@ class TradingAccountBookBoundaryTest {
         }
         assertFalse(Files.exists(persistence.resolve("JdbcTradingReviewStore.kt")))
         assertFalse(Files.exists(persistence.resolve("JdbcTradingImportStore.kt")))
-        listOf("account", "book", "importsession", "normalization", "ledger").forEach { aggregate ->
+        listOf("account", "book", "importsession", "normalization", "ledger", "deletion").forEach { aggregate ->
             Files.walk(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/$aggregate")).use { files ->
                 files.filter { it.toString().endsWith(".kt") }.forEach { file ->
                     assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|java\\.nio\\.file|javax\\.crypto").containsMatchIn(Files.readString(file)))
@@ -117,6 +117,28 @@ class TradingAccountBookBoundaryTest {
         val application = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/TradingNormalizationResultProcessor.kt"))
         assertTrue(application.contains("LedgerRevision.prepare(") && application.contains("publications.publish(LedgerPublication("))
         assertFalse(application.contains("results.publish("))
+    }
+
+    @Test
+    fun deletionRequestsUseATypedAggregateAndPureMapperInsteadOfPersistingInboundResults() {
+        val root = workspaceRoot()
+        val domain = Files.readString(root.resolve("tradingreview/domain/src/main/kotlin/com/refinvest/core/tradingreview/domain/DeletionRequest.kt"))
+        assertTrue(domain.contains("class DeletionRequest private constructor(") && domain.contains("AggregateRoot<DeletionRequestId>"))
+        assertFalse(domain.contains("fun copy(") || domain.contains("org.springframework"))
+        val persistence = root.resolve("tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence")
+        val mapper = Files.readString(persistence.resolve("DeletionRequestPersistenceMapper.kt"))
+        assertTrue(mapper.contains("DeletionRequest.restore("))
+        assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|\\.request\\(").containsMatchIn(mapper))
+        assertFalse(Files.exists(persistence.resolve("JdbcTradingDeletionStoreAdapter.kt")))
+        val adapter = Files.readString(persistence.resolve("JdbcDeletionRequestPersistenceAdapter.kt"))
+        assertTrue(adapter.contains("insert(request: DeletionRequest)") && adapter.contains("DeletionRequestPersistenceMapper.toDomain("))
+        assertFalse(adapter.contains("TradingIdempotencyStore") || adapter.contains("TradingAccountStore"))
+        listOf("TradingReviewService.kt", "TradingImportService.kt").forEach { name ->
+            val source = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/$name"))
+            assertTrue(source.contains("DeletionRequest.request(") && source.contains("TradingDeletion.fromDomain("))
+            assertFalse(source.contains("val deletion = TradingDeletion(") || source.contains("DeletionRequest.restore("))
+        }
+        // Worker state CAS and persisted component progress are the next 4d-2 boundary.
     }
 
     private fun workspaceRoot(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }

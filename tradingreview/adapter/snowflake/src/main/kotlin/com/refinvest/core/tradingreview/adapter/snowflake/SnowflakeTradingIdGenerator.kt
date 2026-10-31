@@ -1,5 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.snowflake
 
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
+
 import com.refinvest.core.shared.infrastructure.id.SnowflakeIdGenerator
 import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
@@ -14,5 +16,5 @@ class SnowflakeTradingIdGenerator(private val snowflake: SnowflakeIdGenerator) :
     override fun bookId() = TradingBookId(snowflake.next())
     override fun importSessionId() = TradingImportSessionId(snowflake.next())
     override fun sourceArtifactId() = TradingSourceArtifactId(snowflake.next())
-    override fun deletionId() = snowflake.next()
+    override fun deletionId() = DeletionRequestId(snowflake.next())
 }
