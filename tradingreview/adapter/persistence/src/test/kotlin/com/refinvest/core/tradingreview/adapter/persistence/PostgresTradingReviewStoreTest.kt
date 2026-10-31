@@ -1,6 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
 import com.refinvest.core.tradingreview.domain.valueobject.*
+import com.refinvest.core.tradingreview.port.deletion.*
 
 import com.refinvest.core.tradingreview.port.normalization.*
 import com.refinvest.core.tradingreview.port.ledger.*
@@ -83,7 +84,7 @@ class PostgresTradingReviewStoreTest {
             DeletionScope.rawArtifact(source.artifact.artifactId), 1, DeletionAffectedResources(0,0,0,1), now)
         stores.deletionAdapter.insert(deletion)
         jdbc.update("UPDATE trading_deletion_requests SET state='PURGING_OBJECTS' WHERE id=?", deletion.id.value)
-        TradingDeletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now, ZoneOffset.UTC)).purgePending()
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now, ZoneOffset.UTC)).purgePending()
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_import_sessions", Long::class.java))
         assertEquals("DELETED", jdbc.queryForObject("SELECT retention_status FROM trading_source_artifacts", String::class.java))
         val restored = stores.deletionAdapter.find(deletion.id, deletion.owner)!!
@@ -120,7 +121,7 @@ class PostgresTradingReviewStoreTest {
     }
 
     @Test
-    fun legacyObjectPhaseCapturesLocatorsAndRuntimeIdentityBeforePurgingPrimary() = withDatabase { connection ->
+    fun legacyObjectPhaseRetainsPrimaryUntilCoverageCanBeVerified() = withDatabase { connection ->
         val (service, tx, stores) = accountBookFixture(connection)
         val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
         val source = grantSource(jdbc, 86001, MemberId(1))
@@ -130,9 +131,9 @@ class PostgresTradingReviewStoreTest {
         val storage = object : RawArtifactStorage by emptyStorage() {
             override fun delete(key: String) { removed += key }
         }
-        TradingDeletionWorker(jdbc, tx, storage, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
+        deletionWorker(jdbc, tx, storage, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
         assertEquals(listOf("objects/synthetic-86001"), removed)
-        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_import_sessions", Long::class.java))
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_import_sessions", Long::class.java))
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_deletion_runtime_tasks", Long::class.java))
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_deletion_dispatch_tasks", Long::class.java))
         assertEquals(source.sessionId.value, jdbc.queryForObject("SELECT session_id FROM trading_deletion_session_tasks", Long::class.java))
@@ -142,48 +143,56 @@ class PostgresTradingReviewStoreTest {
         assertNull(root.verifiedAbsent[DeletionPurgeComponent.COMPUTE_RUNTIME])
     }
 
-    @Test
-    fun parentCannotReportCompletionWhilePurgedChildHasUnverifiedExternalData() = withDatabase { connection ->
-        val (service, tx, stores) = accountBookFixture(connection)
-        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
-        val source = grantSource(jdbc, 87001, MemberId(1))
-        val childScope = DeletionScope.importSession(source.sessionId)
-        jdbc.update("UPDATE trading_import_sessions SET deletion_pending=true,deletion_generation=1 WHERE id=?", source.sessionId.value)
-        val child = DeletionRequest.request(DeletionRequestId(87901), MemberId(1), childScope, 1,
-            DeletionAffectedResources(0,0,1,1), now)
-        stores.deletionAdapter.insert(child)
-        val worker = TradingDeletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now, ZoneOffset.UTC))
-        repeat(5) { worker.purgePending() }
-        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_import_sessions", Long::class.java))
-        val parent = tx.execute { service.delete(source.account.id, "delete-parent") }!!
-        worker.purgePending()
-        val root = stores.deletionAdapter.find(DeletionRequestId(parent.id), MemberId(1))!!
-        assertEquals(DeletionRequestState.PURGING_OBJECTS, root.state)
-        assertNull(root.verifiedAbsent[DeletionPurgeComponent.COMPUTE_RUNTIME])
-        assertNull(root.verifiedAbsent[DeletionPurgeComponent.TEMPORARY_COPIES])
+    private val pendingRuntime = object : TradingRuntimeDeletionClient {
+        override fun purge(command: TradingRuntimeDeletion): TradingRuntimeDeletionOutcome {
+            check(!org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+            return TradingRuntimeDeletionOutcome.Pending(java.time.Duration.ofSeconds(5))
+        }
     }
 
     @Test
-    fun deletionWorkerNeverInfersExternalAbsenceFromPurgedRows() = withDatabase { connection ->
+    fun parentCannotCompleteUntilItsPendingChildHasActualAbsenceEvidence() = withDatabase { connection ->
+        val (service, tx, stores) = accountBookFixture(connection)
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val source = grantSource(jdbc, 87001, MemberId(1))
+        jdbc.update("UPDATE trading_import_sessions SET deletion_pending=true,deletion_generation=1 WHERE id=?", source.sessionId.value)
+        val child = DeletionRequest.request(DeletionRequestId(87901), MemberId(1), DeletionScope.importSession(source.sessionId),
+            1, DeletionAffectedResources(0,0,1,1), now)
+        stores.deletionAdapter.insert(child)
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now, ZoneOffset.UTC), runtimeClient=pendingRuntime).purgePending()
+        val parent = tx.execute { service.delete(source.account.id, "delete-parent") }!!
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now, ZoneOffset.UTC), runtimeClient=pendingRuntime).purgePending()
+        val root = stores.deletionAdapter.find(DeletionRequestId(parent.id), MemberId(1))!!
+        assertEquals(DeletionRequestState.CANCELLING_JOBS, root.state)
+        assertNull(root.verifiedAbsent[DeletionPurgeComponent.COMPUTE_RUNTIME])
+        assertEquals(0, root.attemptCount)
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(6), ZoneOffset.UTC)).purgePending()
+        assertEquals(DeletionRequestState.COMPLETED, stores.deletionAdapter.find(child.id, child.owner)?.state)
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(12), ZoneOffset.UTC)).purgePending()
+        assertEquals(DeletionRequestState.COMPLETED, stores.deletionAdapter.find(root.id, root.owner)?.state)
+    }
+
+    @Test
+    fun pendingRuntimeDoesNotConsumeErrorBudgetAndRestartCompletesOnlyWithActualEvidence() = withDatabase { connection ->
         val (service, tx, stores) = accountBookFixture(connection)
         val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
         val source = grantSource(jdbc, 80001, MemberId(1))
         val deletion = tx.execute { service.delete(source.account.id, "delete-external") }!!
-        val worker = TradingDeletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now, ZoneOffset.UTC))
-        worker.purgePending()
-        val first = stores.deletionAdapter.find(DeletionRequestId(deletion.id), MemberId(1))!!
-        assertEquals(DeletionRequestState.PURGING_OBJECTS, first.state)
-        assertNull(first.verifiedAbsent[DeletionPurgeComponent.COMPUTE_RUNTIME])
-        assertNull(first.verifiedAbsent[DeletionPurgeComponent.TEMPORARY_COPIES])
-        assertTrue(first.verifiedAbsent.keys.containsAll(setOf(DeletionPurgeComponent.RAW_OBJECTS,
-            DeletionPurgeComponent.RAW_KEYS, DeletionPurgeComponent.PRIMARY_DATA)))
+        repeat(6) { attempt ->
+            deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(attempt * 6L), ZoneOffset.UTC),
+                runtimeClient=pendingRuntime).purgePending()
+        }
+        val pending = stores.deletionAdapter.find(DeletionRequestId(deletion.id), MemberId(1))!!
+        assertEquals(DeletionRequestState.CANCELLING_JOBS, pending.state)
+        assertNull(pending.verifiedAbsent[DeletionPurgeComponent.COMPUTE_RUNTIME])
+        assertEquals(0, pending.attemptCount)
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_import_sessions", Long::class.java))
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(40), ZoneOffset.UTC)).purgePending()
+        val completed = stores.deletionAdapter.find(pending.id, pending.owner)!!
+        assertEquals(DeletionRequestState.COMPLETED, completed.state)
+        assertEquals(completed.checklist.requiredComponents, completed.verifiedAbsent.keys)
+        assertEquals(0, completed.attemptCount)
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_import_sessions", Long::class.java))
-        // A new worker sees the same evidence; absent primary rows do not prove absent runtime/spool.
-        repeat(4) { TradingDeletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now, ZoneOffset.UTC)).purgePending() }
-        val failed = stores.deletionAdapter.find(DeletionRequestId(deletion.id), MemberId(1))!!
-        assertEquals(DeletionRequestState.FAILED, failed.state)
-        assertEquals(5, failed.attemptCount)
-        assertEquals(first.verifiedAbsent, failed.verifiedAbsent)
         assertEquals(410, assertFailsWith<TradingFailure> { service.get(source.account.id) }.httpStatus)
     }
 
@@ -201,19 +210,90 @@ class PostgresTradingReviewStoreTest {
                 deleted += key
             }
         }
-        TradingDeletionWorker(jdbc, tx, flaky, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
+        deletionWorker(jdbc, tx, flaky, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
         assertEquals(listOf("objects/synthetic-81001"), deleted)
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_deletion_object_tasks WHERE verified_at IS NOT NULL", Long::class.java))
         val recovered = object : RawArtifactStorage by emptyStorage() {
             override fun delete(key: String) { deleted += key }
         }
-        TradingDeletionWorker(jdbc, tx, recovered, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
+        deletionWorker(jdbc, tx, recovered, Clock.fixed(now.plusSeconds(6), ZoneOffset.UTC)).purgePending()
         assertEquals(listOf("objects/synthetic-81001", "objects/synthetic-82001"), deleted)
         assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_deletion_object_tasks WHERE verified_at IS NOT NULL", Long::class.java))
         val root = stores.deletionAdapter.find(DeletionRequestId(deletion.id), MemberId(1))!!
-        assertEquals(DeletionRequestState.PURGING_OBJECTS, root.state)
+        assertEquals(DeletionRequestState.COMPLETED, root.state)
         assertTrue(DeletionPurgeComponent.RAW_OBJECTS in root.verifiedAbsent)
+    }
+
+    @Test
+    fun replacedOrExpiredDeletionLeaseCannotWriteProgress() = withDatabase { connection ->
+        val (service, tx, stores) = accountBookFixture(connection)
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val source = grantSource(jdbc, 89101, MemberId(1))
+        val deletion = tx.execute { service.delete(source.account.id, "delete-lease") }!!
+        val work = JdbcTradingDeletionWorkStore(jdbc, Clock.fixed(now, ZoneOffset.UTC))
+        val first = tx.execute { work.claim(now, UUID.randomUUID().toString(), java.time.Duration.ofSeconds(1)) }!!
+        val second = tx.execute { work.claim(now.plusSeconds(2), UUID.randomUUID().toString(), java.time.Duration.ofSeconds(30)) }!!
+        val before = jdbc.queryForList("SELECT * FROM trading_deletion_requests WHERE id=?", deletion.id)
+        assertFalse(tx.execute { work.finish(first, emptyList(), now.plusSeconds(2), java.time.Duration.ZERO) }!!)
+        assertEquals(before, jdbc.queryForList("SELECT * FROM trading_deletion_requests WHERE id=?", deletion.id))
+        assertTrue(tx.execute { work.finish(second, emptyList(), now.plusSeconds(2), java.time.Duration.ZERO) }!!)
+        assertFalse(tx.execute { work.finish(second, emptyList(), now.plusSeconds(3), java.time.Duration.ZERO) }!!)
+        val root = stores.deletionAdapter.find(DeletionRequestId(deletion.id), MemberId(1))!!
+        assertEquals(DeletionRequestState.CANCELLING_JOBS, root.state)
+        assertTrue(root.verifiedAbsent.isEmpty())
+        assertEquals(1L, root.version)
+    }
+
+    @Test
+    fun pendingHasZeroErrorsButFailsTruthfullyAtTheLivePurgeSla() = withDatabase { connection ->
+        val (service, tx, stores) = accountBookFixture(connection)
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val source = grantSource(jdbc, 89201, MemberId(1))
+        val deletion = tx.execute { service.delete(source.account.id, "delete-sla") }!!
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now, ZoneOffset.UTC), runtimeClient=pendingRuntime).purgePending()
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(86400), ZoneOffset.UTC), runtimeClient=pendingRuntime).purgePending()
+        val root = stores.deletionAdapter.find(DeletionRequestId(deletion.id), MemberId(1))!!
+        assertEquals(DeletionRequestState.FAILED, root.state)
+        assertEquals(0, root.attemptCount)
+        assertNull(root.completedAt)
+        assertNull(root.verifiedAbsent[DeletionPurgeComponent.COMPUTE_RUNTIME])
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_import_sessions", Long::class.java))
+    }
+
+    @Test
+    fun remediationPreservesFailedAuditAndUnblocksParentAfterVerifiedCompletion() = withDatabase { connection ->
+        val (service, tx, stores) = accountBookFixture(connection)
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val source = grantSource(jdbc, 89301, MemberId(1))
+        jdbc.update("UPDATE trading_import_sessions SET deletion_pending=true,deletion_generation=1 WHERE id=?", source.sessionId.value)
+        val child = DeletionRequest.request(DeletionRequestId(89311), MemberId(1), DeletionScope.importSession(source.sessionId),
+            1, DeletionAffectedResources(0,0,1,1), now)
+        stores.deletionAdapter.insert(child)
+        val unavailable = object : TradingRuntimeDeletionClient {
+            override fun purge(command: TradingRuntimeDeletion): TradingRuntimeDeletionOutcome = error("synthetic dependency failure")
+        }
+        repeat(5) { attempt -> deletionWorker(jdbc, tx, emptyStorage(),
+            Clock.fixed(now.plusSeconds(attempt*100L), ZoneOffset.UTC), runtimeClient=unavailable).purgePending() }
+        val original = stores.deletionAdapter.find(child.id, child.owner)!!
+        assertEquals(DeletionRequestState.FAILED, original.state)
+        assertEquals(5, original.attemptCount)
+        val parent = tx.execute { service.delete(source.account.id, "delete-remediation-parent") }!!
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(500), ZoneOffset.UTC)).purgePending()
+        assertEquals(DeletionRequestState.CANCELLING_JOBS,
+            stores.deletionAdapter.find(DeletionRequestId(parent.id), MemberId(1))?.state)
+        val work = JdbcTradingDeletionWorkStore(jdbc, Clock.fixed(now.plusSeconds(501), ZoneOffset.UTC))
+        val remediation = tx.execute { work.remediate(child.id, DeletionRequestId(89312), now.plusSeconds(501)) }!!
+        assertEquals(original.revokedAt, remediation.revokedAt)
+        assertEquals(original.deletionGeneration, remediation.deletionGeneration)
+        assertEquals(remediation.id, tx.execute { work.remediate(child.id, DeletionRequestId(89313), now.plusSeconds(501)) }!!.id)
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(510), ZoneOffset.UTC)).purgePending()
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(520), ZoneOffset.UTC)).purgePending()
+        assertEquals(DeletionRequestState.COMPLETED, stores.deletionAdapter.find(remediation.id, child.owner)?.state)
+        assertEquals(DeletionRequestState.COMPLETED, stores.deletionAdapter.find(DeletionRequestId(parent.id), child.owner)?.state)
+        val retained = stores.deletionAdapter.find(child.id, child.owner)!!
+        assertEquals(DeletionRequestPersistenceMapper.toRecord(original), DeletionRequestPersistenceMapper.toRecord(retained))
+        assertEquals(child.id, stores.deletionAdapter.findByTarget(child.owner, child.scope)?.id)
     }
 
     @Test
@@ -1146,7 +1226,12 @@ class PostgresTradingReviewStoreTest {
                 val path = java.nio.file.Files.createTempFile("synthetic-result-", ".json")
                 java.nio.file.Files.write(path, bytes)
                 return NormalizationPayloadLookup.Found(
-                    NormalizationPayloadFile(path, bytes.size.toLong(), transportHash))
+                    object : NormalizationPayloadFile {
+                        override val byteSize = bytes.size.toLong()
+                        override val sha256 = transportHash
+                        override fun open() = java.nio.file.Files.newInputStream(path)
+                        override fun close() { java.nio.file.Files.deleteIfExists(path) }
+                    })
             }
             override fun acknowledge(acknowledgement: NormalizationPayloadAcknowledgement): NormalizationAckOutcome {
                 acknowledgeCalls++
@@ -1233,7 +1318,7 @@ class PostgresTradingReviewStoreTest {
                     }
                     override fun open(coreReferenceId: String): java.io.InputStream =
                         java.io.ByteArrayInputStream(saved.getValue(coreReferenceId))
-                    override fun deleteRevision(revisionId: String) = Unit
+                    override fun purgeRevision(revisionId: String) = true
                 }
                 val builder = com.refinvest.core.tradingreview.application.TradingAnalyticsInputBuilder(
                     analyticsReader, artifacts, object : TradingMemberProvider {
@@ -1402,7 +1487,7 @@ class PostgresTradingReviewStoreTest {
             "SELECT count(*) FROM trading_normalization_result_staging", Long::class.java))
         review.insert(TradingDeletion(904, MemberId(1), "TRADING_IMPORT_SESSION", session.id.value,
             "IMPORT_SUBTREE", "REQUESTED", 1, 0, 0, now, now, now, now.plusSeconds(30L * 24 * 3600)))
-        TradingDeletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(3), ZoneOffset.UTC)).purgePending()
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(3), ZoneOffset.UTC)).purgePending()
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
         val ack = assertNotNull(tx.execute { results.claimAck(now.plusSeconds(4),
             java.time.Duration.ofSeconds(45), UUID.randomUUID().toString()) })
@@ -1753,7 +1838,7 @@ class PostgresTradingReviewStoreTest {
         assertNull(results.publisher(now).find(storedId, MemberId(1)))
         review.insert(TradingDeletion(996, MemberId(1), "TRADING_IMPORT_SESSION", session.id.value,
             "IMPORT_SUBTREE", "REQUESTED", 1, 0, 0, now, now, now, now.plusSeconds(30L * 24 * 3600)))
-        TradingDeletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(5), ZoneOffset.UTC)).purgePending()
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(5), ZoneOffset.UTC)).purgePending()
         assertNull(review.find(book.id, book.owner)!!.latestLedgerRevisionId)
         assertFalse(review.update(renamedBook.rename("Stale before purge", now.plusSeconds(7))))
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
@@ -2205,7 +2290,7 @@ class PostgresTradingReviewStoreTest {
             transactions.execute { service.create(account.id, "Blocked", TradingProductFamily.LINEAR_PERPETUAL,
                 TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "new-book") }
         }.httpStatus)
-        TradingDeletionWorker(jdbc, transactions, emptyStorage(), clock).purgePending()
+        deletionWorker(jdbc, transactions, emptyStorage(), clock).purgePending()
         assertEquals("COMPLETED", service.get(deletion.id).state)
         assertEquals(410, assertFailsWith<TradingFailure> { service.get(book.id) }.httpStatus)
         member.id = MemberId(2)
@@ -2228,9 +2313,10 @@ class PostgresTradingReviewStoreTest {
             "REQUESTED", 1, 0, 1, now, now, now, now.plusSeconds(30L * 24 * 3600)))
         jdbc.execute("CREATE TABLE blocking_child (id BIGINT PRIMARY KEY, book_id BIGINT NOT NULL REFERENCES trading_books(id))")
         jdbc.update("INSERT INTO blocking_child(id, book_id) VALUES (1, 302)")
-        val worker = TradingDeletionWorker(jdbc, TransactionTemplate(DataSourceTransactionManager(dataSource)),
-            emptyStorage(), Clock.fixed(now, ZoneOffset.UTC))
-        repeat(5) { worker.purgePending() }
+        repeat(5) { attempt ->
+            deletionWorker(jdbc, TransactionTemplate(DataSourceTransactionManager(dataSource)),
+                emptyStorage(), Clock.fixed(now.plusSeconds(attempt * 100L), ZoneOffset.UTC)).purgePending()
+        }
         val result = store.find(303L, MemberId(1))!!
         assertEquals("FAILED", result.state)
         assertEquals("DELETION_PARTIALLY_COMPLETED", result.failureCode)
@@ -2296,8 +2382,8 @@ class PostgresTradingReviewStoreTest {
         assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
         val rawDelete = transactions.execute { service.deleteArtifact(position.artifact.id, "delete-raw") }
         assertEquals(rawDelete.id, transactions.execute { service.deleteArtifact(position.artifact.id, "delete-raw-again") }.id)
-        TradingDeletionWorker(jdbc, transactions, storage, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
-        assertEquals("PURGING_OBJECTS", accountStore.find(rawDelete.id, MemberId(1))?.state)
+        deletionWorker(jdbc, transactions, storage, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
+        assertEquals("COMPLETED", accountStore.find(rawDelete.id, MemberId(1))?.state)
         assertFalse(storage.exists(position.artifact.objectKey!!))
         assertFalse(service.get(session.id).session.canValidate(importStore.list(session.id)))
         assertEquals(null, jdbc.queryForObject("SELECT wrapped_dek FROM trading_source_artifacts WHERE id=?",
@@ -2314,8 +2400,8 @@ class PostgresTradingReviewStoreTest {
             assertEquals("RESOURCE_DELETED", failure.code)
         }
         assertCreateReplayIsGone()
-        TradingDeletionWorker(jdbc, transactions, storage, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
-        assertEquals("PURGING_OBJECTS", accountStore.find(deletion.id, MemberId(1))?.state)
+        deletionWorker(jdbc, transactions, storage, Clock.fixed(now, ZoneOffset.UTC)).purgePending()
+        assertEquals("COMPLETED", accountStore.find(deletion.id, MemberId(1))?.state)
         assertFalse(storage.exists(trade.artifact.objectKey!!))
         assertFalse(storage.exists(position.artifact.objectKey!!))
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
@@ -2459,10 +2545,10 @@ class PostgresTradingReviewStoreTest {
             assertEquals("RESOURCE_STATE_CONFLICT", (outcome.exceptionOrNull() as TradingFailure).code)
             assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
             java.nio.file.Files.list(root.resolve("staging")).use { assertEquals(0L, it.count()) }
-            java.nio.file.Files.list(root.resolve("objects")).use { assertEquals(0L, it.count()) }
-            TradingDeletionWorker(jdbc, TransactionTemplate(DataSourceTransactionManager(dataSource)), storage,
+            java.nio.file.Files.walk(root.resolve("objects")).use { assertEquals(0L, it.filter(java.nio.file.Files::isRegularFile).count()) }
+            deletionWorker(jdbc, TransactionTemplate(DataSourceTransactionManager(dataSource)), storage,
                 Clock.fixed(now, ZoneOffset.UTC)).purgePending()
-            assertEquals("PURGING_OBJECTS", reviewStore.find(deletion.id, MemberId(1))?.state)
+            assertEquals("COMPLETED", reviewStore.find(deletion.id, MemberId(1))?.state)
         } finally { resume.countDown(); executor.shutdownNow() }
     }
 
@@ -2826,6 +2912,37 @@ class PostgresTradingReviewStoreTest {
         jdbc.update("INSERT INTO members(id, role, created_at) VALUES (2, 'USER', CURRENT_TIMESTAMP)")
     }
 
+    private fun deletionWorker(jdbc: JdbcTemplate, tx: TransactionTemplate, storage: RawArtifactStorage,
+                               clock: Clock, analytics: TradingAnalyticsArtifactStore? = null,
+                               runtimeClient: TradingRuntimeDeletionClient? = null): TradingDeletionWorker {
+        val workspaces = object : com.refinvest.core.tradingreview.port.deletion.TradingArtifactWorkspaces {
+            override fun acquire(scope: com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope) = error("not used")
+            override fun purge(scope: com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope) = true
+            override fun cleanupOrphans(olderThan: Instant, limit: Int) = 0
+        }
+        val files = analytics ?: object : TradingAnalyticsArtifactStore {
+            override fun put(revisionId: String, role: String, mediaType: String, write: (java.io.OutputStream) -> Unit) = error("not used")
+            override fun open(coreReferenceId: String) = error("not used")
+            override fun purgeRevision(revisionId: String) = true
+        }
+        val runtime = object : com.refinvest.core.tradingreview.port.deletion.TradingRuntimeDeletionClient {
+            override fun purge(command: com.refinvest.core.tradingreview.port.deletion.TradingRuntimeDeletion): TradingRuntimeDeletionOutcome {
+                check(!org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+                return TradingRuntimeDeletionOutcome.Absent(clock.instant())
+            }
+        }
+        val legacy = object : com.refinvest.core.tradingreview.port.deletion.LegacyTradingTemporaryCopies {
+            override fun absent() = true
+        }
+        val ids = object : TradingIdGenerator {
+            override fun accountId() = error("not used")
+            override fun bookId() = error("not used")
+            override fun deletionId() = error("not used")
+        }
+        return TradingDeletionWorker(com.refinvest.core.tradingreview.application.TradingDeletionService(
+            JdbcTradingDeletionWorkStore(jdbc, clock), tx, storage, files, workspaces, runtimeClient ?: runtime, legacy, clock, ids))
+    }
+
     private fun withDatabase(applyPinMigration: Boolean = true, applyDeletionMigration: Boolean = true, test: (Connection) -> Unit) {
         val url = requireNotNull(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"))
         val user = requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_USER"))
@@ -2899,6 +3016,9 @@ class PostgresTradingReviewStoreTest {
                         "/db/migration/V13__trading_deletion_checkpoints.sql")!!
                         .bufferedReader().use { it.readText() }
                     splitSqlStatements(deletionMigration).forEach(statement::execute)
+                    val leases = javaClass.getResourceAsStream("/db/migration/V14__trading_deletion_execution_leases.sql")!!
+                        .bufferedReader().use { it.readText() }
+                    splitSqlStatements(leases).forEach(statement::execute)
                 }
                 test(connection)
             } finally {

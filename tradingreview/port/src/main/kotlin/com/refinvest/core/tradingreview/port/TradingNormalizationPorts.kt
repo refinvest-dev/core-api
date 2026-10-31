@@ -8,14 +8,8 @@ import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import java.io.InputStream
-import java.nio.file.Files
-import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
-import javax.crypto.Cipher
-import javax.crypto.CipherInputStream
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 
 data class ArtifactReadGrant(
     val coreArtifactId: String,
@@ -102,25 +96,10 @@ sealed interface NormalizationResultLookup {
 }
 
 /** A temporary HTTP entity body. Production downloads use encrypted spool bytes. */
-class NormalizationPayloadFile(
-    val path: Path, val byteSize: Long, val sha256: String,
-    private val spoolKey: ByteArray? = null,
-    private val spoolIv: ByteArray? = null,
-) : AutoCloseable {
-    fun open(): InputStream {
-        val key = spoolKey ?: return Files.newInputStream(path)
-        val iv = requireNotNull(spoolIv)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
-        return CipherInputStream(Files.newInputStream(path), cipher)
-    }
-    override fun close() {
-        try { Files.deleteIfExists(path) }
-        finally {
-            spoolKey?.fill(0)
-            spoolIv?.fill(0)
-        }
-    }
+interface NormalizationPayloadFile : AutoCloseable {
+    val byteSize: Long
+    val sha256: String
+    fun open(): InputStream
 }
 
 sealed interface NormalizationPayloadLookup {

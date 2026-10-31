@@ -8,6 +8,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope
+import com.refinvest.core.tradingreview.port.deletion.TradingArtifactWorkspaces
+import com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId
+import java.io.FilterInputStream
 import java.io.FilterOutputStream
 import java.io.InputStream
 import java.io.OutputStream
@@ -29,7 +33,8 @@ import java.util.UUID
 
 /** Private immutable content-addressed storage; grants and runtime locators are separate. */
 class LocalTradingAnalyticsArtifactStore(rootPath: Path, private val maximumBytes: Long,
-                                        private val encryptionKey: SecretKey) :
+                                        private val encryptionKey: SecretKey,
+                                        private val workspaces: TradingArtifactWorkspaces = LocalTradingArtifactWorkspaces(rootPath.resolve(".workspaces"))) :
     TradingAnalyticsArtifactStore {
     init { require(maximumBytes > 0) }
     private val root = Files.createDirectories(rootPath.toAbsolutePath()).toRealPath()
@@ -41,26 +46,36 @@ class LocalTradingAnalyticsArtifactStore(rootPath: Path, private val maximumByte
         require(parts.size == 3 && parts[1] in setOf("ledgerRevisionContent", "reconciliationManifest") &&
             Regex("[0-9a-f]{64}").matches(parts[2]))
         val revision = UUID.fromString(parts[0]).toString()
-        val directory = checkedDirectory(root.resolve(revision))
-        val file = Files.newInputStream(directory.resolve("${parts[1]}-${parts[2]}.json"))
+        val lease = workspaces.acquire(TradingArtifactScope.Revision(LedgerRevisionId(UUID.fromString(revision))))
         try {
-            val header = file.readNBytes(magic.size + 12)
-            require(header.size == magic.size + 12 &&
-                header.copyOfRange(0, magic.size).contentEquals(magic))
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, encryptionKey,
-                GCMParameterSpec(128, header.copyOfRange(magic.size, header.size)))
-            cipher.updateAAD("$revision:${parts[1]}".toByteArray(Charsets.UTF_8))
-            return CipherInputStream(file, cipher)
-        } catch (failure: Exception) {
-            file.close()
-            throw failure
-        }
+            val directory = checkedDirectory(root.resolve(revision))
+            val file = Files.newInputStream(directory.resolve("${parts[1]}-${parts[2]}.json"))
+            try {
+                val header = file.readNBytes(magic.size + 12)
+                require(header.size == magic.size + 12 &&
+                    header.copyOfRange(0, magic.size).contentEquals(magic))
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, encryptionKey,
+                    GCMParameterSpec(128, header.copyOfRange(magic.size, header.size)))
+                cipher.updateAAD("$revision:${parts[1]}".toByteArray(Charsets.UTF_8))
+                return object : FilterInputStream(CipherInputStream(file, cipher)) {
+                    override fun read(): Int { lease.checkActive(); return super.read() }
+                    override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                        lease.checkActive(); return super.read(bytes, offset, length)
+                    }
+                    override fun close() { try { super.close() } finally { lease.close() } }
+                }
+            } catch (failure: Exception) {
+                file.close()
+                throw failure
+            }
+        } catch (failure: Exception) { lease.close(); throw failure }
     }
 
-    override fun deleteRevision(revisionId: String) {
+    override fun purgeRevision(revisionId: String): Boolean {
+        if (!workspaces.purge(TradingArtifactScope.Revision(LedgerRevisionId(UUID.fromString(revisionId))))) return false
         val directory = root.resolve(UUID.fromString(revisionId).toString())
-        if (!Files.exists(directory)) return
+        if (!Files.exists(directory)) return true
         Files.newDirectoryStream(checkedDirectory(directory)).use { entries ->
             for (entry in entries) {
                 val name = entry.fileName.toString()
@@ -71,61 +86,68 @@ class LocalTradingAnalyticsArtifactStore(rootPath: Path, private val maximumByte
             }
         }
         Files.deleteIfExists(directory)
+        return !Files.exists(directory)
     }
 
     override fun put(revisionId: String, role: String, mediaType: String,
                      write: (OutputStream) -> Unit): AnalyticsInputArtifact {
         val revision = UUID.fromString(revisionId).toString()
         require(role in setOf("ledgerRevisionContent", "reconciliationManifest"))
-        val directory = checkedDirectory(Files.createDirectories(root.resolve(revision)))
-        val temporary = Files.createTempFile(directory, ".building-", ".tmp")
-        try {
-            val digest = MessageDigest.getInstance("SHA-256")
-            var size = 0L
-            val nonce = ByteArray(12).also(random::nextBytes)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, encryptionKey, GCMParameterSpec(128, nonce))
-            // AAD uses stable revision/role; the final hash is unknown until serialization ends.
-            cipher.updateAAD("$revision:$role".toByteArray(Charsets.UTF_8))
-            Files.newOutputStream(temporary).use { file ->
-                file.write(magic)
-                file.write(nonce)
-                CipherOutputStream(file, cipher).use { encrypted ->
-                val counted = object : FilterOutputStream(encrypted) {
-                    override fun write(value: Int) {
-                        if (++size > maximumBytes) throw IllegalStateException("ANALYTICS_INPUT_TOO_LARGE")
-                        digest.update(value.toByte())
-                        out.write(value)
-                    }
-                    override fun write(bytes: ByteArray, offset: Int, length: Int) {
-                        if (length < 0 || size > maximumBytes - length)
-                            throw IllegalStateException("ANALYTICS_INPUT_TOO_LARGE")
-                        size += length
-                        digest.update(bytes, offset, length)
-                        out.write(bytes, offset, length)
-                    }
-                }
-                write(counted)
-                counted.flush()
-                }
-            }
-            if (size == 0L) throw IllegalStateException("ANALYTICS_INPUT_EMPTY")
-            val hash = HexFormat.of().formatHex(digest.digest())
-            val target = directory.resolve("$role-$hash.json")
-            FileChannel.open(temporary, StandardOpenOption.WRITE).use { it.force(true) }
-            Files.newDirectoryStream(directory, "$role-*.json").use { existing ->
-                if (existing.any { it != target })
-                    throw IllegalStateException("ANALYTICS_ARTIFACT_IDENTITY_CONFLICT")
-            }
+        val lease = workspaces.acquire(TradingArtifactScope.Revision(LedgerRevisionId(UUID.fromString(revision))))
+        return lease.use {
+            val directory = checkedDirectory(Files.createDirectories(root.resolve(revision)))
+            val temporary = Files.createTempFile(directory, ".building-", ".tmp")
             try {
-                Files.createLink(target, temporary)
-            } catch (_: FileAlreadyExistsException) {
-                if (plaintextIdentity("$revision:$role:$hash") != (size to hash))
-                    throw IllegalStateException("ANALYTICS_ARTIFACT_IDENTITY_CONFLICT")
+                val digest = MessageDigest.getInstance("SHA-256")
+                var size = 0L
+                val nonce = ByteArray(12).also(random::nextBytes)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.ENCRYPT_MODE, encryptionKey, GCMParameterSpec(128, nonce))
+                // AAD uses stable revision/role; the final hash is unknown until serialization ends.
+                cipher.updateAAD("$revision:$role".toByteArray(Charsets.UTF_8))
+                Files.newOutputStream(temporary).use { file ->
+                    file.write(magic)
+                    file.write(nonce)
+                    CipherOutputStream(file, cipher).use { encrypted ->
+                    val counted = object : FilterOutputStream(encrypted) {
+                        override fun write(value: Int) {
+                            lease.checkActive()
+                            if (++size > maximumBytes) throw IllegalStateException("ANALYTICS_INPUT_TOO_LARGE")
+                            digest.update(value.toByte())
+                            out.write(value)
+                        }
+                        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                            lease.checkActive()
+                            if (length < 0 || size > maximumBytes - length)
+                                throw IllegalStateException("ANALYTICS_INPUT_TOO_LARGE")
+                            size += length
+                            digest.update(bytes, offset, length)
+                            out.write(bytes, offset, length)
+                        }
+                    }
+                    write(counted)
+                    counted.flush()
+                    }
+                }
+                if (size == 0L) throw IllegalStateException("ANALYTICS_INPUT_EMPTY")
+                val hash = HexFormat.of().formatHex(digest.digest())
+                val target = directory.resolve("$role-$hash.json")
+                FileChannel.open(temporary, StandardOpenOption.WRITE).use { it.force(true) }
+                Files.newDirectoryStream(directory, "$role-*.json").use { existing ->
+                    if (existing.any { it != target })
+                        throw IllegalStateException("ANALYTICS_ARTIFACT_IDENTITY_CONFLICT")
+                }
+                lease.checkActive()
+                try {
+                    Files.createLink(target, temporary)
+                } catch (_: FileAlreadyExistsException) {
+                    if (plaintextIdentity("$revision:$role:$hash") != (size to hash))
+                        throw IllegalStateException("ANALYTICS_ARTIFACT_IDENTITY_CONFLICT")
+                }
+                return AnalyticsInputArtifact("$revision:$role:$hash", mediaType, size, hash)
+            } finally {
+                Files.deleteIfExists(temporary)
             }
-            return AnalyticsInputArtifact("$revision:$role:$hash", mediaType, size, hash)
-        } finally {
-            Files.deleteIfExists(temporary)
         }
     }
 
@@ -161,6 +183,7 @@ class TradingAnalyticsArtifactStorageConfiguration {
         @Value("\${refinvest.trading-review.analytics-artifacts.keystore-path}") keystorePath: String,
         @Value("\${refinvest.trading-review.analytics-artifacts.keystore-password}") password: String,
         @Value("\${refinvest.trading-review.analytics-artifacts.key-alias}") alias: String,
+        workspaces: TradingArtifactWorkspaces,
     ): TradingAnalyticsArtifactStore {
         val secret = password.toCharArray()
         val store = KeyStore.getInstance("PKCS12")
@@ -169,7 +192,7 @@ class TradingAnalyticsArtifactStorageConfiguration {
             store.getKey(alias, secret) as? SecretKey
                 ?: error("Configured analytics artifact key is unavailable")
         } finally { secret.fill('\u0000') }
-        return LocalTradingAnalyticsArtifactStore(Path.of(root), maximumBytes, key)
+        return LocalTradingAnalyticsArtifactStore(Path.of(root), maximumBytes, key, workspaces)
     }
 
     @Bean
@@ -181,6 +204,7 @@ class TradingAnalyticsArtifactStorageConfiguration {
                 throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
             override fun open(coreReferenceId: String): InputStream =
                 throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
-            override fun deleteRevision(revisionId: String) = Unit
+            override fun purgeRevision(revisionId: String): Boolean =
+                throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
         }
 }

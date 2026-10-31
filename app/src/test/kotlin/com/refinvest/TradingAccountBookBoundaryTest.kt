@@ -57,7 +57,7 @@ class TradingAccountBookBoundaryTest {
         listOf("account", "book", "importsession", "normalization", "ledger", "deletion").forEach { aggregate ->
             Files.walk(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/$aggregate")).use { files ->
                 files.filter { it.toString().endsWith(".kt") }.forEach { file ->
-                    assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|java\\.nio\\.file|javax\\.crypto").containsMatchIn(Files.readString(file)))
+                    assertFalse(Regex("org\\.springframework|java\\.(sql|net)|java\\.io\\.(?!(?:InputStream|OutputStream)\\b)|java\\.nio\\.file|javax\\.crypto").containsMatchIn(Files.readString(file)))
                 }
             }
         }

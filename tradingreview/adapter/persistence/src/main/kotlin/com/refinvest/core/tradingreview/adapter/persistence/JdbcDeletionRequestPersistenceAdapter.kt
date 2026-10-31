@@ -26,6 +26,6 @@ class JdbcDeletionRequestPersistenceAdapter(private val jdbc: JdbcTemplate) : De
     override fun find(id: DeletionRequestId, owner: MemberId): DeletionRequest? = DeletionRequestQueries(jdbc)
         .find("d.id=? AND d.owner_member_id=?", id.value, owner.value)
     override fun findByTarget(owner: MemberId, scope: DeletionScope): DeletionRequest? = DeletionRequestQueries(jdbc)
-        .find("d.owner_member_id=? AND d.target_type=? AND d.target_id=?",
+        .find("d.owner_member_id=? AND d.target_type=? AND d.target_id=? AND d.remediation_of IS NULL",
             owner.value, scope.targetType.name, scope.target.value)
 }

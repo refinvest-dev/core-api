@@ -83,6 +83,11 @@ class DeletionRequest private constructor(
             attempts = attempts, failure = "DELETION_PARTIALLY_COMPLETED")
     }
 
+    fun expire(now: Instant): DeletionRequest {
+        require(!state.terminal && !now.isBefore(requestedAt.plus(Duration.ofHours(24))))
+        return changed(now, DeletionRequestState.FAILED, failure = "DELETION_PARTIALLY_COMPLETED")
+    }
+
     /** Fence durable workset/item progress even while the component is only partially purged. */
     fun recordExecutionProgress(now: Instant): DeletionRequest {
         require(!state.terminal && state != DeletionRequestState.REQUESTED)
@@ -98,6 +103,13 @@ class DeletionRequest private constructor(
             requestedAt, now, backupDue, completed, failure, attempts, Math.addExact(version, 1), verified)
     }
     companion object {
+        fun remediation(id: DeletionRequestId, failed: DeletionRequest, now: Instant): DeletionRequest {
+            require(failed.state == DeletionRequestState.FAILED && !now.isBefore(failed.updatedAt))
+            return DeletionRequest(id, failed.owner, failed.scope, DeletionRequestState.REQUESTED,
+                failed.deletionGeneration, failed.affectedResources, failed.revokedAt, now, now,
+                now.plus(Duration.ofDays(30)), null, null, 0, 0, emptyMap())
+        }
+
         fun request(id: DeletionRequestId, owner: MemberId, scope: DeletionScope, generation: Long,
                     resources: DeletionAffectedResources, now: Instant): DeletionRequest {
             resources.requireTarget(scope)
