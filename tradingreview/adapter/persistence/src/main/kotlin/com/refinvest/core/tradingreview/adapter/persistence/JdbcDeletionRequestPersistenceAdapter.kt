@@ -11,7 +11,8 @@ import org.springframework.stereotype.Repository
 @Repository
 class JdbcDeletionRequestPersistenceAdapter(private val jdbc: JdbcTemplate) : DeletionRequestStore {
     override fun insert(request: DeletionRequest) {
-        require(request.state == DeletionRequestState.REQUESTED && request.attemptCount == 0 && request.failureCode == null)
+        require(request.state == DeletionRequestState.REQUESTED && request.attemptCount == 0 && request.failureCode == null &&
+            request.version == 0L && request.verifiedAbsent.isEmpty())
         val r = DeletionRequestPersistenceMapper.toRecord(request)
         jdbc.update("""INSERT INTO trading_deletion_requests (id, owner_member_id, target_type, target_id,
             requested_scope, state, deletion_generation, account_count, book_count, revoked_at, requested_at,
@@ -22,11 +23,9 @@ class JdbcDeletionRequestPersistenceAdapter(private val jdbc: JdbcTemplate) : De
             Timestamp.from(r.backupPurgeDueAt), r.importSessionCount, r.artifactCount, r.attemptCount,
             r.completedAt?.let(Timestamp::from), r.failureCode)
     }
-    override fun find(id: DeletionRequestId, owner: MemberId): DeletionRequest? = jdbc.query(
-        "SELECT * FROM trading_deletion_requests WHERE id=? AND owner_member_id=?",
-        { r, _ -> DeletionRequestPersistenceMapper.toDomain(DeletionRequestRows.read(r)) }, id.value, owner.value).firstOrNull()
-    override fun findByTarget(owner: MemberId, scope: DeletionScope): DeletionRequest? = jdbc.query(
-        "SELECT * FROM trading_deletion_requests WHERE owner_member_id=? AND target_type=? AND target_id=?",
-        { r, _ -> DeletionRequestPersistenceMapper.toDomain(DeletionRequestRows.read(r)) },
-        owner.value, scope.targetType.name, scope.target.value).firstOrNull()
+    override fun find(id: DeletionRequestId, owner: MemberId): DeletionRequest? = DeletionRequestQueries(jdbc)
+        .find("d.id=? AND d.owner_member_id=?", id.value, owner.value)
+    override fun findByTarget(owner: MemberId, scope: DeletionScope): DeletionRequest? = DeletionRequestQueries(jdbc)
+        .find("d.owner_member_id=? AND d.target_type=? AND d.target_id=?",
+            owner.value, scope.targetType.name, scope.target.value)
 }
