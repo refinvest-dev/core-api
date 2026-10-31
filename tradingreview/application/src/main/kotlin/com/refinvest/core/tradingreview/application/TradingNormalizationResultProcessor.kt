@@ -1,6 +1,11 @@
 package com.refinvest.core.tradingreview.application
 
 import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
+import com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionResult
+import com.refinvest.core.tradingreview.domain.valueobject.LedgerSectionDigest
+import com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionMetadata
+import com.refinvest.core.tradingreview.port.ledger.*
+import com.refinvest.core.tradingreview.port.normalization.NormalizationDispatchLease
 import com.refinvest.core.tradingreview.port.normalization.TradingNormalizationRuntime
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
@@ -36,6 +41,8 @@ class TradingNormalizationResultProcessor(
     private val mapper: ObjectMapper,
     private val jitter: TradingRetryJitter,
     private val transition: TradingNormalizationTransitionGate,
+    private val publications: TradingLedgerPublication,
+    private val revisionIds: LedgerRevisionIdGenerator,
     @Value("\${refinvest.trading-review.normalization.delivery.parser-max-depth:64}")
     parserMaxDepth: Int = 64,
     @Value("\${refinvest.trading-review.normalization.delivery.parser-max-string-length:1048576}")
@@ -210,6 +217,17 @@ class TradingNormalizationResultProcessor(
                 as Map<String, Any?>
             val independentlyVerified = stagedVerifier.verify(persistedBase, run, dispatch.id)
             comparePayloadDescriptor(independentlyVerified, descriptor)
+            val revision = LedgerRevision.prepare(revisionIds.revisionId(), MemberId(run.input.ownerId),
+                run.id, run.input.tradingBookId, run.input.importSessionId, requireNotNull(run.inputIdentity),
+                LedgerRevisionResult(run.resultVersionPin, independentlyVerified.resultHash,
+                    independentlyVerified.ledgerContentHash, independentlyVerified.manifestHash,
+                    independentlyVerified.counts, independentlyVerified.sectionDigests.map { item ->
+                        LedgerSectionDigest(item["sectionType"] as String, (item["itemCount"] as Number).toLong(),
+                            item["hashSpecificationVersion"] as String, item["sectionHash"] as String)
+                    }), LedgerRevisionMetadata(mapper.writeValueAsString(independentlyVerified.manifestBase),
+                    mapper.writeValueAsString(independentlyVerified.coverages),
+                    mapper.writeValueAsString(independentlyVerified.capabilities),
+                    mapper.writeValueAsString(independentlyVerified.qualityBase)))
             var transitionHeld = false
             val published = transactions.execute {
                 if (!transition.publicationAllowed()) {
@@ -218,16 +236,8 @@ class TradingNormalizationResultProcessor(
                         clock.instant().plusSeconds(5), clock.instant())
                     return@execute false
                 }
-                val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
-                if (locked == null || !isCurrent(run, locked)) return@execute false
-                if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) return@execute false
-                results.markValidated(run.id.value, clock.instant())
-                results.publish(run, dispatch, worker, descriptor,
-                    mapper.writeValueAsString(independentlyVerified.manifestBase),
-                    mapper.writeValueAsString(independentlyVerified.coverages),
-                    mapper.writeValueAsString(independentlyVerified.capabilities),
-                    mapper.writeValueAsString(independentlyVerified.qualityBase),
-                    independentlyVerified.ledgerContentHash, clock.instant())
+                publications.publish(LedgerPublication(revision, run, dispatch, descriptor,
+                    NormalizationDispatchLease(dispatch.id, worker, clock.instant())))
             } == true
             if (!transitionHeld && !published && transactions.execute {
                     results.hasReadyLease(dispatch.id, worker, clock.instant()) } == true)

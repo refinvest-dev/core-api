@@ -1,6 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
 import com.refinvest.core.tradingreview.port.normalization.*
+import com.refinvest.core.tradingreview.port.ledger.*
 import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
 import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
 import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultDeliveryPolicy
@@ -710,7 +711,7 @@ class PostgresTradingReviewStoreTest {
         val payload = vector.getValue("terminalPayload") as Map<String, Any?>
         @Suppress("UNCHECKED_CAST")
         val manifest = payload.getValue("reconciliationManifest") as Map<String, Any?>
-        val results = JdbcTradingNormalizationResultStore(jdbc, mapper)
+        val results = TradingLedgerTestStore(jdbc, mapper)
         @Suppress("UNCHECKED_CAST")
         val descriptor = NormalizationResultDescriptor("job-v2", dispatch.id, runId,
             "payload-v2", 1, "a".repeat(64), token, 0, run.inputFingerprint,
@@ -901,12 +902,14 @@ class PostgresTradingReviewStoreTest {
                 return NormalizationAckOutcome.Accepted
             }
         }
-        val results = JdbcTradingNormalizationResultStore(jdbc, mapper)
+        val results = TradingLedgerTestStore(jdbc, mapper)
         if (mismatchedDescriptor || mismatchedPayload) {
             val processor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
                 runs, imports, review, results, client, transactions,
                 Clock.fixed(now, ZoneOffset.UTC), mapper,
-                object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc))
+                object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc) , publications = results, revisionIds = object : LedgerRevisionIdGenerator {
+                override fun revisionId() = com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId(UUID.randomUUID())
+            })
             assertTrue(processor.processOne())
             assertEquals(1, descriptorCalls)
             assertEquals(if (mismatchedPayload) 1 else 0, downloadCalls)
@@ -922,16 +925,15 @@ class PostgresTradingReviewStoreTest {
                 "SELECT count(*) FROM trading_normalization_ack_dispatches", Long::class.java))
             return@withDatabase
         }
-        val interrupted = object : TradingNormalizationResultStore by results {
-            override fun publish(run: NormalizationRun, dispatch: NormalizationDispatch, workerId: String,
-                                 descriptor: NormalizationResultDescriptor, manifestJson: String,
-                                 coverageJson: String, capabilityJson: String, qualityJson: String,
-                                 ledgerContentHash: String, now: Instant): Boolean =
+        val interrupted = object : TradingLedgerPublication by results {
+            override fun publish(publication: LedgerPublication): Boolean =
                 error("simulated process failure before publication commit")
         }
         val processor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
-            runs, imports, review, interrupted, client, transactions, Clock.fixed(now, ZoneOffset.UTC), mapper,
-            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc))
+            runs, imports, review, results, client, transactions, Clock.fixed(now, ZoneOffset.UTC), mapper,
+            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc) , publications = interrupted, revisionIds = object : LedgerRevisionIdGenerator {
+                override fun revisionId() = com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId(UUID.randomUUID())
+            })
         assertTrue(processor.processOne())
         assertEquals(TradingImportStatus.VALIDATING, imports.find(session.id, MemberId(1))?.status)
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
@@ -939,7 +941,9 @@ class PostgresTradingReviewStoreTest {
         val recoveredProcessor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
             runs, imports, review, results, client, transactions,
             Clock.fixed(now.plusSeconds(1), ZoneOffset.UTC), mapper,
-            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc))
+            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc) , publications = results, revisionIds = object : LedgerRevisionIdGenerator {
+                override fun revisionId() = com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId(UUID.randomUUID())
+            })
         assertTrue(recoveredProcessor.processOne())
         assertEquals(1, descriptorCalls)
         assertEquals(1, downloadCalls)
@@ -1005,7 +1009,9 @@ class PostgresTradingReviewStoreTest {
         val ackRecovered = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
             runs, imports, review, results, client, transactions,
             Clock.fixed(now.plusSeconds(47), ZoneOffset.UTC), mapper,
-            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc))
+            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc) , publications = results, revisionIds = object : LedgerRevisionIdGenerator {
+                override fun revisionId() = com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId(UUID.randomUUID())
+            })
         assertTrue(ackRecovered.acknowledgeOne())
         assertEquals(2, acknowledgeCalls)
         assertEquals("ACKNOWLEDGED", jdbc.queryForObject(
@@ -1061,9 +1067,11 @@ class PostgresTradingReviewStoreTest {
                 error("No ACK after timeout")
         }
         val processor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
-            runs, imports, review, JdbcTradingNormalizationResultStore(jdbc, mapper), client,
+            runs, imports, review, TradingLedgerTestStore(jdbc, mapper), client,
             transactions, Clock.fixed(now, ZoneOffset.UTC), mapper,
-            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc))
+            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc) , publications = TradingLedgerTestStore(jdbc, mapper), revisionIds = object : LedgerRevisionIdGenerator {
+                override fun revisionId() = com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId(UUID.randomUUID())
+            })
         assertTrue(processor.processOne())
         assertEquals(TradingImportStatus.PROCESSING_FAILED, imports.find(session.id, MemberId(1))?.status)
         assertEquals("TERMINAL_FAILURE", jdbc.queryForObject(
@@ -1119,7 +1127,7 @@ class PostgresTradingReviewStoreTest {
         jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-stale' WHERE id=?::uuid", runId)
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY',attempt_count=10 WHERE id=?::uuid", dispatch.id)
         val current = assertNotNull(runs.findRun(runId))
-        val results = JdbcTradingNormalizationResultStore(jdbc, mapper)
+        val results = TradingLedgerTestStore(jdbc, mapper)
         val worker = UUID.randomUUID().toString()
         val claimed = assertNotNull(tx.execute { results.claimReady(now, java.time.Duration.ofMinutes(15), worker) })
         assertEquals(1, claimed.attemptCount)
@@ -1151,7 +1159,15 @@ class PostgresTradingReviewStoreTest {
     }
 
     @Test
-    fun publicationRollsBackOnMissingEvidenceThenCreatesOneRevisionAndAck() = withDatabase { connection ->
+    fun publicationRollsBackOnMissingEvidenceThenCreatesOneRevisionAndAck() = verifyLedgerPublication(false)
+
+    @Test
+    fun publicationWaitingForABookLockRejectsALeaseThatExpiresWhileWaiting() = verifyLedgerPublication(true)
+
+    @Test
+    fun secondSessionPublishesOnlyItsOwnMembershipAndPreservesTheFirstRevision() = verifyLedgerPublication(false, true)
+
+    private fun verifyLedgerPublication(waitForExpiry: Boolean, secondSession: Boolean = false) = withDatabase { connection ->
         val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
         val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
         val tx = TransactionTemplate(DataSourceTransactionManager(SingleConnectionDataSource(connection, true)))
@@ -1196,17 +1212,29 @@ class PostgresTradingReviewStoreTest {
         jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-1' WHERE id=?::uuid", runId)
         jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY' WHERE id=?::uuid", dispatch.id)
         val current = assertNotNull(runs.findRun(runId))
-        val results = JdbcTradingNormalizationResultStore(jdbc, mapper)
+        val results = TradingLedgerTestStore(jdbc, mapper)
         val worker = UUID.randomUUID().toString()
         val claimed = assertNotNull(tx.execute { results.claimReady(now, java.time.Duration.ofMinutes(15), worker) })
         assertTrue(tx.execute { results.hasReadyLease(claimed.id, worker, now) } == true)
         assertFalse(tx.execute { results.hasReadyLease(claimed.id, worker,
             now.plusSeconds(16 * 60)) } == true)
+        val coverageJson = """[{"artifactRole":"POSITION_HISTORY"},{"artifactRole":"TRADE_HISTORY"}]"""
+        val counts = mapOf("canonicalRecordCount" to 1L, "sourceEvidenceSnapshotCount" to 1L,
+            "reviewUnitCount" to 1L, "positionAllocationCount" to 1L, "artifactCoverageCount" to 2L,
+            "excludedReviewUnitCount" to 0L, "capabilityCount" to 0L, "validationIssueCount" to 2L,
+            "reconciliationMatchCount" to 0L, "reconciliationIssueCount" to 0L)
+        val digests = com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionResult.COUNT_SECTIONS
+            .filterValues { it != null }.map { (count, section) -> mapOf("sectionType" to section,
+                "itemCount" to counts.getValue(count), "sectionHash" to "f".repeat(64),
+                "hashSpecificationVersion" to NormalizationResultVersionPin.V1.hashSpecificationVersion) } +
+            listOf("QUALITY_REPORT", "RECONCILIATION_MANIFEST").map { section -> mapOf(
+                "sectionType" to section, "itemCount" to 1L, "sectionHash" to (if (section == "RECONCILIATION_MANIFEST") "d" else "f").repeat(64),
+                "hashSpecificationVersion" to NormalizationResultVersionPin.V1.hashSpecificationVersion) }
         val descriptor = NormalizationResultDescriptor("job-1", dispatch.id, runId, "payload-1", 100,
             "a".repeat(64), token, 0, run.inputFingerprint, identity.hashSpecificationVersion,
             identity.targetVersionSet.toWireValue(), "TRADING_NORMALIZATION_RESULT_V1",
-            "TRADING_NORMALIZATION_RESULT_HASH_V1", mapOf("canonicalRecordCount" to 1),
-            emptyList(), "d".repeat(64), "e".repeat(64), now.plusSeconds(3600),
+            "TRADING_NORMALIZATION_RESULT_HASH_V1", counts,
+            digests, "d".repeat(64), "e".repeat(64), now.plusSeconds(3600),
             "RESULT_DELIVERY_V1", "identity")
         results.beginStage(current, descriptor, now)
         results.saveStageBase(runId, """{"status":"COMPLETED","canonicalRecords":[]}""")
@@ -1219,6 +1247,10 @@ class PostgresTradingReviewStoreTest {
         }
         fun stage(section: String, id: String, json: String) = results.stageItem(runId,
             NormalizationStagedItem(section, id, "f".repeat(64), json))
+        stage("ARTIFACT_COVERAGES", "POSITION_HISTORY", """{"artifactRole":"POSITION_HISTORY"}""")
+        stage("ARTIFACT_COVERAGES", "TRADE_HISTORY", """{"artifactRole":"TRADE_HISTORY"}""")
+        stage("QUALITY_REPORT", "QUALITY_REPORT", "{}")
+        stage("RECONCILIATION_MANIFEST", "RECONCILIATION_MANIFEST", "{}")
         stage("CANONICAL_RECORDS", "record-1",
             """{"recordId":"record-1","sourceEvidenceSnapshotId":"snapshot-1","recordHash":"${"a".repeat(64)}"}""")
         assertFailsWith<NormalizationResultStoreFailure> {
@@ -1236,7 +1268,7 @@ class PostgresTradingReviewStoreTest {
         results.markValidated(runId, now)
         assertNull(results.publishedForSession(session.id, MemberId(1)))
         assertFailsWith<Exception> {
-            tx.execute { results.publish(current, claimed, worker, descriptor, "{}", "[]", "[]", "{}",
+            tx.execute { results.publish(current, claimed, worker, descriptor, "{}", coverageJson, "[]", "{}",
                 "f".repeat(64), now) }
         }
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
@@ -1245,6 +1277,91 @@ class PostgresTradingReviewStoreTest {
             """{"snapshotId":"snapshot-1","coreArtifactId":"994","artifactRole":"${inputs.first().role.name}","sourceRowNumber":1,"sourceRowHash":"${"a".repeat(64)}","maskingPolicyVersion":"MASK_V1"}""")
         assertFalse(results.hasInvalidEvidence(current))
         assertEquals(1L, results.stagedCounts(runId)["SOURCE_EVIDENCE_SNAPSHOTS"])
+        val request = results.request(current, claimed, worker, descriptor, "{}", coverageJson,
+            "[]", "{}", "f".repeat(64), now)
+        fun snapshot() = listOf(
+            jdbc.queryForMap("SELECT status,version,created_ledger_revision_id FROM trading_import_sessions WHERE id=?", session.id.value),
+            jdbc.queryForMap("SELECT version,latest_ledger_revision_id FROM trading_books WHERE id=?", book.id.value),
+            jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java),
+            jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revision_records", Long::class.java),
+            jdbc.queryForObject("SELECT count(*) FROM trading_normalization_ack_dispatches", Long::class.java),
+            jdbc.queryForMap("SELECT state,validated_at FROM trading_normalization_result_staging WHERE run_id=?::uuid", runId))
+        val before = snapshot()
+        assertFailsWith<IllegalStateException> { results.publish(request) }
+        val altered = results.request(current, claimed, worker, descriptor.copy(resultHash = "0".repeat(64)),
+            "{}", coverageJson, "[]", "{}", "f".repeat(64), now)
+        val changedMetadata = results.request(current, claimed, worker, descriptor,
+            "{}", coverageJson, "[]", """{"unsupported":true}""", "f".repeat(64), now)
+        val staleRun = NormalizationRunPersistenceMapper.toDomain(
+            NormalizationRunPersistenceMapper.toRecord(current).copy(version = current.version + 1))
+        listOf(altered, changedMetadata, request.copy(descriptor = descriptor.copy(payloadId = "different-payload")),
+            request.copy(descriptor = descriptor.copy(payloadSha256 = "0".repeat(64))),
+            request.copy(lease = request.lease.copy(owner = UUID.randomUUID().toString())),
+            request.copy(run = staleRun)).forEach { invalid ->
+            assertFalse(tx.execute { results.publish(invalid) } == true)
+            assertEquals(before, snapshot())
+        }
+        assertFalse(tx.execute { results.publisher(now.plusSeconds(900)).publish(request) } == true)
+        assertEquals(before, snapshot())
+        jdbc.update("UPDATE trading_normalization_transition SET paused=true WHERE singleton")
+        assertFalse(tx.execute { results.publish(request) } == true)
+        assertEquals(before, snapshot())
+        jdbc.update("UPDATE trading_normalization_transition SET paused=false WHERE singleton")
+        tx.execute { status ->
+            assertTrue(results.publish(request))
+            status.setRollbackOnly()
+        }
+        assertEquals(before, snapshot())
+        if (waitForExpiry) {
+            val observedAt = java.util.concurrent.atomic.AtomicReference(now)
+            val liveClock = object : Clock() {
+                override fun instant() = observedAt.get()
+                override fun getZone() = ZoneOffset.UTC
+                override fun withZone(zone: java.time.ZoneId) = this
+            }
+            val backend = java.util.concurrent.atomic.AtomicInteger()
+            val ready = java.util.concurrent.CountDownLatch(1)
+            val executor = Executors.newSingleThreadExecutor()
+            connection.autoCommit = false
+            jdbc.queryForObject("SELECT id FROM trading_books WHERE id=? FOR UPDATE", Long::class.java, book.id.value)
+            try {
+                val waiting = executor.submit<Boolean> {
+                    DriverManager.getConnection(requireNotNull(System.getenv("TRADING_REVIEW_TEST_JDBC_URL")),
+                        requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_USER")),
+                        requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD"))).use { other ->
+                        other.schema = connection.schema
+                        val source = SingleConnectionDataSource(other, true)
+                        val otherJdbc = JdbcTemplate(source)
+                        backend.set(otherJdbc.queryForObject("SELECT pg_backend_pid()", Int::class.java)!!)
+                        ready.countDown()
+                        TransactionTemplate(DataSourceTransactionManager(source)).execute {
+                            JdbcLedgerRevisionPersistenceAdapter(otherJdbc, mapper, liveClock,
+                                JdbcTradingNormalizationTransitionGate(otherJdbc),
+                                JdbcTradingNormalizationResultStore(otherJdbc, mapper)).publish(request)
+                        } == true
+                    }
+                }
+                assertTrue(ready.await(5, TimeUnit.SECONDS))
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                var blocked = false
+                while (System.nanoTime() < deadline) {
+                    jdbc.execute("SELECT pg_stat_clear_snapshot()")
+                    blocked = jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid=? AND wait_event_type='Lock')",
+                        Boolean::class.java, backend.get()) == true
+                    if (blocked) break
+                    Thread.sleep(20)
+                }
+                assertTrue(blocked, "Publisher must actually wait for the Book lock")
+                observedAt.set(now.plusSeconds(900))
+                connection.commit()
+                assertFalse(waiting.get(10, TimeUnit.SECONDS))
+            } finally {
+                connection.rollback()
+                connection.autoCommit = true
+                executor.shutdownNow()
+            }
+            assertEquals(before, snapshot())
+        }
         val publicationGate = java.util.concurrent.CountDownLatch(1)
         val publishers = Executors.newFixedThreadPool(2)
         try {
@@ -1256,11 +1373,11 @@ class PostgresTradingReviewStoreTest {
                         requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD"))).use { publisherConnection ->
                         publisherConnection.schema = connection.schema
                         val publisherSource = SingleConnectionDataSource(publisherConnection, true)
-                        val publisherStore = JdbcTradingNormalizationResultStore(JdbcTemplate(publisherSource), mapper)
+                        val publisherStore = TradingLedgerTestStore(JdbcTemplate(publisherSource), mapper)
                         val publisherTx = TransactionTemplate(DataSourceTransactionManager(publisherSource))
                         publicationGate.await(5, TimeUnit.SECONDS)
                         publisherTx.execute { publisherStore.publish(current, claimed, worker, descriptor,
-                            "{}", "[]", "[]", "{}", "f".repeat(64), now) } == true
+                            "{}", coverageJson, "[]", "{}", "f".repeat(64), now) } == true
                     }
                 }
             }
@@ -1271,6 +1388,14 @@ class PostgresTradingReviewStoreTest {
         }
         assertEquals(TradingImportStatus.ACCEPTED, imports.find(session.id, MemberId(1))?.status)
         assertNotNull(results.publishedForSession(session.id, MemberId(1)))
+        val storedId = com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId(UUID.fromString(
+            jdbc.queryForObject("SELECT id::text FROM trading_ledger_revisions", String::class.java)))
+        val aggregate = assertNotNull(results.publisher(now).find(storedId, MemberId(1)))
+        assertEquals(current.id, aggregate.runId)
+        assertEquals(1L, aggregate.publication?.revisionNumber)
+        assertFalse(aggregate.metadata.manifestBaseJson.contains("unit-1"))
+        assertFalse(aggregate.metadata.qualityBaseJson.contains("supplementary"))
+        assertNull(results.publisher(now).find(storedId, MemberId(2)))
         assertNull(results.publishedForSession(session.id, MemberId(2)))
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
         val publishedJson = jdbc.queryForMap("""SELECT reconciliation_manifest_json::text AS manifest,
@@ -1286,8 +1411,8 @@ class PostgresTradingReviewStoreTest {
                 "0".repeat(64), runId)
         }
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_ack_dispatches", Long::class.java))
-        assertTrue(results.publish(current, claimed, worker, descriptor, "{}", "[]", "[]", "{}",
-            "f".repeat(64), now))
+        assertTrue(tx.execute { results.publish(current, claimed, worker, descriptor, "{}", coverageJson, "[]", "{}",
+            "f".repeat(64), now) } == true)
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
         val publishedBook = review.find(book.id, book.owner)!!
         val latestRevision = assertNotNull(publishedBook.latestLedgerRevisionId)
@@ -1296,6 +1421,67 @@ class PostgresTradingReviewStoreTest {
         assertTrue(review.update(publishedBook.rename("Renamed after publication", now.plusSeconds(1))))
         val renamedBook = review.find(book.id, book.owner)!!
         assertEquals(latestRevision, renamedBook.latestLedgerRevisionId)
+        if (secondSession) {
+            val nextSession = TradingImportSession.create(TradingImportSessionId(1001), renamedBook, "UTC", "UTC",
+                TradingPositionMode.ONE_WAY, TradingDataPolicy(), normalizationVersions, now)
+            imports.insert(nextSession)
+            val nextInputs = TradingArtifactRole.entries.mapIndexed { index, role ->
+                val id = TradingSourceArtifactId(1002L + index)
+                val sha = (if (index == 0) "c" else "d").repeat(64)
+                imports.seedArtifact(TradingSourceArtifact.restore(id, nextSession.id, role, null, "text/csv", 20,
+                    sha, "AUTO", "objects/${UUID.randomUUID()}", byteArrayOf(1), "test-v1",
+                    TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(3600), null, null, 0))
+                NormalizationArtifactInput(id, role, sha, 20, "text/csv", "AUTO")
+            }
+            val nextInput = input.copy(importSessionId = nextSession.id, artifacts = nextInputs)
+            val nextIdentity = NormalizationInputIdentity.fromPinnedInput(nextInput,
+                mapper.readValue(normalizationVersions, Map::class.java))
+            val nextRunId = NormalizationRunId(UUID.randomUUID().toString())
+            val nextToken = UUID.randomUUID().toString()
+            val nextRun = NormalizationRun.restore(nextRunId, nextInput, NormalizationInputCanonicalizer.hash(nextIdentity),
+                "c".repeat(64), NormalizationRunStatus.DISPATCH_PENDING, 1, nextToken, null, null,
+                now, now, null, now, null, 0, inputIdentity = nextIdentity, resultDeliveryPolicy = deliveryPolicy)
+            val nextDispatch = dispatch.copy(id = UUID.randomUUID().toString(), runId = nextRunId.value, computeKey = "d".repeat(64))
+            runs.seed(nextRun, nextDispatch)
+            assertTrue(imports.seedValidation(nextSession.id, nextRunId.value, now))
+            jdbc.update("UPDATE trading_normalization_runs SET status='RESULT_READY',compute_job_id='job-2' WHERE id=?::uuid", nextRunId.value)
+            jdbc.update("UPDATE trading_normalization_dispatches SET status='RESULT_READY' WHERE id=?::uuid", nextDispatch.id)
+            val nextCurrent = assertNotNull(runs.findRun(nextRunId))
+            val nextLease = assertNotNull(tx.execute { results.claimReady(now, java.time.Duration.ofMinutes(15), worker) })
+            val nextCounts = counts.mapValues { (key, _) -> if (key == "artifactCoverageCount") 2L else 0L }
+            val nextDigests = digests.map { digest ->
+                val section = digest["sectionType"]
+                val countKey = com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionResult.COUNT_SECTIONS
+                    .entries.firstOrNull { it.value == section }?.key
+                digest + ("itemCount" to (countKey?.let { nextCounts.getValue(it) } ?: 1L))
+            }
+            val nextDescriptor = descriptor.copy(jobId = "job-2", logicalJobId = nextDispatch.id, runId = nextRunId.value,
+                payloadId = "payload-2", attemptToken = nextToken, inputSetHash = nextRun.inputFingerprint,
+                counts = nextCounts, sectionDigests = nextDigests)
+            results.beginStage(nextCurrent, nextDescriptor, now)
+            listOf("QUALITY_REPORT", "RECONCILIATION_MANIFEST").forEach { section ->
+                results.stageItem(nextRunId.value, NormalizationStagedItem(section, section, "f".repeat(64), "{}"))
+            }
+            TradingArtifactRole.entries.forEach { role -> results.stageItem(nextRunId.value,
+                NormalizationStagedItem("ARTIFACT_COVERAGES", role.name, "f".repeat(64),
+                    """{"artifactRole":"${role.name}"}""")) }
+            val firstRecord = LedgerRevisionPersistenceMapper.toRecord(aggregate)
+            assertTrue(tx.execute { results.publish(nextCurrent, nextLease, worker, nextDescriptor, "{}", coverageJson,
+                "[]", "{}", "f".repeat(64), now.plusSeconds(2)) } == true)
+            val secondId = assertNotNull(imports.find(nextSession.id, MemberId(1))?.createdLedgerRevisionId)
+            assertNotEquals(storedId, secondId)
+            assertEquals(2L, results.publisher(now).find(secondId, MemberId(1))?.publication?.revisionNumber)
+            assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revision_records WHERE revision_id=?::uuid",
+                Long::class.java, secondId.value.toString()))
+            assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revision_records WHERE revision_id=?::uuid",
+                Long::class.java, storedId.value.toString()))
+            assertEquals(firstRecord, LedgerRevisionPersistenceMapper.toRecord(assertNotNull(results.publisher(now).find(storedId, MemberId(1)))))
+            assertEquals(secondId, review.find(book.id, book.owner)?.latestLedgerRevisionId)
+            assertEquals(storedId, imports.find(session.id, MemberId(1))?.createdLedgerRevisionId)
+            assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
+            assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_ack_dispatches", Long::class.java))
+            return@withDatabase
+        }
         val ackWorker = UUID.randomUUID().toString()
         val ack = assertNotNull(tx.execute { results.claimAck(now, java.time.Duration.ofSeconds(45), ackWorker) })
         assertEquals("PERSISTED", ack.disposition)
@@ -1309,6 +1495,9 @@ class PostgresTradingReviewStoreTest {
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_result_staging", Long::class.java))
         val acceptedSession = assertNotNull(imports.find(session.id, MemberId(1)))
         assertTrue(imports.update(acceptedSession.requestDeletion(now.plusSeconds(4))))
+        assertFalse(tx.execute { results.publish(request) } == true)
+        assertEquals(latestRevision, review.find(book.id, book.owner)?.latestLedgerRevisionId)
+        assertNull(results.publisher(now).find(storedId, MemberId(1)))
         review.insert(TradingDeletion(996, MemberId(1), "TRADING_IMPORT_SESSION", session.id.value,
             "IMPORT_SUBTREE", "REQUESTED", 1, 0, 0, now, now, now, now.plusSeconds(30L * 24 * 3600)))
         TradingDeletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(5), ZoneOffset.UTC)).purgePending()

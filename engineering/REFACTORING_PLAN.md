@@ -140,8 +140,58 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 3c | 완료·머지 | [PR #93](https://github.com/refinvest-dev/core-api/pull/93), `ad3af75`·`36db90d`, R12 feature port 계약과 실제 classpath에서 타 feature domain 참조 차단 |
 | 4a | 완료·머지 | [PR #94](https://github.com/refinvest-dev/core-api/pull/94), `96a1a6c`·`47d85c5`·`12aba18`, Account/Book Root·Mapper·Store/Reader와 삭제 cascade fence |
 | 4b-1 | 완료·머지 | [PR #95](https://github.com/refinvest-dev/core-api/pull/95), `5771f96`·`5f66b63`·`f5ac6df`, Session Root·Artifact 슬롯 저장·순수 Mapper·retention CAS와 삭제 replay·grant retry 이력 보강 |
-| 4b-2 | 구현·검증 완료, PR 검토 대상 | [PR #97](https://github.com/refinvest-dev/core-api/pull/97), `ce42b14`·`e4e4b38`, Session 소속 NormalizationRun·순수 Mapper·명시적 admission과 재시도 입력 고정 |
-| 4c 이후 | 미착수 | 다음 PR은 immutable LedgerRevision·publication 경계와 bounded 저장 정리 |
+| 4b-2 | 완료·머지 | [PR #97](https://github.com/refinvest-dev/core-api/pull/97), `ce42b14`·`e4e4b38`, Session 소속 NormalizationRun·순수 Mapper·명시적 admission과 재시도 입력 고정 |
+| 4c | 구현·검증 완료, PR 검토 대상 | [PR #98](https://github.com/refinvest-dev/core-api/pull/98), `d6df0c0`·`fd03cf3`, immutable LedgerRevision·순수 Mapper·전용 publication capability와 bounded 저장 |
+| 4d 이후 | 미착수 | 다음 PR은 DeletionRequest 상태 모델·scope/checklist와 실패·완료 규칙 정리 |
+
+### 4c 검증 기록과 후속 범위
+
+- `LedgerRevision`을 `AggregateRoot<LedgerRevisionId>` 기반의 불변 모델로 정의했다. Application이
+  검증된 입력 identity·결과 쌍·hash·count·section digest와 bounded metadata로 준비하고, 발행 capability가
+  Book 잠금 안에서 순번과 발행 시각만 부여한다. 발행 후 재발행·내용 변경을 허용하지 않는다.
+- `LedgerRevisionPersistenceMapper`는 전달받은 row와 Aggregate를 순수하게 변환하고 양방향 불변식을
+  검증한다. VersionSet과 count/digest JSON의 중첩 key 순서를 정규화한다. command 복원 SQL은
+  manifest의 reviewUnits·matches·issues와 quality의 validationIssues를 DB에서 제외한 뒤 JDBC로 읽는다.
+  전체 membership을 Aggregate 복원에 적재하지 않는다. 독립적인 공개 summary projection은 전용 Reader다.
+- 기존 staging Store의 개별 발행 인자를 제거하고 `LedgerPublication`에 Aggregate, 실행 snapshot,
+  descriptor와 lease 조건을 묶었다. Revision Store/발행 adapter와 summary Reader를 분리했으며,
+  수신·staging·ACK runtime capability는 유지한다. ACK row 작성만 공통 persistence helper로 공유한다.
+- 발행은 transition gate와 Account→Book→Session→Run/dispatch/stage 잠금 순서를 따른다. 저장된 staging
+  descriptor와 메타데이터, expected Run 버전·attempt·hash·결과 쌍, live lease·삭제 generation을 확인한다.
+  잠금을 모두 얻은 후 Clock을 다시 읽으며, stale 요청은 Revision·membership·latest·ACK를 바꾸지 않는다.
+- 대용량 membership·allocation·manifest 배열과 V2 supplement는 기존 INSERT SELECT/DB 집계를 유지한다.
+  Session ACCEPTED·Revision/membership·Book latest·Run/dispatch 완료·ACK outbox·감사·stage 제거는 같은
+  transaction이며 HTTP ACK는 commit 후 별도 runtime에서 처리한다. 중복 성공 조회도 기존 내용과
+  ACK identity를 확인하고, 삭제가 시작된 Session은 성공 replay로 간주하지 않는다.
+- 최종 코드의 관련 테스트 218개 고유 항목을 검증했다. Domain 20, Application 26, Persistence 53,
+  Web·Compute·Storage 각 8, App 95건이며, 실제 PostgreSQL 검증은 Persistence 42건과 App 23건이다.
+  새 도메인/매핑 6건과 source 경계 1건, 실제 잠금 대기 중 lease 만료 및 별도 Session membership
+  격리 2건을 추가했다. 기존 DB 발행 시나리오에도 descriptor·메타데이터·Run 버전·lease 변조,
+  pause·rollback·삭제 후 replay의 무변경 검증과 bounded 복원을 추가했다.
+- Mapper 왕복 테스트에서 중첩 VersionSet의 JSON key 순서가 달라지는 것을 확인해 정규화했다.
+  수정 후 Domain·Application·Persistence·Web·Compute·Storage 전체와 App 94건이 통과했고,
+  기존 `ComputeHttpTimeoutTest.submitTimesOutBeforeHeadersAndDuringBodyDelivery` 한 건의 Windows
+  `Bad address: listen` 오류는 같은 코드로 항목을 재실행해 통과했다. 위 218건은 한 번의 전체
+  Gradle 실행 성공을 뜻하지 않으며 실패한 실행은 성공으로 계산하지 않는다. 최종 고유 항목은
+  실패·skip 0이고 source/실제 Gradle 모듈 경계 검사와 `bootJar`도 통과했다.
+- 도메인·순수 매핑(`d6df0c0`)과 발행 capability·실행 fence·DB 회귀(`fd03cf3`), 로컬 검증 기록을
+  별도 커밋으로 나눈다. API·schema·계산 hash 의미 변경과 계산 결정론 영향은 없다. 구현 전후
+  OpenAPI·hash vector·context 문서 25개 동기화 검사를 통과했다. 원격 CI 결과는 별도 확인 대상이다.
+- `fd03cf3`의 검증 JAR로 실제 Core↔Compute runtime을 통과했다. `primary`·`result_integrity`·
+  `ledger_publication`은 PASS, ACK는 `ACKNOWLEDGED_AFTER_RETRY`, publication identity·evidence references·
+  idempotency는 PASS다. 증적의 source commit과 artifact SHA-256이 테스트한 JAR와 일치한다.
+  로컬 증적은 integration의
+  `.integration-data/trading-normalization/7fd12d4fc2e64071ab62bb5027b615de/evidence.json`이다.
+- 통합 검증은 분리된 `refinvest_integration` DB와 합성 fixture를 사용했다. 로컬 wrapper에서 ACK
+  간격을 20초→60초, 후속 주기 대기를 22초→62초로 조정하고, publication의 Session 대기 잠금을
+  풀기 전에 Compute API를 중지해 ACK 장애를 확실히 주입했다. Windows `WinError 10014`의 API
+  기동·재기동만 제한 재시도했으며, 진단용 파이프 대기는 동일 API의 추가 재기동으로 해소했다.
+  기존 assertion 93개가 AST 기준 동일함을 확인했고 추가 API 재기동 뒤에도 ACK·Revision·count·latest
+  불변성 검사를 통과했다. 준비 단계 오류·장애 주입 시점 경합·프로세스 제어 오류로 실패한 실행은
+  통과 기록에서 제외했다. 이번 실행은 합성 기능 검증이며 대형 payload의 heap 성능 측정은 아니다.
+  검증 프로세스와 임시 환경 파일은 정리했고 credential·fixture·로그·wrapper는 커밋하지 않는다.
+- 후속 4d에서는 DeletionRequest를 명시적 상태 모델로 정리한다. scheduler 진입점과 파일·암호화·HTTP
+  기술 구현 이동은 5a, 삭제/retention 실행 절차 분리는 5b로 남긴다.
 
 ### 4b-2 검증 기록과 후속 범위
 

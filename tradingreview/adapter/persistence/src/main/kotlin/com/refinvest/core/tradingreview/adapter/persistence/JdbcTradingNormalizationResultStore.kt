@@ -20,19 +20,7 @@ import tools.jackson.databind.ObjectMapper
 
 @Repository
 class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, private val mapper: ObjectMapper) :
-    TradingNormalizationResultStore, TradingLedgerPublicationReader {
-    override fun publishedForSession(sessionId: TradingImportSessionId,
-                                     owner: MemberId): PublishedLedgerSummary? = jdbc.query("""
-        SELECT r.id::text,r.quality_report_json::text,r.capability_json::text,r.published_at
-        FROM trading_ledger_revisions r JOIN trading_import_sessions s ON s.id=r.import_session_id
-        JOIN trading_books b ON b.id=s.trading_book_id
-        JOIN trading_accounts a ON a.id=b.account_id
-        WHERE r.import_session_id=? AND s.owner_member_id=? AND s.status='ACCEPTED'
-        AND NOT s.deletion_pending AND b.status='ACTIVE' AND a.status='ACTIVE'
-        ORDER BY r.published_at DESC LIMIT 1""", { rs, _ ->
-        PublishedLedgerSummary(rs.getString(1), rs.getString(2), rs.getString(3),
-            rs.getTimestamp(4).toInstant())
-    }, sessionId.value, owner.value).firstOrNull()
+    TradingNormalizationResultStore {
     override fun claimReady(now: Instant, lease: Duration, workerId: String): NormalizationDispatch? =
         jdbc.query("""WITH due AS (SELECT id FROM trading_normalization_dispatches
             WHERE status='RESULT_READY' AND next_attempt_at<=? AND
@@ -394,179 +382,6 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
         DELETE FROM trading_normalization_ack_dispatches a USING cleared
         WHERE a.id=cleared.id RETURNING a.id""", { rs, _ -> rs.getString(1) }, limit).size
 
-    override fun publish(run: NormalizationRun, dispatch: NormalizationDispatch, workerId: String,
-                         descriptor: NormalizationResultDescriptor, manifestJson: String,
-                         coverageJson: String, capabilityJson: String, qualityJson: String,
-                         ledgerContentHash: String, now: Instant): Boolean {
-        if (run.resultVersionPin != dispatch.resultVersionPin ||
-            run.resultVersionPin.schemaVersion != descriptor.resultSchemaVersion ||
-            run.resultVersionPin.hashSpecificationVersion != descriptor.resultHashSpecificationVersion)
-            throw NormalizationResultStoreFailure("RESULT_VERSION_PIN_MISMATCH")
-        val session = jdbc.query("""SELECT status,deletion_generation,deletion_pending,
-            active_normalization_run_id::text,created_ledger_revision_id::text FROM trading_import_sessions
-            WHERE id=? AND owner_member_id=? FOR UPDATE""", { rs, _ ->
-            listOf(rs.getString(1), rs.getLong(2).toString(), rs.getBoolean(3).toString(),
-                rs.getString(4) ?: "", rs.getString(5) ?: "")
-        }, run.input.importSessionId.value, run.input.ownerId).firstOrNull() ?: return false
-        if (session[0] == "ACCEPTED" && session[4].isNotBlank()) {
-            val existing = jdbc.query("""SELECT run_id::text,result_hash FROM trading_ledger_revisions
-                WHERE id=?::uuid""", { rs, _ -> rs.getString(1) to rs.getString(2) },
-                session[4]).firstOrNull()
-            return existing == (run.id.value to descriptor.resultHash)
-        }
-        if (session != listOf("VALIDATING", run.input.deletionGeneration.toString(), "false", run.id.value, ""))
-            return false
-        val book = jdbc.query("""SELECT status,latest_ledger_revision_id::text FROM trading_books
-            WHERE id=? AND owner_member_id=? FOR UPDATE""", { rs, _ ->
-            rs.getString(1) to rs.getString(2)
-        }, run.input.tradingBookId.value, run.input.ownerId).firstOrNull() ?: return false
-        if (book.first != "ACTIVE") return false
-        val current = jdbc.query("""SELECT r.status,r.attempt_token::text,r.compute_job_id,r.input_fingerprint,
-            r.deletion_generation,d.status,d.lease_owner::text,d.lease_expires_at,
-            s.state FROM trading_normalization_runs r JOIN trading_normalization_dispatches d ON d.run_id=r.id
-            JOIN trading_normalization_result_staging s ON s.run_id=r.id
-            WHERE r.id=?::uuid AND d.id=?::uuid FOR UPDATE OF r,d,s""", { rs, _ ->
-            listOf(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                rs.getLong(5).toString(), rs.getString(6), rs.getString(7) ?: "",
-                rs.getTimestamp(8)?.toInstant()?.toString() ?: "", rs.getString(9))
-        }, run.id.value, dispatch.id).firstOrNull() ?: return false
-        if (current[0] != "RESULT_READY" || current[1] != descriptor.attemptToken ||
-            current[2] != descriptor.jobId || current[3] != descriptor.inputSetHash ||
-            current[4] != descriptor.deletionGeneration.toString() || current[5] != "RESULT_READY" ||
-            current[6] != workerId || current[7].isBlank() ||
-            !Instant.parse(current[7]).isAfter(now) || current[8] != "VALIDATED") return false
-        val number = (jdbc.queryForObject("""SELECT COALESCE(MAX(revision_number),0)+1
-            FROM trading_ledger_revisions WHERE trading_book_id=?""", Long::class.java,
-            run.input.tradingBookId.value) ?: 1L)
-        val revisionId = UUID.randomUUID().toString()
-        val identity = requireNotNull(run.inputIdentity)
-        // Materialize published nested collections inside PostgreSQL. No complete manifest or
-        // quality-report collection is returned to the Core JVM during publication.
-        fun stageArray(section: String) = """COALESCE((SELECT jsonb_agg(item_json
-            ORDER BY item_sort_key COLLATE "C") FROM trading_normalization_staged_items
-            WHERE run_id=?::uuid AND section_type='$section'), '[]'::jsonb)"""
-        val manifestProjection = """jsonb_set(jsonb_set(jsonb_set(?::jsonb,
-            '{reviewUnits}', ${stageArray("REVIEW_UNITS")}),
-            '{reconciliationMatches}', ${stageArray("RECONCILIATION_MATCHES")}),
-            '{reconciliationIssues}', ${stageArray("RECONCILIATION_ISSUES")})"""
-        val qualityProjection = """jsonb_set(?::jsonb, '{validationIssues}',
-            ${stageArray("VALIDATION_ISSUES")})"""
-        jdbc.update("""INSERT INTO trading_ledger_revisions
-            (id,run_id,trading_book_id,import_session_id,revision_number,input_set_hash,
-            input_hash_specification_version,input_identity_json,target_version_set_json,
-            result_schema_version,result_hash_specification_version,result_hash,ledger_content_hash,
-            reconciliation_manifest_hash,reconciliation_manifest_json,coverage_json,capability_json,
-            quality_report_json,counts_json,section_digests_json,published_at)
-            VALUES (?::uuid,?::uuid,?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?,
-            $manifestProjection,?::jsonb,?::jsonb,$qualityProjection,?::jsonb,?::jsonb,?)""",
-            revisionId, run.id.value, run.input.tradingBookId.value, run.input.importSessionId.value, number,
-            run.inputFingerprint, identity.hashSpecificationVersion,
-            mapper.writeValueAsString(identity.toWireValue()),
-            mapper.writeValueAsString(identity.targetVersionSet.toWireValue()),
-            descriptor.resultSchemaVersion, descriptor.resultHashSpecificationVersion,
-            descriptor.resultHash, ledgerContentHash, descriptor.reconciliationManifestHash,
-            manifestJson, run.id.value, run.id.value, run.id.value, coverageJson, capabilityJson,
-            qualityJson, run.id.value,
-            mapper.writeValueAsString(descriptor.counts), mapper.writeValueAsString(descriptor.sectionDigests),
-            Timestamp.from(now))
-        jdbc.update("""INSERT INTO trading_source_evidence_snapshots
-            (trading_book_id,import_session_id,snapshot_id,source_artifact_id,source_row_number,
-            evidence_schema_version,masking_policy_version,evidence_json)
-            SELECT ?,?,item_identity,(item_json->>'coreArtifactId')::bigint,
-            (item_json->>'sourceRowNumber')::bigint,?,item_json->>'maskingPolicyVersion',item_json
-            FROM trading_normalization_staged_items WHERE run_id=?::uuid
-            AND section_type='SOURCE_EVIDENCE_SNAPSHOTS' ON CONFLICT DO NOTHING""",
-            run.input.tradingBookId.value, run.input.importSessionId.value,
-            identity.targetVersionSet.reconstruction.evidenceSchemaVersion, run.id.value)
-        val evidenceConflicts = jdbc.queryForObject("""SELECT count(*) FROM trading_normalization_staged_items i
-            LEFT JOIN trading_source_evidence_snapshots e ON e.trading_book_id=? AND e.snapshot_id=i.item_identity
-            WHERE i.run_id=?::uuid AND i.section_type='SOURCE_EVIDENCE_SNAPSHOTS'
-            AND (e.snapshot_id IS NULL OR e.evidence_json<>i.item_json)""",
-            Long::class.java, run.input.tradingBookId.value, run.id.value) ?: 0
-        if (evidenceConflicts != 0L) throw NormalizationResultStoreFailure("RESULT_ITEM_CONFLICT")
-        jdbc.update("""INSERT INTO trading_records
-            (trading_book_id,record_id,source_evidence_snapshot_id,record_hash,record_json)
-            SELECT ?,item_identity,item_json->>'sourceEvidenceSnapshotId',
-            item_json->>'recordHash',item_json
-            FROM trading_normalization_staged_items WHERE run_id=?::uuid
-            AND section_type='CANONICAL_RECORDS' ON CONFLICT DO NOTHING""",
-            run.input.tradingBookId.value, run.id.value)
-        val recordConflicts = jdbc.queryForObject("""SELECT count(*) FROM trading_normalization_staged_items i
-            LEFT JOIN trading_records r ON r.trading_book_id=? AND r.record_id=i.item_identity
-            WHERE i.run_id=?::uuid AND i.section_type='CANONICAL_RECORDS'
-            AND (r.record_id IS NULL OR r.record_json<>i.item_json)""",
-            Long::class.java, run.input.tradingBookId.value, run.id.value) ?: 0
-        if (recordConflicts != 0L) throw NormalizationResultStoreFailure("RESULT_ITEM_CONFLICT")
-        jdbc.update("""INSERT INTO trading_ledger_revision_records
-            (revision_id,trading_book_id,record_id,semantic_order_key)
-            SELECT ?::uuid,?,item_identity,item_identity
-            FROM trading_normalization_staged_items WHERE run_id=?::uuid
-            AND section_type='CANONICAL_RECORDS'""", revisionId, run.input.tradingBookId.value, run.id.value)
-        jdbc.update("""INSERT INTO trading_ledger_review_units(revision_id,review_unit_id,unit_json)
-            SELECT ?::uuid,item_identity,item_json FROM trading_normalization_staged_items
-            WHERE run_id=?::uuid AND section_type='REVIEW_UNITS'""", revisionId, run.id.value)
-        if (descriptor.resultSchemaVersion == "TRADING_NORMALIZATION_RESULT_V2") {
-            jdbc.update("""INSERT INTO trading_ledger_analytics_supplement
-                (revision_id,review_unit_id,engine_input_json)
-                SELECT ?::uuid,item_identity,item_json FROM trading_normalization_staged_items
-                WHERE run_id=?::uuid AND section_type='ANALYTICS_INPUT_SUPPLEMENT_ROWS'""",
-                revisionId, run.id.value)
-            val savedCount = jdbc.queryForObject("""SELECT count(*) FROM
-                trading_ledger_analytics_supplement WHERE revision_id=?::uuid""",
-                Long::class.java, revisionId)
-            if (savedCount != descriptor.counts["reviewUnitCount"]?.toString()?.toLongOrNull())
-                throw NormalizationResultStoreFailure("RESULT_COUNT_MISMATCH")
-        }
-        jdbc.update("""INSERT INTO trading_ledger_allocations
-            (revision_id,allocation_id,review_unit_id,record_id,allocation_json)
-            SELECT ?::uuid,a.value->>'allocationId',u.item_identity,a.value->>'recordId',a.value
-            FROM trading_normalization_staged_items u
-            CROSS JOIN LATERAL jsonb_array_elements(u.item_json->'allocations') a(value)
-            WHERE u.run_id=?::uuid AND u.section_type='REVIEW_UNITS'""", revisionId, run.id.value)
-        check(jdbc.update("""UPDATE trading_import_sessions SET status='ACCEPTED',
-            created_ledger_revision_id=?::uuid,failure_code=NULL,failure_retryable=NULL,
-            failure_user_action=NULL,failure_occurred_at=NULL,updated_at=?,version=version+1
-            WHERE id=? AND status='VALIDATING' AND active_normalization_run_id=?::uuid
-            AND deletion_generation=? AND NOT deletion_pending""", revisionId, Timestamp.from(now),
-            run.input.importSessionId.value, run.id.value, run.input.deletionGeneration) == 1)
-        jdbc.update("""UPDATE trading_books SET latest_ledger_revision_id=?::uuid,
-            updated_at=?,version=version+1 WHERE id=?""", revisionId, Timestamp.from(now),
-            run.input.tradingBookId.value)
-        jdbc.update("""UPDATE trading_normalization_runs SET status='PUBLISHED',
-            completed_at=?,updated_at=?,version=version+1 WHERE id=?::uuid""",
-            Timestamp.from(now), Timestamp.from(now), run.id.value)
-        jdbc.update("""UPDATE trading_normalization_attempts SET completed_at=?,result_category='PUBLISHED'
-            WHERE run_id=?::uuid AND attempt_token=?::uuid AND completed_at IS NULL""",
-            Timestamp.from(now), run.id.value, descriptor.attemptToken)
-        jdbc.update("""UPDATE trading_normalization_dispatches SET status='PUBLISHED',
-            lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?::uuid""",
-            Timestamp.from(now), dispatch.id)
-        enqueueAck(run, descriptor, "PERSISTED", null, now)
-        jdbc.update("""INSERT INTO trading_normalization_audit(run_id,event,occurred_at)
-            VALUES (?::uuid,'LEDGER_PUBLISHED',?)""", run.id.value, Timestamp.from(now))
-        jdbc.update("DELETE FROM trading_normalization_result_staging WHERE run_id=?::uuid", run.id.value)
-        return true
-    }
-
-    private fun enqueueAck(run: NormalizationRun, descriptor: NormalizationResultDescriptor,
-                           disposition: String, currentGeneration: Long?, now: Instant) {
-        val key = java.security.MessageDigest.getInstance("SHA-256").digest(
-            "${run.id.value}:${descriptor.jobId}:${descriptor.payloadId}:$disposition".toByteArray(Charsets.UTF_8))
-            .let { java.util.HexFormat.of().formatHex(it) }
-        jdbc.update("""INSERT INTO trading_normalization_ack_dispatches
-            (id,run_id,core_import_session_id,compute_job_id,payload_id,payload_sha256,result_hash,attempt_token,
-            deletion_generation,current_deletion_generation,disposition,idempotency_key,retry_policy_json,
-            payload_expires_at,status,
-            next_attempt_at,created_at,updated_at)
-            VALUES (?::uuid,?::uuid,?,?,?,?,?,?::uuid,?,?,?,?,?::jsonb,?,'PENDING',?,?,?)
-            ON CONFLICT (idempotency_key) DO NOTHING""", UUID.randomUUID().toString(), run.id.value,
-            run.input.importSessionId.value,
-            descriptor.jobId, descriptor.payloadId, descriptor.payloadSha256, descriptor.resultHash,
-            descriptor.attemptToken, descriptor.deletionGeneration, currentGeneration, disposition,
-            key, run.input.retryPolicyJson, Timestamp.from(descriptor.expiresAt),
-            Timestamp.from(now), Timestamp.from(now), Timestamp.from(now))
-    }
-
     override fun discardStale(run: NormalizationRun, dispatch: NormalizationDispatch,
                               workerId: String, descriptor: NormalizationResultDescriptor,
                               now: Instant): Boolean {
@@ -594,7 +409,7 @@ class JdbcTradingNormalizationResultStore(private val jdbc: JdbcTemplate, privat
         jdbc.update("""UPDATE trading_normalization_attempts SET completed_at=?,
             result_category='OBSOLETE' WHERE run_id=?::uuid AND attempt_token=?::uuid
             AND completed_at IS NULL""", Timestamp.from(now), run.id.value, descriptor.attemptToken)
-        enqueueAck(run, descriptor, "DISCARDED_STALE", generation, now)
+        NormalizationAcknowledgementRows(jdbc).enqueue(run, descriptor, "DISCARDED_STALE", generation, now)
         discardStage(run.id.value)
         jdbc.update("""INSERT INTO trading_normalization_audit(run_id,event,occurred_at)
             VALUES (?::uuid,'STALE_RESULT_DISCARDED',?)""", run.id.value, Timestamp.from(now))
