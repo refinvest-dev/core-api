@@ -1,27 +1,23 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.deletion.*
-
-import com.refinvest.core.tradingreview.port.normalization.*
-import com.refinvest.core.tradingreview.port.importsession.*
-import com.refinvest.core.tradingreview.port.ledger.*
-import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
-import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
-import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultDeliveryPolicy
-import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
-import com.refinvest.core.tradingreview.domain.valueobject.NormalizationInputIdentity
-import com.refinvest.core.tradingreview.domain.valueobject.NormalizationDispatchStatus
-import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunStatus
-import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
-import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
-import com.refinvest.core.tradingreview.domain.importsession.NormalizationInput
-import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.tradingreview.application.GetTradingDeletionRequestService
 import com.refinvest.core.tradingreview.application.NormalizationInputFingerprint
 import com.refinvest.core.tradingreview.application.TradingReviewService
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationInput
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact
+import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
+import com.refinvest.core.tradingreview.domain.valueobject.*
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationDispatchStatus
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationInputIdentity
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultDeliveryPolicy
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
@@ -37,7 +33,13 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsse
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
 import com.refinvest.core.tradingreview.port.*
+import com.refinvest.core.tradingreview.port.TradingFailureKind
 import com.refinvest.core.tradingreview.port.book.TradingAccountBookDeletion
+import com.refinvest.core.tradingreview.port.deletion.*
+import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.importsession.*
+import com.refinvest.core.tradingreview.port.ledger.*
+import com.refinvest.core.tradingreview.port.normalization.*
 import java.sql.Connection
 import java.sql.DriverManager
 import java.time.Clock
@@ -75,6 +77,62 @@ class PostgresTradingReviewStoreTest {
         override fun attemptToken() = UUID.randomUUID().toString()
     }
     private val normalizationVersions = """{"versionSetHash":"${"f".repeat(64)}","normalizer":{"sourceDialectVersionsByArtifactRole":{"TRADE_HISTORY":"TRADE_V1","POSITION_HISTORY":"POSITION_V1"},"adapterVersion":"ADAPTER_V1","normalizerVersion":"NORMALIZER_V1","canonicalSchemaVersion":"CANONICAL_V1","implementationDigest":"normalizer-digest","versionSetHash":"${"d".repeat(64)}"},"reconstruction":{"instrumentTermsVersionByInstrument":{},"reconstructionPolicyVersion":"RECONSTRUCTION_V1","reconciliationVersion":"RECONCILIATION_V1","reviewUnitSchemaVersion":"REVIEW_UNIT_V1","evidenceSchemaVersion":"EVIDENCE_V1","implementationDigest":"reconstruction-digest","versionSetHash":"${"e".repeat(64)}"}}"""
+
+    @Test
+    fun deletionReaderPreservesVerifiedPartialProgressAndHidesOtherOwnersWithoutWriting() = withDatabase { connection ->
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        members(jdbc)
+        val store = JdbcDeletionRequestPersistenceAdapter(jdbc)
+        val reader = JdbcDeletionRequestReader(jdbc)
+        val request = DeletionRequest.request(DeletionRequestId(7101), MemberId(1), DeletionScope.book(TradingBookId(7102)),
+            1, DeletionAffectedResources(0, 1), now)
+        store.insert(request)
+        val requested = assertNotNull(reader.find(request.id, request.owner))
+        assertEquals(PurgeComponentStatus.NOT_STARTED, requested.primaryPurgeStatus)
+        assertEquals(PurgeComponentStatus.NOT_STARTED, requested.objectPurgeStatus) // zero counters do not define scope
+        assertEquals(PurgeComponentStatus.NOT_STARTED, requested.computeRuntimePurgeStatus)
+        val partial = request.start(now.plusSeconds(1)).beginPrimaryPurge(now.plusSeconds(2))
+            .verifyAbsent(DeletionPurgeComponent.PRIMARY_DATA, now.plusSeconds(3))
+            .verifyAbsent(DeletionPurgeComponent.DERIVED_RESULTS, now.plusSeconds(3))
+            .beginObjectPurge(now.plusSeconds(4))
+            .verifyAbsent(DeletionPurgeComponent.COMPUTE_RUNTIME, now.plusSeconds(5))
+            .verifyAbsent(DeletionPurgeComponent.RAW_OBJECTS, now.plusSeconds(6))
+            .recordFailure(now.plusSeconds(7), 1)
+        val tx = TransactionTemplate(DataSourceTransactionManager(SingleConnectionDataSource(connection, true)))
+        assertTrue(tx.execute { JdbcDeletionRequestExecution(jdbc).commit(request, partial) }!!)
+        val persisted = DeletionRequestPersistenceMapper.toRecord(assertNotNull(store.find(request.id, request.owner)))
+        val member = object : TradingMemberProvider {
+            var id = MemberId(1)
+            override fun currentMemberId() = id
+        }
+        val service = GetTradingDeletionRequestService(member, reader)
+        repeat(2) {
+            val view = service.get(request.id.value)
+            assertEquals("FAILED", view.state)
+            assertEquals(PurgeComponentStatus.COMPLETED, view.primaryPurgeStatus)
+            assertEquals(PurgeComponentStatus.COMPLETED, view.computeRuntimePurgeStatus)
+            assertEquals(PurgeComponentStatus.FAILED, view.objectPurgeStatus)
+            assertEquals(PurgeComponentStatus.IN_PROGRESS, view.backupPurgeStatus)
+            assertFalse(view.retryable)
+        }
+        assertEquals(persisted, DeletionRequestPersistenceMapper.toRecord(assertNotNull(store.find(request.id, request.owner))))
+        member.id = MemberId(2)
+        assertEquals(TradingFailureKind.NOT_FOUND, assertFailsWith<TradingFailure> { service.get(request.id.value) }.kind)
+        assertNull(reader.find(request.id, MemberId(2)))
+
+        // V13 preserves historical COMPLETED labels but deliberately does not manufacture absence checkpoints.
+        val legacy = DeletionRequest.request(DeletionRequestId(7103), MemberId(1), DeletionScope.book(TradingBookId(7104)), 2,
+            DeletionAffectedResources(0, 1), now)
+        store.insert(legacy)
+        jdbc.update("""UPDATE trading_deletion_requests SET state='COMPLETED',completed_at=?,updated_at=? WHERE id=?""",
+            java.sql.Timestamp.from(now.plusSeconds(10)), java.sql.Timestamp.from(now.plusSeconds(10)), legacy.id.value)
+        val view = assertNotNull(reader.find(legacy.id, legacy.owner))
+        assertEquals("COMPLETED", view.state)
+        assertEquals(PurgeComponentStatus.IN_PROGRESS, view.primaryPurgeStatus)
+        assertEquals(PurgeComponentStatus.IN_PROGRESS, view.objectPurgeStatus)
+        assertEquals(PurgeComponentStatus.IN_PROGRESS, view.computeRuntimePurgeStatus)
+        assertEquals(PurgeComponentStatus.IN_PROGRESS, view.backupPurgeStatus)
+    }
 
     @Test
     fun legacyRawOnlyRequestResumesWithoutPurgingRetainedPrimaryData() = withDatabase { connection ->
@@ -194,7 +252,7 @@ class PostgresTradingReviewStoreTest {
         assertEquals(completed.checklist.requiredComponents, completed.verifiedAbsent.keys)
         assertEquals(0, completed.attemptCount)
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_import_sessions", Long::class.java))
-        assertEquals(410, assertFailsWith<TradingFailure> { service.get(source.account.id) }.httpStatus)
+        assertEquals(TradingFailureKind.NO_LONGER_AVAILABLE, assertFailsWith<TradingFailure> { service.get(source.account.id) }.kind)
     }
 
     @Test
@@ -464,7 +522,7 @@ class PostgresTradingReviewStoreTest {
         assertEquals(before, normalizationAdmissionRows(f.jdbc))
         f.time.set(now)
         f.jdbc.execute("SELECT trading_normalization_transition_control('PAUSE',0,'direct-admission')")
-        assertEquals(503, assertFailsWith<TradingFailure> { f.tx.execute { f.admission.admit(request) } }.httpStatus)
+        assertEquals(TradingFailureKind.DEPENDENCY_UNAVAILABLE, assertFailsWith<TradingFailure> { f.tx.execute { f.admission.admit(request) } }.kind)
         assertEquals(before, normalizationAdmissionRows(f.jdbc))
         f.jdbc.execute("SELECT trading_normalization_transition_control('VERIFY',1,'direct-admission')")
         f.jdbc.execute("SELECT trading_normalization_transition_control('RESUME',1,'direct-admission')")
@@ -2365,7 +2423,7 @@ class PostgresTradingReviewStoreTest {
                 }
             }
             assertEquals("TEMPORARY_DEPENDENCY_FAILURE", failure.code)
-            assertEquals(503, failure.httpStatus)
+            assertEquals(TradingFailureKind.DEPENDENCY_UNAVAILABLE, failure.kind)
         }
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_idempotency", Long::class.java))
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_dispatches", Long::class.java))
@@ -2621,32 +2679,32 @@ class PostgresTradingReviewStoreTest {
             transactions.execute { service.create(TradingVenue.BINANCE, "Different", "create-account") }
         }.code)
         member.id = MemberId(2)
-        assertEquals(404, assertFailsWith<TradingFailure> { service.get(account.id) }.httpStatus)
-        assertEquals(404, assertFailsWith<TradingFailure> {
+        assertEquals(TradingFailureKind.NOT_FOUND, assertFailsWith<TradingFailure> { service.get(account.id) }.kind)
+        assertEquals(TradingFailureKind.NOT_FOUND, assertFailsWith<TradingFailure> {
             transactions.execute { service.create(account.id, "Other", TradingProductFamily.LINEAR_PERPETUAL,
                 TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "foreign-book") }
-        }.httpStatus)
+        }.kind)
         member.id = MemberId(1)
         val book = transactions.execute { service.create(account.id, "Futures", TradingProductFamily.LINEAR_PERPETUAL,
             TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "create-book") }
         assertEquals(book.id, transactions.execute { service.create(account.id, "Futures", TradingProductFamily.LINEAR_PERPETUAL,
             TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "create-book") }.id)
-        assertEquals(422, assertFailsWith<TradingFailure> {
+        assertEquals(TradingFailureKind.INPUT_REJECTED, assertFailsWith<TradingFailure> {
             transactions.execute { service.create(account.id, "Bad timezone", TradingProductFamily.LINEAR_PERPETUAL,
                 TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "+09:00", "invalid-timezone") }
-        }.httpStatus)
+        }.kind)
         val deletion = transactions.execute { service.delete(account.id, "delete-account") }
         assertEquals(1L, deletion.deletionGeneration)
-        assertEquals(410, assertFailsWith<TradingFailure> { service.get(account.id) }.httpStatus)
-        assertEquals(410, assertFailsWith<TradingFailure> {
+        assertEquals(TradingFailureKind.NO_LONGER_AVAILABLE, assertFailsWith<TradingFailure> { service.get(account.id) }.kind)
+        assertEquals(TradingFailureKind.NO_LONGER_AVAILABLE, assertFailsWith<TradingFailure> {
             transactions.execute { service.create(account.id, "Blocked", TradingProductFamily.LINEAR_PERPETUAL,
                 TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "new-book") }
-        }.httpStatus)
+        }.kind)
         deletionWorker(jdbc, transactions, emptyStorage(), clock).purgePending()
-        assertEquals("COMPLETED", service.get(deletion.id).state)
-        assertEquals(410, assertFailsWith<TradingFailure> { service.get(book.id) }.httpStatus)
+        assertEquals("COMPLETED", GetTradingDeletionRequestService(member, JdbcDeletionRequestReader(jdbc)).get(deletion.id).state)
+        assertEquals(TradingFailureKind.NO_LONGER_AVAILABLE, assertFailsWith<TradingFailure> { service.get(book.id) }.kind)
         member.id = MemberId(2)
-        assertEquals(404, assertFailsWith<TradingFailure> { service.get(book.id) }.httpStatus)
+        assertEquals(TradingFailureKind.NOT_FOUND, assertFailsWith<TradingFailure> { service.get(book.id) }.kind)
     }
 
     @Test
@@ -2742,13 +2800,13 @@ class PostgresTradingReviewStoreTest {
             ByteArray::class.java, position.artifact.id.value))
         val deletion = transactions.execute { service.delete(session.id, "delete-import") }
         assertEquals(deletion.id, transactions.execute { service.delete(session.id, "delete-import-again") }.id)
-        assertEquals(410, assertFailsWith<TradingFailure> { service.get(session.id) }.httpStatus)
+        assertEquals(TradingFailureKind.NO_LONGER_AVAILABLE, assertFailsWith<TradingFailure> { service.get(session.id) }.kind)
         fun assertCreateReplayIsGone() {
             val failure = assertFailsWith<TradingFailure> {
                 transactions.execute { service.create(book.id, "UTC", "UTC", TradingPositionMode.ONE_WAY,
                     null, null, "create-import") }
             }
-            assertEquals(410, failure.httpStatus)
+            assertEquals(TradingFailureKind.NO_LONGER_AVAILABLE, failure.kind)
             assertEquals("RESOURCE_DELETED", failure.code)
         }
         assertCreateReplayIsGone()
@@ -3024,7 +3082,7 @@ class PostgresTradingReviewStoreTest {
                 imports.find(fixture.sessionId, MemberId(1))?.status)
             val failure = assertFailsWith<TradingFailure> { grants.redeem(issued.getValue(fixture)) }
             assertEquals("RESOURCE_NOT_FOUND", failure.code)
-            assertEquals(404, failure.httpStatus)
+            assertEquals(TradingFailureKind.NOT_FOUND, failure.kind)
             val issueFailure = assertFailsWith<TradingFailure> { issue(fixture) }
             assertEquals("SOURCE_ARTIFACT_EXPIRED", issueFailure.code)
         }
@@ -3209,7 +3267,7 @@ class PostgresTradingReviewStoreTest {
                 val restarted = JdbcTradingNormalizationTransitionGate(JdbcTemplate(transitionSource(connection.schema)))
                 val failure = assertFailsWith<TradingFailure> { tx.execute { restarted.requireAdmission() } }
                 assertEquals("TEMPORARY_DEPENDENCY_FAILURE", failure.code)
-                assertEquals(503, failure.httpStatus)
+                assertEquals(TradingFailureKind.DEPENDENCY_UNAVAILABLE, failure.kind)
                 assertNull(restarted.withCreatePermit { error("No HTTP send while paused") })
             }
             assertFailsWith<org.springframework.dao.DataAccessException> {

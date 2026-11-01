@@ -12,6 +12,7 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import com.refinvest.core.tradingreview.port.*
+import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
 import java.io.InputStream
 import java.security.MessageDigest
 import java.time.Clock
@@ -83,6 +84,22 @@ class TradingImportControllerTest {
             session.reviewTimezone, session.declaredPositionMode, session.dataPolicyVersion, session.retentionPolicy,
             session.maskingPolicyVersion, session.evidenceRetention, session.deletionPolicyVersion,
             session.versionSetJson, status, 0, false, now, now, 0, failure = failure)
+
+    @Test
+    fun publicFailureUsesAWebDtoAndOnlyContractFields() {
+        assertEquals(TradingImportFailureResponse::class.java,
+            TradingImportSessionResponse::class.java.getDeclaredField("failure").type)
+        currentSession = restoreSession(TradingImportStatus.PROCESSING_FAILED,
+            TradingImportFailure("TEMPORARY_DEPENDENCY_FAILURE", true, "RETRY", now))
+        val response = mapper.readTree(mvc.perform(get("/trading-import-sessions/10"))
+            .andExpect(status().isOk).andReturn().response.contentAsString)
+        val failure = response.path("failure")
+        assertEquals(setOf("code", "retryable", "userAction", "occurredAt"), failure.propertyNames().toSet())
+        assertEquals("TEMPORARY_DEPENDENCY_FAILURE", failure.path("code").asText())
+        assertEquals(true, failure.path("retryable").asBoolean())
+        assertEquals("RETRY", failure.path("userAction").asText())
+        assertEquals(now.toString(), failure.path("occurredAt").asText())
+    }
 
     @Test
     fun createListGetAndDeleteFollowPublicShape() {

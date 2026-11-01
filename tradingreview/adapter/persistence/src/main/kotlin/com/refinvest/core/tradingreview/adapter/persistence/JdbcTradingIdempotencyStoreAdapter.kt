@@ -4,6 +4,7 @@ import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.*
 import com.refinvest.core.tradingreview.port.*
+import com.refinvest.core.tradingreview.port.TradingFailureKind
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 
@@ -18,7 +19,7 @@ class JdbcTradingIdempotencyStoreAdapter(private val jdbc: JdbcTemplate) : Tradi
         val saved = jdbc.query("""SELECT payload_fingerprint, resource_id FROM trading_idempotency
             WHERE owner_member_id=? AND operation_id=? AND request_key=? FOR UPDATE""",
             { rs, _ -> rs.getString(1) to rs.getLong(2) }, owner.value, operation, key).single()
-        if (saved.first != fingerprint) throw TradingFailure("IDEMPOTENCY_PAYLOAD_CONFLICT", 409)
+        if (saved.first != fingerprint) throw TradingFailure("IDEMPOTENCY_PAYLOAD_CONFLICT", TradingFailureKind.CONFLICT)
         return IdempotencyClaim.Replayed(saved.second)
     }
 

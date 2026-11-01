@@ -1,10 +1,11 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import com.refinvest.core.tradingreview.port.*
+import com.refinvest.core.tradingreview.port.TradingFailureKind
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.sql.Timestamp
@@ -31,7 +32,7 @@ class JdbcArtifactAccessGrants(
     override fun issueReadGrant(artifact: NormalizationArtifactInput, logicalJobId: String,
                                 sessionId: TradingImportSessionId, attemptToken: String,
                                 deletionGeneration: Long): ArtifactReadGrant {
-        if (baseUrl.isBlank() || secret.isBlank()) throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
+        if (baseUrl.isBlank() || secret.isBlank()) throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", TradingFailureKind.DEPENDENCY_UNAVAILABLE)
         val row = jdbc.query("""SELECT a.object_key, a.byte_size, a.content_sha256, a.content_type,
             a.artifact_role FROM trading_source_artifacts a JOIN trading_import_sessions s
             ON s.id=a.import_session_id
@@ -49,12 +50,12 @@ class JdbcArtifactAccessGrants(
                 rs.getString("content_sha256"), rs.getString("content_type"), rs.getString("artifact_role")) },
             artifact.artifactId.value, sessionId.value, logicalJobId, deletionGeneration,
             deletionGeneration, attemptToken, Timestamp.from(clock.instant())).firstOrNull()
-            ?: throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", 410)
+            ?: throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", TradingFailureKind.NO_LONGER_AVAILABLE)
         if (row[1]?.toLong() != artifact.contentLength || row[2] != artifact.sha256 ||
             row[3] != artifact.mediaType || row[4] != artifact.role.name)
-            throw TradingFailure("ARTIFACT_IDENTITY_CONFLICT", 409)
-        if (!storage.exists(row[0] ?: throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", 410)))
-            throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", 410)
+            throw TradingFailure("ARTIFACT_IDENTITY_CONFLICT", TradingFailureKind.CONFLICT)
+        if (!storage.exists(row[0] ?: throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", TradingFailureKind.NO_LONGER_AVAILABLE)))
+            throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", TradingFailureKind.NO_LONGER_AVAILABLE)
         val nonce = ByteArray(32).also(random::nextBytes)
         val part = encoder.encodeToString(nonce)
         val token = part + "." + encoder.encodeToString(mac(part))
@@ -73,11 +74,11 @@ class JdbcArtifactAccessGrants(
     }
 
     override fun redeem(token: String): ArtifactRedemption {
-        if (secret.isBlank() || token.length !in 80..120) throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+        if (secret.isBlank() || token.length !in 80..120) throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val parts = token.split('.')
         if (parts.size != 2 || !MessageDigest.isEqual(
                 try { Base64.getUrlDecoder().decode(parts[1]) } catch (_: Exception) { byteArrayOf() },
-                mac(parts[0]))) throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+                mac(parts[0]))) throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val now = clock.instant()
         val rows = jdbc.query("""UPDATE trading_artifact_read_grants g SET consumed_at=?
             FROM trading_source_artifacts a, trading_import_sessions s,
@@ -100,7 +101,7 @@ class JdbcArtifactAccessGrants(
                 rs.getBytes("wrapped_dek"), rs.getString("key_version"), rs.getLong("byte_size"),
                 rs.getString("content_type")) }, Timestamp.from(now), sha(token), Timestamp.from(now),
             Timestamp.from(now))
-        val row = rows.firstOrNull() ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+        val row = rows.firstOrNull() ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         return ArtifactRedemption(storage.open(row.key, row.dek, row.keyVersion, row.id), row.length, row.mediaType)
     }
 

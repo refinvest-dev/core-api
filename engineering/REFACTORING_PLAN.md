@@ -55,6 +55,7 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | R15 | 운영 설정 | public health 상세 공개, 기본 Snowflake node-id=0 | health 공개 범위 제한, 다중 인스턴스 ID 설정·검증 |
 | R16 | 검증 체계 | import 일부만 검사하는 경계 테스트, DB 조건부 테스트/캐시 | 변경 경계 검사 확대, 실제 PostgreSQL 및 integration 결과를 구분해 기록 |
 | R17 | Raw 정책 시계 | upload의 24시간 expiry가 accepted/rejected 전이에서 갱신되지 않으며 non-terminal TTL의 runtime 취소 연결이 없음 | 5b-2에서 terminal 시계 고정·실제 expiry 요청·generation fence와 늦은 발행 거절 구현, 아래 검증 기록 참조 |
+| R18 | 삭제 영향 범위 count | Book 삭제는 Book 1개만, Account 삭제는 Account/Book 수만 요청에 고정하며 하위 Session/artifact와 Revision/Run 수를 충분히 저장하지 않음 | 5c-2에서 요청 시점 scope snapshot·영속 count와 replay/조회·legacy 복원을 검증; 현재 count를 부재 증거로 쓰지 않음 |
 
 주요 근거 파일:
 
@@ -98,7 +99,8 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | 5a | Dispatch/polling/result/ACK 진입점 | inbound use case, port의 기술 구현 이동, ACK commit 순서 보존 |
 | 5b-1 | 남은 retention 실행 경계 | application orchestration, reader/copy drain, lease CAS·backoff와 orphan 보호 |
 | 5b-2 | Raw 정책 시계와 non-terminal 만료 | accepted/rejected 보관 시각, 만료 시 runtime 종료·늦은 발행 차단, 정책 기간 불연장 |
-| 5c | 실패/조회/web 경계 | 의미 기반 실패, web DTO, 정확한 purge read model |
+| 5c-1 | 실패/조회/web 경계 | 의미 기반 실패, web DTO, checkpoint 기반 purge read model |
+| 5c-2 | 삭제 영향 범위 count | 요청 시점 count 저장·replay·조회, 삭제 경합과 legacy 복원 검증 |
 | 6a | 기존 모듈 schema migration | 새 DB·기존 DB 업그레이드, 데이터 보존, validate 기동 |
 | 6b | 운영 설정 | health/node ID 등 설정 검증, 개발·운영 동작 확인 |
 | 6c | 전체 경계/회귀/integration | 미해결 목록 점검, PostgreSQL/E2E·계약 검증 결과 정리 |
@@ -149,8 +151,54 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 4d-2 | 완료·머지 | [PR #100](https://github.com/refinvest-dev/core-api/pull/100), application 실행 조율·lease·실제 부재 확인·복구와 ORCH-024~028 검증 |
 | 5a | 완료·머지 | [PR #101](https://github.com/refinvest-dev/core-api/pull/101), `eb6ec6a`·`0ca702a`, 정규화 inbound port·독립 ACK 실행과 commit/rollback·재전송 검증 |
 | 5b-1 | 완료·머지 | [PR #102](https://github.com/refinvest-dev/core-api/pull/102), `a53a1c4`, 원본 purge·orphan 실행 조율, reader drain·lease·backoff와 V15 |
-| 5b-2 | 구현·검증 완료·리뷰 대기 | [PR #103](https://github.com/refinvest-dev/core-api/pull/103), `260d620`, R17 정책 시계·non-terminal 만료와 runtime 취소·늦은 publication 처리 |
-| 5c | 후속 범위 | 실패·조회·HTTP 의미 정리 |
+| 5b-2 | 완료·머지 | [PR #103](https://github.com/refinvest-dev/core-api/pull/103), `260d620`, R17 정책 시계·non-terminal 만료와 runtime 취소·늦은 publication 처리 |
+| 5c-1 | 구현·검증 완료·리뷰 대기 | [PR #104](https://github.com/refinvest-dev/core-api/pull/104), `33c2171`, 실패 의미·web DTO·전용 삭제 Reader와 checkpoint 기반 public component 상태 |
+| 5c-2 | 후속 범위 | R18 삭제 영향 범위 count의 요청 시점 snapshot과 저장·조회 |
+
+### 5c-1 실패 의미와 public 조회 경계
+
+- Port의 `TradingFailure`에서 HTTP 숫자를 제거하고 `TradingFailureKind`로 실패 의미를 전달한다.
+  Application·capability·composition은 이 의미를 사용하고 web exception handler가 HTTP로 매핑한다.
+  기존 400/422·404/410 구분, concurrent modification·dependency failure의 retryable과 재업로드 안내를 유지한다.
+- Import failure는 web DTO의 명시적 변환으로 공개한다. code/retryable/userAction/occurredAt 네 필드와 기존
+  nullable·terminal 응답 의미를 보존하고 domain failure 객체를 응답 필드로 직접 노출하지 않는다.
+- 삭제 GET은 `GetTradingDeletionRequestService`와 `DeletionRequestReader`로 분리한다. Reader는 Store와
+  같은 한 statement의 Root/checkpoint snapshot과 순수 Mapper를 공유하며 조회에서 상태를 변경하지 않는다.
+  Application command의 생성·replay 응답도 같은 projection factory를 사용한다.
+- Public primary는 PRIMARY_DATA+DERIVED_RESULTS, object는 RAW_OBJECTS+RAW_KEYS+TEMPORARY_COPIES,
+  runtime은 COMPUTE_RUNTIME의 scope별 필수 항목을 기준으로 한다. 필수 항목이 없을 때만 NOT_APPLICABLE,
+  필수 부재 checkpoint가 모두 있을 때만 COMPLETED다. 전체 요청이 FAILED여도 확인된 group은 COMPLETED를
+  유지하고 미완료 group은 FAILED다. count 0이나 전체 요청 상태만으로 group 완료·적용 불가를 추정하지 않는다.
+- Raw-only backup은 NOT_APPLICABLE과 null due date다. Subtree backup은 별도 부재 증거가 없어 IN_PROGRESS를
+  유지하며 기한 도달만으로 완료를 만들지 않는다. V13이 보존한 legacy COMPLETED label에 checkpoint가 없으면
+  historical label은 보존하고 확인되지 않은 component는 보수적으로 IN_PROGRESS로 표시한다. 이 조회가
+  과거 부재 증거를 만들거나 삭제를 재실행하지 않는다.
+- R18은 이번 대조에서 확인한 별도 저장 문제다. 현재 admission-time count는 보존하며, 정확한 scope count를
+  고정하는 migration·경합 검증은 5c-2에 분리한다. 5c 전체가 완료됐다는 의미가 아니다.
+- 수정 전 raw-only runtime이 NOT_APPLICABLE로 잘못 표시되는 회귀 실패를 확인했다. 수정 후 Trading Review
+  171개와 app 99개, 총 270개 테스트의 실제 실행·필요 범위 재검증을 취합해 통과했다. 실제 PostgreSQL은
+  65개이며 owner isolation·조회 무변경·partial checkpoint·legacy 상태 복원을 포함한다. 테스트 실패·오류·
+  skip은 최종 취합에서 0개다. 새 DB Flyway V1~V16·모듈 경계·실행 JAR와 Context 문서 26개 검사를 통과했다.
+- 중간 검증의 새 service transaction proxy 설정·중복 scope fixture·이동한 조회 진입점과 composition의
+  호출부를 수정한 뒤 재검증했다. Windows socket listen 오류로 시작하지 못한 application 26개는 별도
+  실제 실행으로 확인했다. 로컬 실행기의 bare wildcard filter가 파일 목록으로 확장된 실패는 패키지
+  한정 filter로 재검증했으며, 이들 중간 실행을 성공으로 세지 않는다.
+- 첫 실제 E2E에서는 raw-only와 Session 삭제의 queued/unknown-create 공개 상태 검사가 통과했지만,
+  기존 cutover fixture가 전송 중 ACK 재예약과 경합해 retry를 소진했다. terminal ACK 실패를 확인한 뒤
+  해당 시나리오와 소유 서비스만 정리했다. fixture 대기는 실제 실패 전송의 lease 해제 뒤 조건부 UPDATE로
+  예약하도록 보완했다. 상태·attempt·lease·retry 예산을 강제로 바꾸지 않고 같은 Core 코드로 재검증했다.
+- 최종 실제 Core↔Compute E2E는 raw-only/Session 삭제의 queued·unknown-create 공개 상태 네 경로,
+  정책 시계 네 assertion·primary·무결성·publication·ACK 재시도·V1 pin·ORCH-024~028·두 Core cutover
+  10개·migration replay가 모두 통과했고 실제 프로세스 종료 코드는 0이다. Windows 10014로 실제 worker를
+  한 번 복구했고 원래 로그를 보존했다. 실제 checkpoint·runtime receipt·파일/key 부재와 HTTP component
+  상태를 함께 검증했다. V2 실제 HTTP publication은 범위 밖이며 PostgreSQL V2 검증과 구분한다.
+- 증적은 integration의 `.integration-data/trading-normalization/757aa2a950884641bfea387f022beee8/evidence.json`이다.
+  후보는 Core `33c2171`, Integration `1510b75`, Compute `d75ff4d`, Context `0099527`이다. 최종 실행과 중지한
+  첫 실행의 소유 registry 프로세스 0개와 포트 해제를 확인했다. 기존 Compute 0017의 단일 transaction
+  진단은 SQLSTATE `55006`으로 rollback됐고 기존 `psql -f` runner의 migration/replay는 통과했다.
+  검증 변경은 [Integration PR #47](https://github.com/refinvest-dev/integration/pull/47)로 분리했다.
+- 계산 입력·hash·version pin·generation·lease와 결정론은 바꾸지 않았다. 이 단계에는 DB schema와
+  OpenAPI snapshot 변경이 없으며 로컬 credential·fixture·증적은 커밋하지 않는다. 다음 단계는 R18/5c-2다.
 
 ### 5b-2 Raw 정책 시계와 non-terminal 만료
 

@@ -1,12 +1,12 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.deletion.*
-import java.io.FilterInputStream
-import java.util.concurrent.ConcurrentHashMap
 import com.refinvest.core.tradingreview.port.RawArtifactStorage
 import com.refinvest.core.tradingreview.port.StagedRawArtifact
 import com.refinvest.core.tradingreview.port.TradingFailure
+import com.refinvest.core.tradingreview.port.TradingFailureKind
+import com.refinvest.core.tradingreview.port.deletion.*
+import java.io.FilterInputStream
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -16,6 +16,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Cipher
 import javax.crypto.CipherInputStream
 import javax.crypto.CipherOutputStream
@@ -76,13 +77,13 @@ class LocalEncryptedRawArtifactStorage(
                         if (count < 0) break
                         if (count == 0) continue
                         size += count
-                        if (size > maxBytes) throw TradingFailure("FILE_TOO_LARGE", 413)
+                        if (size > maxBytes) throw TradingFailure("FILE_TOO_LARGE", TradingFailureKind.PAYLOAD_TOO_LARGE)
                         sha.update(buffer, 0, count)
                         encrypted.write(buffer, 0, count)
                     }
                 }
             }
-            if (size == 0L) throw TradingFailure("REQUEST_INVALID", 400)
+            if (size == 0L) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
             val hash = sha.digest().toHex()
             val verified = MessageDigest.getInstance("SHA-256")
             var verifiedSize = 0L
@@ -327,7 +328,7 @@ class RawArtifactStorageConfiguration {
     @Bean
     @ConditionalOnMissingBean(RawArtifactStorage::class)
     fun unavailableRawArtifactStorage(): RawArtifactStorage = object : RawArtifactStorage {
-        private fun unavailable(): Nothing = throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
+        private fun unavailable(): Nothing = throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", TradingFailureKind.DEPENDENCY_UNAVAILABLE)
         override fun putStaging(source: InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId, sessionId: TradingImportSessionId): StagedRawArtifact = unavailable()
         override fun preparePublication(staged: StagedRawArtifact, role: TradingArtifactRole): StagedRawArtifact = unavailable()
         override fun purgeCopies(scope: TradingArtifactScope): Boolean = unavailable()

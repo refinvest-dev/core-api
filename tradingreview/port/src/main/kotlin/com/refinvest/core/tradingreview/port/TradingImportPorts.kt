@@ -7,6 +7,7 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
+import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
 import java.io.InputStream
 import java.time.Instant
 
