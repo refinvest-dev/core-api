@@ -93,7 +93,7 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | 4b-2 | Session 소속 NormalizationRun | 소속 모델·Mapper·입력 pin·재시도·원자적 admission 보존 |
 | 4c | LedgerRevision 및 publication | immutable 발행 모델, membership/hash/generation gate, bounded 저장 |
 | 4d-1 | DeletionRequest 모델·저장 경계 | Root/typed ID·scope/checklist 정의·순수 Mapper·Aggregate 단위 요청 저장/복원 |
-| 4d-2 | DeletionRequest 상태 전이·진행 증명 | worker 전이 CAS·component별 durable checkpoint·실패/완료 규칙 연결 |
+| 4d-2 | DeletionRequest 상태 전이·진행 증명 | worker 전이 CAS·component별 durable checkpoint·정상 완료·실패·복구 연결 |
 | 5a | Dispatch/polling/result/ACK 진입점 | inbound use case, port의 기술 구현 이동, ACK commit 순서 보존 |
 | 5b | 삭제/retention 실행 흐름 | application orchestration, component별 durable 처리와 복구 |
 | 5c | 실패/조회/web 경계 | 의미 기반 실패, web DTO, 정확한 purge read model |
@@ -144,64 +144,48 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 4b-2 | 완료·머지 | [PR #97](https://github.com/refinvest-dev/core-api/pull/97), `ce42b14`·`e4e4b38`, Session 소속 NormalizationRun·순수 Mapper·명시적 admission과 재시도 입력 고정 |
 | 4c | 완료·머지 | [PR #98](https://github.com/refinvest-dev/core-api/pull/98), `d6df0c0`·`fd03cf3`, immutable LedgerRevision·순수 Mapper·전용 publication capability와 bounded 저장 |
 | 4d-1 | 완료·머지 | [PR #99](https://github.com/refinvest-dev/core-api/pull/99), `e02feae`·`7107bf6`, DeletionRequest Root·typed scope/checklist 정의·Mapper·Aggregate 요청 저장/복원 |
-| 4d-2 | 진행 중·머지 차단 | [Draft PR #100](https://github.com/refinvest-dev/core-api/pull/100), worker CAS·checkpoint 구현과 별개로 정상 삭제 완료 경로 미완성, 추가 E2E 미완료 |
-| 5a 이후 | 미착수 | dispatch/polling/result/ACK 진입점, 5b 외부 삭제 검증·복구, 5c read model/HTTP 순서 |
+| 4d-2 | 구현·검증 완료·리뷰 대기 | [PR #100](https://github.com/refinvest-dev/core-api/pull/100), application 실행 조율·lease·실제 부재 확인·복구와 ORCH-024~028 검증 |
+| 5a~5c | 후속 범위 | dispatch/polling/result/ACK 진입점, 남은 retention 실행, 조회·HTTP 의미 정리 |
 
 ### 4d-2 범위와 후속 경계
 
-- `DeletionRequest`의 행위로 시작·primary/object purge·부분 진행·실패·완료를 표현한다.
-  `verifiedAbsent`는 실제 component 확인 시각이며 전체 상태·영향 개수에서 만들지 않는다.
-  복원은 과거 `COMPLETED`의 빈 증거를 그대로 보존하지만, 새 완료 저장에는 모든 필수 증거가 필요하다.
-  terminal 요청은 재실행하거나 뒤로 전이하지 않는다. live 완료 후 backup 제거 기한은 별도로 추적한다.
-- `DeletionRequestExecution`은 Store와 분리된 원자적 실행 capability다. 활성 transaction의
-  `FOR UPDATE SKIP LOCKED`로 요청을 선택하고 owner/scope/generation/state/version CAS와 checkpoint를
-  함께 저장한다. 부분 object item의 완료와 workset 확보도 version을 증가시킨다. stale 실패는 요청과
-  artifact 상태를 바꾸지 않는다. Store의 조회는 같은 DB statement에서 Root와 checkpoint를 읽고
-  순수 Mapper로 복원한다.
-- V13은 기존 row와 terminal 기록을 보존하고 checkpoint를 추정해 backfill하지 않는다. primary purge
-  전 opaque object locator와 Session/Book/Account 관계, Compute job/attempt·dispatch key·원래/현재
-  generation·Revision ID를 별도 control workset에 보존한다. 객체별 삭제·부재 확인은 개별 transaction으로
-  commit하므로 다음 객체에서 실패하거나 worker가 재시작해도 성공 item과 나머지 locator가 남는다.
-  기존 `PURGING_OBJECTS`도 상태를 되돌리지 않고 workset 확보 후 진행한다.
-- 삭제 tombstone 아래의 local dispatch를 중단하고 read grant를 폐기한다. 기존 stale payload ACK는
-  primary purge 뒤에도 남기며, DB child 삭제와 unaffected latest pointer 정합을 유지한다. 미완료인
-  하위 삭제의 row가 사라졌다는 이유로 상위 scope를 완료하지 않는다.
-- **미완료 외부 실행 경계:** 현재 Compute port에는 cancellation/runtime 부재 확인이 없고 Core의
-  임시 spool은 scope별 추적을 제공하지 않는다. published analytics 파일도 삭제 호출만 있고 부재 조회가
-  없다. 따라서 해당 데이터가 있었을 수 있는 요청은 그 component를 완료하지 않는다. 확인 가능한
-  primary/object/key 진행을 보존하면서 `PURGING_OBJECTS`에 머물고 기존 5회 실패 예산 소진 시
-  `FAILED/DELETION_PARTIALLY_COMPLETED`가 된다. 단순 DB 삭제·TTL·전체 상태로 외부 부재를 추정하지 않는다.
-  이는 모든 삭제 scope의 정상 완료나 외부 runtime purge를 구현했다는 뜻이 아니다.
-- **머지 차단:** 실제 삭제 요청의 정상 완료가 막히는 기능 제약은 단순한 후속 작업으로 넘기지 않는다.
-  외부 확인 기능을 연결하거나 정상 삭제 흐름을 보존하도록 PR 범위를 다시 나누고 검증해야 한다.
-  로컬 테스트 통과는 이 기능 제약의 해소를 증명하지 않는다. 4d-2 완료 보고를 정정하며, 이 조건과
-  E2E 검증 공백을 해결하기 전에는 Draft를 해제하거나 다음 구조 단계로 넘어가지 않는다.
-- 5b는 보존한 workset을 소비하는 외부 취소·부재 검증, scope별 temporary cleanup, transaction 밖의
-  I/O·backoff·remediation을 연결해야 한다. 과거 완료 기록의 실제 외부 부재를 이번 migration으로
-  재증명하지 않는다. public component read model의 전체 상태 기반 추정 제거는 5c에 남아 있다.
-- 수정 전 기존 worker에서 외부 부재를 확인하지 않고 `COMPLETED`로 표시하는 회귀 실패를 재현했다.
-  같은 최종 코드에서 전체 실행과 대상 재실행을 합쳐 고유 테스트 239건을 통과했다. Domain 27,
-  Application 26, Persistence 66, Web·Compute·Storage 각 8, App 96건이며 최종 실패·skip은 0개다.
-  실제 PostgreSQL은 Persistence 51건과 App 23건, 총 74건이다. 컴파일의 UP-TO-DATE와 테스트 실행을
-  구분하며, 최종 전체 실행의 Windows 소켓 오류로 Domain 실행 일부·기존 DB 테스트 1건·HTTP timeout
-  테스트 2건이 중단된 실행은 통과로 세지 않았다. 같은 코드의 Domain 및 대상 재실행으로 보완했다.
-  중간 SQL·fixture 오류도 수정 후 검증했으며 실패한 실행을 통과로 합산하지 않는다.
-- 실제 DB에서 stale owner/generation/version·완료 뒤 실패 거절, 독립 연결의 SKIP LOCKED claim과
-  rollback, checkpoint 원자성, primary purge 후 객체별 복구, legacy subtree/raw-only 복구, V13 기존
-  terminal 데이터 보존과 하위 삭제 격리를 검증했다. 모듈 경계 두 진입점·bootJar와 계약·hash vector·
-  context 문서 25개 동기화 검사도 통과했다. API·계산 hash 계약과 계산 결정론 영향은 없다.
-- 분리된 integration Core/Compute schema의 실제 HTTP에서 기본 정규화·결과 무결성·LedgerRevision
-  publication과 V1 pin 024~026을 통과했다. 첫 시도는 psql Windows 소켓 오류로 V9 inspection 중단,
-  재시도는 추가 cutover 028의 `CUTOVER_PROCESS_CONTROL_FAILED`로 실패했으며 027 migration rehearsal은
-  미실행이다. 전체 E2E 통과로 표시하지 않으며 PR은 Draft로 둔다. 실패 원인은 harness 프로세스 제어
-  단계까지 확인했고 그 하위 원인은 확정하지 않았다. 해당 실행의 main·second·canary 서비스 registry는
-  모두 비어 있음을 확인했다. 자격 정보·fixture·증적·runner는 로컬에만 보관하고 커밋하지 않는다.
-- Domain·Mapper·실행 port(`36a5e94`)와 worker·CAS·V13·DB 회귀(`3e34350`)를 나누어 커밋했다.
-- 적용 시 삭제 worker를 중지하고 기존 transaction을 종료한 뒤 V13을 적용하고 모든 worker를 교체한다.
-  이전 worker는 version/checkpoint를 갱신하지 않으므로 혼합 실행은 지원하지 않는다. rollback 시 control
-  workset·checkpoint·migration 이력을 삭제하지 않으며, 구 worker의 완료 추정으로 복귀하지 않도록
-  삭제 worker를 중지한 상태에서 복구한다. 먼저 이 PR의 정상 완료 경로와 E2E 차단 사항을 해결하고,
-  이후 5a와 5b의 의존 관계를 다시 맞춘다.
+- `DeletionRequest`의 상태 전이와 component 증거를 CAS로 저장한다. 과거 `COMPLETED`의 빈 증거는
+  보존하지만 새 완료에는 모든 필수 component의 실제 부재 확인이 필요하다. terminal 요청을 되돌리지 않는다.
+- 정상 삭제의 완료를 위해 5b의 필수 외부 실행을 먼저 연결했다. Scheduler는 inbound port를 호출하고
+  application이 5분 lease·최대 10개 작업·transaction 밖 HTTP/파일 I/O·짧은 결과 반영을 조율한다.
+  owner/scope/generation/version과 현재 lease를 잠근 뒤 검사하며 stale 응답은 진행·실패·키를 바꾸지 않는다.
+- V13 workset은 primary purge 전 opaque locator와 관계를 보존한다. V14는 실행 정책·다음 시도·lease,
+  Run의 Session/source identity, artifact role, 사본 task와 remediation 관계를 추가한다. Mapper는 Root와
+  checkpoint를 순수 복원한다. 기존 terminal 기록이나 불명확한 legacy 범위에서 부재를 추정하지 않는다.
+- Compute는 Core Run 단위로 새 생성을 먼저 차단하고 실제 자원 부재를 확인한다. job ID가 없는 생성
+  응답 유실도 처리하며 source generation과 삭제 scope generation을 비교하거나 바꿔 쓰지 않는다.
+  child 종료뿐 아니라 부모의 결과 payload와 실패 traceback 해제도 확인한다.
+- raw upload/read, Run spool과 Revision 분석 입력을 scope별로 추적한다. 삭제 표식 뒤 새 쓰기를 막고
+  활성 handle을 drain한 뒤 사본을 정리한다. 파일·암호화 구현은 adapter로 옮겼다. raw-only는 retained
+  ledger/evidence/분석 입력을 유지한다. 기존 stale ACK와 unrelated latest pointer도 보존한다.
+- `PENDING`은 오류 횟수 0으로 기다린다. 실제 오류는 지수 backoff 뒤 5회 한도에서 실패하고, 24시간
+  SLA 초과도 실패로 남긴다. remediation은 원래 `FAILED` audit·scope/generation·item 증거를 보존한
+  새 요청이다. 상위 삭제는 같은 범위의 복구 완료 증거를 확인한다.
+- 최종 Core 고유 테스트 251건을 검증했다. Trading Review 155건과 app 96건이며 PostgreSQL Store
+  54건을 포함한다. 전체 실행의 파일 adapter JVM 시작 소켓 오류는 동일 코드의 15건 재실행으로
+  보완했다. 최종 실패·skip은 0이고 모듈 경계·bootJar도 통과했다.
+- Compute는 최신 main 병합 뒤 전체 단위 실행 936건 통과·선택 환경 87건 skip·event-loop 시작 오류
+  1건을 확인했다. 동일 코드의 대상 파일 17건 재실행과 부모 예외 자원 보존을 포함한 29건 회귀,
+  실제 PostgreSQL 15건, Ruff·strict Pyright 검증이 통과했다.
+- 실제 Core↔Compute HTTP에서 기본 정규화·무결성·LedgerRevision 발행과 ORCH-024~028이 모두
+  통과했다. 두 Core cutover의 assertion 10개, pre-pin migration 후 HTTP replay·Revision/ACK 보존,
+  queued Job 및 응답 유실 Run의 삭제 `COMPLETED`·체크포인트 6개·파일/primary/Job 부재·capacity
+  반환·늦은 create 거절을 검증했다. 구현 조합은 Core `fdbaaca`, Compute `7574c05`, integration
+  `0ae4d0a`다. 성공 실행의 worker 복구 event는 0개이며 main·second·canary registry는 모두 비어 있다.
+- 중단한 실행은 성공 기록에 포함하지 않는다. background JVM이 진단 PIPE를 상속해 startup 제어가
+  대기하는 문제는 임시 파일 수집으로 수정하고 실제 Windows child를 포함한 진단 테스트 4건을 검증했다.
+  Compute 0017의 단일 transaction 진단은 기존 `55006` 제약을 보존하고 rollback했다. 기존 `psql -f`
+  runner로 migration·HTTP replay가 통과했으며, 임의의 단일 transaction 배포로 일반화하지 않는다.
+- Context 문서 26개·Core/Compute/Web 계약·provenance·고정 hash fixture가 동기화됐다. 계산 입력·결과
+  hash·버전과 계산 결정론 영향은 없다. credential·fixture 산출물·상세 증적은 로컬에만 보관한다.
+- 전환은 [삭제 전환 절차](TRADING_DELETION_ROLLOUT.md)를 따른다. 후속 5a는 dispatch/polling/result/ACK
+  진입점, 남은 5b는 retention 실행 흐름, 5c는 public component projection과 HTTP 의미 정리를 다룬다.
+
 
 ### 4d-1 범위와 후속 경계
 

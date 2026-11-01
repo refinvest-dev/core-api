@@ -12,7 +12,8 @@ ADR-061/063과 [runtime 삭제 계약](../docs/TRADING_RUNTIME_DELETION.md)을 �
   인스턴스별로 사용하는 구성은 여러 인스턴스의 부재 확인을 보장하지 않는다.
 - 해당 volume에서 JVM 간 shared/exclusive file lock이 동작하는지 확인한다. scope 삭제 표식은 새
   reader/writer를 거절하고, 기존 handle을 drain한 뒤 실제 파일 부재를 확인한다.
-- 전환 전 global raw staging과 legacy result spool을 조사한다. 귀속을 확인할 수 없는 사본은
+- 전환 전 global raw staging·legacy flat object/발행 사본과 legacy result spool의 참조를 조사한다.
+  귀속을 확인할 수 없는 사본은
   완료로 backfill하지 않는다. orphan sweeper의 최대 보존 시간은 24시간이며 활성 handle은 건드리지 않는다.
 
 ## Deployment order
