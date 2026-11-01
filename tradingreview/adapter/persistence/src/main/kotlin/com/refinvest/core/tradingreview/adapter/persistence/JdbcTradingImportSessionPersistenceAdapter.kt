@@ -79,12 +79,23 @@ class JdbcTradingImportSessionPersistenceAdapter(private val jdbc: JdbcTemplate)
         val before = TradingImportSessionPersistenceMapper.toRecord(current)
         val after = TradingImportSessionPersistenceMapper.toRecord(session)
         if (before.version != after.version || before.deletionPending || after.updatedAt < before.updatedAt) return false
+        val rejectedNow = before.status == "VALIDATING" && after.status == "REJECTED"
+        val expiredNow = before.rawExpiredAt == null && after.rawExpiredAt != null
+        if (before.rejectedAt != after.rejectedAt && !(rejectedNow && after.rejectedAt == after.updatedAt)) return false
+        if (before.rawExpiredAt != after.rawExpiredAt && !(expiredNow && after.rawExpiredAt == after.updatedAt &&
+                before.status in setOf("RECEIVED", "VALIDATING", "PROCESSING_FAILED") &&
+                after.status == "PROCESSING_FAILED" && after.failure?.code == "SOURCE_ARTIFACT_EXPIRED" &&
+                after.failure.retryable == false && after.failure.userAction == "REUPLOAD_REQUIRED" &&
+                current.artifacts.any { !after.updatedAt.isBefore(it.rawExpiresAt) })) return false
         if (before.copy(status = after.status, deletionGeneration = after.deletionGeneration,
                 deletionPending = after.deletionPending, updatedAt = after.updatedAt,
                 validationStartedAt = after.validationStartedAt, activeNormalizationRunId = after.activeNormalizationRunId,
-                failure = after.failure, artifacts = emptyList(), normalizationRun = null) != after.copy(artifacts = emptyList(), normalizationRun = null)) return false
+                failure = after.failure, rejectedAt = after.rejectedAt, rawExpiredAt = after.rawExpiredAt,
+                artifacts = emptyList(), normalizationRun = null) != after.copy(artifacts = emptyList(), normalizationRun = null)) return false
         val generationAdvanced = before.deletionGeneration < Long.MAX_VALUE && after.deletionGeneration == before.deletionGeneration + 1
         val stateAllowed = when {
+            expiredNow -> generationAdvanced && !after.deletionPending &&
+                after.activeNormalizationRunId == before.activeNormalizationRunId && after.validationStartedAt == before.validationStartedAt
             after.deletionPending -> generationAdvanced && after.status == before.status &&
                 after.activeNormalizationRunId == before.activeNormalizationRunId &&
                 after.validationStartedAt == before.validationStartedAt && after.failure == before.failure
@@ -104,8 +115,11 @@ class JdbcTradingImportSessionPersistenceAdapter(private val jdbc: JdbcTemplate)
         for (stored in storedArtifacts) {
             val next = after.artifacts.singleOrNull { it.id == stored.id } ?: return false
             if (!sameArtifact(stored, next)) {
-                if (!generationAdvanced || stored.retentionStatus !in setOf("ACTIVE", "RETENTION_SCHEDULED") ||
-                    next.retentionStatus != "DELETION_PENDING" || !sameArtifact(stored.copy(retentionStatus = next.retentionStatus), next)) return false
+                val deleting = generationAdvanced && stored.retentionStatus in setOf("ACTIVE", "RETENTION_SCHEDULED") &&
+                    next.retentionStatus == "DELETION_PENDING" && sameArtifact(stored.copy(retentionStatus = next.retentionStatus), next)
+                val rejecting = rejectedNow && stored.retentionStatus == "ACTIVE" && stored.rawExpiresAt > after.updatedAt &&
+                    next.rawExpiresAt == after.updatedAt.plusSeconds(86400) && sameArtifact(stored.copy(rawExpiresAt = next.rawExpiresAt), next)
+                if (!deleting && !rejecting) return false
             }
         }
         val added = after.artifacts.filter { next -> storedArtifacts.none { it.id == next.id } }
@@ -114,25 +128,26 @@ class JdbcTradingImportSessionPersistenceAdapter(private val jdbc: JdbcTemplate)
         val pendingTransitions = storedArtifacts.count { stored ->
             stored.retentionStatus != "DELETION_PENDING" && after.artifacts.single { it.id == stored.id }.retentionStatus == "DELETION_PENDING"
         }
-        if (generationAdvanced && !after.deletionPending && pendingTransitions != 1) return false
+        if (generationAdvanced && !after.deletionPending && pendingTransitions != 1 && !(expiredNow && pendingTransitions == 0)) return false
         if (after.deletionPending && after.artifacts.any { it.retentionStatus in setOf("ACTIVE", "RETENTION_SCHEDULED") }) return false
         val changed = jdbc.update("""UPDATE trading_import_sessions SET status=?, deletion_generation=?, deletion_pending=?,
             updated_at=?, validation_started_at=?, active_normalization_run_id=?::uuid, failure_code=?,
-            failure_retryable=?, failure_user_action=?, failure_occurred_at=?, version=version+1
+            failure_retryable=?, failure_user_action=?, failure_occurred_at=?, rejected_at=?, raw_expired_at=?, version=version+1
             WHERE id=? AND owner_member_id=? AND version=? AND EXISTS (
                 SELECT 1 FROM trading_books b JOIN trading_accounts a ON a.id=b.account_id
                 WHERE b.id=trading_import_sessions.trading_book_id AND b.owner_member_id=trading_import_sessions.owner_member_id
                 AND b.status='ACTIVE' AND a.status='ACTIVE')""", after.status, after.deletionGeneration,
             after.deletionPending, Timestamp.from(after.updatedAt), after.validationStartedAt?.let(Timestamp::from),
             after.activeNormalizationRunId, after.failure?.code, after.failure?.retryable, after.failure?.userAction,
-            after.failure?.occurredAt?.let(Timestamp::from), after.id, after.owner, after.version)
+            after.failure?.occurredAt?.let(Timestamp::from), after.rejectedAt?.let(Timestamp::from),
+            after.rawExpiredAt?.let(Timestamp::from), after.id, after.owner, after.version)
         if (changed != 1) return false
         added.forEach(::insertArtifact)
         storedArtifacts.forEach { stored ->
             val next = after.artifacts.single { it.id == stored.id }
-            if (next.retentionStatus != stored.retentionStatus) check(jdbc.update("""UPDATE trading_source_artifacts
-                SET retention_status=?, version=version+1 WHERE id=? AND version=?""",
-                next.retentionStatus, next.id, next.version) == 1)
+            if (next.retentionStatus != stored.retentionStatus || next.rawExpiresAt != stored.rawExpiresAt)
+                check(jdbc.update("""UPDATE trading_source_artifacts SET retention_status=?,raw_expires_at=?,version=version+1
+                    WHERE id=? AND version=?""", next.retentionStatus, Timestamp.from(next.rawExpiresAt), next.id, next.version) == 1)
         }
         return true
     }

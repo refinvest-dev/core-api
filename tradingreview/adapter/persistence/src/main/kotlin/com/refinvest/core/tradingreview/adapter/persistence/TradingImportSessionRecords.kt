@@ -29,6 +29,9 @@ internal data class TradingImportSessionRecord(
     val createdLedgerRevisionId: UUID?,
     val artifacts: List<TradingSourceArtifactRecord> = emptyList(),
     val normalizationRun: NormalizationRunRecord? = null,
+    val acceptedAt: Instant? = null,
+    val rejectedAt: Instant? = null,
+    val rawExpiredAt: Instant? = null,
 )
 
 internal data class TradingSourceArtifactRecord(

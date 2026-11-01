@@ -52,12 +52,12 @@ class JdbcLedgerRevisionPersistenceAdapter(
         val book = jdbc.query("SELECT status,version FROM trading_books WHERE id=? AND account_id=? AND owner_member_id=? FOR UPDATE",
             { rs, _ -> rs.getString(1) to rs.getLong(2) }, candidate.bookId.value, accountId, candidate.owner.value).firstOrNull() ?: return false
         if (book.first != "ACTIVE") return false
-        val session = jdbc.query("""SELECT status,deletion_generation,deletion_pending,
-            active_normalization_run_id::text,created_ledger_revision_id::text FROM trading_import_sessions
+        val sessionRecord = jdbc.query("""SELECT * FROM trading_import_sessions
             WHERE id=? AND owner_member_id=? AND trading_book_id=? FOR UPDATE""", { rs, _ ->
-            listOf(rs.getString(1), rs.getLong(2).toString(), rs.getBoolean(3).toString(),
-                rs.getString(4) ?: "", rs.getString(5) ?: "") }, candidate.importSessionId.value,
+            TradingImportRows.session(rs) }, candidate.importSessionId.value,
             candidate.owner.value, candidate.bookId.value).firstOrNull() ?: return false
+        val session = listOf(sessionRecord.status, sessionRecord.deletionGeneration.toString(), sessionRecord.deletionPending.toString(),
+            sessionRecord.activeNormalizationRunId ?: "", sessionRecord.createdLedgerRevisionId?.toString() ?: "")
         if (session[2] != "false" || session[1] != run.input.deletionGeneration.toString()) return false
         if (session[0] == "ACCEPTED" && session[4].isNotBlank()) {
             val existing = find(LedgerRevisionId(java.util.UUID.fromString(session[4])), candidate.owner) ?: return false
@@ -81,8 +81,12 @@ class JdbcLedgerRevisionPersistenceAdapter(
                 rs.getTimestamp(8)?.toInstant()?.toString() ?: "", rs.getString(9), rs.getLong(10).toString(),
                 rs.getString(11), rs.getString(12)) }, run.id.value, dispatch.id, candidate.owner.value,
             candidate.bookId.value, candidate.importSessionId.value).firstOrNull() ?: return false
-        // Re-read wall time after all locks: a request that waited past its lease cannot publish.
+        val artifactRecords = jdbc.query("SELECT * FROM trading_source_artifacts WHERE import_session_id=? ORDER BY artifact_role FOR UPDATE",
+            { rs, _ -> TradingImportRows.artifact(rs) }, candidate.importSessionId.value)
+        // Re-read wall time after all locks: expired source or lease cannot publish.
         val now = clock.instant()
+        val accepted = TradingImportSessionPersistenceMapper.toDomain(sessionRecord.copy(artifacts = artifactRecords))
+            .acceptNormalization(run.id, run.input.deletionGeneration, candidate.id, now) ?: return false
         if (now.isBefore(lease.observedAt) || current[0] != "RESULT_READY" || current[1] != descriptor.attemptToken ||
             current[2] != descriptor.jobId || current[3] != descriptor.inputSetHash ||
             current[4] != descriptor.deletionGeneration.toString() || current[5] != "RESULT_READY" ||
@@ -187,10 +191,13 @@ class JdbcLedgerRevisionPersistenceAdapter(
             WHERE u.run_id=?::uuid AND u.section_type='REVIEW_UNITS'""", revisionId, run.id.value)
         check(jdbc.update("""UPDATE trading_import_sessions SET status='ACCEPTED',
             created_ledger_revision_id=?::uuid,failure_code=NULL,failure_retryable=NULL,
-            failure_user_action=NULL,failure_occurred_at=NULL,updated_at=?,version=version+1
+            failure_user_action=NULL,failure_occurred_at=NULL,accepted_at=?,updated_at=?,version=version+1
             WHERE id=? AND status='VALIDATING' AND active_normalization_run_id=?::uuid
-            AND deletion_generation=? AND NOT deletion_pending""", revisionId, Timestamp.from(now),
+            AND deletion_generation=? AND NOT deletion_pending""", revisionId, Timestamp.from(accepted.acceptedAt), Timestamp.from(now),
             run.input.importSessionId.value, run.id.value, run.input.deletionGeneration) == 1)
+        for (artifact in accepted.artifacts) check(jdbc.update("""UPDATE trading_source_artifacts SET raw_expires_at=?,version=version+1
+            WHERE id=? AND version=? AND retention_status='ACTIVE'""", Timestamp.from(artifact.rawExpiresAt),
+            artifact.id.value, artifact.version) == 1)
         check(jdbc.update("""UPDATE trading_books SET latest_ledger_revision_id=?::uuid,
             updated_at=?,version=version+1 WHERE id=? AND version=? AND status='ACTIVE'""", revisionId, Timestamp.from(now),
             run.input.tradingBookId.value, book.second) == 1)

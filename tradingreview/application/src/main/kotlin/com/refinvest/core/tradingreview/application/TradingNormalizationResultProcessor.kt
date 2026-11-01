@@ -242,8 +242,14 @@ class TradingNormalizationResultProcessor(
                     NormalizationDispatchLease(dispatch.id, worker, clock.instant())))
             } == true
             if (!transitionHeld && !published && transactions.execute {
-                    results.hasReadyLease(dispatch.id, worker, clock.instant()) } == true)
-                obsolete(run, dispatch, worker, descriptor)
+                    results.hasReadyLease(dispatch.id, worker, clock.instant()) } == true) {
+                val current = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId))
+                if (current != null && isCurrent(run, current) && current.artifacts.any { !clock.instant().isBefore(it.rawExpiresAt) }) {
+                    // Wait for the durable expiry generation/request. Do not invent a stale ACK at the old generation.
+                    transactions.execute { results.retryReady(dispatch.id, worker, "SOURCE_ARTIFACT_EXPIRED",
+                        clock.instant().plusSeconds(5), clock.instant()) }
+                } else obsolete(run, dispatch, worker, descriptor)
+            }
         } catch (_: LeaseLost) { return true }
         catch (error: ResultIntegrityFailure) { terminal(run, dispatch, worker, error.code) }
         catch (error: NormalizationResultStoreFailure) { terminal(run, dispatch, worker, error.safeCode) }

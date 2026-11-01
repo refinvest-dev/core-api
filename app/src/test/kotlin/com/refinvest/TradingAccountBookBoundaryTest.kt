@@ -40,6 +40,7 @@ class TradingAccountBookBoundaryTest {
         val root = workspaceRoot().resolve("tradingreview/adapter")
         listOf(
             "persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence/TradingRawRetentionWorker.kt",
+            "persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence/TradingImportExpiryScheduler.kt",
             "storage/src/main/kotlin/com/refinvest/core/tradingreview/adapter/storage/TradingRawOrphanWorker.kt",
         ).forEach { name ->
             val source = Files.readString(root.resolve(name))

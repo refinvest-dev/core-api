@@ -939,6 +939,65 @@ class PostgresTradingReviewStoreTest {
         return jdbc to uploaded.artifacts.single()
     }
 
+    private fun expiryService(jdbc: JdbcTemplate, tx: TransactionTemplate, clock: Clock,
+        deletionStore: DeletionRequestStore = JdbcDeletionRequestPersistenceAdapter(jdbc)):
+        com.refinvest.core.tradingreview.application.TradingImportExpiryService {
+        val nextId = java.util.concurrent.atomic.AtomicLong(600000)
+        return com.refinvest.core.tradingreview.application.TradingImportExpiryService(
+            JdbcTradingRawExpiryCandidates(jdbc), JdbcTradingAccountPersistenceAdapter(jdbc), JdbcTradingBookPersistenceAdapter(jdbc),
+            JdbcTradingImportSessionPersistenceAdapter(jdbc), deletionStore, object : TradingIdGenerator {
+                override fun accountId() = error("not used")
+                override fun bookId() = error("not used")
+                override fun deletionId() = DeletionRequestId(nextId.incrementAndGet())
+            }, tx, clock)
+    }
+
+    @Test
+    fun rawExpiryAndItsDurableRequestRollBackTogetherAndReplayOnce() = withDatabase { connection ->
+        val (jdbc, artifact) = seedExpiredRetentionArtifact(connection)
+        val tx = TransactionTemplate(DataSourceTransactionManager(requireNotNull(jdbc.dataSource)))
+        val before = importRows(jdbc)
+        val requests = JdbcDeletionRequestPersistenceAdapter(jdbc)
+        val interrupted = object : DeletionRequestStore by requests {
+            override fun insert(request: DeletionRequest) { requests.insert(request); error("synthetic expiry failure") }
+        }
+        val at = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS)
+        assertFailsWith<IllegalStateException> { expiryService(jdbc, tx, Clock.fixed(at, ZoneOffset.UTC), interrupted).expireDue() }
+        assertEquals(before, importRows(jdbc))
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_deletion_requests", Long::class.java))
+        val service = expiryService(jdbc, tx, Clock.fixed(at, ZoneOffset.UTC))
+        assertEquals(1, service.expireDue())
+        assertEquals(0, service.expireDue())
+        val root = JdbcTradingImportSessionPersistenceAdapter(jdbc).find(artifact.sessionId, MemberId(1))!!
+        assertEquals(at, root.rawExpiredAt)
+        assertEquals(1L, root.deletionGeneration)
+        assertEquals("SOURCE_ARTIFACT_EXPIRED", root.failure?.code)
+        assertFalse(root.failure!!.retryable)
+        assertEquals("RAW_ONLY", jdbc.queryForObject("SELECT requested_scope FROM trading_deletion_requests", String::class.java))
+        assertEquals(artifact.id.value, jdbc.queryForObject("SELECT target_id FROM trading_deletion_requests", Long::class.java))
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_deletion_requests", Long::class.java))
+    }
+
+    @Test
+    fun policyClockMigrationRecoversRejectedEvidenceWithoutExtendingOldRaw() = withDatabase { connection ->
+        val (jdbc, _) = seedExpiredRetentionArtifact(connection)
+        val rejected = now.plusSeconds(60)
+        jdbc.update("""UPDATE trading_import_sessions SET status='REJECTED',failure_code='FILE_FORMAT_INVALID',
+            failure_retryable=false,failure_user_action='NONE',failure_occurred_at=?,updated_at=?""",
+            java.sql.Timestamp.from(rejected), java.sql.Timestamp.from(rejected))
+        val deadline = jdbc.queryForObject("SELECT raw_expires_at FROM trading_source_artifacts", java.sql.Timestamp::class.java)
+        connection.createStatement().use { statement ->
+            statement.execute("ALTER TABLE trading_import_sessions DROP COLUMN accepted_at,DROP COLUMN rejected_at,DROP COLUMN raw_expired_at")
+            val migration = javaClass.getResourceAsStream("/db/migration/V16__trading_raw_policy_clocks.sql")!!.bufferedReader().use { it.readText() }
+            splitSqlStatements(migration).forEach(statement::execute)
+        }
+        val root = JdbcTradingImportSessionPersistenceAdapter(jdbc).find(TradingImportSessionId(32100), MemberId(1))!!
+        assertEquals(rejected, root.rejectedAt)
+        assertEquals(deadline, jdbc.queryForObject("SELECT raw_expires_at FROM trading_source_artifacts", java.sql.Timestamp::class.java))
+        assertNull(root.acceptedAt)
+        assertNull(root.rawExpiredAt)
+    }
+
     private fun importRows(jdbc: JdbcTemplate) = listOf(
         jdbc.queryForList("SELECT row_to_json(s)::text FROM trading_import_sessions s ORDER BY id", String::class.java),
         jdbc.queryForList("SELECT row_to_json(a)::text FROM trading_source_artifacts a ORDER BY id", String::class.java),
@@ -1314,6 +1373,10 @@ class PostgresTradingReviewStoreTest {
         verifyPublishedTerminal(true, expireRaw = true)
 
     @Test
+    fun expiredSourcesBlockLatePublicationBeforeTheExpiryWorkerRuns() =
+        verifyPublishedTerminal(false, expireBeforePublication = true)
+
+    @Test
     fun mismatchedTerminalDescriptorBlocksRevisionAndPersistedAck() =
         verifyPublishedTerminal(false, mismatchedDescriptor = true)
 
@@ -1322,7 +1385,8 @@ class PostgresTradingReviewStoreTest {
         verifyPublishedTerminal(false, mismatchedPayload = true)
 
     private fun verifyPublishedTerminal(v2: Boolean, mismatchedDescriptor: Boolean = false,
-                                        mismatchedPayload: Boolean = false, expireRaw: Boolean = false) =
+                                        mismatchedPayload: Boolean = false, expireRaw: Boolean = false,
+                                        expireBeforePublication: Boolean = false) =
         withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
@@ -1524,6 +1588,8 @@ class PostgresTradingReviewStoreTest {
                 object : TradingRetryJitter { override fun factor() = 0.5 })
         assertFalse(acknowledgement.acknowledgeOne())
         assertEquals(0, acknowledgeCalls)
+        if (expireBeforePublication) jdbc.update("UPDATE trading_source_artifacts SET raw_expires_at=?",
+            java.sql.Timestamp.from(now.plusSeconds(1)))
         val recoveredProcessor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
             runs, imports, review, results, client, transactions,
             Clock.fixed(now.plusSeconds(1), ZoneOffset.UTC), mapper,
@@ -1531,9 +1597,29 @@ class PostgresTradingReviewStoreTest {
                 override fun revisionId() = com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId(UUID.randomUUID())
             })
         assertTrue(recoveredProcessor.processOne())
+        if (expireBeforePublication) {
+            assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
+            assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_ack_dispatches", Long::class.java))
+            assertEquals("SOURCE_ARTIFACT_EXPIRED", jdbc.queryForObject("SELECT last_failure_code FROM trading_normalization_dispatches", String::class.java))
+            assertEquals(1, expiryService(jdbc, transactions, Clock.fixed(now.plusSeconds(1), ZoneOffset.UTC)).expireDue())
+            assertEquals(0, expiryService(jdbc, transactions, Clock.fixed(now.plusSeconds(2), ZoneOffset.UTC)).expireDue())
+            val expired = imports.find(session.id, MemberId(1))!!
+            assertEquals(TradingImportStatus.PROCESSING_FAILED, expired.status)
+            assertEquals("SOURCE_ARTIFACT_EXPIRED", expired.failure?.code)
+            assertEquals(1L, expired.deletionGeneration)
+            assertNotNull(expired.rawExpiredAt)
+            assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_deletion_requests", Long::class.java))
+            deletionWorker(jdbc, transactions, emptyStorage(), Clock.fixed(now.plusSeconds(3), ZoneOffset.UTC)).purgePending()
+            assertEquals("COMPLETED", jdbc.queryForObject("SELECT state FROM trading_deletion_requests", String::class.java))
+            assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
+            return@withDatabase
+        }
         assertEquals(1, descriptorCalls)
         assertEquals(1, downloadCalls)
         assertEquals(TradingImportStatus.ACCEPTED, imports.find(session.id, MemberId(1))?.status)
+        assertTrue(imports.find(session.id, MemberId(1))!!.artifacts.all {
+            it.rawExpiresAt == now.plusSeconds(1).plus(java.time.Duration.ofDays(7))
+        }, "Accepted raw must expire seven days after publication")
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
         val revisionId = assertNotNull(jdbc.queryForObject(
             "SELECT id::text FROM trading_ledger_revisions", String::class.java))
@@ -3080,6 +3166,10 @@ class PostgresTradingReviewStoreTest {
             val terminal = assertNotNull(imports.find(session.id, MemberId(1)))
             val expected = if (index < 6) TradingImportStatus.REJECTED else TradingImportStatus.PROCESSING_FAILED
             assertEquals(expected, terminal.status, code)
+            if (expected == TradingImportStatus.REJECTED) {
+                assertEquals(now, terminal.rejectedAt)
+                assertTrue(terminal.artifacts.all { it.rawExpiresAt == now.plusSeconds(86400) })
+            }
             assertEquals(code, terminal.failure?.code, code)
             assertEquals(NormalizationRunStatus.TERMINAL_FAILURE, runs.findRun(runId)?.status, code)
             assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
@@ -3291,6 +3381,11 @@ class PostgresTradingReviewStoreTest {
                     val retry = javaClass.getResourceAsStream("/db/migration/V15__trading_raw_retention_retry.sql")!!
                         .bufferedReader().use { it.readText() }
                     splitSqlStatements(retry).forEach(statement::execute)
+                }
+                connection.createStatement().use { statement ->
+                    val policy = javaClass.getResourceAsStream("/db/migration/V16__trading_raw_policy_clocks.sql")!!
+                        .bufferedReader().use { it.readText() }
+                    splitSqlStatements(policy).forEach(statement::execute)
                 }
                 test(connection)
             } finally {

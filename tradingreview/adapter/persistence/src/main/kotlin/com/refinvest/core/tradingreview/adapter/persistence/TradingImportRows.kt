@@ -18,7 +18,10 @@ internal object TradingImportRows {
         rs.getString("failure_code")?.let { code -> TradingImportFailureRecord(code,
             rs.getBoolean("failure_retryable"), rs.getString("failure_user_action"),
             rs.getTimestamp("failure_occurred_at").toInstant()) },
-        rs.getObject("created_ledger_revision_id", UUID::class.java))
+        rs.getObject("created_ledger_revision_id", UUID::class.java),
+        acceptedAt = rs.getTimestamp("accepted_at")?.toInstant(),
+        rejectedAt = rs.getTimestamp("rejected_at")?.toInstant(),
+        rawExpiredAt = rs.getTimestamp("raw_expired_at")?.toInstant())
 
     fun artifact(rs: ResultSet) = TradingSourceArtifactRecord(rs.getLong("id"),
         rs.getLong("import_session_id"), rs.getString("artifact_role"),
