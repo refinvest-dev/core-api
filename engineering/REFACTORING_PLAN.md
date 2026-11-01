@@ -144,8 +144,46 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 4b-2 | 완료·머지 | [PR #97](https://github.com/refinvest-dev/core-api/pull/97), `ce42b14`·`e4e4b38`, Session 소속 NormalizationRun·순수 Mapper·명시적 admission과 재시도 입력 고정 |
 | 4c | 완료·머지 | [PR #98](https://github.com/refinvest-dev/core-api/pull/98), `d6df0c0`·`fd03cf3`, immutable LedgerRevision·순수 Mapper·전용 publication capability와 bounded 저장 |
 | 4d-1 | 완료·머지 | [PR #99](https://github.com/refinvest-dev/core-api/pull/99), `e02feae`·`7107bf6`, DeletionRequest Root·typed scope/checklist 정의·Mapper·Aggregate 요청 저장/복원 |
-| 4d-2 | 구현·검증 완료·리뷰 대기 | [PR #100](https://github.com/refinvest-dev/core-api/pull/100), application 실행 조율·lease·실제 부재 확인·복구와 ORCH-024~028 검증 |
-| 5a~5c | 후속 범위 | dispatch/polling/result/ACK 진입점, 남은 retention 실행, 조회·HTTP 의미 정리 |
+| 4d-2 | 완료·머지 | [PR #100](https://github.com/refinvest-dev/core-api/pull/100), application 실행 조율·lease·실제 부재 확인·복구와 ORCH-024~028 검증 |
+| 5a | 구현·검증 완료·리뷰 대기 | [PR #101](https://github.com/refinvest-dev/core-api/pull/101), `eb6ec6a`·`0ca702a`, 정규화 inbound port·독립 ACK 실행과 commit/rollback·재전송 검증 |
+| 5b~5c | 후속 범위 | 남은 retention 실행, 실패·조회·HTTP 의미 정리 |
+
+### 5a 진입점과 ACK 실행 분리
+
+- dispatch·polling·결과 수신·ACK·staging 정리를 기능별 inbound port로 정의했다. Scheduler는
+  이 계약만 주입받고 회차당 20개 처리 상한과 기존 실행 주기를 유지한다. Application은 기존
+  lease·입력 identity·generation·result version pin과 publication 검증을 유지한다.
+- compute adapter의 application 의존성과 소스 경계 검사의 두 구현체 예외를 제거했다. 수정 전
+  새 Gradle 검사에서 기존 직접 의존을 거절하는 실패를 확인했고, 수정 후 compile/test classpath의
+  전이 의존에도 application 구현체가 없는지 검사한다. 기술 구현 금지 검사는 port 전체로 확대했다.
+  파일·암호화 구현 분리는 선행 #100의 내용을 유지하며 HTTP client는 compute adapter에 둔다.
+- `TradingNormalizationAcknowledgementService`는 commit된 ACK outbox의 claim→transaction 밖 전송→
+  결과 CAS만 담당한다. 결과 검증과 Revision 발행을 반복하지 않으며 저장된 재시도 정책·payload
+  만료·lease·멱등 키를 보존한다. 결과 수신 서비스는 발행과 ACK outbox를 같은 transaction에 저장한다.
+- 실제 PostgreSQL 테스트는 발행 row와 ACK outbox를 쓴 뒤 commit 전에 실패시켜 둘 다 rollback되고
+  staging은 남는지 확인한다. 복구 후 한 번만 발행하며, ACK 전송 때 활성 DB transaction이 없고 별도
+  물리 연결에서도 발행·Session ACCEPTED·ACK identity가 보이는지 검증했다. Compute가 ACK를 받은 뒤
+  Core가 결과를 기록하지 못한 경우도 lease 만료 후 같은 ACK를 재전송한다. V1/V2 publication을 포함한다.
+- Trading Review 155개와 app 97개, 총 252개 테스트의 실제 실행·재검증 결과를 취합해 통과했다.
+  실제 PostgreSQL 54개를 포함하며 최종 실패·오류·skip은 0개다. 최초 전체 실행과 일부 재실행의
+  Windows `Bad address: listen/connect`·10014 오류는 통과로 세지 않았다. 소스 변경 없이 해당 모듈과
+  남은 실패 테스트를 재실행했고 app 97개는 전체 재실행에서 통과했다. Gradle 모듈 경계 검사와
+  실행 JAR 빌드도 통과했다. 로컬 실행 보고서·credential·fixture·증적은 커밋하지 않는다.
+- 수정 전후 계약 snapshot과 Context 문서 26개·V1/V2 fixed vector 검사를 통과했다. 새 JAR의 실제
+  Core↔Compute E2E는 `primary`·`result_integrity`·`ledger_publication` 모두 PASS이며 ACK는
+  `ACKNOWLEDGED_AFTER_RETRY`다. ACK 요청 시 별도 DB 연결에서 publication commit 가시성을 확인했다.
+  V1 publication·ORCH-024~028과 두 Core의 cutover assertion 10개, migration 후 replay를 통과했다.
+  잘못된 descriptor/payload의 Revision·PERSISTED ACK는 0건이고 기존 latest를 유지했다. queued Job과
+  unknown-create 삭제 회귀도 각각 component 체크포인트 6개·실제 부재·늦은 create 거절을 확인했다.
+  실제 HTTP의 V2 publication은 이번 E2E 범위에 포함하지 않으며 PostgreSQL의 V2 publication 검증과 구분한다.
+- 첫 E2E는 서비스 기동 전 Windows 10014 DB 연결 오류로 중단됐고 성공으로 세지 않았다. 새 격리
+  실행은 종료 코드 0이며 실행 중 worker 소켓 오류 한 건의 harness 복구를 별도로 기록했다. 최종
+  증적은 integration의 `.integration-data/trading-normalization/655a38bdd73f4122b12d7f88812f0977/evidence.json`이다.
+  후보는 Core `0ca702a`, Compute `d75ff4d`, Context `0099527`, Integration `0ae4d0a`이며 이후 Core 변경은
+  이 문서뿐이다. 기본·두 번째 Core·canary registry의 프로세스 0개와 검증용 포트 해제를 확인했다.
+- API·DB schema·migration·retry 정책·version pin·hash와 계산 입력 의미는 바꾸지 않았으며 결정론에
+  영향이 없다. 다음 5b는 원본 TTL 만료와 orphan 정리의 application 조율·짧은 transaction·실제 부재
+  확인을 다룬다. #100에서 선반영한 삭제 실행과 복구를 남은 retention 전체의 완료로 보지 않는다.
 
 ### 4d-2 범위와 후속 경계
 
