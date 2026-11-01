@@ -42,8 +42,8 @@ class TradingNormalizationDispatcher(
     private val clock: Clock,
     private val mapper: ObjectMapper,
     private val transition: TradingNormalizationTransitionGate,
-) {
-    fun dispatchOne(): Boolean = transition.withCreatePermit { dispatchPermitted() } ?: false
+) : DispatchTradingNormalizationUseCase, PollTradingNormalizationUseCase {
+    override fun dispatchOne(): Boolean = transition.withCreatePermit { dispatchPermitted() } ?: false
 
     private fun dispatchPermitted(): Boolean {
         val now = clock.instant()
@@ -115,7 +115,7 @@ class TradingNormalizationDispatcher(
         return true
     }
 
-    fun pollOne(): Boolean {
+    override fun pollOne(): Boolean {
         val now = clock.instant()
         val workerId = UUID.randomUUID().toString()
         val dispatch = transactions.execute {

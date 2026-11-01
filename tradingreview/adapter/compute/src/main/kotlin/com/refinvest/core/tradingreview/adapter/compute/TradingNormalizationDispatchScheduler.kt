@@ -1,15 +1,23 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import com.refinvest.core.tradingreview.application.TradingNormalizationDispatcher
-import com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor
+import com.refinvest.core.tradingreview.port.normalization.AcknowledgeTradingNormalizationResultUseCase
+import com.refinvest.core.tradingreview.port.normalization.CleanupTradingNormalizationStagingUseCase
+import com.refinvest.core.tradingreview.port.normalization.DispatchTradingNormalizationUseCase
+import com.refinvest.core.tradingreview.port.normalization.PollTradingNormalizationUseCase
+import com.refinvest.core.tradingreview.port.normalization.ReceiveTradingNormalizationResultUseCase
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
 @Component
 @ConditionalOnProperty(name = ["refinvest.compute.enabled"], havingValue = "true")
-class TradingNormalizationDispatchScheduler(private val dispatcher: TradingNormalizationDispatcher,
-                                            private val results: TradingNormalizationResultProcessor) {
+class TradingNormalizationDispatchScheduler(
+    private val dispatcher: DispatchTradingNormalizationUseCase,
+    private val polling: PollTradingNormalizationUseCase,
+    private val results: ReceiveTradingNormalizationResultUseCase,
+    private val acknowledgements: AcknowledgeTradingNormalizationResultUseCase,
+    private val staging: CleanupTradingNormalizationStagingUseCase,
+) {
     @Scheduled(fixedDelayString = "\${refinvest.compute.dispatch-delay:PT5S}")
     fun dispatch() {
         repeat(20) { if (!dispatcher.dispatchOne()) return }
@@ -17,7 +25,7 @@ class TradingNormalizationDispatchScheduler(private val dispatcher: TradingNorma
 
     @Scheduled(fixedDelayString = "\${refinvest.compute.poll-delay:PT5S}")
     fun poll() {
-        repeat(20) { if (!dispatcher.pollOne()) return }
+        repeat(20) { if (!polling.pollOne()) return }
     }
 
     @Scheduled(fixedDelayString = "\${refinvest.compute.result-delay:PT5S}")
@@ -27,11 +35,11 @@ class TradingNormalizationDispatchScheduler(private val dispatcher: TradingNorma
 
     @Scheduled(fixedDelayString = "\${refinvest.compute.ack-delay:PT5S}")
     fun acknowledge() {
-        repeat(20) { if (!results.acknowledgeOne()) return }
+        repeat(20) { if (!acknowledgements.acknowledgeOne()) return }
     }
 
     @Scheduled(fixedDelayString = "\${refinvest.compute.staging-cleanup-delay:PT1M}")
     fun cleanupStaging() {
-        results.cleanupObsoleteStaging()
+        staging.cleanupObsoleteStaging()
     }
 }

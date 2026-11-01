@@ -7,6 +7,9 @@ import com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionMetadat
 import com.refinvest.core.tradingreview.port.ledger.*
 import com.refinvest.core.tradingreview.port.normalization.NormalizationDispatchLease
 import com.refinvest.core.tradingreview.port.normalization.TradingNormalizationRuntime
+import com.refinvest.core.tradingreview.port.normalization.ReceiveTradingNormalizationResultUseCase
+import com.refinvest.core.tradingreview.port.normalization.AcknowledgeTradingNormalizationResultUseCase
+import com.refinvest.core.tradingreview.port.normalization.CleanupTradingNormalizationStagingUseCase
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.shared.kernel.member.MemberId
@@ -53,7 +56,8 @@ class TradingNormalizationResultProcessor(
     parserMaxTokenCount: Long = 5_000_000,
     @Value("\${refinvest.trading-review.normalization.delivery.stage-batch-size:100}")
     private val stageBatchSize: Int = 100,
-) {
+) : ReceiveTradingNormalizationResultUseCase, AcknowledgeTradingNormalizationResultUseCase,
+    CleanupTradingNormalizationStagingUseCase {
     init { require(stageBatchSize > 0) }
     private val strictResultMapper = JsonMapper.builder()
         .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build()
@@ -62,7 +66,7 @@ class TradingNormalizationResultProcessor(
             parserMaxNameLength, parserMaxTokenCount))
     private val stagedVerifier = NormalizationStagedResultVerifier(results, strictResultMapper,
         stageBatchSize)
-    fun processOne(): Boolean {
+    override fun processOne(): Boolean {
         val worker = UUID.randomUUID().toString()
         val dispatch = transactions.execute {
             results.claimReady(clock.instant(), Duration.ofMinutes(15), worker)
@@ -249,7 +253,7 @@ class TradingNormalizationResultProcessor(
         return true
     }
 
-    fun acknowledgeOne(): Boolean {
+    override fun acknowledgeOne(): Boolean {
         val worker = UUID.randomUUID().toString()
         val ack = transactions.execute { results.claimAck(clock.instant(), Duration.ofSeconds(45), worker) }
             ?: return false
@@ -284,7 +288,7 @@ class TradingNormalizationResultProcessor(
         return true
     }
 
-    fun cleanupObsoleteStaging(): Int = transactions.execute {
+    override fun cleanupObsoleteStaging(): Int = transactions.execute {
         results.cleanupObsoleteStages(100) + results.cleanupAcknowledgementsForDeletedSessions(100)
     } ?: 0
 
