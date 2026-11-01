@@ -8,7 +8,6 @@ import com.refinvest.core.tradingreview.port.ledger.*
 import com.refinvest.core.tradingreview.port.normalization.NormalizationDispatchLease
 import com.refinvest.core.tradingreview.port.normalization.TradingNormalizationRuntime
 import com.refinvest.core.tradingreview.port.normalization.ReceiveTradingNormalizationResultUseCase
-import com.refinvest.core.tradingreview.port.normalization.AcknowledgeTradingNormalizationResultUseCase
 import com.refinvest.core.tradingreview.port.normalization.CleanupTradingNormalizationStagingUseCase
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
@@ -56,8 +55,7 @@ class TradingNormalizationResultProcessor(
     parserMaxTokenCount: Long = 5_000_000,
     @Value("\${refinvest.trading-review.normalization.delivery.stage-batch-size:100}")
     private val stageBatchSize: Int = 100,
-) : ReceiveTradingNormalizationResultUseCase, AcknowledgeTradingNormalizationResultUseCase,
-    CleanupTradingNormalizationStagingUseCase {
+) : ReceiveTradingNormalizationResultUseCase, CleanupTradingNormalizationStagingUseCase {
     init { require(stageBatchSize > 0) }
     private val strictResultMapper = JsonMapper.builder()
         .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build()
@@ -250,41 +248,6 @@ class TradingNormalizationResultProcessor(
         catch (error: ResultIntegrityFailure) { terminal(run, dispatch, worker, error.code) }
         catch (error: NormalizationResultStoreFailure) { terminal(run, dispatch, worker, error.safeCode) }
         catch (_: Exception) { retry(run, dispatch, worker, "TEMPORARY_DEPENDENCY_FAILURE") }
-        return true
-    }
-
-    override fun acknowledgeOne(): Boolean {
-        val worker = UUID.randomUUID().toString()
-        val ack = transactions.execute { results.claimAck(clock.instant(), Duration.ofSeconds(45), worker) }
-            ?: return false
-        val outcome = compute.acknowledge(ack)
-        transactions.execute {
-            val now = clock.instant()
-            when (outcome) {
-                NormalizationAckOutcome.Accepted -> results.completeAck(ack.idempotencyKey, worker, now)
-                is NormalizationAckOutcome.Rejected -> results.failAck(ack.idempotencyKey, worker,
-                    outcome.code, now)
-                NormalizationAckOutcome.Retry -> {
-                val pinned = mapper.readTree(ack.retryPolicyJson)
-                val attempts = pinned.path("maxAttempts").asInt()
-                val deadline = minOf(ack.payloadExpiresAt,
-                    ack.occurredAt.plus(Duration.parse(pinned.path("maxElapsedTime").asText())))
-                if (ack.attemptCount >= attempts || !now.isBefore(deadline)) {
-                    results.failAck(ack.idempotencyKey, worker, "RESULT_NOT_AVAILABLE", now)
-                    return@execute
-                }
-                val initial = Duration.parse(pinned.path("initialDelay").asText())
-                val maximum = Duration.parse(pinned.path("maxDelay").asText())
-                val scaled = min(initial.toMillis().toDouble() *
-                    (1L shl min(ack.attemptCount - 1, 20)), maximum.toMillis().toDouble())
-                val factor = if (pinned.path("jitter").asText() == "FULL_JITTER") jitter.factor() else 1.0
-                val next = now.plusMillis((scaled * factor).toLong().coerceAtLeast(0))
-                if (!next.isBefore(deadline))
-                    results.failAck(ack.idempotencyKey, worker, "RESULT_NOT_AVAILABLE", now)
-                else results.retryAck(ack.idempotencyKey, worker, next, now)
-                }
-            }
-        }
         return true
     }
 
