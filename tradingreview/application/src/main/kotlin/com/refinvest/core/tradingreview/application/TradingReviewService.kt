@@ -1,6 +1,9 @@
 package com.refinvest.core.tradingreview.application
 
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionAffectedResources
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionScope
 import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
@@ -9,16 +12,15 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
 import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
 import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
-import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
-import com.refinvest.core.tradingreview.domain.valueobject.DeletionScope
-import com.refinvest.core.tradingreview.domain.valueobject.DeletionAffectedResources
+import com.refinvest.core.tradingreview.port.TradingFailureKind
 import com.refinvest.core.tradingreview.port.account.TradingAccountReader
 import com.refinvest.core.tradingreview.port.account.TradingAccountStore
 import com.refinvest.core.tradingreview.port.book.TradingAccountBookDeletion
 import com.refinvest.core.tradingreview.port.book.TradingBookDeletionCascade
 import com.refinvest.core.tradingreview.port.book.TradingBookReader
 import com.refinvest.core.tradingreview.port.book.TradingBookStore
+import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
@@ -38,7 +40,7 @@ open class TradingReviewService(
     private val accountReader: TradingAccountReader,
     private val bookReader: TradingBookReader,
     private val bookDeletionCascade: TradingBookDeletionCascade,
-) : TradingAccountUseCase, TradingBookUseCase, GetTradingDeletionRequestUseCase {
+) : TradingAccountUseCase, TradingBookUseCase {
     @Transactional
     override fun create(venue: TradingVenue, displayName: String, key: String): TradingAccount {
         validKey(key)
@@ -47,7 +49,7 @@ open class TradingReviewService(
         return when (val claim = idempotency.claim(owner, "createTradingAccount", key, fingerprint)) {
             is IdempotencyClaim.Replayed -> accounts.find(TradingAccountId(claim.resourceId), owner)
                 ?.takeIf { it.status == TradingLifecycleStatus.ACTIVE || it.status == TradingLifecycleStatus.ARCHIVED }
-                ?: throw TradingFailure("RESOURCE_DELETED", 410)
+                ?: throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
             IdempotencyClaim.New -> TradingAccount.create(ids.accountId(), owner, venue, displayName, clock.instant()).also {
                 accounts.insert(it)
                 idempotency.complete(owner, "createTradingAccount", key, it.id.value)
@@ -60,7 +62,7 @@ open class TradingReviewService(
         val owner = members.currentMemberId()
         val account = accountReader.find(id, owner) ?: throw missing(accountReader.deleted(id, owner))
         if (account.status == TradingLifecycleStatus.DELETION_PENDING || account.status == TradingLifecycleStatus.DELETION_FAILED)
-            throw TradingFailure("RESOURCE_DELETED", 410)
+            throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         return account
     }
 
@@ -78,16 +80,16 @@ open class TradingReviewService(
         val fingerprint = fingerprint(id.value.toString())
         val existing = idempotency.claim(owner, operation, key, fingerprint)
         if (existing is IdempotencyClaim.Replayed) return deletions.find(DeletionRequestId(existing.resourceId), owner)?.let(TradingDeletion::fromDomain)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val account = accounts.find(id, owner, forUpdate = true) ?: throw missing(accounts.deleted(id, owner))
         if (account.status != TradingLifecycleStatus.ACTIVE && account.status != TradingLifecycleStatus.ARCHIVED)
-            throw TradingFailure("RESOURCE_DELETED", 410)
+            throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         val now = clock.instant()
         val deletingAccount = account.requestDeletion(now)
-        if (!accounts.update(deletingAccount)) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
+        if (!accounts.update(deletingAccount)) throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
         val count = bookDeletionCascade.markDeleting(TradingAccountBookDeletion(
             deletingAccount.id, owner, deletingAccount.deletionGeneration, Math.addExact(account.version, 1), now,
-        )) ?: throw TradingFailure("CONCURRENT_MODIFICATION", 409)
+        )) ?: throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
         val deletion = DeletionRequest.request(ids.deletionId(), owner, DeletionScope.account(id),
             deletingAccount.deletionGeneration, DeletionAffectedResources(1, count), now)
         deletions.insert(deletion)
@@ -102,14 +104,14 @@ open class TradingReviewService(
         validKey(key)
         val owner = members.currentMemberId()
         val account = accounts.find(accountId, owner, forUpdate = true) ?: throw missing(accounts.deleted(accountId, owner))
-        if (account.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", 410)
-        if (reviewTimezone !in ZoneId.getAvailableZoneIds()) throw TradingFailure("REVIEW_TIMEZONE_INVALID", 422)
+        if (account.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
+        if (reviewTimezone !in ZoneId.getAvailableZoneIds()) throw TradingFailure("REVIEW_TIMEZONE_INVALID", TradingFailureKind.INPUT_REJECTED)
         val fingerprint = fingerprint(accountId.value.toString(), displayName, productFamily.name,
             positionMode.name, settlementAsset.name, reviewTimezone)
         return when (val claim = idempotency.claim(owner, "createTradingBook", key, fingerprint)) {
             is IdempotencyClaim.Replayed -> books.find(TradingBookId(claim.resourceId), owner)
                 ?.takeIf { it.status == TradingLifecycleStatus.ACTIVE }
-                ?: throw TradingFailure("RESOURCE_DELETED", 410)
+                ?: throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
             IdempotencyClaim.New -> TradingBook.create(ids.bookId(), account, displayName, productFamily,
                 positionMode, settlementAsset, reviewTimezone, clock.instant()).also {
                 books.insert(it)
@@ -122,9 +124,9 @@ open class TradingReviewService(
     override fun get(id: TradingBookId): TradingBook {
         val owner = members.currentMemberId()
         val book = bookReader.find(id, owner) ?: throw missing(bookReader.deleted(id, owner))
-        if (book.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", 410)
+        if (book.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         val account = accountReader.find(book.accountId, owner) ?: throw missing(accountReader.deleted(book.accountId, owner))
-        if (account.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", 410)
+        if (account.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         return book
     }
 
@@ -143,15 +145,15 @@ open class TradingReviewService(
         val fingerprint = fingerprint(id.value.toString())
         val existing = idempotency.claim(owner, operation, key, fingerprint)
         if (existing is IdempotencyClaim.Replayed) return deletions.find(DeletionRequestId(existing.resourceId), owner)?.let(TradingDeletion::fromDomain)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val initialBook = books.find(id, owner) ?: throw missing(books.deleted(id, owner))
-        val account = accounts.find(initialBook.accountId, owner, forUpdate = true) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
-        if (account.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", 410)
+        val account = accounts.find(initialBook.accountId, owner, forUpdate = true) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
+        if (account.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         val book = books.find(id, owner, forUpdate = true) ?: throw missing(books.deleted(id, owner))
-        if (book.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", 410)
+        if (book.status != TradingLifecycleStatus.ACTIVE) throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         val now = clock.instant()
         val deletingBook = book.requestDeletion(now)
-        if (!books.update(deletingBook)) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
+        if (!books.update(deletingBook)) throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
         val deletion = DeletionRequest.request(ids.deletionId(), owner, DeletionScope.book(id),
             deletingBook.deletionGeneration, DeletionAffectedResources(0, 1), now)
         deletions.insert(deletion)
@@ -159,19 +161,15 @@ open class TradingReviewService(
         return TradingDeletion.fromDomain(deletion)
     }
 
-    @Transactional(readOnly = true)
-    override fun get(id: Long): TradingDeletion = deletions.find(DeletionRequestId(id), members.currentMemberId())?.let(TradingDeletion::fromDomain)
-        ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
-
     private fun missing(deleted: Boolean): TradingFailure =
-        if (deleted) TradingFailure("RESOURCE_DELETED", 410) else TradingFailure("RESOURCE_NOT_FOUND", 404)
+        if (deleted) TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE) else TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
 
     private fun validPage(page: Int, size: Int) {
-        if (page < 0 || size !in 1..100) throw TradingFailure("REQUEST_INVALID", 400)
+        if (page < 0 || size !in 1..100) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
     }
 
     private fun validKey(key: String) {
-        if (key.length !in 1..128 || !KEY.matches(key)) throw TradingFailure("IDEMPOTENCY_KEY_INVALID", 400)
+        if (key.length !in 1..128 || !KEY.matches(key)) throw TradingFailure("IDEMPOTENCY_KEY_INVALID", TradingFailureKind.INVALID_REQUEST)
     }
 
     private fun fingerprint(vararg parts: String): String {

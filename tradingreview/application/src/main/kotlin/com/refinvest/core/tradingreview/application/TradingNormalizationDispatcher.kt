@@ -1,19 +1,20 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.normalization.*
-import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
-import com.refinvest.core.tradingreview.domain.valueobject.NormalizationDispatchStatus
-import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
-import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationDispatchStatus
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportFailure
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
 import com.refinvest.core.tradingreview.port.*
+import com.refinvest.core.tradingreview.port.TradingFailureKind
 import com.refinvest.core.tradingreview.port.book.TradingBookStore
 import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
 import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactReader
+import com.refinvest.core.tradingreview.port.normalization.*
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -58,15 +59,15 @@ class TradingNormalizationDispatcher(
             return true
         }
         val submission = try {
-            if (run.inputIdentity == null) throw TradingFailure("INTERNAL_REQUEST_CONTRACT_INVALID", 422)
+            if (run.inputIdentity == null) throw TradingFailure("INTERNAL_REQUEST_CONTRACT_INVALID", TradingFailureKind.INPUT_REJECTED)
             val current = artifacts.list(run.input.importSessionId)
             for (pinned in run.input.artifacts) {
                 val live = current.singleOrNull { it.id == pinned.artifactId && it.role == pinned.role }
-                    ?: throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", 410)
+                    ?: throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", TradingFailureKind.NO_LONGER_AVAILABLE)
                 if (live.sha256 != pinned.sha256 || live.byteSize != pinned.contentLength)
-                    throw TradingFailure("ARTIFACT_IDENTITY_CONFLICT", 409)
+                    throw TradingFailure("ARTIFACT_IDENTITY_CONFLICT", TradingFailureKind.CONFLICT)
                 if (!live.rawReparseAvailable(clock.instant()))
-                    throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", 410)
+                    throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", TradingFailureKind.NO_LONGER_AVAILABLE)
             }
             val issued = run.input.artifacts.map { pinned -> grants.issueReadGrant(pinned,
                 dispatch.id, run.input.importSessionId, run.attemptToken, run.input.deletionGeneration) }

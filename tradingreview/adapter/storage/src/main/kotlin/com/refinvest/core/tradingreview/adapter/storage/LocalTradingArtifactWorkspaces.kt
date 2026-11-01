@@ -1,9 +1,12 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
 import com.refinvest.core.tradingreview.port.TradingFailure
+import com.refinvest.core.tradingreview.port.TradingFailureKind
 import com.refinvest.core.tradingreview.port.deletion.*
 import java.io.InputStream
 import java.io.OutputStream
+import java.lang.ref.ReferenceQueue
+import java.lang.ref.WeakReference
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
@@ -12,8 +15,6 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.util.HexFormat
 import java.util.concurrent.ConcurrentHashMap
-import java.lang.ref.ReferenceQueue
-import java.lang.ref.WeakReference
 
 /** Shared-volume process locks plus JVM-wide reference counts; handles may close on another thread. */
 class LocalTradingArtifactWorkspaces(rootPath: Path) : TradingArtifactWorkspaces {
@@ -31,7 +32,7 @@ class LocalTradingArtifactWorkspaces(rootPath: Path) : TradingArtifactWorkspaces
         val control = state(controls.resolve("$key.lock"))
         synchronized(control) {
             requireLive(key)
-            if (control.writing) throw TradingFailure("RESOURCE_DELETED", 410)
+            if (control.writing) throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
             if (control.readers == 0) {
                 val channel = FileChannel.open(controls.resolve("$key.lock"),
                     StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE)
@@ -85,7 +86,7 @@ class LocalTradingArtifactWorkspaces(rootPath: Path) : TradingArtifactWorkspaces
 
     private fun requireLive(key: String) {
         if (Files.exists(controls.resolve("$key.deleted"), LinkOption.NOFOLLOW_LINKS))
-            throw TradingFailure("RESOURCE_DELETED", 410)
+            throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
     }
 
     internal fun key(scope: TradingArtifactScope): String {

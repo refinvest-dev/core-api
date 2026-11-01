@@ -1,23 +1,24 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
-import com.refinvest.core.tradingreview.port.normalization.*
-import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
-import com.refinvest.core.tradingreview.domain.valueobject.NormalizationInputIdentity
-import com.refinvest.core.tradingreview.domain.valueobject.NormalizationDispatchStatus
-import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
-import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
-import com.refinvest.core.tradingreview.domain.importsession.NormalizationInput
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationInput
+import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationDispatchStatus
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationInputIdentity
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
 import com.refinvest.core.tradingreview.port.*
+import com.refinvest.core.tradingreview.port.TradingFailureKind
 import com.refinvest.core.tradingreview.port.account.TradingAccountStore
 import com.refinvest.core.tradingreview.port.book.TradingBookStore
 import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
+import com.refinvest.core.tradingreview.port.normalization.*
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
@@ -56,67 +57,67 @@ open class TradingNormalizationService(
     private fun admit(id: TradingImportSessionId, requestedVersions: String?, key: String,
                       retry: Boolean): TradingImportSession {
         if (key.length !in 1..128 || !Regex("[A-Za-z0-9._~-]+").matches(key))
-            throw TradingFailure("IDEMPOTENCY_KEY_INVALID", 400)
+            throw TradingFailure("IDEMPOTENCY_KEY_INVALID", TradingFailureKind.INVALID_REQUEST)
         transition.requireAdmission()
         val owner = members.currentMemberId()
         val initial = sessions.find(id, owner) ?: throw TradingFailure(
             if (sessions.deleted(id, owner)) "RESOURCE_DELETED" else "RESOURCE_NOT_FOUND",
-            if (sessions.deleted(id, owner)) 410 else 404)
-        val initialBook = books.find(initial.bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            if (sessions.deleted(id, owner)) TradingFailureKind.NO_LONGER_AVAILABLE else TradingFailureKind.NOT_FOUND)
+        val initialBook = books.find(initial.bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val account = accounts.find(initialBook.accountId, owner, forUpdate = true)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val book = books.find(initialBook.id, owner, forUpdate = true)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val session = sessions.find(id, owner, forUpdate = true)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         if (account.status != TradingLifecycleStatus.ACTIVE || book.status != TradingLifecycleStatus.ACTIVE ||
-            session.deletionPending) throw TradingFailure("RESOURCE_DELETED", 410)
+            session.deletionPending) throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         if (session.bookId != book.id || session.owner != book.owner || session.owner != owner)
-            throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         if (session.declaredPositionMode != book.positionMode ||
             session.sourceTimezone.isBlank() || session.reviewTimezone.isBlank())
-            throw TradingFailure("REQUEST_INVALID", 422)
+            throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INPUT_REJECTED)
         val operation = if (retry) "retryTradingImportSession" else "validateTradingImportSession"
         val pinnedVersions = canonical(session.versionSetJson)
         if (requestedVersions != null && canonical(requestedVersions) != pinnedVersions)
-            throw TradingFailure("VERSION_UNAVAILABLE", 422)
+            throw TradingFailure("VERSION_UNAVAILABLE", TradingFailureKind.INPUT_REJECTED)
         val publicPayload = NormalizationInputFingerprint.hashParts(id.value.toString(),
             requestedVersions?.let(::canonical) ?: "", if (retry) "retry" else "validate")
         when (idempotency.claim(owner, operation, key, publicPayload)) {
             is IdempotencyClaim.Replayed -> return sessions.find(id, owner)
-                ?: throw TradingFailure("RESOURCE_DELETED", 410)
+                ?: throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
             IdempotencyClaim.New -> Unit
         }
         if (!retry && session.status == TradingImportStatus.VALIDATING) {
             if (runs.findActive(id)?.id != session.activeNormalizationRunId)
-                throw TradingFailure("RESOURCE_STATE_CONFLICT", 409)
+                throw TradingFailure("RESOURCE_STATE_CONFLICT", TradingFailureKind.CONFLICT)
             idempotency.complete(owner, operation, key, id.value)
             return session
         }
         if (retry && (session.status != TradingImportStatus.PROCESSING_FAILED ||
                 session.failure?.retryable != true))
-            throw TradingFailure("RESOURCE_STATE_CONFLICT", 409)
+            throw TradingFailure("RESOURCE_STATE_CONFLICT", TradingFailureKind.CONFLICT)
         if (!retry && session.status != TradingImportStatus.RECEIVED)
-            throw TradingFailure("RESOURCE_STATE_CONFLICT", 409)
+            throw TradingFailure("RESOURCE_STATE_CONFLICT", TradingFailureKind.CONFLICT)
         // The version pin must still be executable. Retry never silently moves to a newer version.
-        if (canonical(versions.currentJson()) != pinnedVersions) throw TradingFailure("VERSION_UNAVAILABLE", 422)
+        if (canonical(versions.currentJson()) != pinnedVersions) throw TradingFailure("VERSION_UNAVAILABLE", TradingFailureKind.INPUT_REJECTED)
         val now = clock.instant()
         val source = session.artifacts
         val prepared = TradingArtifactRole.entries.map { role ->
             val matches = source.filter { it.role == role && it.retentionStatus == TradingArtifactRetentionStatus.ACTIVE }
             if (matches.isEmpty()) throw TradingFailure(
                 if (retry) "SOURCE_ARTIFACT_EXPIRED" else "MISSING_REQUIRED_ARTIFACT",
-                if (retry) 410 else 422)
+                if (retry) TradingFailureKind.NO_LONGER_AVAILABLE else TradingFailureKind.INPUT_REJECTED)
             if (matches.size != 1 || source.count { it.role == role } != 1)
-                throw TradingFailure("ARTIFACT_ROLE_CONFLICT", 409)
+                throw TradingFailure("ARTIFACT_ROLE_CONFLICT", TradingFailureKind.CONFLICT)
             val artifact = matches.single()
             if (artifact.dialectCandidate != "AUTO" && artifact.dialectCandidate != when (role) {
                     TradingArtifactRole.TRADE_HISTORY -> "BINANCE_USDS_TRADE_HISTORY_V1"
                     TradingArtifactRole.POSITION_HISTORY -> "BINANCE_USDS_POSITION_HISTORY_V1"
-                }) throw TradingFailure("REQUEST_INVALID", 422)
+                }) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INPUT_REJECTED)
             if (!artifact.rawReparseAvailable(now) || artifact.byteSize <= 0 ||
                 !Regex("[0-9a-f]{64}").matches(artifact.sha256))
-                throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", 410)
+                throw TradingFailure("SOURCE_ARTIFACT_EXPIRED", TradingFailureKind.NO_LONGER_AVAILABLE)
             NormalizationArtifactInput(artifact.id, role, artifact.sha256, artifact.byteSize,
                 artifact.contentType, artifact.dialectCandidate)
         }.sortedBy { it.role.ordinal }
@@ -128,7 +129,7 @@ open class TradingNormalizationService(
             "initialDelay" to policy.initialDelay.toString(),
             "maxDelay" to policy.maxDelay.toString(), "jitter" to policy.jitter))
         val terms = if (retry) session.normalizationRun?.input?.instrumentTermsJson
-            ?: throw TradingFailure("RESOURCE_STATE_CONFLICT", 409)
+            ?: throw TradingFailure("RESOURCE_STATE_CONFLICT", TradingFailureKind.CONFLICT)
         else canonical(settings.instrumentTermsJson())
         val input = NormalizationInput(book.id, session.id, owner.value, prepared, book.venue.name,
             book.productFamily.name, book.positionMode.name, book.settlementAsset.name,
@@ -136,19 +137,19 @@ open class TradingNormalizationService(
             session.dataPolicyVersion, policy.version, policyJson, session.deletionGeneration)
         val identity = try {
             NormalizationInputIdentity.fromPinnedInput(input, mapper.readValue(pinnedVersions, Map::class.java))
-        } catch (_: Exception) { throw TradingFailure("VERSION_UNAVAILABLE", 422) }
+        } catch (_: Exception) { throw TradingFailure("VERSION_UNAVAILABLE", TradingFailureKind.INPUT_REJECTED) }
         val hash = NormalizationInputCanonicalizer.hash(identity)
         val previous = if (retry) {
             val previous = session.normalizationRun
-                ?: throw TradingFailure("RESOURCE_STATE_CONFLICT", 409)
+                ?: throw TradingFailure("RESOURCE_STATE_CONFLICT", TradingFailureKind.CONFLICT)
             val previousIdentity = previous.inputIdentity
-                ?: throw TradingFailure("VERSION_UNAVAILABLE", 422)
+                ?: throw TradingFailure("VERSION_UNAVAILABLE", TradingFailureKind.INPUT_REJECTED)
             if (previous.inputFingerprint != hash ||
                 !NormalizationInputCanonicalizer.canonicalize(previousIdentity).contentEquals(
                     NormalizationInputCanonicalizer.canonicalize(identity)) ||
                 previous.input.artifacts != prepared ||
                 previous.input.deletionGeneration != session.deletionGeneration)
-                throw TradingFailure("ARTIFACT_IDENTITY_CONFLICT", 409)
+                throw TradingFailure("ARTIFACT_IDENTITY_CONFLICT", TradingFailureKind.CONFLICT)
             previous
         } else null
         val runId = identifiers.runId()
@@ -166,14 +167,14 @@ open class TradingNormalizationService(
             NormalizationDispatchStatus.PENDING, 0, now, null, null, null, now, now,
             resultVersionPin = resultPin)
         if (!admissions.admit(NormalizationAdmission(session, admitted, dispatch)))
-            throw TradingFailure("CONCURRENT_MODIFICATION", 409)
+            throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
         idempotency.complete(owner, operation, key, id.value)
         return admitted
     }
 
     private fun canonical(raw: String): String = try {
         NormalizationInputFingerprint.canonical(strictMapper.readValue(raw, Any::class.java), mapper)
-    } catch (_: Exception) { throw TradingFailure("VERSION_UNAVAILABLE", 422) }
+    } catch (_: Exception) { throw TradingFailure("VERSION_UNAVAILABLE", TradingFailureKind.INPUT_REJECTED) }
 }
 
 object NormalizationInputFingerprint {

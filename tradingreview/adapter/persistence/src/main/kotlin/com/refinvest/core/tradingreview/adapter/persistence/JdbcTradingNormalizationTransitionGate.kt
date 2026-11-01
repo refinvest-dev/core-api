@@ -1,12 +1,13 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
 import com.refinvest.core.tradingreview.port.TradingFailure
+import com.refinvest.core.tradingreview.port.TradingFailureKind
 import com.refinvest.core.tradingreview.port.TradingNormalizationTransitionGate
+import java.util.concurrent.Semaphore
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.support.TransactionSynchronizationManager
-import java.util.concurrent.Semaphore
 
 @Repository
 class JdbcTradingNormalizationTransitionGate(private val jdbc: JdbcTemplate) : TradingNormalizationTransitionGate {
@@ -14,7 +15,7 @@ class JdbcTradingNormalizationTransitionGate(private val jdbc: JdbcTemplate) : T
     private val sending = Semaphore(1)
 
     override fun requireAdmission() {
-        if (!publicationAllowed()) throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
+        if (!publicationAllowed()) throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", TradingFailureKind.DEPENDENCY_UNAVAILABLE)
     }
 
     override fun publicationAllowed(): Boolean {

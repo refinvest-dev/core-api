@@ -1,21 +1,23 @@
 package com.refinvest.core.tradingreview.adapter.web
 
+import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
-import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
-import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
 import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
+import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
-
-import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
 import com.refinvest.core.tradingreview.port.*
+import com.refinvest.core.tradingreview.port.deletion.GetTradingDeletionRequestUseCase
+import com.refinvest.core.tradingreview.port.deletion.PurgeComponentStatus
+import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotEmpty
 import jakarta.validation.constraints.Size
+import java.time.Instant
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.*
-import java.time.Instant
 
 data class CreateTradingAccountRequest(
     val venue: TradingVenue,
@@ -60,20 +62,18 @@ data class TradingDeletionResponse(val id: String, val targetType: String, val t
                                    val affectedResources: AffectedResourceSummary, val revokedAt: Instant,
                                    val primaryPurgeStatus: String, val objectPurgeStatus: String,
                                    val computeRuntimePurgeStatus: String, val backupPurgeStatus: String,
-                                   val backupPurgeDueAt: Instant, val retryable: Boolean,
+                                   val backupPurgeDueAt: Instant?, val retryable: Boolean,
                                    val requestedAt: Instant, val updatedAt: Instant,
                                    val completedAt: Instant?, val failure: TradingDeletionFailure?) {
     companion object {
         fun from(value: TradingDeletion) = TradingDeletionResponse(value.id.toString(), value.targetType,
             value.targetId.toString(), value.requestedScope, value.state,
             AffectedResourceSummary(value.accountCount, value.bookCount, value.importSessionCount, value.artifactCount), value.revokedAt,
-            if (value.targetType == "TRADING_SOURCE_ARTIFACT") "NOT_APPLICABLE" else when (value.state) {
-                "COMPLETED" -> "COMPLETED"; "FAILED" -> "FAILED"; else -> "IN_PROGRESS" },
-            if (value.artifactCount == 0L) "NOT_APPLICABLE" else when (value.state) {
-                "COMPLETED" -> "COMPLETED"; "FAILED" -> "FAILED"; else -> "IN_PROGRESS" },
-            "NOT_APPLICABLE", "IN_PROGRESS", value.backupPurgeDueAt,
-            value.state != "COMPLETED" && value.state != "FAILED", value.requestedAt, value.updatedAt,
-            value.completedAt, value.failureCode?.let { TradingDeletionFailure(it, "Deletion could not be completed", false) })
+            value.primaryPurgeStatus.name, value.objectPurgeStatus.name, value.computeRuntimePurgeStatus.name,
+            value.backupPurgeStatus.name,
+            value.backupPurgeDueAt.takeUnless { value.backupPurgeStatus == PurgeComponentStatus.NOT_APPLICABLE },
+            value.retryable, value.requestedAt, value.updatedAt,
+            value.completedAt, value.failureCode?.let { TradingDeletionFailure(it, "Deletion could not be completed", value.retryable) })
     }
 }
 

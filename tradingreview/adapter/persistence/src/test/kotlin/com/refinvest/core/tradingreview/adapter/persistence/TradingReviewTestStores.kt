@@ -1,12 +1,13 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
 import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.tradingreview.domain.valueobject.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
 import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
-import com.refinvest.core.tradingreview.domain.valueobject.*
 import com.refinvest.core.tradingreview.port.account.*
 import com.refinvest.core.tradingreview.port.book.*
+import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
 import org.springframework.jdbc.core.JdbcTemplate
 
 /** Test fixture composition only; production adapters each implement one aggregate or capability. */

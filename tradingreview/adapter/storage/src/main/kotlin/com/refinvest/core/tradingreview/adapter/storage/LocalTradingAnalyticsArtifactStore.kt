@@ -1,35 +1,36 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
+import com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId
 import com.refinvest.core.tradingreview.port.AnalyticsInputArtifact
 import com.refinvest.core.tradingreview.port.TradingAnalyticsArtifactStore
 import com.refinvest.core.tradingreview.port.TradingFailure
-import org.springframework.beans.factory.annotation.Value
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Configuration
+import com.refinvest.core.tradingreview.port.TradingFailureKind
 import com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope
 import com.refinvest.core.tradingreview.port.deletion.TradingArtifactWorkspaces
-import com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId
 import java.io.FilterInputStream
 import java.io.FilterOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.channels.FileChannel
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.security.KeyStore
+import java.security.MessageDigest
 import java.security.SecureRandom
+import java.util.HexFormat
+import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.CipherInputStream
 import javax.crypto.CipherOutputStream
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
-import java.nio.file.FileAlreadyExistsException
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.channels.FileChannel
-import java.nio.file.StandardOpenOption
-import java.security.MessageDigest
-import java.util.HexFormat
-import java.util.UUID
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
 
 /** Private immutable content-addressed storage; grants and runtime locators are separate. */
 class LocalTradingAnalyticsArtifactStore(rootPath: Path, private val maximumBytes: Long,
@@ -201,10 +202,10 @@ class TradingAnalyticsArtifactStorageConfiguration {
         object : TradingAnalyticsArtifactStore {
             override fun put(revisionId: String, role: String, mediaType: String,
                              write: (OutputStream) -> Unit): AnalyticsInputArtifact =
-                throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
+                throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", TradingFailureKind.DEPENDENCY_UNAVAILABLE)
             override fun open(coreReferenceId: String): InputStream =
-                throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
+                throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", TradingFailureKind.DEPENDENCY_UNAVAILABLE)
             override fun purgeRevision(revisionId: String): Boolean =
-                throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
+                throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", TradingFailureKind.DEPENDENCY_UNAVAILABLE)
         }
 }

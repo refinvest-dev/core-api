@@ -1,6 +1,9 @@
 package com.refinvest.core.tradingreview.application
 
 import com.refinvest.core.tradingreview.domain.*
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionAffectedResources
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionScope
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
 import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
@@ -11,12 +14,11 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatu
 import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
-import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
-import com.refinvest.core.tradingreview.domain.valueobject.DeletionScope
-import com.refinvest.core.tradingreview.domain.valueobject.DeletionAffectedResources
+import com.refinvest.core.tradingreview.port.TradingFailureKind
 import com.refinvest.core.tradingreview.port.account.TradingAccountStore
 import com.refinvest.core.tradingreview.port.book.TradingBookStore
+import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
 import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionReader
 import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
 import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactReader
@@ -51,27 +53,27 @@ open class TradingImportService(
                         mode: TradingPositionMode, dataPolicyVersion: String?, clientRequestReference: String?,
                         key: String): TradingImportSession {
         validKey(key)
-        if (sourceTimezone !in ZoneId.getAvailableZoneIds()) throw TradingFailure("SOURCE_TIMEZONE_INVALID", 422)
-        if (reviewTimezone !in ZoneId.getAvailableZoneIds()) throw TradingFailure("REVIEW_TIMEZONE_INVALID", 422)
+        if (sourceTimezone !in ZoneId.getAvailableZoneIds()) throw TradingFailure("SOURCE_TIMEZONE_INVALID", TradingFailureKind.INPUT_REJECTED)
+        if (reviewTimezone !in ZoneId.getAvailableZoneIds()) throw TradingFailure("REVIEW_TIMEZONE_INVALID", TradingFailureKind.INPUT_REJECTED)
         if (dataPolicyVersion != null && dataPolicyVersion != POLICY.dataPolicyVersion)
-            throw TradingFailure("VERSION_UNAVAILABLE", 422)
+            throw TradingFailure("VERSION_UNAVAILABLE", TradingFailureKind.INPUT_REJECTED)
         if (clientRequestReference != null && clientRequestReference.length > 100)
-            throw TradingFailure("REQUEST_INVALID", 400)
+            throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
         val owner = members.currentMemberId()
-        val initial = books.find(bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+        val initial = books.find(bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val account = accounts.find(initial.accountId, owner, forUpdate = true)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
-        val book = books.find(bookId, owner, forUpdate = true) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
+        val book = books.find(bookId, owner, forUpdate = true) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         if (account.status != TradingLifecycleStatus.ACTIVE || book.status != TradingLifecycleStatus.ACTIVE)
-            throw TradingFailure("RESOURCE_DELETED", 410)
+            throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         if (mode != TradingPositionMode.ONE_WAY || mode != book.positionMode)
-            throw TradingFailure("POSITION_MODE_UNSUPPORTED", 422)
+            throw TradingFailure("POSITION_MODE_UNSUPPORTED", TradingFailureKind.INPUT_REJECTED)
         val fingerprint = fingerprint(bookId.value.toString(), sourceTimezone, reviewTimezone, mode.name,
             POLICY.dataPolicyVersion, clientRequestReference ?: "")
         return when (val claim = idempotency.claim(owner, "createTradingImportSession", key, fingerprint)) {
             is IdempotencyClaim.Replayed -> sessions.find(TradingImportSessionId(claim.resourceId), owner)
                 ?.takeUnless { it.deletionPending }
-                ?: throw TradingFailure("RESOURCE_DELETED", 410)
+                ?: throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
             IdempotencyClaim.New -> {
                 val session = TradingImportSession.create(ids.importSessionId(), book, sourceTimezone,
                     reviewTimezone, mode, POLICY, versions.currentJson(), clock.instant())
@@ -86,11 +88,11 @@ open class TradingImportService(
     override fun get(id: TradingImportSessionId): TradingImportSessionView {
         val owner = members.currentMemberId()
         val session = reader.find(id, owner) ?: throw missing(reader.deleted(id, owner))
-        if (session.deletionPending) throw TradingFailure("RESOURCE_DELETED", 410)
-        val book = books.find(session.bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
-        val account = accounts.find(book.accountId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+        if (session.deletionPending) throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
+        val book = books.find(session.bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
+        val account = accounts.find(book.accountId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         if (book.status != TradingLifecycleStatus.ACTIVE || account.status != TradingLifecycleStatus.ACTIVE)
-            throw TradingFailure("RESOURCE_DELETED", 410)
+            throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         return TradingImportSessionView(session, session.artifacts,
             if (session.status == TradingImportStatus.ACCEPTED)
                 revisions.publishedForSession(id, owner) else null)
@@ -98,12 +100,12 @@ open class TradingImportService(
 
     @Transactional(readOnly = true)
     override fun list(bookId: TradingBookId, page: Int, size: Int): TradingPage<TradingImportSessionView> {
-        if (page < 0 || size !in 1..100) throw TradingFailure("REQUEST_INVALID", 400)
+        if (page < 0 || size !in 1..100) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
         val owner = members.currentMemberId()
-        val book = books.find(bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
-        val account = accounts.find(book.accountId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+        val book = books.find(bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
+        val account = accounts.find(book.accountId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         if (book.status != TradingLifecycleStatus.ACTIVE || account.status != TradingLifecycleStatus.ACTIVE)
-            throw TradingFailure("RESOURCE_DELETED", 410)
+            throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         val result = reader.list(bookId, owner, page, size)
         return TradingPage(result.items.map { session -> TradingImportSessionView(session,
             session.artifacts, if (session.status == TradingImportStatus.ACCEPTED)
@@ -122,75 +124,75 @@ open class TradingImportService(
         validKey(key)
         val owner = members.currentMemberId()
         val preflight = sessions.find(id, owner) ?: throw missing(sessions.deleted(id, owner))
-        if (!preflight.canUpload()) throw TradingFailure("RESOURCE_STATE_CONFLICT", 409)
-        val preflightBook = books.find(preflight.bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+        if (!preflight.canUpload()) throw TradingFailure("RESOURCE_STATE_CONFLICT", TradingFailureKind.CONFLICT)
+        val preflightBook = books.find(preflight.bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val preflightAccount = accounts.find(preflightBook.accountId, owner)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         if (preflightBook.status != TradingLifecycleStatus.ACTIVE || preflightAccount.status != TradingLifecycleStatus.ACTIVE)
-            throw TradingFailure("RESOURCE_DELETED", 410)
+            throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         val artifactId = ids.sourceArtifactId()
         var staged = try {
             source.use { storage.putStaging(it, MAX_BYTES, artifactId, id) }
         } catch (failure: TradingFailure) { throw failure }
-          catch (failure: Exception) { throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503) }
+          catch (failure: Exception) { throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", TradingFailureKind.DEPENDENCY_UNAVAILABLE) }
         var finalKey: String? = null
         try {
             val details = metadata()
             val role = details.role
             val contentType = details.contentType
             val dialectCandidate = details.dialectCandidate
-            if (details.byteSize !in 1..MAX_BYTES) throw TradingFailure("FILE_TOO_LARGE", 413)
-            if (!SHA256.matches(details.sha256)) throw TradingFailure("REQUEST_INVALID", 400)
-            if (contentType !in CONTENT_TYPES) throw TradingFailure("UNSUPPORTED_MEDIA_TYPE", 415)
+            if (details.byteSize !in 1..MAX_BYTES) throw TradingFailure("FILE_TOO_LARGE", TradingFailureKind.PAYLOAD_TOO_LARGE)
+            if (!SHA256.matches(details.sha256)) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
+            if (contentType !in CONTENT_TYPES) throw TradingFailure("UNSUPPORTED_MEDIA_TYPE", TradingFailureKind.UNSUPPORTED_MEDIA)
             if (dialectCandidate != "AUTO" && dialectCandidate != when (role) {
                     TradingArtifactRole.TRADE_HISTORY -> "BINANCE_USDS_TRADE_HISTORY_V1"
                     TradingArtifactRole.POSITION_HISTORY -> "BINANCE_USDS_POSITION_HISTORY_V1"
-                }) throw TradingFailure("REQUEST_INVALID", 400)
+                }) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
             val safeFilename = details.filename.substringAfterLast('/').substringAfterLast('\\')
             if (safeFilename.isBlank() || safeFilename.length > 255 || safeFilename.any { it.isISOControl() })
-                throw TradingFailure("REQUEST_INVALID", 400)
+                throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
             if (staged.byteSize != details.byteSize || staged.sha256 != details.sha256)
-                throw TradingFailure("CHECKSUM_MISMATCH", 422)
+                throw TradingFailure("CHECKSUM_MISMATCH", TradingFailureKind.INPUT_REJECTED)
             staged = storage.preparePublication(staged, role)
             val publishedKey = requireNotNull(staged.publicationKey)
             finalKey = publishedKey
             storage.promote(staged, publishedKey)
-            if (!storage.exists(publishedKey)) throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
+            if (!storage.exists(publishedKey)) throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", TradingFailureKind.DEPENDENCY_UNAVAILABLE)
             val result = transactions.execute {
                 val initial = sessions.find(id, owner) ?: throw missing(sessions.deleted(id, owner))
                 val account = accounts.find((books.find(initial.bookId, owner)
-                    ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)).accountId, owner, forUpdate = true)
-                    ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+                    ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)).accountId, owner, forUpdate = true)
+                    ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
                 val book = books.find(initial.bookId, owner, forUpdate = true)
-                    ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+                    ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
                 val session = sessions.find(id, owner, forUpdate = true) ?: throw missing(sessions.deleted(id, owner))
                 if (account.status != TradingLifecycleStatus.ACTIVE || book.status != TradingLifecycleStatus.ACTIVE)
-                    throw TradingFailure("RESOURCE_DELETED", 410)
-                if (!session.canUpload()) throw TradingFailure("RESOURCE_STATE_CONFLICT", 409)
+                    throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
+                if (!session.canUpload()) throw TradingFailure("RESOURCE_STATE_CONFLICT", TradingFailureKind.CONFLICT)
                 val payload = fingerprint(id.value.toString(), role.name, staged.sha256, staged.byteSize.toString(),
                     contentType, dialectCandidate)
                 val claim = idempotency.claim(owner, "uploadTradingImportArtifact", key, payload)
                 if (claim is IdempotencyClaim.Replayed) {
                     val existing = artifacts.find(TradingSourceArtifactId(claim.resourceId), owner)
-                        ?: throw TradingFailure("RESOURCE_DELETED", 410)
+                        ?: throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
                     return@execute UploadArtifactResult(existing, false)
                 }
                 val existing = session.artifacts.singleOrNull { it.role == role }
                 if (existing != null) {
-                    if (existing.sha256 != staged.sha256) throw TradingFailure("ARTIFACT_ROLE_CONFLICT", 409)
+                    if (existing.sha256 != staged.sha256) throw TradingFailure("ARTIFACT_ROLE_CONFLICT", TradingFailureKind.CONFLICT)
                     if (existing.retentionStatus != TradingArtifactRetentionStatus.ACTIVE)
-                        throw TradingFailure("SOURCE_ARTIFACT_DELETED", 410)
+                        throw TradingFailure("SOURCE_ARTIFACT_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
                     idempotency.complete(owner, "uploadTradingImportArtifact", key, existing.id.value)
                     return@execute UploadArtifactResult(existing, false)
                 }
                 val now = clock.instant()
                 val changed = session.recordUpload(artifactId, role, contentType, staged.byteSize, staged.sha256,
                     dialectCandidate, publishedKey, staged.wrappedDek, staged.keyVersion, now)
-                if (!sessions.update(changed)) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
+                if (!sessions.update(changed)) throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
                 val artifact = changed.artifacts.single { it.id == artifactId }
                 idempotency.complete(owner, "uploadTradingImportArtifact", key, artifactId.value)
                 UploadArtifactResult(artifact, true)
-            } ?: throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
+            } ?: throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", TradingFailureKind.DEPENDENCY_UNAVAILABLE)
             if (!result.created) storage.delete(publishedKey)
             return result
         } catch (failure: Exception) {
@@ -199,7 +201,7 @@ open class TradingImportService(
                 finalKey?.let { if (!artifacts.referencesObjectKey(it)) storage.delete(it) }
             } catch (_: Exception) { /* orphan worker retries after grace period */ }
             if (failure is TradingFailure) throw failure
-            throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
+            throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", TradingFailureKind.DEPENDENCY_UNAVAILABLE)
         } finally {
             storage.completePublication(staged.stagingKey)
         }
@@ -213,23 +215,23 @@ open class TradingImportService(
         val fingerprint = fingerprint(id.value.toString())
         val claim = idempotency.claim(owner, operation, key, fingerprint)
         if (claim is IdempotencyClaim.Replayed) return deletions.find(DeletionRequestId(claim.resourceId), owner)?.let(TradingDeletion::fromDomain)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         deletions.findByTarget(owner, DeletionScope.importSession(id))?.let { existing ->
             idempotency.complete(owner, operation, key, existing.id.value)
             return TradingDeletion.fromDomain(existing)
         }
         val initial = sessions.find(id, owner) ?: throw missing(sessions.deleted(id, owner))
         val account = accounts.find((books.find(initial.bookId, owner)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)).accountId, owner, forUpdate = true)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
-        val book = books.find(initial.bookId, owner, forUpdate = true) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)).accountId, owner, forUpdate = true)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
+        val book = books.find(initial.bookId, owner, forUpdate = true) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val session = sessions.find(id, owner, forUpdate = true) ?: throw missing(sessions.deleted(id, owner))
         if (account.status != TradingLifecycleStatus.ACTIVE || book.status != TradingLifecycleStatus.ACTIVE)
-            throw TradingFailure("RESOURCE_DELETED", 410)
-        if (session.deletionPending) throw TradingFailure("RESOURCE_DELETED", 410)
+            throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
+        if (session.deletionPending) throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         val now = clock.instant()
         val changed = session.requestDeletion(now)
-        if (!sessions.update(changed)) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
+        if (!sessions.update(changed)) throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
         val count = session.artifacts.size.toLong()
         val deletion = DeletionRequest.request(ids.deletionId(), owner, DeletionScope.importSession(id),
             changed.deletionGeneration, DeletionAffectedResources(0, 0, 1, count), now)
@@ -246,31 +248,31 @@ open class TradingImportService(
         val fingerprint = fingerprint(id.value.toString())
         val claim = idempotency.claim(owner, operation, key, fingerprint)
         if (claim is IdempotencyClaim.Replayed) return deletions.find(DeletionRequestId(claim.resourceId), owner)?.let(TradingDeletion::fromDomain)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         deletions.findByTarget(owner, DeletionScope.rawArtifact(id))?.let { existing ->
             idempotency.complete(owner, operation, key, existing.id.value)
             return TradingDeletion.fromDomain(existing)
         }
-        val initialArtifact = artifacts.find(id, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+        val initialArtifact = artifacts.find(id, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val initialSession = sessions.find(initialArtifact.sessionId, owner)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
-        val initialBook = books.find(initialSession.bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
+        val initialBook = books.find(initialSession.bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val account = accounts.find(initialBook.accountId, owner, forUpdate = true)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val book = books.find(initialBook.id, owner, forUpdate = true)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         val session = sessions.find(initialSession.id, owner, forUpdate = true)
-            ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
-        val artifact = session.artifacts.singleOrNull { it.id == id } ?: throw TradingFailure("RESOURCE_NOT_FOUND", 404)
+            ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
+        val artifact = session.artifacts.singleOrNull { it.id == id } ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         if (account.status != TradingLifecycleStatus.ACTIVE || book.status != TradingLifecycleStatus.ACTIVE ||
-            session.deletionPending) throw TradingFailure("RESOURCE_DELETED", 410)
+            session.deletionPending) throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         if (artifact.retentionStatus != TradingArtifactRetentionStatus.ACTIVE &&
             artifact.retentionStatus != TradingArtifactRetentionStatus.RETENTION_SCHEDULED)
-            throw TradingFailure("RESOURCE_DELETED", 410)
+            throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         val now = clock.instant()
         val changed = session.requestArtifactDeletion(id, now)
         if (!sessions.update(changed))
-            throw TradingFailure("CONCURRENT_MODIFICATION", 409)
+            throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
         val deletion = DeletionRequest.request(ids.deletionId(), owner, DeletionScope.rawArtifact(id),
             changed.deletionGeneration, DeletionAffectedResources(0, 0, 0, 1), now)
         deletions.insert(deletion)
@@ -279,10 +281,10 @@ open class TradingImportService(
     }
 
     private fun missing(deleted: Boolean) = TradingFailure(if (deleted) "RESOURCE_DELETED" else "RESOURCE_NOT_FOUND",
-        if (deleted) 410 else 404)
+        if (deleted) TradingFailureKind.NO_LONGER_AVAILABLE else TradingFailureKind.NOT_FOUND)
 
     private fun validKey(key: String) {
-        if (key.length !in 1..128 || !KEY.matches(key)) throw TradingFailure("IDEMPOTENCY_KEY_INVALID", 400)
+        if (key.length !in 1..128 || !KEY.matches(key)) throw TradingFailure("IDEMPOTENCY_KEY_INVALID", TradingFailureKind.INVALID_REQUEST)
     }
 
     private fun fingerprint(vararg parts: String): String {

@@ -8,6 +8,25 @@ import kotlin.test.assertTrue
 
 class TradingAccountBookBoundaryTest {
     @Test
+    fun publicFailureSemanticsAndDeletionQueriesStayInsideTheirBoundaries() {
+        val root = workspaceRoot()
+        listOf("domain", "port", "application").forEach { layer ->
+            Files.walk(root.resolve("tradingreview/$layer/src/main/kotlin")).use { files ->
+                files.filter { it.toString().endsWith(".kt") }.forEach { file ->
+                    val source = Files.readString(file)
+                    assertFalse(Regex("HttpStatus|httpStatus|org\\.springframework\\.http").containsMatchIn(source),
+                        "Transport status outside web: $file")
+                }
+            }
+        }
+        val query = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/GetTradingDeletionRequestService.kt"))
+        assertTrue(query.contains("DeletionRequestReader"))
+        assertFalse(query.contains("DeletionRequestStore") || query.contains(".insert(") || query.contains(".update("))
+        val response = Files.readString(root.resolve("tradingreview/adapter/web/src/main/kotlin/com/refinvest/core/tradingreview/adapter/web/TradingReviewController.kt"))
+        assertFalse(response.contains("when (value.state)") || response.contains("if (value.artifactCount"))
+    }
+
+    @Test
     fun tradingReviewSourcesRespectFeatureLayers() {
         val root = workspaceRoot()
         listOf("domain", "port", "application", "adapter/persistence", "adapter/web", "adapter/compute",

@@ -1,6 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.web
 
 import com.refinvest.core.tradingreview.port.TradingFailure
+import com.refinvest.core.tradingreview.port.TradingFailureKind
 import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -15,15 +16,15 @@ internal class StreamingMultipartReader(source: InputStream, contentType: String
     private var active = false
 
     init {
-        val type = contentType ?: throw TradingFailure("REQUEST_INVALID", 400)
+        val type = contentType ?: throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
         if (!type.substringBefore(';').trim().equals("multipart/form-data", ignoreCase = true))
-            throw TradingFailure("UNSUPPORTED_MEDIA_TYPE", 415)
+            throw TradingFailure("UNSUPPORTED_MEDIA_TYPE", TradingFailureKind.UNSUPPORTED_MEDIA)
         val parameter = type.split(';').drop(1).map { it.trim() }.firstOrNull { it.startsWith("boundary=", true) }
-            ?: throw TradingFailure("REQUEST_INVALID", 400)
+            ?: throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
         boundary = parameter.substringAfter('=').trim().removeSurrounding("\"")
         if (boundary.length !in 1..70 || boundary.any { it.code !in 33..126 || it == '/' || it == '\\' })
-            throw TradingFailure("REQUEST_INVALID", 400)
-        if (line() != "--$boundary") throw TradingFailure("REQUEST_INVALID", 400)
+            throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
+        if (line() != "--$boundary") throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
     }
 
     data class Part(val name: String, val contentType: String?, val body: InputStream)
@@ -36,19 +37,19 @@ internal class StreamingMultipartReader(source: InputStream, contentType: String
         while (true) {
             val header = line()
             headersSize += header.length + 2
-            if (headersSize > 8_192) throw TradingFailure("REQUEST_INVALID", 400)
+            if (headersSize > 8_192) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
             if (header.isEmpty()) break
             val colon = header.indexOf(':')
-            if (colon <= 0) throw TradingFailure("REQUEST_INVALID", 400)
+            if (colon <= 0) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
             val name = header.substring(0, colon).lowercase()
-            if (name in headers) throw TradingFailure("REQUEST_INVALID", 400)
+            if (name in headers) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
             headers[name] = header.substring(colon + 1).trim()
         }
-        val disposition = headers["content-disposition"] ?: throw TradingFailure("REQUEST_INVALID", 400)
-        if (!disposition.startsWith("form-data;", true)) throw TradingFailure("REQUEST_INVALID", 400)
+        val disposition = headers["content-disposition"] ?: throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
+        if (!disposition.startsWith("form-data;", true)) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
         val name = Regex("(?:^|;)\\s*name=\"([^\"]+)\"").find(disposition)?.groupValues?.get(1)
-            ?: throw TradingFailure("REQUEST_INVALID", 400)
-        if (name != "metadata" && name != "file") throw TradingFailure("REQUEST_INVALID", 400)
+            ?: throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
+        if (name != "metadata" && name != "file") throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
         active = true
         return Part(name, headers["content-type"], BoundaryStream())
     }
@@ -57,12 +58,12 @@ internal class StreamingMultipartReader(source: InputStream, contentType: String
         val bytes = ArrayList<Byte>()
         while (true) {
             val b = input.read()
-            if (b < 0) throw TradingFailure("REQUEST_INVALID", 400)
+            if (b < 0) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
             if (b == 13) {
-                if (input.read() != 10) throw TradingFailure("REQUEST_INVALID", 400)
+                if (input.read() != 10) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
                 return bytes.toByteArray().toString(StandardCharsets.ISO_8859_1)
             }
-            if (b == 10 || bytes.size >= 8_192) throw TradingFailure("REQUEST_INVALID", 400)
+            if (b == 10 || bytes.size >= 8_192) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
             bytes.add(b.toByte())
         }
     }
