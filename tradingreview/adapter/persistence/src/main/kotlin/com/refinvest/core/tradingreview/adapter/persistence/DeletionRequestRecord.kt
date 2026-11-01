@@ -8,4 +8,6 @@ internal data class DeletionRequestRecord(
     val importSessionCount: Long, val artifactCount: Long, val revokedAt: Instant, val requestedAt: Instant,
     val updatedAt: Instant, val backupPurgeDueAt: Instant, val completedAt: Instant?, val failureCode: String?,
     val attemptCount: Int,
+    val version: Long = 0,
+    val verifiedAbsent: Map<String, Instant> = emptyMap(),
 )

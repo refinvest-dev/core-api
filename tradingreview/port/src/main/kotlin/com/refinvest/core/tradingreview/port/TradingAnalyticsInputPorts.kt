@@ -38,5 +38,6 @@ interface TradingAnalyticsArtifactStore {
             write: (OutputStream) -> Unit): AnalyticsInputArtifact
     /** Only internal, authorization-checked callers may redeem a stored reference. */
     fun open(coreReferenceId: String): InputStream
-    fun deleteRevision(revisionId: String)
+    fun purgeRevision(revisionId: String): Boolean
+    fun deleteRevision(revisionId: String) { check(purgeRevision(revisionId)) { "Revision files are still in use" } }
 }

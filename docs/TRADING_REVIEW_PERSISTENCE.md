@@ -330,6 +330,9 @@ state, idempotency, generation/hash 검증과 retry로 연결한다.
 
 ### 7.4 Deletion
 
+Normalization Run tombstone·실행 자원·부재 확인 receipt의 추가 경계는
+[`TRADING_RUNTIME_DELETION.md`](TRADING_RUNTIME_DELETION.md)를 따른다.
+
 1. **Deletion commit transaction**: owner/scope equivalence를 검증하고 generation 증가, tombstone,
    `DeletionRequest(REQUESTED)`, fixed purge checklist를 함께 commit한다. 이 순간 normal access와 신규 job/retry를
    막는다.

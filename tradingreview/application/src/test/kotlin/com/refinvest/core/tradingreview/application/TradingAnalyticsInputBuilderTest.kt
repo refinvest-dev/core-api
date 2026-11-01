@@ -106,6 +106,6 @@ class TradingAnalyticsInputBuilderTest {
             return AnalyticsInputArtifact(id, mediaType, payload.size.toLong(), hash)
         }
         override fun open(coreReferenceId: String): InputStream = ByteArrayInputStream(bytes.getValue(coreReferenceId))
-        override fun deleteRevision(revisionId: String) { bytes.keys.removeIf { it.startsWith("$revisionId:") } }
+        override fun purgeRevision(revisionId: String): Boolean { bytes.keys.removeIf { it.startsWith("$revisionId:") }; return true }
     }
 }

@@ -16,7 +16,9 @@ import tools.jackson.databind.ObjectMapper
 import java.net.http.HttpClient
 import java.time.Duration
 import java.time.Instant
-import java.nio.file.Files
+import com.refinvest.core.tradingreview.port.deletion.TradingArtifactWorkspaces
+import com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
 import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.util.HexFormat
@@ -31,19 +33,20 @@ class RestClientTradingNormalizationClient private constructor(
     private val apiKey: String,
     private val mapper: ObjectMapper,
     private val client: RestClient,
+    private val workspaces: TradingArtifactWorkspaces,
 ) : TradingNormalizationComputeClient, TradingNormalizationResultClient {
     @Autowired
     constructor(@Value("\${refinvest.compute.base-url:http://localhost:8000}") baseUrl: String,
                 @Value("\${REFINVEST_INTERNAL_API_KEY:}") apiKey: String,
-                mapper: ObjectMapper) : this(apiKey, mapper, RestClient.builder().baseUrl(baseUrl)
+                mapper: ObjectMapper, workspaces: TradingArtifactWorkspaces) : this(apiKey, mapper, RestClient.builder().baseUrl(baseUrl)
         .requestFactory(JdkClientHttpRequestFactory(HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1).build()).apply {
             setReadTimeout(Duration.ofSeconds(20))
-        }).build())
+        }).build(), workspaces)
 
     companion object {
-        internal fun withClient(apiKey: String, mapper: ObjectMapper, client: RestClient) =
-            RestClientTradingNormalizationClient(apiKey, mapper, client)
+        internal fun withClient(apiKey: String, mapper: ObjectMapper, client: RestClient, workspaces: TradingArtifactWorkspaces) =
+            RestClientTradingNormalizationClient(apiKey, mapper, client, workspaces)
     }
 
     override fun submit(run: NormalizationRun, dispatch: NormalizationDispatch,
@@ -211,6 +214,9 @@ class RestClientTradingNormalizationClient private constructor(
         if (apiKey.isBlank()) return NormalizationPayloadLookup.Rejected("INTERNAL_AUTHENTICATION_FAILED")
         if (descriptor.byteSize > policy.maxAcceptedPayloadBytes)
             return NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LIMIT_EXCEEDED")
+        val lease = try { workspaces.acquire(TradingArtifactScope.Run(NormalizationRunId(descriptor.runId))) }
+            catch (_: Exception) { return NormalizationPayloadLookup.Retry("RESULT_PAYLOAD_STREAM_ABORTED") }
+        var handedOff = false
         return try {
             client.get().uri("/trading-review/terminal-payloads/{payloadId}", descriptor.payloadId)
                 .header("X-Internal-Api-Key", apiKey)
@@ -229,20 +235,21 @@ class RestClientTradingNormalizationClient private constructor(
                                 return@exchange NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LIMIT_EXCEEDED")
                             if (headerLength >= 0 && headerLength != descriptor.byteSize)
                                 return@exchange NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LENGTH_MISMATCH")
-                            val path = NormalizationResultSpool.create()
+                            val file = lease.createTemporary()
+                            val random = SecureRandom()
+                            val spoolKey = ByteArray(32).also(random::nextBytes)
+                            val spoolIv = ByteArray(12).also(random::nextBytes)
                             try {
-                                val random = SecureRandom()
-                                val spoolKey = ByteArray(32).also(random::nextBytes)
-                                val spoolIv = ByteArray(12).also(random::nextBytes)
                                 val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                                 cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(spoolKey, "AES"),
                                     GCMParameterSpec(128, spoolIv))
                                 val digest = MessageDigest.getInstance("SHA-256")
                                 val size = DigestInputStream(response.body, digest).use { input ->
-                                    CipherOutputStream(Files.newOutputStream(path), cipher).use { output ->
+                                    CipherOutputStream(file.openOutput(), cipher).use { output ->
                                         val buffer = ByteArray(8192)
                                         var total = 0L
                                         while (true) {
+                                            lease.checkActive()
                                             val count = input.read(buffer)
                                             if (count < 0) break
                                             total += count
@@ -256,17 +263,19 @@ class RestClientTradingNormalizationClient private constructor(
                                         total
                                     }
                                 }
-                                NormalizationPayloadLookup.Found(NormalizationPayloadFile(path, size,
+                                handedOff = true
+                                NormalizationPayloadLookup.Found(EncryptedNormalizationPayload(file, lease, size,
                                     HexFormat.of().formatHex(digest.digest()), spoolKey, spoolIv))
                             } catch (_: PayloadTooLarge) {
-                                Files.deleteIfExists(path)
                                 NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LIMIT_EXCEEDED")
                             } catch (_: PayloadLengthMismatch) {
-                                Files.deleteIfExists(path)
                                 NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LENGTH_MISMATCH")
                             } catch (_: Exception) {
-                                Files.deleteIfExists(path)
                                 NormalizationPayloadLookup.Retry("RESULT_PAYLOAD_STREAM_ABORTED")
+                            } finally {
+                                if (!handedOff) {
+                                    try { file.close() } finally { spoolKey.fill(0); spoolIv.fill(0) }
+                                }
                             }
                         }
                         401, 403 -> NormalizationPayloadLookup.Rejected("INTERNAL_AUTHENTICATION_FAILED")
@@ -275,6 +284,7 @@ class RestClientTradingNormalizationClient private constructor(
                     }
                 }
         } catch (_: Exception) { NormalizationPayloadLookup.Retry("TEMPORARY_DEPENDENCY_FAILURE") }
+        finally { if (!handedOff) lease.close() }
     }
 
     private class PayloadTooLarge : RuntimeException()

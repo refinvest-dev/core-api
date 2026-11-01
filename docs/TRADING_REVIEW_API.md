@@ -352,6 +352,9 @@ generation 검증을 통과한 final Core transaction에서 함께 publish한다
 
 ## 9. Deletion
 
+Normalization runtime의 생성 차단·실제 부재 확인은
+[`TRADING_RUNTIME_DELETION.md`](TRADING_RUNTIME_DELETION.md)를 따른다. 취소 접수나 job 404는 삭제 완료가 아니다.
+
 각 delete path가 target type/ID를 결정하므로 request body로 임의 target을 받지 않는다. `Idempotency-Key`가
 logical deletion request identity다. response/status는 다음을 반환한다.
 

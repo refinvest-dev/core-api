@@ -25,7 +25,6 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.ZoneId
-import java.util.UUID
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
@@ -130,11 +129,11 @@ open class TradingImportService(
         if (preflightBook.status != TradingLifecycleStatus.ACTIVE || preflightAccount.status != TradingLifecycleStatus.ACTIVE)
             throw TradingFailure("RESOURCE_DELETED", 410)
         val artifactId = ids.sourceArtifactId()
-        val staged = try {
-            source.use { storage.putStaging(it, MAX_BYTES, artifactId) }
+        var staged = try {
+            source.use { storage.putStaging(it, MAX_BYTES, artifactId, id) }
         } catch (failure: TradingFailure) { throw failure }
           catch (failure: Exception) { throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503) }
-        val finalKey = "objects/" + UUID.randomUUID()
+        var finalKey: String? = null
         try {
             val details = metadata()
             val role = details.role
@@ -152,8 +151,11 @@ open class TradingImportService(
                 throw TradingFailure("REQUEST_INVALID", 400)
             if (staged.byteSize != details.byteSize || staged.sha256 != details.sha256)
                 throw TradingFailure("CHECKSUM_MISMATCH", 422)
-            storage.promote(staged, finalKey)
-            if (!storage.exists(finalKey)) throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
+            staged = storage.preparePublication(staged, role)
+            val publishedKey = requireNotNull(staged.publicationKey)
+            finalKey = publishedKey
+            storage.promote(staged, publishedKey)
+            if (!storage.exists(publishedKey)) throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
             val result = transactions.execute {
                 val initial = sessions.find(id, owner) ?: throw missing(sessions.deleted(id, owner))
                 val account = accounts.find((books.find(initial.bookId, owner)
@@ -183,23 +185,23 @@ open class TradingImportService(
                 }
                 val now = clock.instant()
                 val changed = session.recordUpload(artifactId, role, contentType, staged.byteSize, staged.sha256,
-                    dialectCandidate, finalKey, staged.wrappedDek, staged.keyVersion, now)
+                    dialectCandidate, publishedKey, staged.wrappedDek, staged.keyVersion, now)
                 if (!sessions.update(changed)) throw TradingFailure("CONCURRENT_MODIFICATION", 409)
                 val artifact = changed.artifacts.single { it.id == artifactId }
                 idempotency.complete(owner, "uploadTradingImportArtifact", key, artifactId.value)
                 UploadArtifactResult(artifact, true)
             } ?: throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
-            if (!result.created) storage.delete(finalKey)
+            if (!result.created) storage.delete(publishedKey)
             return result
         } catch (failure: Exception) {
             try {
                 storage.delete(staged.stagingKey)
-                if (!artifacts.referencesObjectKey(finalKey)) storage.delete(finalKey)
+                finalKey?.let { if (!artifacts.referencesObjectKey(it)) storage.delete(it) }
             } catch (_: Exception) { /* orphan worker retries after grace period */ }
             if (failure is TradingFailure) throw failure
             throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", 503)
         } finally {
-            storage.completePublication(finalKey)
+            storage.completePublication(staged.stagingKey)
         }
     }
 

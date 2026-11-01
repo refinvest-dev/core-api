@@ -45,7 +45,7 @@ class AuthFamilyFenceMigrationTest {
                 val sessions = jdbc.queryForList("SELECT * FROM refresh_sessions ORDER BY jti")
                 val identities = jdbc.queryForList("SELECT * FROM social_identities ORDER BY id")
                 val flyway = Flyway.configure().dataSource(source).schemas(schema).baselineOnMigrate(true).baselineVersion("11")
-                    .locations("classpath:db/migration").load()
+                    .locations("classpath:db/migration").target("12").load()
                 assertEquals(1, flyway.migrate().migrationsExecuted)
                 assertEquals(sessions, jdbc.queryForList("SELECT * FROM refresh_sessions ORDER BY jti"))
                 assertEquals(identities, jdbc.queryForList("SELECT * FROM social_identities ORDER BY id"))

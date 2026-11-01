@@ -93,7 +93,7 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | 4b-2 | Session 소속 NormalizationRun | 소속 모델·Mapper·입력 pin·재시도·원자적 admission 보존 |
 | 4c | LedgerRevision 및 publication | immutable 발행 모델, membership/hash/generation gate, bounded 저장 |
 | 4d-1 | DeletionRequest 모델·저장 경계 | Root/typed ID·scope/checklist 정의·순수 Mapper·Aggregate 단위 요청 저장/복원 |
-| 4d-2 | DeletionRequest 상태 전이·진행 증명 | worker 전이 CAS·component별 durable checkpoint·실패/완료 규칙 연결 |
+| 4d-2 | DeletionRequest 상태 전이·진행 증명 | worker 전이 CAS·component별 durable checkpoint·정상 완료·실패·복구 연결 |
 | 5a | Dispatch/polling/result/ACK 진입점 | inbound use case, port의 기술 구현 이동, ACK commit 순서 보존 |
 | 5b | 삭제/retention 실행 흐름 | application orchestration, component별 durable 처리와 복구 |
 | 5c | 실패/조회/web 경계 | 의미 기반 실패, web DTO, 정확한 purge read model |
@@ -143,8 +143,49 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 4b-1 | 완료·머지 | [PR #95](https://github.com/refinvest-dev/core-api/pull/95), `5771f96`·`5f66b63`·`f5ac6df`, Session Root·Artifact 슬롯 저장·순수 Mapper·retention CAS와 삭제 replay·grant retry 이력 보강 |
 | 4b-2 | 완료·머지 | [PR #97](https://github.com/refinvest-dev/core-api/pull/97), `ce42b14`·`e4e4b38`, Session 소속 NormalizationRun·순수 Mapper·명시적 admission과 재시도 입력 고정 |
 | 4c | 완료·머지 | [PR #98](https://github.com/refinvest-dev/core-api/pull/98), `d6df0c0`·`fd03cf3`, immutable LedgerRevision·순수 Mapper·전용 publication capability와 bounded 저장 |
-| 4d-1 | 구현·검증 완료, PR 검토 대상 | [PR #99](https://github.com/refinvest-dev/core-api/pull/99), `e02feae`·`7107bf6`, DeletionRequest Root·typed scope/checklist 정의·Mapper·Aggregate 요청 저장/복원 |
-| 4d-2 이후 | 미착수 | worker 상태 전이 CAS와 실제 component 진행 증명 연결, 이후 5a/5b/5c 순서 |
+| 4d-1 | 완료·머지 | [PR #99](https://github.com/refinvest-dev/core-api/pull/99), `e02feae`·`7107bf6`, DeletionRequest Root·typed scope/checklist 정의·Mapper·Aggregate 요청 저장/복원 |
+| 4d-2 | 구현·검증 완료·리뷰 대기 | [PR #100](https://github.com/refinvest-dev/core-api/pull/100), application 실행 조율·lease·실제 부재 확인·복구와 ORCH-024~028 검증 |
+| 5a~5c | 후속 범위 | dispatch/polling/result/ACK 진입점, 남은 retention 실행, 조회·HTTP 의미 정리 |
+
+### 4d-2 범위와 후속 경계
+
+- `DeletionRequest`의 상태 전이와 component 증거를 CAS로 저장한다. 과거 `COMPLETED`의 빈 증거는
+  보존하지만 새 완료에는 모든 필수 component의 실제 부재 확인이 필요하다. terminal 요청을 되돌리지 않는다.
+- 정상 삭제의 완료를 위해 5b의 필수 외부 실행을 먼저 연결했다. Scheduler는 inbound port를 호출하고
+  application이 5분 lease·최대 10개 작업·transaction 밖 HTTP/파일 I/O·짧은 결과 반영을 조율한다.
+  owner/scope/generation/version과 현재 lease를 잠근 뒤 검사하며 stale 응답은 진행·실패·키를 바꾸지 않는다.
+- V13 workset은 primary purge 전 opaque locator와 관계를 보존한다. V14는 실행 정책·다음 시도·lease,
+  Run의 Session/source identity, artifact role, 사본 task와 remediation 관계를 추가한다. Mapper는 Root와
+  checkpoint를 순수 복원한다. 기존 terminal 기록이나 불명확한 legacy 범위에서 부재를 추정하지 않는다.
+- Compute는 Core Run 단위로 새 생성을 먼저 차단하고 실제 자원 부재를 확인한다. job ID가 없는 생성
+  응답 유실도 처리하며 source generation과 삭제 scope generation을 비교하거나 바꿔 쓰지 않는다.
+  child 종료뿐 아니라 부모의 결과 payload와 실패 traceback 해제도 확인한다.
+- raw upload/read, Run spool과 Revision 분석 입력을 scope별로 추적한다. 삭제 표식 뒤 새 쓰기를 막고
+  활성 handle을 drain한 뒤 사본을 정리한다. 파일·암호화 구현은 adapter로 옮겼다. raw-only는 retained
+  ledger/evidence/분석 입력을 유지한다. 기존 stale ACK와 unrelated latest pointer도 보존한다.
+- `PENDING`은 오류 횟수 0으로 기다린다. 실제 오류는 지수 backoff 뒤 5회 한도에서 실패하고, 24시간
+  SLA 초과도 실패로 남긴다. remediation은 원래 `FAILED` audit·scope/generation·item 증거를 보존한
+  새 요청이다. 상위 삭제는 같은 범위의 복구 완료 증거를 확인한다.
+- 최종 Core 고유 테스트 251건을 검증했다. Trading Review 155건과 app 96건이며 PostgreSQL Store
+  54건을 포함한다. 전체 실행의 파일 adapter JVM 시작 소켓 오류는 동일 코드의 15건 재실행으로
+  보완했다. 최종 실패·skip은 0이고 모듈 경계·bootJar도 통과했다.
+- Compute는 최신 main 병합 뒤 전체 단위 실행 936건 통과·선택 환경 87건 skip·event-loop 시작 오류
+  1건을 확인했다. 동일 코드의 대상 파일 17건 재실행과 부모 예외 자원 보존을 포함한 29건 회귀,
+  실제 PostgreSQL 15건, Ruff·strict Pyright 검증이 통과했다.
+- 실제 Core↔Compute HTTP에서 기본 정규화·무결성·LedgerRevision 발행과 ORCH-024~028이 모두
+  통과했다. 두 Core cutover의 assertion 10개, pre-pin migration 후 HTTP replay·Revision/ACK 보존,
+  queued Job 및 응답 유실 Run의 삭제 `COMPLETED`·체크포인트 6개·파일/primary/Job 부재·capacity
+  반환·늦은 create 거절을 검증했다. 구현 조합은 Core `fdbaaca`, Compute `7574c05`, integration
+  `0ae4d0a`다. 성공 실행의 worker 복구 event는 0개이며 main·second·canary registry는 모두 비어 있다.
+- 중단한 실행은 성공 기록에 포함하지 않는다. background JVM이 진단 PIPE를 상속해 startup 제어가
+  대기하는 문제는 임시 파일 수집으로 수정하고 실제 Windows child를 포함한 진단 테스트 4건을 검증했다.
+  Compute 0017의 단일 transaction 진단은 기존 `55006` 제약을 보존하고 rollback했다. 기존 `psql -f`
+  runner로 migration·HTTP replay가 통과했으며, 임의의 단일 transaction 배포로 일반화하지 않는다.
+- Context 문서 26개·Core/Compute/Web 계약·provenance·고정 hash fixture가 동기화됐다. 계산 입력·결과
+  hash·버전과 계산 결정론 영향은 없다. credential·fixture 산출물·상세 증적은 로컬에만 보관한다.
+- 전환은 [삭제 전환 절차](TRADING_DELETION_ROLLOUT.md)를 따른다. 후속 5a는 dispatch/polling/result/ACK
+  진입점, 남은 5b는 retention 실행 흐름, 5c는 public component projection과 HTTP 의미 정리를 다룬다.
+
 
 ### 4d-1 범위와 후속 경계
 

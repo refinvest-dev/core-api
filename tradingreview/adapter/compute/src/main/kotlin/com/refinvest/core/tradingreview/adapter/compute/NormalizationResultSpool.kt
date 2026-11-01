@@ -8,6 +8,8 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Duration
+import com.refinvest.core.tradingreview.port.deletion.LegacyTradingTemporaryCopies
+import com.refinvest.core.tradingreview.port.deletion.TradingArtifactWorkspaces
 
 /** Only ciphertext is written here. The per-download key is held in process memory. */
 internal object NormalizationResultSpool {
@@ -20,6 +22,8 @@ internal object NormalizationResultSpool {
     }
 
     fun cleanupOlderThan(cutoff: java.time.Instant): Int = cleanupOlderThan(root, cutoff)
+
+    fun absent(): Boolean = !Files.exists(root) || Files.newDirectoryStream(root).use { !it.iterator().hasNext() }
 
     internal fun cleanupOlderThan(directory: Path, cutoff: java.time.Instant): Int {
         if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) return 0
@@ -39,13 +43,19 @@ internal object NormalizationResultSpool {
 @Component
 class NormalizationResultSpoolSweeper(
     private val clock: Clock,
+    private val workspaces: TradingArtifactWorkspaces,
     @Value("\${refinvest.trading-review.normalization.delivery.spool-orphan-retention:PT24H}")
     private val retention: Duration,
-) {
+) : LegacyTradingTemporaryCopies {
     init {
         require(!retention.isNegative && !retention.isZero && retention <= Duration.ofHours(24))
     }
 
     @Scheduled(fixedDelayString = "\${refinvest.trading-review.normalization.delivery.spool-sweep-delay-ms:3600000}")
-    fun sweep(): Int = NormalizationResultSpool.cleanupOlderThan(clock.instant().minus(retention))
+    fun sweep(): Int {
+        val cutoff = clock.instant().minus(retention)
+        return NormalizationResultSpool.cleanupOlderThan(cutoff) + workspaces.cleanupOrphans(cutoff, 100)
+    }
+
+    override fun absent() = NormalizationResultSpool.absent()
 }

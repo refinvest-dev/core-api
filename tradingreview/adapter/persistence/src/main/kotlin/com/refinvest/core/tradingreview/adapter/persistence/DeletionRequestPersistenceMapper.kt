@@ -11,7 +11,8 @@ internal object DeletionRequestPersistenceMapper {
             request.scope.target.value, request.scope.requestedScope, request.state.name, request.deletionGeneration,
             resources.accounts, resources.books, resources.importSessions, resources.artifacts, request.revokedAt,
             request.requestedAt, request.updatedAt, request.backupPurgeDueAt, request.completedAt,
-            request.failureCode, request.attemptCount)
+            request.failureCode, request.attemptCount, request.version,
+            request.verifiedAbsent.mapKeys { it.key.name })
     }
     fun toDomain(record: DeletionRequestRecord): DeletionRequest {
         val type = DeletionTargetType.valueOf(record.targetType)
@@ -25,6 +26,7 @@ internal object DeletionRequestPersistenceMapper {
             DeletionScope.restore(type, target, record.requestedScope), DeletionRequestState.valueOf(record.state),
             record.deletionGeneration, DeletionAffectedResources(record.accountCount, record.bookCount,
                 record.importSessionCount, record.artifactCount), record.revokedAt, record.requestedAt,
-            record.updatedAt, record.backupPurgeDueAt, record.completedAt, record.failureCode, record.attemptCount)
+            record.updatedAt, record.backupPurgeDueAt, record.completedAt, record.failureCode, record.attemptCount,
+            record.version, record.verifiedAbsent.mapKeys { DeletionPurgeComponent.valueOf(it.key) })
     }
 }

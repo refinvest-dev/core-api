@@ -11,16 +11,20 @@ import java.io.InputStream
 import java.time.Instant
 
 data class StagedRawArtifact(val stagingKey: String, val sha256: String, val byteSize: Long,
-                             val wrappedDek: ByteArray, val keyVersion: String)
+                             val wrappedDek: ByteArray, val keyVersion: String,
+                             val publicationKey: String? = null)
 
 interface RawArtifactStorage {
-    fun putStaging(source: InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId): StagedRawArtifact
+    fun putStaging(source: InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId,
+                   sessionId: TradingImportSessionId): StagedRawArtifact
+    fun preparePublication(staged: StagedRawArtifact, role: TradingArtifactRole): StagedRawArtifact
     fun promote(staged: StagedRawArtifact, finalKey: String)
     fun completePublication(finalKey: String)
     fun open(key: String, wrappedDek: ByteArray, keyVersion: String, artifactId: TradingSourceArtifactId): InputStream
     fun delete(key: String)
     fun exists(key: String): Boolean
     fun cleanupOrphans(olderThan: Instant, limit: Int, isReferenced: (String) -> Boolean): Int
+    fun purgeCopies(scope: com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope): Boolean
 }
 
 interface TradingVersionPins { fun currentJson(): String }

@@ -74,4 +74,44 @@ class DeletionRequestTest {
         assertFailsWith<IllegalArgumentException> { restore(DeletionRequestState.REQUESTED, now, null) }
         assertFailsWith<IllegalArgumentException> { restore(DeletionRequestState.FAILED, null, "unsafe details") }
     }
+    @Test
+    fun legalTransitionsRequirePrimaryProofAndEveryLiveComponentBeforeCompletion() {
+        val cancelling = request().start(now)
+        assertFailsWith<IllegalArgumentException> { cancelling.complete(now) }
+        val primary = cancelling.beginPrimaryPurge(now)
+        assertFailsWith<IllegalArgumentException> { primary.beginObjectPurge(now) }
+        var objects = primary.verifyAbsent(DeletionPurgeComponent.PRIMARY_DATA, now)
+            .verifyAbsent(DeletionPurgeComponent.DERIVED_RESULTS, now).beginObjectPurge(now)
+        for (component in objects.checklist.requiredComponents - objects.verifiedAbsent.keys - DeletionPurgeComponent.COMPUTE_RUNTIME)
+            objects = objects.verifyAbsent(component, now)
+        assertFailsWith<IllegalArgumentException> { objects.complete(now) }
+        val complete = objects.verifyAbsent(DeletionPurgeComponent.COMPUTE_RUNTIME, now).complete(now.plusSeconds(60))
+        assertEquals(DeletionRequestState.COMPLETED, complete.state)
+        assertEquals(now.plusSeconds(60).plus(Duration.ofDays(30)), complete.backupPurgeDueAt)
+        assertFailsWith<IllegalArgumentException> { complete.recordFailure(now.plusSeconds(61)) }
+        assertFailsWith<IllegalArgumentException> { complete.start(now.plusSeconds(61)) }
+    }
+
+    @Test
+    fun retriesPreserveProofAndNeverReverseTerminalFailure() {
+        var failed = request().start(now).verifyAbsent(DeletionPurgeComponent.COMPUTE_RUNTIME, now)
+        repeat(5) { failed = failed.recordFailure(now.plusSeconds(it.toLong())) }
+        assertEquals(DeletionRequestState.FAILED, failed.state)
+        assertEquals(5, failed.attemptCount)
+        assertEquals(mapOf(DeletionPurgeComponent.COMPUTE_RUNTIME to now), failed.verifiedAbsent)
+        assertFailsWith<IllegalArgumentException> { failed.recordFailure(now.plusSeconds(10)) }
+        assertFailsWith<IllegalArgumentException> { failed.beginPrimaryPurge(now.plusSeconds(10)) }
+        assertFailsWith<UnsupportedOperationException> { (failed.verifiedAbsent as MutableMap).clear() }
+    }
+
+    @Test
+    fun progressRejectsForeignComponentsWrongPhaseAndBackdatedEvidence() {
+        val raw = request(DeletionScope.rawArtifact(TradingSourceArtifactId(4)), DeletionAffectedResources(0,0,0,1))
+        assertFailsWith<IllegalArgumentException> { raw.verifyAbsent(DeletionPurgeComponent.RAW_KEYS, now) }
+        val cancelling = raw.start(now.plusSeconds(1))
+        assertFailsWith<IllegalArgumentException> { cancelling.verifyAbsent(DeletionPurgeComponent.PRIMARY_DATA, now.plusSeconds(1)) }
+        assertFailsWith<IllegalArgumentException> { cancelling.verifyAbsent(DeletionPurgeComponent.COMPUTE_RUNTIME, now) }
+        assertFailsWith<IllegalArgumentException> { cancelling.beginObjectPurge(now.plusSeconds(1)) }
+    }
+
 }
