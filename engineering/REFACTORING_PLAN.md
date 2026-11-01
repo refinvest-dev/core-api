@@ -54,7 +54,7 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | R14 | Schema | Flyway와 Hibernate ddl-auto:update 병행 | 기존 모듈 migration 편입, 새 DB/기존 DB 검증 후 운영 validate 전환 |
 | R15 | 운영 설정 | public health 상세 공개, 기본 Snowflake node-id=0 | health 공개 범위 제한, 다중 인스턴스 ID 설정·검증 |
 | R16 | 검증 체계 | import 일부만 검사하는 경계 테스트, DB 조건부 테스트/캐시 | 변경 경계 검사 확대, 실제 PostgreSQL 및 integration 결과를 구분해 기록 |
-| R17 | Raw 정책 시계 | upload의 24시간 expiry가 accepted/rejected 전이에서 갱신되지 않으며 non-terminal TTL의 runtime 취소 연결이 없음 | 5b-2에서 정책 시계·멱등 전이·만료 시 취소와 늦은 발행 거절을 회귀로 검증 |
+| R17 | Raw 정책 시계 | upload의 24시간 expiry가 accepted/rejected 전이에서 갱신되지 않으며 non-terminal TTL의 runtime 취소 연결이 없음 | 5b-2에서 terminal 시계 고정·실제 expiry 요청·generation fence와 늦은 발행 거절 구현, 아래 검증 기록 참조 |
 
 주요 근거 파일:
 
@@ -148,9 +148,52 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 4d-1 | 완료·머지 | [PR #99](https://github.com/refinvest-dev/core-api/pull/99), `e02feae`·`7107bf6`, DeletionRequest Root·typed scope/checklist 정의·Mapper·Aggregate 요청 저장/복원 |
 | 4d-2 | 완료·머지 | [PR #100](https://github.com/refinvest-dev/core-api/pull/100), application 실행 조율·lease·실제 부재 확인·복구와 ORCH-024~028 검증 |
 | 5a | 완료·머지 | [PR #101](https://github.com/refinvest-dev/core-api/pull/101), `eb6ec6a`·`0ca702a`, 정규화 inbound port·독립 ACK 실행과 commit/rollback·재전송 검증 |
-| 5b-1 | 구현·검증 완료·리뷰 대기 | [PR #102](https://github.com/refinvest-dev/core-api/pull/102), `a53a1c4`, 원본 purge·orphan 실행 조율, reader drain·lease·backoff와 V15 |
-| 5b-2 | 후속 범위 | R17 정책 시계·non-terminal 만료와 runtime 취소·늦은 publication 처리 |
+| 5b-1 | 완료·머지 | [PR #102](https://github.com/refinvest-dev/core-api/pull/102), `a53a1c4`, 원본 purge·orphan 실행 조율, reader drain·lease·backoff와 V15 |
+| 5b-2 | 구현·검증 완료·리뷰 대기 | [PR #103](https://github.com/refinvest-dev/core-api/pull/103), `260d620`, R17 정책 시계·non-terminal 만료와 runtime 취소·늦은 publication 처리 |
 | 5c | 후속 범위 | 실패·조회·HTTP 의미 정리 |
+
+### 5b-2 Raw 정책 시계와 non-terminal 만료
+
+- Session Root가 새 accepted publication의 `accepted_at + P7D`, 새 rejection의 `rejected_at + PT24H`를
+  결정한다. replay·조회·raw-only 삭제는 고정된 시각과 기한을 연장하지 않는다. publication은 artifact까지
+  잠근 뒤 읽은 시각으로 raw 가용성과 lease를 검사해 이미 만료되거나 purge가 시작된 원본을 발행하지 않는다.
+- `TradingImportExpiryService`는 후보를 bounded 조회하고 Account→Book→Session 잠금 뒤 만료를 다시 검사한다.
+  Root의 `PROCESSING_FAILED / SOURCE_ARTIFACT_EXPIRED / REUPLOAD_REQUIRED` 전이, generation 증가,
+  `raw_expired_at`과 실제 raw-only `DeletionRequest`를 같은 transaction에 저장한다. replay는 요청이나
+  generation 증가를 반복하지 않는다. Scheduler는 inbound port만 호출하며 외부 I/O는 이 transaction 밖이다.
+- 기존 삭제 실행의 Run identity fence와 raw-only 네 component 부재 확인을 재사용한다. 생성 응답을 잃어
+  job ID가 없는 경우도 실제 runtime 정리를 거친다. Session metadata와 발행된 Revision·record·evidence·
+  분석 입력·Book latest는 보존한다. 결과 수신이 expiry worker보다 먼저 만료를 발견하면 발행하지 않고
+  durable expiry 전이를 기다리며 이전 generation의 PERSISTED ACK나 가짜 stale 증거를 만들지 않는다.
+- V16은 nullable 정책 시각과 후보 인덱스를 추가한다. legacy accepted는 연결된 Revision의 `published_at`,
+  rejected는 failure 시각에서 유효한 증거가 있을 때만 복원하고 기존 raw 기한은 변경하지 않는다.
+  삭제된 raw를 되살리거나 현재 시각으로 추정하지 않는다. 전환·rollback은
+  [Raw Policy Clocks Rollout](TRADING_RAW_POLICY_CLOCKS_ROLLOUT.md)을 따른다.
+- 수정 전 실제 PostgreSQL에서 accepted 이후에도 upload 기한이 남는 회귀 실패를 확인했다. 수정 후 실제
+  PostgreSQL 64개를 포함한 Trading Review 167개와 app 98개, 총 265개 테스트를 캐시 재사용 없이 실행해
+  통과했다. 실패·오류·skip은 없다.
+  기한 경계·terminal clock 보존·late publication 차단·expiry/request 동시 rollback·멱등 처리·legacy 기한
+  보존을 포함한다. 새 DB Flyway V1~V16·모듈 경계·실행 JAR 빌드도 통과했다. 중간 검증의 fixture ID 타입과
+  migration publication 컬럼명 오류를 수정한 뒤 전체 검증을 다시 실행했다.
+- 실제 Core↔Compute에서 accepted clock/replay·queued expiry·생성 응답 유실 expiry·accepted raw purge 뒤
+  Review 보존, 네 assertion이 모두 통과했다. 단일 실제 요청·runtime absence receipt·파일/키 부재·capacity
+  반환·늦은 create 거절과 Session metadata 보존을 확인했다. 기본 publication·무결성·ACK 재시도·V1 pin·
+  ORCH-024~028·두 Core cutover assertion 10개·migration replay도 통과했다. V2 실제 HTTP publication은
+  이 E2E 범위 밖이며 PostgreSQL V2 검증과 구분한다. Context 문서 26개와 계약 snapshot 검사도 통과했다.
+- 증적은 integration의 `.integration-data/trading-normalization/b5f674ede190433da351dd3aa094ba71/evidence.json`이다.
+  후보는 Core `260d620`, Integration `359531d`, Compute `d75ff4d`, Context `0099527`이며 약 552초에
+  실제 프로세스 종료 코드 0으로 통과했다. worker 복구는 0건이며 기본·두 번째 Core·canary registry 프로세스 0개와
+  포트 해제를 확인했다. 로컬 credential·
+  fixture·증적은 커밋하지 않는다. Compute 0017의 단일 transaction 진단은 기존 SQLSTATE `55006` 한계로
+  rollback됐고 기존 `psql -f` runner의 replay는 통과했다. Core V16의 실제 새 DB migration 통과와 구분한다.
+- 중간 E2E의 Windows 10014 기동 오류·호스트 실행 공백 뒤 시간 초과·새 조회 도우미 인자 오류를 통과로
+  세지 않았다. 별도 재실행에서는 소켓 복구로 지연되는 동안 합성 ACK의 20분 대기가 소진됐다. 선택형 TTL
+  E2E에만 충분한 ACK 대기를 적용하고 기존 단계에서 즉시 해제하도록 수정한 뒤 모든 assertion을 재검증했다.
+  기본 runner의 20분 대기와 제품 retry 예산은 유지한다. PowerShell stderr 리다이렉션이 native 종료 0에도
+  외부 실행 도구에 1을 보고하는 현상은 독립 재현했고, 최종 실행의 프로세스 종료 코드를 직접 수집해 0을 확인했다.
+  검증 runner는 [Integration PR #46](https://github.com/refinvest-dev/integration/pull/46)로 분리했다.
+  API·hash·version pin·계산 입력 의미와 결정론은 바꾸지 않았다. 다음 단계는 5c의 실패 의미·조회
+  projection·web DTO 정리다.
 
 ### 5b-1 원본 purge와 orphan 실행 경계
 
