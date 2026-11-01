@@ -4,6 +4,7 @@ import com.refinvest.core.tradingreview.domain.valueobject.*
 import com.refinvest.core.tradingreview.port.deletion.*
 
 import com.refinvest.core.tradingreview.port.normalization.*
+import com.refinvest.core.tradingreview.port.importsession.*
 import com.refinvest.core.tradingreview.port.ledger.*
 import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
 import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
@@ -701,19 +702,241 @@ class PostgresTradingReviewStoreTest {
             TradingArtifactRole.TRADE_HISTORY, "text/csv", 2, "a".repeat(64), "AUTO", "objects/claim", byteArrayOf(1), "test", now)) })
         val old = store.find(session.id, session.owner)!!
         val firstClaim = retention.claimDue(Instant.now(), 1).single()
-        assertFalse(tx.execute { store.update(old.requestArtifactDeletion(firstClaim.id, now.plusSeconds(1))) })
+        assertFalse(tx.execute { store.update(old.requestArtifactDeletion(firstClaim.artifact.id, now.plusSeconds(1))) })
         jdbc.update("UPDATE trading_source_artifacts SET deletion_claim_until=CURRENT_TIMESTAMP - INTERVAL '1 second'")
+        val expired = importRows(jdbc)
+        assertFalse(retention.finish(RawArtifactRetentionCompletion(firstClaim, RawArtifactPurgeOutcome.ABSENT, Instant.now())))
+        assertFalse(retention.finish(RawArtifactRetentionCompletion(firstClaim, RawArtifactPurgeOutcome.EXHAUSTED, Instant.now())))
+        assertEquals(expired, importRows(jdbc))
         val nextClaim = retention.claimDue(Instant.now(), 1).single()
         val before = importRows(jdbc)
-        assertFalse(retention.markDeleted(firstClaim, Instant.now()))
-        retention.markDeletionFailed(firstClaim, "LATE_FAILURE", Instant.now())
+        assertFalse(retention.finish(RawArtifactRetentionCompletion(firstClaim, RawArtifactPurgeOutcome.ABSENT, Instant.now())))
+        assertFalse(retention.finish(RawArtifactRetentionCompletion(firstClaim, RawArtifactPurgeOutcome.EXHAUSTED, Instant.now())))
         assertEquals(before, importRows(jdbc))
-        assertTrue(retention.markDeleted(nextClaim, Instant.now()))
+        assertTrue(retention.finish(RawArtifactRetentionCompletion(nextClaim, RawArtifactPurgeOutcome.ABSENT, Instant.now())))
         val deleted = store.find(session.id, session.owner)!!.artifacts.single()
         assertEquals(TradingArtifactRetentionStatus.DELETED, deleted.retentionStatus)
         assertNull(deleted.objectKey)
         assertNull(deleted.wrappedDek)
         assertFalse(deleted.rawReparseAvailable(Instant.now()))
+    }
+
+    @Test
+    fun rawRetentionDrainsCurrentReadersAndTemporaryCopies(@org.junit.jupiter.api.io.TempDir root: java.nio.file.Path) =
+        verifyRawRetentionDrain(root, false)
+
+    @Test
+    fun rawRetentionDrainsLegacyReadersBeforeRemovingTheirDescriptor(@org.junit.jupiter.api.io.TempDir root: java.nio.file.Path) =
+        verifyRawRetentionDrain(root, true)
+
+    private fun verifyRawRetentionDrain(root: java.nio.file.Path, legacy: Boolean) = withDatabase { connection ->
+        val (jdbc, tx, session) = retentionFixture(connection)
+        val wrappingKey = javax.crypto.spec.SecretKeySpec(ByteArray(32) { 7 }, "AES")
+        val local = com.refinvest.core.tradingreview.adapter.storage.LocalEncryptedRawArtifactStorage(root, wrappingKey, "test-v1")
+        val store = JdbcTradingImportSessionPersistenceAdapter(jdbc)
+        var uploaded = session
+        val keys = mutableListOf<String>()
+        val descriptors = mutableListOf<StagedRawArtifact>()
+        for ((index, role) in TradingArtifactRole.entries.withIndex()) {
+            val id = TradingSourceArtifactId(32101L + index)
+            val staged = local.preparePublication(local.putStaging(java.io.ByteArrayInputStream(byteArrayOf(1, 2)),
+                2, id, session.id), role)
+            var key = requireNotNull(staged.publicationKey)
+            local.promote(staged, key)
+            local.completePublication(key)
+            if (legacy && index == 0) {
+                val oldKey = "objects/${UUID.randomUUID()}"
+                java.nio.file.Files.move(root.resolve(key), root.resolve(oldKey))
+                key = oldKey
+            }
+            keys += key
+            descriptors += staged
+            uploaded = uploaded.recordUpload(id, role, "text/csv", 2, staged.sha256, "AUTO", key,
+                staged.wrappedDek, staged.keyVersion, if (index == 0) now else Instant.now())
+        }
+        assertTrue(tx.execute { store.update(uploaded) })
+        jdbc.update("UPDATE trading_source_artifacts SET filename='synthetic.csv' WHERE id=32101")
+        val reader = local.open(keys[0], descriptors[0].wrappedDek, descriptors[0].keyVersion, TradingSourceArtifactId(32101))
+        val workspaces = com.refinvest.core.tradingreview.adapter.storage.LocalTradingArtifactWorkspaces(root.resolve("workspaces"))
+        val scope = if (legacy) TradingArtifactScope.LegacyArtifact(TradingSourceArtifactId(32101))
+            else TradingArtifactScope.RawSlot(session.id, TradingArtifactRole.TRADE_HISTORY)
+        val lease = workspaces.acquire(scope)
+        val temporary = lease.createTemporary()
+        temporary.openOutput().use { it.write(byteArrayOf(3, 4)) }
+        lease.close() // A crashed writer may leave a closed-handle temporary copy behind.
+        val restarted = com.refinvest.core.tradingreview.adapter.storage.LocalEncryptedRawArtifactStorage(root, wrappingKey, "test-v1")
+        val checked = object : RawArtifactStorage by restarted {
+            override fun purgeCopies(scope: TradingArtifactScope): Boolean {
+                assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+                assertTrue(connection.autoCommit)
+                return restarted.purgeCopies(scope)
+            }
+        }
+        val sweepAt = Instant.now()
+        fun sweep(at: Instant) = com.refinvest.core.tradingreview.application.TradingRawRetentionService(
+            JdbcTradingArtifactRetentionAdapter(jdbc), checked, tx, Clock.fixed(at, ZoneOffset.UTC)).purgeExpired()
+        try {
+            val waiting = sweep(sweepAt)
+            assertEquals(1, waiting.waiting)
+            assertEquals(0, waiting.failures)
+            assertEquals(1L, waiting.overdue)
+            val pending = store.find(session.id, session.owner)!!.artifacts.single { it.id.value == 32101L }
+            assertEquals(TradingArtifactRetentionStatus.DELETION_PENDING, pending.retentionStatus)
+            assertNotNull(pending.wrappedDek)
+            assertEquals(0, jdbc.queryForObject("SELECT deletion_attempt_count FROM trading_source_artifacts WHERE id=32101", Int::class.java))
+            assertFailsWith<TradingFailure> { reader.read() }
+            reader.close()
+            assertEquals(0, sweep(sweepAt.plusSeconds(1)).deleted)
+            val complete = sweep(sweepAt.plusSeconds(6))
+            assertEquals(1, complete.deleted)
+            assertEquals(0L, complete.overdue)
+            val deleted = store.find(session.id, session.owner)!!.artifacts.single { it.id.value == 32101L }
+            assertEquals(TradingArtifactRetentionStatus.DELETED, deleted.retentionStatus)
+            assertNull(deleted.objectKey)
+            assertNull(deleted.wrappedDek)
+            assertNull(deleted.keyVersion)
+            assertNull(deleted.filename)
+            assertFalse(restarted.exists(keys[0]))
+            assertTrue(restarted.exists(keys[1]))
+            assertTrue(workspaces.purge(scope))
+            assertEquals(0, sweep(sweepAt.plusSeconds(7)).deleted)
+            assertEquals(TradingImportStatus.RECEIVED, store.find(session.id, session.owner)!!.status)
+        } finally { reader.close(); temporary.close() }
+    }
+
+    @Test
+    fun rawRetentionPersistsBackoffAndStopsAfterFiveRealFailures() = withDatabase { connection ->
+        val (jdbc, _) = seedExpiredRetentionArtifact(connection)
+        val raw = object : RawArtifactStorage by emptyStorage() {
+            override fun purgeCopies(scope: TradingArtifactScope): Boolean = error("synthetic storage failure")
+        }
+        val tx = TransactionTemplate(DataSourceTransactionManager(requireNotNull(jdbc.dataSource)))
+        var at = Instant.now()
+        repeat(5) { attempt ->
+            val service = com.refinvest.core.tradingreview.application.TradingRawRetentionService(
+                JdbcTradingArtifactRetentionAdapter(jdbc), raw, tx, Clock.fixed(at, ZoneOffset.UTC))
+            assertEquals(1, service.purgeExpired().failures)
+            assertEquals(attempt + 1, jdbc.queryForObject("SELECT deletion_attempt_count FROM trading_source_artifacts", Int::class.java))
+            assertEquals(1L, JdbcTradingArtifactRetentionAdapter(jdbc).countOverdue(at))
+            assertTrue(JdbcTradingArtifactRetentionAdapter(jdbc).claimDue(at.plusSeconds(1), 20).isEmpty())
+            assertNotNull(jdbc.queryForObject("SELECT wrapped_dek FROM trading_source_artifacts", ByteArray::class.java))
+            if (attempt < 4) {
+                val next = jdbc.queryForObject("SELECT deletion_next_attempt_at FROM trading_source_artifacts", java.sql.Timestamp::class.java)!!.toInstant()
+                assertEquals(at.plusSeconds(5L shl attempt).epochSecond, next.epochSecond)
+                at = next
+            }
+        }
+        assertEquals("DELETION_FAILED", jdbc.queryForObject("SELECT retention_status FROM trading_source_artifacts", String::class.java))
+        assertEquals("ARTIFACT_DELETION_FAILED", jdbc.queryForObject("SELECT deletion_failure FROM trading_source_artifacts", String::class.java))
+        assertTrue(JdbcTradingArtifactRetentionAdapter(jdbc).claimDue(at.plusSeconds(3600), 20).isEmpty())
+    }
+
+    @Test
+    fun rawRetentionChecksLeaseAfterWaitingForTheArtifactLock() = withDatabase { connection ->
+        val (jdbc, artifact) = seedExpiredRetentionArtifact(connection)
+        val store = JdbcTradingArtifactRetentionAdapter(jdbc)
+        val at = Instant.now()
+        val claim = store.claimDue(at, 1, java.time.Duration.ofSeconds(3)).single()
+        val workerPid = jdbc.queryForObject("SELECT pg_backend_pid()", Int::class.java)
+        DriverManager.getConnection(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"), System.getenv("TRADING_REVIEW_TEST_DB_USER"),
+            System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD")).use { blocker ->
+            blocker.schema = connection.schema
+            blocker.autoCommit = false
+            blocker.createStatement().use { it.executeQuery("SELECT id FROM trading_source_artifacts WHERE id=${artifact.id.value} FOR UPDATE").close() }
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val task = executor.submit<Boolean> {
+                    store.finish(RawArtifactRetentionCompletion(claim, RawArtifactPurgeOutcome.ABSENT, at))
+                }
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+                var locked = false
+                while (!locked && System.nanoTime() < deadline) {
+                    blocker.createStatement().use { statement ->
+                        statement.executeQuery("SELECT wait_event_type FROM pg_stat_activity WHERE pid=$workerPid").use {
+                            locked = it.next() && it.getString(1) == "Lock"
+                        }
+                    }
+                    if (!locked) Thread.sleep(10)
+                }
+                assertTrue(locked, "The completion must actually wait for the row lock")
+                Thread.sleep(3100)
+                blocker.commit()
+                assertFalse(task.get(5, TimeUnit.SECONDS))
+                assertEquals("DELETION_PENDING", jdbc.queryForObject("SELECT retention_status FROM trading_source_artifacts", String::class.java))
+                assertNotNull(jdbc.queryForObject("SELECT wrapped_dek FROM trading_source_artifacts", ByteArray::class.java))
+            } finally { blocker.rollback(); executor.shutdownNow() }
+        }
+    }
+
+    @Test
+    fun rawRetentionMigrationPreservesDescriptorsDeadlinesAndExistingClaims() = withDatabase(applyRetentionMigration = false) { connection ->
+        val (jdbc, _) = seedExpiredRetentionArtifact(connection)
+        jdbc.update("UPDATE trading_source_artifacts SET retention_status='DELETION_PENDING',deletion_attempt_count=3,deletion_claim_until=clock_timestamp()+INTERVAL '5 minutes'")
+        val before = jdbc.queryForList("SELECT to_jsonb(a)::text FROM trading_source_artifacts a", String::class.java)
+        val sql = javaClass.getResourceAsStream("/db/migration/V15__trading_raw_retention_retry.sql")!!.bufferedReader().use { it.readText() }
+        connection.createStatement().use { statement -> splitSqlStatements(sql).forEach(statement::execute) }
+        assertEquals(before, jdbc.queryForList("SELECT (to_jsonb(a)-'deletion_next_attempt_at')::text FROM trading_source_artifacts a", String::class.java))
+        assertNull(jdbc.queryForObject("SELECT deletion_next_attempt_at FROM trading_source_artifacts", java.sql.Timestamp::class.java))
+        assertTrue(JdbcTradingArtifactRetentionAdapter(jdbc).claimDue(Instant.now(), 20).isEmpty())
+    }
+
+    @Test
+    fun rawOrphanCleanupKeepsReferencedObjectsAndActiveUploads(@org.junit.jupiter.api.io.TempDir root: java.nio.file.Path) = withDatabase { connection ->
+        val (jdbc, tx, session) = retentionFixture(connection)
+        val storage = com.refinvest.core.tradingreview.adapter.storage.LocalEncryptedRawArtifactStorage(root,
+            javax.crypto.spec.SecretKeySpec(ByteArray(32) { 6 }, "AES"), "test-v1")
+        val staged = storage.preparePublication(storage.putStaging(java.io.ByteArrayInputStream(byteArrayOf(1, 2)), 2,
+            TradingSourceArtifactId(32201), session.id), TradingArtifactRole.TRADE_HISTORY)
+        val key = requireNotNull(staged.publicationKey)
+        storage.promote(staged, key)
+        storage.completePublication(key)
+        val imports = JdbcTradingImportSessionPersistenceAdapter(jdbc)
+        assertTrue(tx.execute { imports.update(session.recordUpload(TradingSourceArtifactId(32201), TradingArtifactRole.TRADE_HISTORY,
+            "text/csv", 2, staged.sha256, "AUTO", key, staged.wrappedDek, staged.keyVersion, now)) })
+        val orphan = root.resolve("objects/${UUID.randomUUID()}")
+        java.nio.file.Files.write(orphan, byteArrayOf(3, 4))
+        java.nio.file.Files.setLastModifiedTime(orphan, java.nio.file.attribute.FileTime.from(Instant.EPOCH))
+        java.nio.file.Files.setLastModifiedTime(root.resolve(key), java.nio.file.attribute.FileTime.from(Instant.EPOCH))
+        val pending = storage.putStaging(java.io.ByteArrayInputStream(byteArrayOf(5, 6)), 2, TradingSourceArtifactId(32202), session.id)
+        java.nio.file.Files.setLastModifiedTime(root.resolve(pending.stagingKey), java.nio.file.attribute.FileTime.from(Instant.EPOCH))
+        val checked = object : RawArtifactStorage by storage {
+            override fun cleanupOrphans(olderThan: Instant, limit: Int, isReferenced: (String) -> Boolean): Int {
+                assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+                return storage.cleanupOrphans(olderThan, limit) {
+                    assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+                    isReferenced(it)
+                }
+            }
+        }
+        try {
+            assertEquals(0, com.refinvest.core.tradingreview.application.TradingRawOrphanCleanupService(
+                checked, imports, Clock.systemUTC(), 599).cleanupOrphans())
+            assertEquals(1, com.refinvest.core.tradingreview.application.TradingRawOrphanCleanupService(
+                checked, imports, Clock.systemUTC()).cleanupOrphans())
+            assertTrue(storage.exists(key))
+            assertTrue(storage.exists(pending.stagingKey))
+            assertFalse(java.nio.file.Files.exists(orphan))
+        } finally { storage.delete(pending.stagingKey) }
+    }
+
+    private fun retentionFixture(connection: Connection): Triple<JdbcTemplate, TransactionTemplate, TradingImportSession> {
+        val (service, tx, _) = accountBookFixture(connection)
+        val account = tx.execute { service.create(TradingVenue.BINANCE, "A", "retention-account") }
+        val book = tx.execute { service.create(account.id, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "retention-book") }
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val session = TradingImportSession.create(TradingImportSessionId(32100), book, "UTC", "UTC", TradingPositionMode.ONE_WAY,
+            TradingDataPolicy(), normalizationVersions, now)
+        tx.execute { JdbcTradingImportSessionPersistenceAdapter(jdbc).insert(session) }
+        return Triple(jdbc, tx, session)
+    }
+
+    private fun seedExpiredRetentionArtifact(connection: Connection): Pair<JdbcTemplate, TradingSourceArtifact> {
+        val (jdbc, tx, session) = retentionFixture(connection)
+        val uploaded = session.recordUpload(TradingSourceArtifactId(32101), TradingArtifactRole.TRADE_HISTORY,
+            "text/csv", 2, "a".repeat(64), "AUTO", "objects/expired", byteArrayOf(1), "test-v1", now)
+        assertTrue(tx.execute { JdbcTradingImportSessionPersistenceAdapter(jdbc).update(uploaded) })
+        return jdbc to uploaded.artifacts.single()
     }
 
     private fun importRows(jdbc: JdbcTemplate) = listOf(
@@ -1087,6 +1310,10 @@ class PostgresTradingReviewStoreTest {
         verifyPublishedTerminal(true)
 
     @Test
+    fun rawPurgeKeepsPublishedRevisionEvidenceAndAnalyticsSupplement() =
+        verifyPublishedTerminal(true, expireRaw = true)
+
+    @Test
     fun mismatchedTerminalDescriptorBlocksRevisionAndPersistedAck() =
         verifyPublishedTerminal(false, mismatchedDescriptor = true)
 
@@ -1095,7 +1322,7 @@ class PostgresTradingReviewStoreTest {
         verifyPublishedTerminal(false, mismatchedPayload = true)
 
     private fun verifyPublishedTerminal(v2: Boolean, mismatchedDescriptor: Boolean = false,
-                                        mismatchedPayload: Boolean = false) =
+                                        mismatchedPayload: Boolean = false, expireRaw: Boolean = false) =
         withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
@@ -1374,6 +1601,25 @@ class PostgresTradingReviewStoreTest {
         assertEquals(2, acknowledgeCalls)
         assertEquals("ACKNOWLEDGED", jdbc.queryForObject(
             "SELECT status FROM trading_normalization_ack_dispatches", String::class.java))
+        if (expireRaw) {
+            // This execution regression uses the persisted deadline. Terminal policy clocks are a separate 5b-2 change.
+            val tables = listOf("trading_ledger_revisions", "trading_records", "trading_source_evidence_snapshots",
+                "trading_ledger_analytics_supplement", "trading_books", "trading_normalization_ack_dispatches")
+            fun retainedRows() = tables.associateWith { table ->
+                jdbc.queryForList("SELECT row_to_json(t)::text FROM $table t ORDER BY 1", String::class.java)
+            }
+            val retained = retainedRows()
+            val expiry = jdbc.queryForObject("SELECT max(raw_expires_at) FROM trading_source_artifacts", java.sql.Timestamp::class.java)!!.toInstant()
+            val sweep = com.refinvest.core.tradingreview.application.TradingRawRetentionService(
+                JdbcTradingArtifactRetentionAdapter(jdbc), emptyStorage(), transactions, Clock.fixed(expiry, ZoneOffset.UTC))
+            assertEquals(2, sweep.purgeExpired().deleted)
+            assertEquals(0, sweep.purgeExpired().deleted)
+            assertEquals(retained, retainedRows())
+            assertEquals(TradingImportStatus.ACCEPTED, imports.find(session.id, MemberId(1))!!.status)
+            assertTrue(imports.find(session.id, MemberId(1))!!.artifacts.all {
+                it.retentionStatus == TradingArtifactRetentionStatus.DELETED && it.wrappedDek == null && !it.rawReparseAvailable(expiry)
+            })
+        }
     }
 
     @Test
@@ -2963,7 +3209,8 @@ class PostgresTradingReviewStoreTest {
             JdbcTradingDeletionWorkStore(jdbc, clock), tx, storage, files, workspaces, runtimeClient ?: runtime, legacy, clock, ids))
     }
 
-    private fun withDatabase(applyPinMigration: Boolean = true, applyDeletionMigration: Boolean = true, test: (Connection) -> Unit) {
+    private fun withDatabase(applyPinMigration: Boolean = true, applyDeletionMigration: Boolean = true,
+                             applyRetentionMigration: Boolean = true, test: (Connection) -> Unit) {
         val url = requireNotNull(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"))
         val user = requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_USER"))
         val password = requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD"))
@@ -3039,6 +3286,11 @@ class PostgresTradingReviewStoreTest {
                     val leases = javaClass.getResourceAsStream("/db/migration/V14__trading_deletion_execution_leases.sql")!!
                         .bufferedReader().use { it.readText() }
                     splitSqlStatements(leases).forEach(statement::execute)
+                }
+                if (applyRetentionMigration) connection.createStatement().use { statement ->
+                    val retry = javaClass.getResourceAsStream("/db/migration/V15__trading_raw_retention_retry.sql")!!
+                        .bufferedReader().use { it.readText() }
+                    splitSqlStatements(retry).forEach(statement::execute)
                 }
                 test(connection)
             } finally {

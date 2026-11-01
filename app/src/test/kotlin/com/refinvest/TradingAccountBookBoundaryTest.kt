@@ -36,6 +36,20 @@ class TradingAccountBookBoundaryTest {
     }
 
     @Test
+    fun rawCleanupSchedulersOnlyDependOnInboundPortsAndObservability() {
+        val root = workspaceRoot().resolve("tradingreview/adapter")
+        listOf(
+            "persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence/TradingRawRetentionWorker.kt",
+            "storage/src/main/kotlin/com/refinvest/core/tradingreview/adapter/storage/TradingRawOrphanWorker.kt",
+        ).forEach { name ->
+            val source = Files.readString(root.resolve(name))
+            assertFalse(Regex("JdbcTemplate|RawArtifactStorage|TradingSourceArtifactReader|TradingArtifactRetention|TransactionTemplate|java\\.time|core\\.env\\.Environment")
+                .containsMatchIn(source), "Orchestration in scheduler: $name")
+            assertTrue(source.contains("UseCase"), "Missing inbound port: $name")
+        }
+    }
+
+    @Test
     fun allTradingReviewPortsKeepTechnologyImplementationsOutside() {
         Files.walk(workspaceRoot().resolve("tradingreview/port/src/main/kotlin")).use { files ->
             files.filter { it.toString().endsWith(".kt") }.forEach { file ->
