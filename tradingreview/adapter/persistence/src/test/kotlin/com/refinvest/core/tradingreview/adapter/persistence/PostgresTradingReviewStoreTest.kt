@@ -79,6 +79,148 @@ class PostgresTradingReviewStoreTest {
     private val normalizationVersions = """{"versionSetHash":"${"f".repeat(64)}","normalizer":{"sourceDialectVersionsByArtifactRole":{"TRADE_HISTORY":"TRADE_V1","POSITION_HISTORY":"POSITION_V1"},"adapterVersion":"ADAPTER_V1","normalizerVersion":"NORMALIZER_V1","canonicalSchemaVersion":"CANONICAL_V1","implementationDigest":"normalizer-digest","versionSetHash":"${"d".repeat(64)}"},"reconstruction":{"instrumentTermsVersionByInstrument":{},"reconstructionPolicyVersion":"RECONSTRUCTION_V1","reconciliationVersion":"RECONCILIATION_V1","reviewUnitSchemaVersion":"REVIEW_UNIT_V1","evidenceSchemaVersion":"EVIDENCE_V1","implementationDigest":"reconstruction-digest","versionSetHash":"${"e".repeat(64)}"}}"""
 
     @Test
+    fun bookDeletionPinsDescendantCountsBeforePurgeAndReplaysThem() = withDatabase { connection ->
+        val (service, tx, _) = accountBookFixture(connection)
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val source = grantSource(jdbc, 71900, MemberId(1))
+        val request = tx.execute { service.delete(source.bookId, "count-book") }!!
+        assertEquals(1L, request.importSessionCount)
+        assertEquals(1L, request.artifactCount)
+        assertEquals("REQUEST_TIME_SNAPSHOT", request.countSnapshotStatus)
+        val again = tx.execute { service.delete(source.bookId, "count-book") }!!
+        assertEquals(request, again)
+        deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(60), ZoneOffset.UTC)).purgePending()
+        val retained = tx.execute { service.delete(source.bookId, "count-book") }!!
+        assertEquals("COMPLETED", retained.state)
+        assertEquals(1L, retained.importSessionCount)
+        assertEquals(1L, retained.artifactCount)
+        assertEquals("REQUEST_TIME_SNAPSHOT", retained.countSnapshotStatus)
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_import_sessions", Long::class.java))
+    }
+
+    @Test
+    fun scopeInventoryCountsOwnedResourcesInOneSnapshotAndExcludesNormalizationFromAnalysis() = withDatabase { connection ->
+        val (_, tx, _) = accountBookFixture(connection)
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val source = grantSource(jdbc, 72000, MemberId(1))
+        grantSource(jdbc, 72010, MemberId(1), source.account)
+        grantSource(jdbc, 72100, MemberId(2))
+        val inventory = JdbcDeletionScopeInventory(jdbc)
+        assertFailsWith<IllegalStateException> { inventory.capture(DeletionScope.account(source.account.id), MemberId(1)) }
+        assertEquals(DeletionAffectedResources(1, 2, 2, 2),
+            tx.execute { inventory.capture(DeletionScope.account(source.account.id), MemberId(1)) })
+        assertEquals(DeletionAffectedResources(0, 1, 1, 1),
+            tx.execute { inventory.capture(DeletionScope.book(source.bookId), MemberId(1)) })
+        assertEquals(DeletionAffectedResources(0, 0, 1, 1),
+            tx.execute { inventory.capture(DeletionScope.importSession(source.sessionId), MemberId(1)) })
+        assertEquals(DeletionAffectedResources(0, 0, 0, 1),
+            tx.execute { inventory.capture(DeletionScope.rawArtifact(source.artifact.artifactId), MemberId(1)) })
+        for (scope in listOf(DeletionScope.account(source.account.id), DeletionScope.book(source.bookId),
+                DeletionScope.importSession(source.sessionId), DeletionScope.rawArtifact(source.artifact.artifactId)))
+            assertNull(tx.execute { inventory.capture(scope, MemberId(2)) })
+        val empty = TradingAccount.create(TradingAccountId(72500), MemberId(1), TradingVenue.BINANCE, "empty", now)
+        JdbcTradingAccountPersistenceAdapter(jdbc).insert(empty)
+        assertEquals(DeletionAffectedResources(1, 0), tx.execute { inventory.capture(DeletionScope.account(empty.id), MemberId(1)) })
+    }
+
+    @Test
+    fun countSnapshotAndTombstoneRollbackTogetherAndTheRetryCapturesCurrentScope() = withDatabase { connection ->
+        val (service, tx, stores) = accountBookFixture(connection)
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val source = grantSource(jdbc, 72200, MemberId(1))
+        tx.execute { status ->
+            assertEquals(1L, service.delete(source.account.id, "rollback-count").bookCount)
+            status.setRollbackOnly()
+        }
+        assertNull(stores.deletionAdapter.findByTarget(MemberId(1), DeletionScope.account(source.account.id)))
+        assertEquals(TradingLifecycleStatus.ACTIVE, stores.find(source.account.id, MemberId(1))?.status)
+        grantSource(jdbc, 72210, MemberId(1), source.account)
+        val request = tx.execute { service.delete(source.account.id, "rollback-count") }!!
+        assertEquals(2L, request.bookCount)
+        assertEquals(2L, request.importSessionCount)
+        assertEquals(2L, request.artifactCount)
+        assertEquals(request, tx.execute { service.delete(source.account.id, "rollback-count") })
+    }
+
+    @Test
+    fun accountCountSnapshotFencesABookCreationWaitingOnTheSameParent() = withDatabase { connection ->
+        val (service, tx, stores) = accountBookFixture(connection)
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val source = grantSource(jdbc, 72400, MemberId(1))
+        val executor = Executors.newSingleThreadExecutor()
+        val backend = java.util.concurrent.CompletableFuture<Int>()
+        val schema = connection.schema
+        var creation: java.util.concurrent.Future<Result<TradingBook>>? = null
+        try {
+            val request = tx.execute {
+                assertNotNull(stores.find(source.account.id, MemberId(1), true))
+                creation = executor.submit<Result<TradingBook>> {
+                    DriverManager.getConnection(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"),
+                        System.getenv("TRADING_REVIEW_TEST_DB_USER"), System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD")).use { other ->
+                        other.schema = schema
+                        val (writer, writerTx, _) = accountBookFixture(other, seedMembers = false)
+                        val otherJdbc = JdbcTemplate(SingleConnectionDataSource(other, true))
+                        backend.complete(otherJdbc.queryForObject("SELECT pg_backend_pid()", Int::class.java)!!)
+                        runCatching { writerTx.execute { writer.create(source.account.id, "blocked", TradingProductFamily.LINEAR_PERPETUAL,
+                            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "count-race-create") }!! }
+                    }
+                }
+                val pid = backend.get(5, TimeUnit.SECONDS)
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                var blocked = false
+                while (!blocked && System.nanoTime() < deadline) {
+                    blocked = jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=? AND wait_event_type='Lock')",
+                        Boolean::class.java, pid) == true
+                    if (!blocked) Thread.sleep(10)
+                }
+                assertTrue(blocked, "Writer must actually wait on the parent's command lock")
+                service.delete(source.account.id, "count-race-delete")
+            }!!
+            val failure = creation!!.get(10, TimeUnit.SECONDS).exceptionOrNull()
+            assertIs<TradingFailure>(failure)
+            assertEquals(TradingFailureKind.NO_LONGER_AVAILABLE, failure.kind)
+            assertEquals(1L, request.bookCount)
+            assertEquals(1L, request.importSessionCount)
+            assertEquals(1L, request.artifactCount)
+            assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_books WHERE account_id=?", Long::class.java, source.account.id.value))
+        } finally { executor.shutdownNow() }
+    }
+
+    @Test
+    fun v17PreservesLegacyCountsAndRemediationNeverInventsARequestTimeSnapshot() = withDatabase(applyCountMigration = false) { connection ->
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        members(jdbc)
+        jdbc.update("""INSERT INTO trading_deletion_requests(id,owner_member_id,target_type,target_id,requested_scope,state,
+            deletion_generation,account_count,book_count,import_session_count,artifact_count,revoked_at,requested_at,updated_at,
+            backup_purge_due_at,attempt_count,failure_code,version) VALUES
+            (72300,1,'TRADING_BOOK',72301,'BOOK_SUBTREE','FAILED',1,0,1,3,5,?,?,?,?,5,'DELETION_PARTIALLY_COMPLETED',7)""",
+            java.sql.Timestamp.from(now), java.sql.Timestamp.from(now), java.sql.Timestamp.from(now.plusSeconds(10)),
+            java.sql.Timestamp.from(now.plusSeconds(86400)))
+        val before = jdbc.queryForMap("SELECT account_count,book_count,import_session_count,artifact_count,state,version,attempt_count FROM trading_deletion_requests")
+        val migration = javaClass.getResourceAsStream("/db/migration/V17__trading_deletion_count_snapshot.sql")!!.bufferedReader().use { it.readText() }
+        connection.createStatement().use { statement -> splitSqlStatements(migration).forEach(statement::execute) }
+        assertEquals(before, jdbc.queryForMap("SELECT account_count,book_count,import_session_count,artifact_count,state,version,attempt_count FROM trading_deletion_requests"))
+        val store = JdbcDeletionRequestPersistenceAdapter(jdbc)
+        val legacy = assertNotNull(store.find(DeletionRequestId(72300), MemberId(1)))
+        assertEquals(DeletionAffectedResources(0, 1, 3, 5, snapshotStatus = DeletionCountSnapshotStatus.LEGACY_PARTIAL), legacy.affectedResources)
+        val tx = TransactionTemplate(DataSourceTransactionManager(SingleConnectionDataSource(connection, true)))
+        val repaired = tx.execute { JdbcTradingDeletionWorkStore(jdbc, Clock.fixed(now, ZoneOffset.UTC))
+            .remediate(legacy.id, DeletionRequestId(72302), now.plusSeconds(20)) }!!
+        assertEquals(legacy.affectedResources, repaired.affectedResources)
+        assertEquals(repaired.affectedResources, store.find(repaired.id, legacy.owner)?.affectedResources)
+        assertEquals(7L, store.find(legacy.id, legacy.owner)?.version)
+        assertEquals("LEGACY_PARTIAL", JdbcDeletionRequestReader(jdbc).find(legacy.id, legacy.owner)?.countSnapshotStatus)
+        val exact = DeletionRequest.request(DeletionRequestId(72310), MemberId(1), DeletionScope.book(TradingBookId(72311)),
+            1, DeletionAffectedResources(0, 1, 2, 4, 3, 5, 6), now)
+        store.insert(exact)
+        val failed = exact.start(now.plusSeconds(1)).recordFailure(now.plusSeconds(2), 1)
+        assertTrue(tx.execute { JdbcDeletionRequestExecution(jdbc).commit(exact, failed) }!!)
+        val exactRemediation = tx.execute { JdbcTradingDeletionWorkStore(jdbc, Clock.fixed(now, ZoneOffset.UTC))
+            .remediate(exact.id, DeletionRequestId(72312), now.plusSeconds(20)) }!!
+        assertEquals(exact.affectedResources, store.find(exactRemediation.id, exact.owner)?.affectedResources)
+    }
+
+    @Test
     fun deletionReaderPreservesVerifiedPartialProgressAndHidesOtherOwnersWithoutWriting() = withDatabase { connection ->
         val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
         members(jdbc)
@@ -1233,10 +1375,10 @@ class PostgresTradingReviewStoreTest {
         }
     }
 
-    private fun accountBookFixture(connection: Connection): Triple<TradingReviewService, TransactionTemplate, TradingReviewTestStores> {
+    private fun accountBookFixture(connection: Connection, seedMembers: Boolean = true): Triple<TradingReviewService, TransactionTemplate, TradingReviewTestStores> {
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
-        members(jdbc)
+        if (seedMembers) members(jdbc)
         val stores = TradingReviewTestStores(jdbc)
         val ids = object : TradingIdGenerator {
             var next = 10000L
@@ -1247,7 +1389,7 @@ class PostgresTradingReviewStoreTest {
         val service = TradingReviewService(object : TradingMemberProvider {
             override fun currentMemberId() = MemberId(1)
         }, ids, stores, stores, stores, stores, Clock.fixed(now, ZoneOffset.UTC),
-            stores.accountReader, stores.bookReader, stores.bookDeletionCascade)
+            stores.accountReader, stores.bookReader, stores.bookDeletionCascade, JdbcDeletionScopeInventory(jdbc))
         return Triple(service, TransactionTemplate(DataSourceTransactionManager(source)), stores)
     }
 
@@ -1681,6 +1823,12 @@ class PostgresTradingReviewStoreTest {
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
         val revisionId = assertNotNull(jdbc.queryForObject(
             "SELECT id::text FROM trading_ledger_revisions", String::class.java))
+        assertEquals(1L, transactions.execute {
+            JdbcDeletionScopeInventory(jdbc).capture(DeletionScope.importSession(session.id), MemberId(1))
+        }?.ledgerRevisions)
+        assertEquals(0L, transactions.execute {
+            JdbcDeletionScopeInventory(jdbc).capture(DeletionScope.rawArtifact(imports.find(session.id, MemberId(1))!!.artifacts.first().id), MemberId(1))
+        }?.ledgerRevisions)
         transactions.execute {
             val analyticsReader = JdbcTradingAnalyticsRevisionReader(jdbc)
             val header = assertNotNull(analyticsReader.find(revisionId, 1))
@@ -2670,7 +2818,7 @@ class PostgresTradingReviewStoreTest {
         }
         val clock = Clock.fixed(now, ZoneOffset.UTC)
         val service = TradingReviewService(member, ids, store, store, store, store, clock,
-            store.accountReader, store.bookReader, store.bookDeletionCascade)
+            store.accountReader, store.bookReader, store.bookDeletionCascade, JdbcDeletionScopeInventory(jdbc))
         val account = transactions.execute { service.create(TradingVenue.BINANCE, "Primary", "create-account") }
         assertEquals(account.id, transactions.execute {
             service.create(TradingVenue.BINANCE, "Primary", "create-account")
@@ -2760,7 +2908,7 @@ class PostgresTradingReviewStoreTest {
             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) }, ids, accountStore, accountStore, importStore, importStore,
             accountStore, accountStore, storage, object : com.refinvest.core.tradingreview.port.TradingVersionPins {
                 override fun currentJson() = "{\"versionSetHash\":\"exact\"}"
-            }, transactions, Clock.fixed(now, ZoneOffset.UTC), noPublished, importStore)
+            }, transactions, Clock.fixed(now, ZoneOffset.UTC), noPublished, importStore, JdbcDeletionScopeInventory(jdbc))
         val session = transactions.execute { service.create(book.id, "UTC", "UTC", TradingPositionMode.ONE_WAY,
             null, null, "create-import") }
         assertEquals(session.id, transactions.execute { service.create(book.id, "UTC", "UTC", TradingPositionMode.ONE_WAY,
@@ -2859,7 +3007,7 @@ class PostgresTradingReviewStoreTest {
                             storage, object : com.refinvest.core.tradingreview.port.TradingVersionPins {
                                 override fun currentJson() = "{}"
                             }, TransactionTemplate(DataSourceTransactionManager(dataSource)),
-                            Clock.fixed(now, ZoneOffset.UTC), noPublished, importStore)
+                            Clock.fixed(now, ZoneOffset.UTC), noPublished, importStore, JdbcDeletionScopeInventory(workerJdbc))
                         val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
                             .joinToString("") { "%02x".format(it) }
                         start.await(10, TimeUnit.SECONDS)
@@ -2920,7 +3068,7 @@ class PostgresTradingReviewStoreTest {
                 reviews, reviews, imports, imports, reviews, reviews, storage,
                 object : com.refinvest.core.tradingreview.port.TradingVersionPins { override fun currentJson() = "{}" },
                 TransactionTemplate(DataSourceTransactionManager(source)), Clock.fixed(now, ZoneOffset.UTC),
-                noPublished, imports)
+                noPublished, imports, JdbcDeletionScopeInventory(connectionJdbc))
         }
         val reading = java.util.concurrent.CountDownLatch(1)
         val resume = java.util.concurrent.CountDownLatch(1)
@@ -3004,7 +3152,7 @@ class PostgresTradingReviewStoreTest {
                             object : com.refinvest.core.tradingreview.port.TradingVersionPins {
                                 override fun currentJson() = "{}"
                             }, TransactionTemplate(DataSourceTransactionManager(dataSource)),
-                            Clock.fixed(now, ZoneOffset.UTC), noPublished, imports)
+                            Clock.fixed(now, ZoneOffset.UTC), noPublished, imports, JdbcDeletionScopeInventory(workerJdbc))
                         started.countDown()
                         runCatching { TransactionTemplate(DataSourceTransactionManager(dataSource)).execute {
                             service.create(bookId, "UTC", "UTC", TradingPositionMode.ONE_WAY, null, null,
@@ -3067,7 +3215,7 @@ class PostgresTradingReviewStoreTest {
         val service = TradingReviewService(object : TradingMemberProvider {
             override fun currentMemberId() = MemberId(1)
         }, ids, review, review, review, review, Clock.fixed(now, ZoneOffset.UTC),
-            review.accountReader, review.bookReader, review.bookDeletionCascade)
+            review.accountReader, review.bookReader, review.bookDeletionCascade, JdbcDeletionScopeInventory(jdbc))
         val deletion = assertNotNull(tx.execute {
             if (deleteAccount) service.delete(target.account.id, "delete-account")
             else service.delete(target.bookId, "delete-book")
@@ -3358,7 +3506,7 @@ class PostgresTradingReviewStoreTest {
     }
 
     private fun withDatabase(applyPinMigration: Boolean = true, applyDeletionMigration: Boolean = true,
-                             applyRetentionMigration: Boolean = true, test: (Connection) -> Unit) {
+                             applyRetentionMigration: Boolean = true, applyCountMigration: Boolean = true, test: (Connection) -> Unit) {
         val url = requireNotNull(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"))
         val user = requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_USER"))
         val password = requireNotNull(System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD"))
@@ -3444,6 +3592,11 @@ class PostgresTradingReviewStoreTest {
                     val policy = javaClass.getResourceAsStream("/db/migration/V16__trading_raw_policy_clocks.sql")!!
                         .bufferedReader().use { it.readText() }
                     splitSqlStatements(policy).forEach(statement::execute)
+                }
+                if (applyCountMigration) connection.createStatement().use { statement ->
+                    val counts = javaClass.getResourceAsStream("/db/migration/V17__trading_deletion_count_snapshot.sql")!!
+                        .bufferedReader().use { it.readText() }
+                    splitSqlStatements(counts).forEach(statement::execute)
                 }
                 test(connection)
             } finally {

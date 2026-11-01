@@ -77,6 +77,17 @@ class TradingReviewControllerTest {
     }
 
     @Test
+    fun publicCountsIncludeStoredRevisionAndRunCountsAndSnapshotProvenance() {
+        val root = DeletionRequest.request(DeletionRequestId(14), MemberId(1), DeletionScope.book(book.id), 1,
+            DeletionAffectedResources(0, 1, 2, 4, 3, 5, 6), now)
+        val response = TradingDeletionResponse.from(TradingDeletion.fromDomain(root))
+        assertEquals(AffectedResourceSummary(0, 1, 2, 4, 3, 5, 6, "REQUEST_TIME_SNAPSHOT"), response.affectedResources)
+        val legacy = DeletionRequest.request(DeletionRequestId(15), MemberId(1), DeletionScope.book(book.id), 1,
+            root.affectedResources.copy(snapshotStatus = DeletionCountSnapshotStatus.LEGACY_PARTIAL), now)
+        assertEquals("LEGACY_PARTIAL", TradingDeletionResponse.from(TradingDeletion.fromDomain(legacy)).affectedResources.snapshotStatus)
+    }
+
+    @Test
     fun deletionResponseUsesVerifiedComponentsAndKeepsSuccessfulWorkAfterFailure() {
         val root = DeletionRequest.request(DeletionRequestId(13), MemberId(1),
             DeletionScope.rawArtifact(TradingSourceArtifactId(40)), 1,

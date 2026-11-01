@@ -55,7 +55,8 @@ data class TradingPageResponse<T>(val items: List<T>, val page: Int, val size: I
 
 data class AffectedResourceSummary(val accounts: Long, val books: Long, val importSessions: Long = 0,
                                    val artifacts: Long = 0, val ledgerRevisions: Long = 0,
-                                   val analysisRuns: Long = 0, val reprocessingRuns: Long = 0)
+                                   val analysisRuns: Long = 0, val reprocessingRuns: Long = 0,
+                                   val snapshotStatus: String = "LEGACY_PARTIAL")
 
 data class TradingDeletionResponse(val id: String, val targetType: String, val targetId: String,
                                    val requestedScope: String, val state: String,
@@ -68,7 +69,8 @@ data class TradingDeletionResponse(val id: String, val targetType: String, val t
     companion object {
         fun from(value: TradingDeletion) = TradingDeletionResponse(value.id.toString(), value.targetType,
             value.targetId.toString(), value.requestedScope, value.state,
-            AffectedResourceSummary(value.accountCount, value.bookCount, value.importSessionCount, value.artifactCount), value.revokedAt,
+            AffectedResourceSummary(value.accountCount, value.bookCount, value.importSessionCount, value.artifactCount,
+                value.ledgerRevisionCount, value.analysisRunCount, value.reprocessingRunCount, value.countSnapshotStatus), value.revokedAt,
             value.primaryPurgeStatus.name, value.objectPurgeStatus.name, value.computeRuntimePurgeStatus.name,
             value.backupPurgeStatus.name,
             value.backupPurgeDueAt.takeUnless { value.backupPurgeStatus == PurgeComponentStatus.NOT_APPLICABLE },

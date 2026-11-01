@@ -13,6 +13,22 @@ class DeletionRequestTest {
         DeletionRequest.request(DeletionRequestId(3), MemberId(1), scope, 1, resources, now)
 
     @Test
+    fun resourceSnapshotsSurviveFailureAndRemediationAndRejectInvalidCounts() {
+        val counts = DeletionAffectedResources(0, 1, 2, 4, 3, 5, 6)
+        var failed = request(resources = counts).start(now)
+        repeat(5) { failed = failed.recordFailure(now) }
+        assertEquals(counts, failed.affectedResources)
+        assertEquals(counts, DeletionRequest.remediation(DeletionRequestId(20), failed, now).affectedResources)
+        assertFailsWith<IllegalArgumentException> { DeletionAffectedResources(0, 1, ledgerRevisions = -1) }
+        assertFailsWith<IllegalArgumentException> {
+            request(DeletionScope.rawArtifact(TradingSourceArtifactId(4)), DeletionAffectedResources(0, 0, 0, 1, 1))
+        }
+        val legacy = counts.copy(snapshotStatus = DeletionCountSnapshotStatus.LEGACY_PARTIAL)
+        assertEquals(DeletionCountSnapshotStatus.LEGACY_PARTIAL,
+            request(resources = legacy).start(now).recordFailure(now, 1).affectedResources.snapshotStatus)
+    }
+
+    @Test
     fun newRequestsPinTheirScopeGenerationAndInitialState() {
         listOf(DeletionScope.account(TradingAccountId(1)) to DeletionAffectedResources(1, 2),
             DeletionScope.book(TradingBookId(2)) to DeletionAffectedResources(0, 1),
