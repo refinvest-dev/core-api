@@ -33,6 +33,9 @@ class TradingImportSession private constructor(
     artifacts: List<TradingSourceArtifact> = emptyList(),
     val createdLedgerRevisionId: LedgerRevisionId? = null,
     val normalizationRun: NormalizationRun? = null,
+    val acceptedAt: Instant? = null,
+    val rejectedAt: Instant? = null,
+    val rawExpiredAt: Instant? = null,
 ) : AggregateRoot<TradingImportSessionId>(id) {
     val artifacts: List<TradingSourceArtifact> = java.util.Collections.unmodifiableList(artifacts.toList())
 
@@ -56,6 +59,11 @@ class TradingImportSession private constructor(
             normalizationRun.input.ownerId == owner.value)) { "Foreign normalization run" }
         require(validationStartedAt == null || !validationStartedAt.isBefore(createdAt))
         require(createdLedgerRevisionId == null || status == TradingImportStatus.ACCEPTED) { "Only accepted imports have a Revision" }
+        require(acceptedAt == null || status == TradingImportStatus.ACCEPTED)
+        require(rejectedAt == null || status == TradingImportStatus.REJECTED)
+        require(rawExpiredAt == null || (status == TradingImportStatus.PROCESSING_FAILED &&
+            failure?.code == "SOURCE_ARTIFACT_EXPIRED" && !failure.retryable))
+        require(listOfNotNull(acceptedAt, rejectedAt, rawExpiredAt).all { !it.isBefore(createdAt) && !it.isAfter(updatedAt) })
     }
 
     fun recordUpload(artifactId: TradingSourceArtifactId, role: TradingArtifactRole, contentType: String,
@@ -132,7 +140,36 @@ class TradingImportSession private constructor(
     fun rejectValidation(runId: String, generation: Long, cause: TradingImportFailure, now: Instant): TradingImportSession? =
         if (status == TradingImportStatus.VALIDATING && activeNormalizationRunId?.value == runId &&
             deletionGeneration == generation && !deletionPending)
-            copy(status = TradingImportStatus.REJECTED, failure = cause, updatedAt = now) else null
+            if (artifacts.all { it.rawReparseAvailable(now) }) {
+                require(retentionPolicy == "TRADING_RETENTION_V1")
+                copy(status = TradingImportStatus.REJECTED, failure = cause, updatedAt = now, rejectedAt = now,
+                    artifacts = artifacts.map { it.pinTerminalExpiry(now, 86400) })
+            } else null
+        else null
+
+    fun acceptNormalization(runId: NormalizationRunId, generation: Long, revisionId: LedgerRevisionId,
+                            now: Instant): TradingImportSession? {
+        if (status != TradingImportStatus.VALIDATING || activeNormalizationRunId != runId ||
+            deletionGeneration != generation || deletionPending || rawExpiredAt != null ||
+            artifacts.size != 2 || artifacts.any { !it.rawReparseAvailable(now) }) return null
+        require(retentionPolicy == "TRADING_RETENTION_V1")
+        return copy(status = TradingImportStatus.ACCEPTED, failure = null, updatedAt = now,
+            createdLedgerRevisionId = revisionId, acceptedAt = now,
+            artifacts = artifacts.map { it.pinTerminalExpiry(now, 7 * 86400) })
+    }
+
+    /** A policy-triggered raw-only deletion; retained Session metadata stays readable. */
+    fun expireRawSource(artifactId: TradingSourceArtifactId, now: Instant): TradingImportSession? {
+        if (status in setOf(TradingImportStatus.ACCEPTED, TradingImportStatus.REJECTED) ||
+            deletionPending || rawExpiredAt != null || failure?.code == "SOURCE_ARTIFACT_DELETED") return null
+        val source = artifacts.singleOrNull { it.id == artifactId } ?: return null
+        if (now.isBefore(source.rawExpiresAt)) return null
+        return copy(status = TradingImportStatus.PROCESSING_FAILED,
+            deletionGeneration = Math.addExact(deletionGeneration, 1), rawExpiredAt = now, updatedAt = now,
+            failure = TradingImportFailure("SOURCE_ARTIFACT_EXPIRED", false, "REUPLOAD_REQUIRED", now),
+            artifacts = artifacts.map { if (it.id == artifactId && it.retentionStatus in setOf(
+                TradingArtifactRetentionStatus.ACTIVE, TradingArtifactRetentionStatus.RETENTION_SCHEDULED)) it.requestDeletion() else it })
+    }
 
     private fun requestRawDeletion(now: Instant): TradingImportSession {
         require(!deletionPending) { "Session deletion already requested" }
@@ -160,10 +197,15 @@ class TradingImportSession private constructor(
         failure: TradingImportFailure? = this.failure,
         artifacts: List<TradingSourceArtifact> = this.artifacts,
         normalizationRun: NormalizationRun? = this.normalizationRun,
+        createdLedgerRevisionId: LedgerRevisionId? = this.createdLedgerRevisionId,
+        acceptedAt: Instant? = this.acceptedAt,
+        rejectedAt: Instant? = this.rejectedAt,
+        rawExpiredAt: Instant? = this.rawExpiredAt,
     ) = TradingImportSession(id, bookId, owner, sourceTimezone, reviewTimezone, declaredPositionMode,
         dataPolicyVersion, retentionPolicy, maskingPolicyVersion, evidenceRetention, deletionPolicyVersion,
         versionSetJson, status, deletionGeneration, deletionPending, createdAt, updatedAt, version,
-        validationStartedAt, activeNormalizationRunId, failure, artifacts, createdLedgerRevisionId, normalizationRun)
+        validationStartedAt, activeNormalizationRunId, failure, artifacts, createdLedgerRevisionId, normalizationRun,
+        acceptedAt, rejectedAt, rawExpiredAt)
 
     companion object {
         fun restore(
@@ -191,10 +233,14 @@ class TradingImportSession private constructor(
             artifacts: List<TradingSourceArtifact> = emptyList(),
             createdLedgerRevisionId: LedgerRevisionId? = null,
             normalizationRun: NormalizationRun? = null,
+            acceptedAt: Instant? = null,
+            rejectedAt: Instant? = null,
+            rawExpiredAt: Instant? = null,
         ) = TradingImportSession(id, bookId, owner, sourceTimezone, reviewTimezone, declaredPositionMode,
             dataPolicyVersion, retentionPolicy, maskingPolicyVersion, evidenceRetention, deletionPolicyVersion,
             versionSetJson, status, deletionGeneration, deletionPending, createdAt, updatedAt, version,
-            validationStartedAt, activeNormalizationRunId, failure, artifacts, createdLedgerRevisionId, normalizationRun)
+            validationStartedAt, activeNormalizationRunId, failure, artifacts, createdLedgerRevisionId, normalizationRun,
+            acceptedAt, rejectedAt, rawExpiredAt)
 
         fun create(id: TradingImportSessionId, book: TradingBook, sourceTimezone: String,
                    reviewTimezone: String, mode: TradingPositionMode, policy: TradingDataPolicy,

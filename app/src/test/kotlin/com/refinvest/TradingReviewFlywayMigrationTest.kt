@@ -24,7 +24,7 @@ class TradingReviewFlywayMigrationTest {
                 val flyway = Flyway.configure().dataSource(url, user, password).schemas(schema)
                     .baselineOnMigrate(true).baselineVersion("0")
                     .locations("classpath:db/migration").load()
-                assertEquals(15, flyway.migrate().migrationsExecuted)
+                assertEquals(16, flyway.migrate().migrationsExecuted)
                 assertEquals(0, flyway.migrate().migrationsExecuted)
                 connection.schema = schema
                 connection.createStatement().use { statement ->

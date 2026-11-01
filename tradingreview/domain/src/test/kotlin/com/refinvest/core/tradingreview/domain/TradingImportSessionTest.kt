@@ -116,4 +116,50 @@ class TradingImportSessionTest {
 
     private fun upload(root: TradingImportSession, id: Long, role: TradingArtifactRole) = root.recordUpload(
         TradingSourceArtifactId(id), role, "text/csv", 1, "a".repeat(64), "AUTO", "objects/$id", byteArrayOf(1), "test", now)
+
+    private fun validating(): TradingImportSession {
+        val uploaded = upload(upload(session, 4, TradingArtifactRole.TRADE_HISTORY), 5, TradingArtifactRole.POSITION_HISTORY)
+        return TradingImportSession.restore(uploaded.id, uploaded.bookId, uploaded.owner, uploaded.sourceTimezone,
+            uploaded.reviewTimezone, uploaded.declaredPositionMode, uploaded.dataPolicyVersion, uploaded.retentionPolicy,
+            uploaded.maskingPolicyVersion, uploaded.evidenceRetention, uploaded.deletionPolicyVersion, uploaded.versionSetJson,
+            TradingImportStatus.VALIDATING, 0, false, now, now, 0, now,
+            NormalizationRunId("00000000-0000-0000-0000-000000000001"), artifacts = uploaded.artifacts)
+    }
+
+    @Test
+    fun terminalClocksArePinnedOnceAndSurviveRawDeletion() {
+        val root = validating()
+        val at = now.plusSeconds(60)
+        val revision = com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId(java.util.UUID.randomUUID())
+        val accepted = root.acceptNormalization(root.activeNormalizationRunId!!, 0, revision, at)!!
+        assertEquals(at, accepted.acceptedAt)
+        assertTrue(accepted.artifacts.all { it.rawExpiresAt == at.plusSeconds(7 * 86400) })
+        assertEquals(null, accepted.acceptNormalization(root.activeNormalizationRunId, 0, revision, at.plusSeconds(1)))
+        assertEquals(at, accepted.requestArtifactDeletion(TradingSourceArtifactId(4), at.plusSeconds(1)).acceptedAt)
+        val rejected = root.rejectValidation(root.activeNormalizationRunId.value, 0,
+            TradingImportFailure("FILE_FORMAT_INVALID", false, "NONE", at), at)!!
+        assertEquals(at, rejected.rejectedAt)
+        assertTrue(rejected.artifacts.all { it.rawExpiresAt == at.plusSeconds(86400) })
+        assertEquals(at, rejected.requestArtifactDeletion(TradingSourceArtifactId(4), at.plusSeconds(2)).rejectedAt)
+    }
+
+    @Test
+    fun rawExpiryFencesTheSessionAtTheBoundaryWithoutRevivingSource() {
+        val root = validating()
+        val deadline = now.plusSeconds(86400)
+        assertEquals(null, root.expireRawSource(TradingSourceArtifactId(4), deadline.minusNanos(1)))
+        assertEquals(null, root.acceptNormalization(root.activeNormalizationRunId!!, 0,
+            com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId(java.util.UUID.randomUUID()), deadline))
+        assertEquals(null, root.rejectValidation(root.activeNormalizationRunId.value, 0,
+            TradingImportFailure("LATE", false, "NONE", deadline), deadline))
+        val expired = root.expireRawSource(TradingSourceArtifactId(4), deadline)!!
+        assertEquals(deadline, expired.rawExpiredAt)
+        assertEquals(1L, expired.deletionGeneration)
+        assertEquals("SOURCE_ARTIFACT_EXPIRED", expired.failure?.code)
+        assertEquals("REUPLOAD_REQUIRED", expired.failure?.userAction)
+        assertFalse(expired.failure!!.retryable)
+        assertFalse(expired.canUpload())
+        assertEquals(null, expired.expireRawSource(TradingSourceArtifactId(5), deadline.plusSeconds(1)))
+        assertEquals(root.artifacts.map { it.rawExpiresAt }, expired.artifacts.map { it.rawExpiresAt })
+    }
 }

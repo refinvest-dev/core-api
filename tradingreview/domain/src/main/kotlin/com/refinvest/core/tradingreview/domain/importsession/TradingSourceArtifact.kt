@@ -50,6 +50,13 @@ class TradingSourceArtifact private constructor(
             uploadedAt, rawExpiresAt, null, deletionFailure, version)
     }
 
+    internal fun pinTerminalExpiry(at: Instant, seconds: Long): TradingSourceArtifact {
+        require(rawReparseAvailable(at)) { "Expired raw cannot be revived" }
+        return restore(id, sessionId, role, filename, contentType, byteSize, sha256, dialectCandidate,
+            objectKey, encryptedKey, keyVersion, retentionStatus, uploadedAt, at.plusSeconds(seconds),
+            deletedAt, deletionFailure, version)
+    }
+
     override fun equals(other: Any?): Boolean = other is TradingSourceArtifact && id == other.id && version == other.version
     override fun hashCode(): Int = 31 * id.hashCode() + version.hashCode()
 
