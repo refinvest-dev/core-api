@@ -46,8 +46,7 @@ val aggregateModuleDependencies = mapOf(
     ":tradingreview:application" to setOf(":tradingreview:port"),
     ":tradingreview:adapter:persistence" to setOf(":tradingreview:port"),
     ":tradingreview:adapter:web" to setOf(":tradingreview:port"),
-    // R10 / stage 5a: existing normalization scheduler implementation calls remain explicitly tracked.
-    ":tradingreview:adapter:compute" to setOf(":tradingreview:port", ":tradingreview:application"),
+    ":tradingreview:adapter:compute" to setOf(":tradingreview:port"),
     ":tradingreview:adapter:storage" to setOf(":tradingreview:port"),
     ":tradingreview:adapter:uuid" to setOf(":tradingreview:port"),
     ":tradingreview:adapter:security" to setOf(":tradingreview:port", ":member:port"),
@@ -66,6 +65,14 @@ tasks.register("verifyAggregateModuleBoundaries") {
                 .map { it.path }.toSet()
             check(allowed.containsAll(dependencies)) {
                 "$modulePath has forbidden project dependencies: ${dependencies - allowed}"
+            }
+            if (modulePath == ":tradingreview:adapter:compute") {
+                listOf("compileClasspath", "testCompileClasspath").forEach { configuration ->
+                    val applications = module.configurations.getByName(configuration).incoming.resolutionResult
+                        .allComponents.mapNotNull { it.id as? ProjectComponentIdentifier }
+                        .map { it.projectPath }.filter { it.endsWith(":application") }
+                    check(applications.isEmpty()) { "$modulePath $configuration exposes application implementations: $applications" }
+                }
             }
             if (":adapter:" !in modulePath) {
                 val technology = module.configurations.getByName("compileClasspath")

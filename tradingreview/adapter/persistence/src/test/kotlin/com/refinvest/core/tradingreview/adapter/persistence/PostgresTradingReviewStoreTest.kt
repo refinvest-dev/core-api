@@ -1235,8 +1235,20 @@ class PostgresTradingReviewStoreTest {
             }
             override fun acknowledge(acknowledgement: NormalizationPayloadAcknowledgement): NormalizationAckOutcome {
                 acknowledgeCalls++
+                assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+                assertTrue(connection.autoCommit)
                 assertEquals("PERSISTED", acknowledgement.disposition)
                 assertEquals(TradingImportStatus.ACCEPTED, imports.find(session.id, MemberId(1))?.status)
+                DriverManager.getConnection(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"),
+                    System.getenv("TRADING_REVIEW_TEST_DB_USER"),
+                    System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD")).use { observer ->
+                    observer.schema = connection.schema
+                    val committed = JdbcTemplate(SingleConnectionDataSource(observer, true))
+                    assertEquals(1L, committed.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
+                    assertEquals("ACCEPTED", committed.queryForObject("SELECT status FROM trading_import_sessions", String::class.java))
+                    assertEquals(acknowledgement.idempotencyKey, committed.queryForObject(
+                        "SELECT idempotency_key FROM trading_normalization_ack_dispatches", String::class.java))
+                }
                 return NormalizationAckOutcome.Accepted
             }
         }
@@ -1264,8 +1276,10 @@ class PostgresTradingReviewStoreTest {
             return@withDatabase
         }
         val interrupted = object : TradingLedgerPublication by results {
-            override fun publish(publication: LedgerPublication): Boolean =
-                error("simulated process failure before publication commit")
+            override fun publish(publication: LedgerPublication): Boolean {
+                assertTrue(results.publish(publication))
+                error("simulated process failure after publication writes but before commit")
+            }
         }
         val processor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
             runs, imports, review, results, client, transactions, Clock.fixed(now, ZoneOffset.UTC), mapper,
@@ -1276,6 +1290,13 @@ class PostgresTradingReviewStoreTest {
         assertEquals(TradingImportStatus.VALIDATING, imports.find(session.id, MemberId(1))?.status)
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_ledger_revisions", Long::class.java))
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_result_staging", Long::class.java))
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_ack_dispatches", Long::class.java))
+        val acknowledgement: AcknowledgeTradingNormalizationResultUseCase =
+            com.refinvest.core.tradingreview.application.TradingNormalizationAcknowledgementService(
+                results, client, transactions, Clock.fixed(now, ZoneOffset.UTC), mapper,
+                object : TradingRetryJitter { override fun factor() = 0.5 })
+        assertFalse(acknowledgement.acknowledgeOne())
+        assertEquals(0, acknowledgeCalls)
         val recoveredProcessor = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
             runs, imports, review, results, client, transactions,
             Clock.fixed(now.plusSeconds(1), ZoneOffset.UTC), mapper,
@@ -1344,12 +1365,11 @@ class PostgresTradingReviewStoreTest {
         val pending = assertNotNull(transactions.execute { results.claimAck(now.plusSeconds(1),
             java.time.Duration.ofSeconds(45), lostWorker) })
         assertEquals(NormalizationAckOutcome.Accepted, client.acknowledge(pending))
-        val ackRecovered = com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor(
-            runs, imports, review, results, client, transactions,
+        val ackRecovered: AcknowledgeTradingNormalizationResultUseCase =
+            com.refinvest.core.tradingreview.application.TradingNormalizationAcknowledgementService(
+            results, client, transactions,
             Clock.fixed(now.plusSeconds(47), ZoneOffset.UTC), mapper,
-            object : TradingRetryJitter { override fun factor() = 0.5 }, JdbcTradingNormalizationTransitionGate(jdbc) , publications = results, revisionIds = object : LedgerRevisionIdGenerator {
-                override fun revisionId() = com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId(UUID.randomUUID())
-            })
+            object : TradingRetryJitter { override fun factor() = 0.5 })
         assertTrue(ackRecovered.acknowledgeOne())
         assertEquals(2, acknowledgeCalls)
         assertEquals("ACKNOWLEDGED", jdbc.queryForObject(

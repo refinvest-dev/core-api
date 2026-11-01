@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 
 class TradingAccountBookBoundaryTest {
     @Test
-    fun tradingReviewSourcesRespectFeatureLayersAndKeepExistingSchedulerDebtExplicit() {
+    fun tradingReviewSourcesRespectFeatureLayers() {
         val root = workspaceRoot()
         listOf("domain", "port", "application", "adapter/persistence", "adapter/web", "adapter/compute",
             "adapter/storage", "adapter/security", "adapter/snowflake", "adapter/uuid").forEach { layer ->
@@ -27,14 +27,20 @@ class TradingAccountBookBoundaryTest {
                     if (layer == "adapter/security") add("com.refinvest.core.member.port.")
                     if (layer == "adapter/snowflake") add("com.refinvest.core.shared.infrastructure.")
                 }
-                // R10: stage 5a will replace these two existing scheduler implementation dependencies with inbound ports.
-                val pendingSchedulers = if (layer == "adapter/compute") setOf(
-                    "com.refinvest.core.tradingreview.application.TradingNormalizationDispatcher",
-                    "com.refinvest.core.tradingreview.application.TradingNormalizationResultProcessor") else emptySet()
-                assertTrue(references.all { ref -> allowed.any { ref.startsWith(it) || ref == it.removeSuffix(".") } ||
-                    pendingSchedulers.any { ref == it || ref.startsWith("$it.") } }, "Forbidden reference in $file: $references")
+                assertTrue(references.all { ref -> allowed.any { ref.startsWith(it) || ref == it.removeSuffix(".") } },
+                    "Forbidden reference in $file: $references")
                 if (layer in setOf("domain", "port")) assertFalse(source.contains("org.springframework"), "Framework in $file")
                 if (!layer.startsWith("adapter/")) assertFalse(Regex("jakarta\\.(persistence|servlet)|org\\.springframework\\.(data|jdbc|orm|web|boot)").containsMatchIn(source), "Technology in $file")
+            }
+        }
+    }
+
+    @Test
+    fun allTradingReviewPortsKeepTechnologyImplementationsOutside() {
+        Files.walk(workspaceRoot().resolve("tradingreview/port/src/main/kotlin")).use { files ->
+            files.filter { it.toString().endsWith(".kt") }.forEach { file ->
+                assertFalse(Regex("org\\.springframework|java\\.(sql|net)|java\\.io\\.(?!(?:InputStream|OutputStream)\\b)|java\\.nio\\.file|javax\\.crypto")
+                    .containsMatchIn(Files.readString(file)), "Technology implementation in port: $file")
             }
         }
     }
