@@ -95,6 +95,8 @@ import kotlin.test.assertTrue
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.jpa.hibernate.ddl-auto=create-drop",
+        "refinvest.security.cookie-secure=true",
+        "refinvest.security.cookie-same-site=Lax",
         "refinvest.trading-review.retention-enabled=false",
     ],
 )
@@ -501,7 +503,7 @@ class RefinvestApplicationTests(
         val cookies = first.headers().allValues("set-cookie")
         assertTrue(cookies.any { it.startsWith("REFINVEST_ACCESS_TOKEN=") && it.contains("HttpOnly") }, cookies.toString())
         assertTrue(cookies.any { it.startsWith("REFINVEST_REFRESH_TOKEN=") && it.contains("Path=/auth") }, cookies.toString())
-        assertTrue(cookies.all { it.contains("SameSite=Lax") && !it.contains("; Secure") }, cookies.toString())
+        assertTrue(cookies.all { it.contains("SameSite=Lax") && it.contains("; Secure") }, "Authentication cookie attributes must match the configured policy")
         assertFalse(refreshSession(issued.refreshJti).revokedAt == null)
         assertEquals(1L, jdbcTemplate.queryForObject(
             "select count(*) from refresh_sessions where family_id = ? and revoked_at is null",
