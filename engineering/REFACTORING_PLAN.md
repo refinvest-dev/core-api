@@ -155,7 +155,7 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 5c-1 | 완료·머지 | [PR #104](https://github.com/refinvest-dev/core-api/pull/104), `33c2171`, 실패 의미·web DTO·전용 삭제 Reader와 checkpoint 기반 public component 상태 |
 | 5c-2 | 완료·머지 | [PR #105](https://github.com/refinvest-dev/core-api/pull/105), `0d589cd`, R18 요청 시점 일곱 count·provenance 저장과 V17, 실제 purge/replay E2E 통과 |
 | 6a | Core 완료·머지 / Integration 리뷰 대기 | [Core #106](https://github.com/refinvest-dev/core-api/pull/106), [Integration #49](https://github.com/refinvest-dev/integration/pull/49), V18~V21·Boot Flyway 자동 기동·Hibernate validate, app 104개·실제 JAR·Linux 전체 fixture/API/Web CI 통과 |
-| 6b | 구현·로컬 검증 완료·후보 CI 확인 중 | health 상세 제한·명시적 node ID, app 109개·공통 ID 4개·실제 JAR 재기동과 누락 설정 거절, Integration identity 30 assertion 통과 |
+| 6b | 구현·검증 완료·리뷰 대기 | [Core #107](https://github.com/refinvest-dev/core-api/pull/107), [Integration #50](https://github.com/refinvest-dev/integration/pull/50), health 상세 제한·명시적 node ID, app 109개·공통 ID 4개·실제 JAR·Linux 전체 fixture/API/Web 통과 |
 
 ### 5c-2 삭제 영향 범위 count snapshot
 
@@ -228,10 +228,18 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
   node 설정을 제거한 별도 JAR의 비정상 종료도 확인했다. 전용 프로세스는 종료했다.
 - Integration은 primary 0을 명시하고 secondary 1·canary 2를 유지한다. 실제 Spring JSON override를 포함한
   node ID를 프로세스 identity에 반영해 변경된 설정의 프로세스 재사용을 거절한다. 관련 30 assertion이 통과했다.
-- 후보 계약 CI와 API/Web smoke는 통과했다. 전체 Trading fixture 후보 CI는 확인 중이며 최종 결과를 별도 기록한다.
+- 후보 [계약 CI](https://github.com/refinvest-dev/integration/actions/runs/41471542806)와
+  [API/Web·전체 Trading CI](https://github.com/refinvest-dev/integration/actions/runs/41471547547)를 통과했다.
+  검증 대상은 Core `7189137`·Integration `b19fcf9`이며 이후 변경은 문서뿐이다. Fixture runtime은 475.712초다.
+  ORCH-024~028·두 Core node 0/1·별도 canary·raw 정책 시계 네 경로·Book/Account count·migration replay가
+  통과했다. Worker 복구는 없고 process-control 13개 종료 코드는 모두 0이다. 기존 Compute 0017 단일 transaction
+  진단의 SQLSTATE `55006` rollback과 실제 `psql -f` migration/replay 통과는 구분한다.
 - 운영자는 동시에 쓰는 writer마다 다른 node ID를 배정해야 한다. JVM 설정 검증은 분산 중복 할당을 탐지하지
   않으며 registry/allocator를 추가하지 않았다. [운영 설정 절차](OPERATIONS_CONFIGURATION.md)를 따른다.
   ID 형식·기존 ID·업무 API/schema·계산 hash와 결정론은 바꾸지 않았다. Credential·fixture·실행 증적은 커밋하지 않는다.
+- [Core #107](https://github.com/refinvest-dev/core-api/pull/107)과
+  [Integration #50](https://github.com/refinvest-dev/integration/pull/50)은 Ready PR이다. Integration #50은 열린
+  #49의 후속 브랜치로 분리했다. #49 → Core #107 → Integration #50 순서로 반영하며 실제 머지는 사람이 수행한다.
 
 ### 다음 단계 6c
 
