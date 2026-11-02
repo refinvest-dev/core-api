@@ -35,7 +35,7 @@ management:
 
 refinvest:
   id:
-    node-id: ${SNOWFLAKE_NODE_ID:0}
+    node-id: ${SNOWFLAKE_NODE_ID}
   security:
     issuer: ${REFINVEST_JWT_ISSUER}
     audience: ${REFINVEST_JWT_AUDIENCE}
