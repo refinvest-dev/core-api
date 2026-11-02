@@ -56,7 +56,7 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | R16 | 검증 체계 | import 일부만 검사하는 경계 테스트, DB 조건부 테스트/캐시 | 변경 경계 검사 확대, 실제 PostgreSQL 및 integration 결과를 구분해 기록 |
 | R17 | Raw 정책 시계 | upload의 24시간 expiry가 accepted/rejected 전이에서 갱신되지 않으며 non-terminal TTL의 runtime 취소 연결이 없음 | 5b-2에서 terminal 시계 고정·실제 expiry 요청·generation fence와 늦은 발행 거절 구현, 아래 검증 기록 참조 |
 | R18 | 삭제 영향 범위 count | Book 삭제는 Book 1개만, Account 삭제는 Account/Book 수만 요청에 고정하며 하위 Session/artifact와 Revision/Run 수를 충분히 저장하지 않음 | 5c-2에서 요청 시점 scope snapshot·영속 count와 replay/조회·legacy 복원을 검증; 현재 count를 부재 증거로 쓰지 않음 |
-| R19 | Auth HTTP 진입점 | Controller가 outbound token parser와 concrete security adapter를 직접 의존 | 6c-2에서 credential 처리의 inbound 진입점·cookie/OAuth 기술 소유권 정리, refresh replay/폐기와 CSRF 보존 |
+| R19 | Auth HTTP 진입점 | Controller가 outbound token parser와 concrete security adapter를 직접 의존 | 6c-2/[Core #109](https://github.com/refinvest-dev/core-api/pull/109)에서 raw credential 업무 진입점·HTTP 기술 소유권 분리, 검증된 요청만 transaction 진입 |
 | R20 | Trading Review port 구성 | Account/Book/Import inbound 계약과 storage/idempotency outbound capability·모델이 파일에 혼재 | 6c-3에서 기능별 Command/Query/Result와 계약 파일 분리, Aggregate 저장·기존 wire 의미 보존 |
 
 주요 근거 파일:
@@ -161,7 +161,8 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 5c-2 | 완료·머지 | [PR #105](https://github.com/refinvest-dev/core-api/pull/105), `0d589cd`, R18 요청 시점 일곱 count·provenance 저장과 V17, 실제 purge/replay E2E 통과 |
 | 6a | Core 완료·머지 / Integration 리뷰 대기 | [Core #106](https://github.com/refinvest-dev/core-api/pull/106), [Integration #49](https://github.com/refinvest-dev/integration/pull/49), V18~V21·Boot Flyway 자동 기동·Hibernate validate, app 104개·실제 JAR·Linux 전체 fixture/API/Web CI 통과 |
 | 6b | Core 완료·머지 / Integration 선행 PR 대기 | [Core #107](https://github.com/refinvest-dev/core-api/pull/107) 머지, [Integration #50](https://github.com/refinvest-dev/integration/pull/50)은 #49 후속 브랜치에 머지, app 109개·공통 ID 4개·실제 JAR·Linux 전체 fixture/API/Web 통과 |
-| 6c-1 | 구현·검증 완료·리뷰 대기 | [Core #108](https://github.com/refinvest-dev/core-api/pull/108), 전체 46개 모듈 경계·로컬/Linux 499개 테스트(실제 PG 144개)·report gate, [재점검](ARCHITECTURE_AUDIT.md)에서 R19/R20 후속 범위 식별 |
+| 6c-1 | 완료·머지 | [Core #108](https://github.com/refinvest-dev/core-api/pull/108), 전체 46개 모듈 경계·로컬/Linux 499개 테스트(실제 PG 144개)·report gate, [재점검](ARCHITECTURE_AUDIT.md)에서 R19/R20 후속 범위 식별 |
+| 6c-2 | 구현·리뷰 대기 | [Core #109](https://github.com/refinvest-dev/core-api/pull/109), raw credential inbound 처리와 transaction 경계, HTTP 구성요소 web 소유·adapter 직접 의존 제거, 최신 검증 결과는 PR 참조 |
 
 ### 5c-2 삭제 영향 범위 count snapshot
 
@@ -260,7 +261,26 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 소켓 오류 두 범위는 별도 재실행해 최종 499개(실제 PostgreSQL 144개)·실패/오류/skip 0개를 확인했다.
 [Linux CI](https://github.com/refinvest-dev/core-api/actions/runs/41482472152)도 같은 499개와 report gate를
 통과했다. 최초 CI의 DB 이름 안전 조건 불일치는 전용 컨테이너 설정을 맞춰 해결했고 테스트 조건은
-완화하지 않았다. 최신 head 검사는 PR에서 확인한다. 다음 구현 범위는 R19/6c-2다.
+완화하지 않았다. 최신 head 검사는 PR에서 확인한다.
+
+### 6c-2 Auth inbound 진입점과 HTTP 소유권
+
+- [Core #109](https://github.com/refinvest-dev/core-api/pull/109)는 Refresh/Logout Command로 raw credential을
+  받고 application이 token parser port를 호출하도록 바꾼다. 진단 문자열에는 credential을 넣지 않는다.
+  검증 실패·누락은 DB transaction 전에 종료한다. 검증된 회전/폐기는 기존 REQUIRED transaction에서
+  실행해 family fence·role 정본·replay·현재 시각과 commit/rollback 의미를 유지한다.
+- Cookie 작성·OAuth callback/returnTo·HTTP 오류/필터·metrics filter 구성을 web adapter로 이동했다.
+  Controller의 업무 호출은 inbound port이며 같은 web adapter의 쿠키 보조 객체는 전송만 담당한다.
+  JWT 서명·검증·token port는 security adapter에 남긴다. HTTP는 Spring의 access 전용 `JwtDecoder`
+  인터페이스를 주입받는다. 일반 decoder는 refresh를 검증하며 두 adapter 사이 Gradle 의존성은 없다.
+- 설정 prefix/키·기본값과 JWT claim·cookie path/속성·CORS·CSRF·공개 endpoint를 유지한다.
+  새 source 검사로 Controller/outbound·adapter 상호 참조와 security 내부 HTTP 구현을 금지한다.
+- Auth application 단위 23개와 web cookie/provider 검증 5개를 통과했다. 실제 HTTP에는 누락·서명·
+  issuer/audience/만료/type 오류의 family 불변, CSRF 없는 refresh/logout 거절과 잘못된 credential의
+  logout 쿠키/세션 정리를 추가했다. 로컬 Windows listen 오류와 새 쿠키 테스트의 잘못된 기본값 가정은
+  구분하며, 쿠키 테스트는 Secure=true·SameSite=Lax를 명시해 검증한다. 최신 전체 Core/PostgreSQL
+  CI와 실제 API/Web smoke 결과·후보 ref는 PR에 기록한다.
+- 업무 API/schema/hash와 계산 결정론 영향은 없다. 다음 구현 범위는 R20/6c-3이며 전체 완료는 아니다.
 
 ### 5c-1 실패 의미와 public 조회 경계
 
