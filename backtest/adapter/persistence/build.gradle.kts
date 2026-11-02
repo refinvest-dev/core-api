@@ -9,6 +9,6 @@ dependencies {
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(project(":backtest:application"))
     testImplementation(project(":backtest:adapter:compute"))
-    testImplementation(project(":strategy:port"))
+    testImplementation(project(":strategy:port")) { isTransitive = false }
     testRuntimeOnly(libs.postgresql)
 }
