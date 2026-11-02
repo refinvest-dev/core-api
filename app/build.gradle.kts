@@ -38,7 +38,7 @@ dependencies {
     implementation(libs.spring.boot.starter.web)
     implementation(libs.kotlin.reflect)
     runtimeOnly(libs.postgresql)
-    implementation(libs.flyway.core)
+    implementation(libs.spring.boot.starter.flyway)
     runtimeOnly(libs.flyway.database.postgresql)
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     testImplementation(libs.spring.boot.starter.test)

@@ -5,6 +5,9 @@ import com.zaxxer.hikari.HikariDataSource
 import jakarta.persistence.EntityManagerFactory
 import jakarta.persistence.PersistenceException
 import org.flywaydb.core.Flyway
+import org.springframework.boot.autoconfigure.AutoConfigurations
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration
+import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.dao.DataIntegrityViolationException
@@ -16,6 +19,19 @@ import kotlin.test.*
 
 @EnabledIfEnvironmentVariable(named = "CORE_SCHEMA_TEST_JDBC_URL", matches = ".+")
 class CoreSchemaMigrationTest {
+    @Test
+    fun `Boot auto configuration migrates before Hibernate validation`() = fixture { f ->
+        ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(FlywayAutoConfiguration::class.java))
+            .withBean(javax.sql.DataSource::class.java, { f.source })
+            .withPropertyValues("spring.flyway.enabled=true", "spring.flyway.baseline-on-migrate=true", "spring.flyway.baseline-version=0")
+            .run { context ->
+                assertNull(context.startupFailure)
+                assertEquals(21, context.getBean(Flyway::class.java).info().applied().size)
+                f.orm("validate")
+            }
+    }
+
     @Test
     fun `empty database migrates every mapped feature and supports Hibernate validate`() = fixture { f ->
         f.flyway().migrate()
