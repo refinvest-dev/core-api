@@ -56,6 +56,8 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | R16 | 검증 체계 | import 일부만 검사하는 경계 테스트, DB 조건부 테스트/캐시 | 변경 경계 검사 확대, 실제 PostgreSQL 및 integration 결과를 구분해 기록 |
 | R17 | Raw 정책 시계 | upload의 24시간 expiry가 accepted/rejected 전이에서 갱신되지 않으며 non-terminal TTL의 runtime 취소 연결이 없음 | 5b-2에서 terminal 시계 고정·실제 expiry 요청·generation fence와 늦은 발행 거절 구현, 아래 검증 기록 참조 |
 | R18 | 삭제 영향 범위 count | Book 삭제는 Book 1개만, Account 삭제는 Account/Book 수만 요청에 고정하며 하위 Session/artifact와 Revision/Run 수를 충분히 저장하지 않음 | 5c-2에서 요청 시점 scope snapshot·영속 count와 replay/조회·legacy 복원을 검증; 현재 count를 부재 증거로 쓰지 않음 |
+| R19 | Auth HTTP 진입점 | Controller가 outbound token parser와 concrete security adapter를 직접 의존 | 6c-2에서 credential 처리의 inbound 진입점·cookie/OAuth 기술 소유권 정리, refresh replay/폐기와 CSRF 보존 |
+| R20 | Trading Review port 구성 | Account/Book/Import inbound 계약과 storage/idempotency outbound capability·모델이 파일에 혼재 | 6c-3에서 기능별 Command/Query/Result와 계약 파일 분리, Aggregate 저장·기존 wire 의미 보존 |
 
 주요 근거 파일:
 
@@ -104,6 +106,9 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | 6a | 기존 모듈 schema migration | 새 DB·기존 DB 업그레이드, 데이터 보존, validate 기동 |
 | 6b | 운영 설정 | health/node ID 등 설정 검증, 개발·운영 동작 확인 |
 | 6c | 전체 경계/회귀/integration | 미해결 목록 점검, PostgreSQL/E2E·계약 검증 결과 정리 |
+| 6c-1 | 전체 검증 누락 보강 | Gradle 46개 모듈 coverage·classpath, Asset/공통/Mapper source 경계, Core 자체 PostgreSQL CI |
+| 6c-2 | Auth inbound 진입점 | R19 제거, concrete adapter 결합과 outbound 호출을 HTTP Controller에서 분리 |
+| 6c-3 | Trading Review port 구성 | R20 정리 후 전체 검증 결과와 잔여 제약 재확인 |
 
 새롭게 확인한 긴급 동작 문제는 근거와 의존성을 기록해 우선 처리한다. 구조 작업 때문에 필요한
 schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit의 기동을 깨뜨리지 않는다.
@@ -155,7 +160,8 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 5c-1 | 완료·머지 | [PR #104](https://github.com/refinvest-dev/core-api/pull/104), `33c2171`, 실패 의미·web DTO·전용 삭제 Reader와 checkpoint 기반 public component 상태 |
 | 5c-2 | 완료·머지 | [PR #105](https://github.com/refinvest-dev/core-api/pull/105), `0d589cd`, R18 요청 시점 일곱 count·provenance 저장과 V17, 실제 purge/replay E2E 통과 |
 | 6a | Core 완료·머지 / Integration 리뷰 대기 | [Core #106](https://github.com/refinvest-dev/core-api/pull/106), [Integration #49](https://github.com/refinvest-dev/integration/pull/49), V18~V21·Boot Flyway 자동 기동·Hibernate validate, app 104개·실제 JAR·Linux 전체 fixture/API/Web CI 통과 |
-| 6b | 구현·검증 완료·리뷰 대기 | [Core #107](https://github.com/refinvest-dev/core-api/pull/107), [Integration #50](https://github.com/refinvest-dev/integration/pull/50), health 상세 제한·명시적 node ID, app 109개·공통 ID 4개·실제 JAR·Linux 전체 fixture/API/Web 통과 |
+| 6b | Core 완료·머지 / Integration 선행 PR 대기 | [Core #107](https://github.com/refinvest-dev/core-api/pull/107) 머지, [Integration #50](https://github.com/refinvest-dev/integration/pull/50)은 #49 후속 브랜치에 머지, app 109개·공통 ID 4개·실제 JAR·Linux 전체 fixture/API/Web 통과 |
+| 6c-1 | 구현·검증 완료·리뷰 대기 | [Core #108](https://github.com/refinvest-dev/core-api/pull/108), 전체 46개 모듈 경계·로컬/Linux 499개 테스트(실제 PG 144개)·report gate, [재점검](ARCHITECTURE_AUDIT.md)에서 R19/R20 후속 범위 식별 |
 
 ### 5c-2 삭제 영향 범위 count snapshot
 
@@ -241,11 +247,20 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
   [Integration #50](https://github.com/refinvest-dev/integration/pull/50)은 Ready PR이다. Integration #50은 열린
   #49의 후속 브랜치로 분리했다. #49 → Core #107 → Integration #50 순서로 반영하며 실제 머지는 사람이 수행한다.
 
-### 다음 단계 6c
+### 6c 전체 점검과 후속 순서
 
-전체 feature의 Aggregate·Store/Reader·Mapper·application/adapter 의존 경계를 다시 점검하고 R01~R18의
-미해결 여부를 근거와 함께 정리한다. 필요한 전체 경계·회귀·실제 PostgreSQL 및 cross-repository 검증을
-수행하고, 통과·실패·미실행과 운영상 제약을 구분해 리팩토링 완료 기준을 확인한다.
+전체 feature의 Aggregate·Store/Reader·Mapper·application/adapter 의존 경계를 다시 점검했다.
+[재점검 기록](ARCHITECTURE_AUDIT.md)에 46개 모듈·550개 운영 Kotlin 파일, Root 11개·Mapper 13개와
+검증 누락 및 잔여 항목을 정리한다. 6c-1에서 R16 검증 누락을 보강하고, 새로 확인한 R19 Auth HTTP
+진입점은 6c-2, R20 Trading Review 계약 구성은 6c-3으로 분리한다. R19/R20을 남긴 채 리팩토링 전체를
+완료로 표시하지 않는다. 실제 DB·CI 실행 결과와 운영상 제약은 해당 PR의 검증 범위와 구분해 기록한다.
+
+6c-1의 기존 검사 누락은 임시 init script로 금지된 Asset→Strategy application 의존성을 추가했을 때
+성공하는 것으로 재현했다. 수정 후 같은 의존성과 미등록 모듈 추가를 거절한다. 로컬 전체 테스트의
+소켓 오류 두 범위는 별도 재실행해 최종 499개(실제 PostgreSQL 144개)·실패/오류/skip 0개를 확인했다.
+[Linux CI](https://github.com/refinvest-dev/core-api/actions/runs/41482472152)도 같은 499개와 report gate를
+통과했다. 최초 CI의 DB 이름 안전 조건 불일치는 전용 컨테이너 설정을 맞춰 해결했고 테스트 조건은
+완화하지 않았다. 최신 head 검사는 PR에서 확인한다. 다음 구현 범위는 R19/6c-2다.
 
 ### 5c-1 실패 의미와 public 조회 경계
 
