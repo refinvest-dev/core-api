@@ -108,9 +108,12 @@ tasks.register("verifyAggregateModuleBoundaries") {
                 }.distinct()
                     .filter { id ->
                         id.group.startsWith("org.springframework.data") || id.group.startsWith("org.hibernate") ||
-                            id.group.startsWith("jakarta.persistence") || id.group == "org.postgresql" ||
+                            id.group.startsWith("jakarta.persistence") || id.group.startsWith("javax.persistence") ||
+                            id.group.startsWith("jakarta.servlet") || id.group.startsWith("javax.servlet") ||
+                            id.group.startsWith("org.springframework.security") || id.group == "org.postgresql" ||
+                            id.group.startsWith("org.flywaydb") || id.group.startsWith("io.r2dbc") ||
                             (id.group.startsWith("org.springframework.boot") && id.module != "spring-boot-dependencies") ||
-                            (id.group == "org.springframework" && id.module in setOf("spring-web", "spring-webmvc", "spring-jdbc", "spring-orm")) ||
+                            (id.group == "org.springframework" && (id.module.startsWith("spring-web") || id.module in setOf("spring-jdbc", "spring-orm", "spring-r2dbc"))) ||
                             (!modulePath.endsWith(":application") && id.group.startsWith("org.springframework"))
                     }
                 check(technology.isEmpty()) { "$modulePath exposes forbidden technology dependencies: $technology" }
