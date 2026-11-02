@@ -22,13 +22,13 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: refinvest_test
+          POSTGRES_DB: refinvest_integration
           POSTGRES_USER: refinvest
           POSTGRES_PASSWORD: refinvest-ci-only
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U refinvest -d refinvest_test"
+          --health-cmd "pg_isready -U refinvest -d refinvest_integration"
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
@@ -46,12 +46,12 @@ jobs:
         shell: bash
         run: |
           for prefix in CORE_SCHEMA BACKTEST AUTH STRATEGY MEMBER_SUBSCRIPTION TRADING_REVIEW; do
-            echo "${prefix}_TEST_JDBC_URL=jdbc:postgresql://127.0.0.1:5432/refinvest_test" >> "$GITHUB_ENV"
+            echo "${prefix}_TEST_JDBC_URL=jdbc:postgresql://127.0.0.1:5432/refinvest_integration" >> "$GITHUB_ENV"
             echo "${prefix}_TEST_DB_USER=refinvest" >> "$GITHUB_ENV"
             echo "${prefix}_TEST_DB_PASSWORD=refinvest-ci-only" >> "$GITHUB_ENV"
           done
       - name: Verify modules and run all tests
-        run: bash ./gradlew verifyAggregateModuleBoundaries cleanTest test :app:bootJar --no-build-cache --no-daemon --max-workers=2 --console=plain
+        run: bash ./gradlew verifyAggregateModuleBoundaries cleanTest test :app:bootJar --continue --no-build-cache --no-daemon --max-workers=2 --console=plain
       - name: Require executed PostgreSQL regression suites
         run: python3 scripts/verify-test-results.py --require-postgres
       - name: Upload test reports
