@@ -68,6 +68,8 @@ import org.springframework.mock.web.MockHttpSession
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import io.micrometer.core.instrument.MeterRegistry
+import org.springframework.boot.health.contributor.Health
+import org.springframework.boot.health.contributor.HealthIndicator
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.time.Instant
@@ -86,7 +88,7 @@ import kotlin.test.assertTrue
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-@Import(AssetDataClientTestConfiguration::class)
+@Import(AssetDataClientTestConfiguration::class, PublicHealthTestConfiguration::class)
 @TestPropertySource(
     properties = [
         "spring.datasource.url=jdbc:h2:mem:refinvest;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
@@ -111,6 +113,7 @@ class RefinvestApplicationTests(
     @Autowired private val assetDataClient: AssetDataClientTestDouble,
     @Autowired private val mockMvc: MockMvc,
     @Autowired private val meterRegistry: MeterRegistry,
+    @Autowired private val publicHealthProbe: PublicHealthProbe,
     @LocalServerPort private val port: Int,
 ) {
     private val httpClient = HttpClient.newHttpClient()
@@ -198,15 +201,35 @@ class RefinvestApplicationTests(
     }
 
     @Test
-    fun `health includes datasource status`() {
-        val response = HttpClient.newHttpClient().send(
-            HttpRequest.newBuilder(URI("http://localhost:$port/actuator/health")).GET().build(),
-            HttpResponse.BodyHandlers.ofString(),
-        )
+    fun `public health returns only aggregate status with and without an access cookie`() {
+        for (cookie in listOf<String?>(null, "REFINVEST_ACCESS_TOKEN=" + accessToken())) {
+            val request = HttpRequest.newBuilder(URI("http://localhost:$port/actuator/health"))
+            if (cookie != null) request.header("Cookie", cookie)
+            val response = HttpClient.newHttpClient().send(request.GET().build(), HttpResponse.BodyHandlers.ofString())
+            assertEquals(200, response.statusCode())
+            assertPublicHealth(response.body(), "UP")
+        }
+    }
 
-        assertTrue(response.statusCode() == 200)
-        assertTrue(response.body().contains("\"status\":\"UP\""))
-        assertTrue(response.body().contains("\"db\""), response.body())
+    @Test
+    fun `unhealthy contributor changes public status without exposing details`() {
+        publicHealthProbe.down = true
+        try {
+            val response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI("http://localhost:$port/actuator/health")).GET().build(),
+                HttpResponse.BodyHandlers.ofString())
+            assertEquals(503, response.statusCode())
+            assertPublicHealth(response.body(), "DOWN")
+        } finally { publicHealthProbe.down = false }
+    }
+
+    private fun assertPublicHealth(payload: String, expectedStatus: String) {
+        val response = objectMapper.readValue(payload, Map::class.java)
+        assertEquals(expectedStatus, response["status"])
+        assertTrue(response.keys.all { it == "status" || it == "groups" }, payload)
+        if ("groups" in response) {
+            assertTrue((response["groups"] as List<*>).all { it in setOf("liveness", "readiness") }, payload)
+        }
     }
 
     @Test
@@ -1463,4 +1486,16 @@ class AssetDataClientTestDouble : AssetDataClient {
     fun reset() {
         seriesRequestCount = 0
     }
+}
+
+@TestConfiguration(proxyBeanMethods = false)
+class PublicHealthTestConfiguration {
+    @Bean
+    fun publicHealthProbe() = PublicHealthProbe()
+}
+
+class PublicHealthProbe : HealthIndicator {
+    @Volatile var down = false
+    override fun health(): Health = (if (down) Health.down() else Health.up())
+        .withDetail("private-diagnostic", "must-not-be-public").build()
 }
