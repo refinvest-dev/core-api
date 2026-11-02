@@ -1,4 +1,4 @@
-package com.refinvest.core.auth.adapter.security.oauth
+package com.refinvest.core.auth.adapter.web.oauth
 
 import com.refinvest.core.auth.domain.valueobject.SocialProvider
 import com.refinvest.core.auth.port.inbound.login.SocialLoginCommand

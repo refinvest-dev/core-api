@@ -28,8 +28,7 @@ val aggregateModuleDependencies = mapOf(
     ":auth:application" to setOf(":auth:port", ":member:port"),
     ":auth:adapter:persistence" to setOf(":auth:port"),
     ":auth:adapter:security" to setOf(":auth:port", ":member:port", ":strategy:port", ":backtest:port"),
-    // Cookie transport is shared with the OAuth success handler in the same feature.
-    ":auth:adapter:web" to setOf(":auth:port", ":auth:adapter:security", ":subscription:port"),
+    ":auth:adapter:web" to setOf(":auth:port", ":subscription:port"),
     ":strategy:domain" to setOf(":shared:kernel"),
     ":strategy:port" to setOf(":strategy:domain"),
     ":strategy:application" to setOf(":strategy:port"),

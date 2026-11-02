@@ -1,4 +1,4 @@
-package com.refinvest.core.auth.adapter.security.config
+package com.refinvest.core.auth.adapter.web.config
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean

@@ -7,6 +7,28 @@ import kotlin.test.assertTrue
 
 class AuthModuleBoundaryTest {
     @Test
+    fun `auth HTTP adapter depends on inbound business contracts and owns its transport helpers`() {
+        val root = workspaceRoot()
+        val controller = Files.readString(root.resolve("auth/adapter/web/src/main/kotlin/com/refinvest/core/auth/adapter/web/AuthController.kt"))
+        assertTrue(!controller.contains(".port.outbound.") && !controller.contains(".adapter.security."),
+            "Controller must use inbound business ports and local HTTP helpers")
+        listOf("web", "security").forEach { technology ->
+            Files.walk(root.resolve("auth/adapter/$technology/src/main/kotlin")).use { files ->
+                files.filter { it.toString().endsWith(".kt") }.forEach { file ->
+                    val source = Files.readString(file)
+                    val other = if (technology == "web") "security" else "web"
+                    assertTrue(!source.contains("com.refinvest.core.auth.adapter.$other."),
+                        "Cross-adapter implementation reference in $file")
+                    if (technology == "web") assertTrue(!source.contains(".port.outbound."),
+                        "Outbound business port in HTTP adapter: $file")
+                    if (technology == "security") assertTrue(!Regex("jakarta\\.servlet|org\\.springframework\\.(http|web)|org\\.springframework\\.security\\.web")
+                        .containsMatchIn(source), "HTTP transport implementation in token security adapter: $file")
+                }
+            }
+        }
+    }
+
+    @Test
     fun `auth source dependencies keep domain port application and persistence separate`() {
         val root = workspaceRoot()
         listOf("domain", "port", "application", "adapter/persistence").forEach { layer ->

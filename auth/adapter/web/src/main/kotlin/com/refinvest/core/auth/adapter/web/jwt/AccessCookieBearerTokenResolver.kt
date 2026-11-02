@@ -1,6 +1,6 @@
-package com.refinvest.core.auth.adapter.security.jwt
+package com.refinvest.core.auth.adapter.web.jwt
 
-import com.refinvest.core.auth.adapter.security.cookie.AuthCookieWriter
+import com.refinvest.core.auth.adapter.web.cookie.AuthCookieWriter
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver
 

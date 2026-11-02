@@ -1,6 +1,6 @@
-package com.refinvest.core.auth.adapter.security.oauth
+package com.refinvest.core.auth.adapter.web.oauth
 
-import com.refinvest.core.auth.adapter.security.error.SecurityErrorResponse
+import com.refinvest.core.auth.adapter.web.error.SecurityErrorResponse
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse

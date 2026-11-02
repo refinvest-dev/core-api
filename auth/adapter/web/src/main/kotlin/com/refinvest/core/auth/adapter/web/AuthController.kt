@@ -1,6 +1,6 @@
 package com.refinvest.core.auth.adapter.web
 
-import com.refinvest.core.auth.adapter.security.cookie.AuthCookieWriter
+import com.refinvest.core.auth.adapter.web.cookie.AuthCookieWriter
 import com.refinvest.core.auth.adapter.web.auth.me.GetCurrentMemberResponse
 import com.refinvest.core.auth.adapter.web.auth.subscription.UpgradeSubscriptionResponse
 import com.refinvest.core.auth.adapter.web.auth.usage.GetUsageResponse

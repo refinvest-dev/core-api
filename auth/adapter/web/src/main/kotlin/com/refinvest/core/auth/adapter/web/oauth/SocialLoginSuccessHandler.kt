@@ -1,7 +1,7 @@
-package com.refinvest.core.auth.adapter.security.oauth
+package com.refinvest.core.auth.adapter.web.oauth
 
-import com.refinvest.core.auth.adapter.security.config.RefInvestSecurityProperties
-import com.refinvest.core.auth.adapter.security.cookie.AuthCookieWriter
+import com.refinvest.core.auth.adapter.web.config.AuthWebProperties
+import com.refinvest.core.auth.adapter.web.cookie.AuthCookieWriter
 import com.refinvest.core.auth.port.inbound.login.SocialLoginUseCase
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -17,7 +17,7 @@ class SocialLoginSuccessHandler(
     private val providerIdentityNormalizer: ProviderIdentityNormalizer,
     private val socialLoginUseCase: SocialLoginUseCase,
     private val authCookieWriter: AuthCookieWriter,
-    private val properties: RefInvestSecurityProperties,
+    private val properties: AuthWebProperties,
 ) : AuthenticationSuccessHandler {
     private val webOrigin = URI.create(properties.webOrigin).also { origin ->
         require(origin.scheme in setOf("http", "https") && origin.host != null) {
