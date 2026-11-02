@@ -9,5 +9,7 @@ internal object DeletionRequestRows {
         r.getLong("import_session_count"), r.getLong("artifact_count"), r.getTimestamp("revoked_at").toInstant(),
         r.getTimestamp("requested_at").toInstant(), r.getTimestamp("updated_at").toInstant(),
         r.getTimestamp("backup_purge_due_at").toInstant(), r.getTimestamp("completed_at")?.toInstant(),
-        r.getString("failure_code"), r.getInt("attempt_count"), r.getLong("version"))
+        r.getString("failure_code"), r.getInt("attempt_count"), r.getLong("version"),
+        ledgerRevisionCount = r.getLong("ledger_revision_count"), analysisRunCount = r.getLong("analysis_run_count"),
+        reprocessingRunCount = r.getLong("reprocessing_run_count"), countSnapshotStatus = r.getString("count_snapshot_status"))
 }

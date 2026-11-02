@@ -10,4 +10,6 @@ internal data class DeletionRequestRecord(
     val attemptCount: Int,
     val version: Long = 0,
     val verifiedAbsent: Map<String, Instant> = emptyMap(),
+    val ledgerRevisionCount: Long = 0, val analysisRunCount: Long = 0, val reprocessingRunCount: Long = 0,
+    val countSnapshotStatus: String = "LEGACY_PARTIAL",
 )

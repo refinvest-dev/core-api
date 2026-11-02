@@ -21,6 +21,8 @@ data class TradingDeletion(
     val computeRuntimePurgeStatus: PurgeComponentStatus = PurgeComponentStatus.NOT_STARTED,
     val backupPurgeStatus: PurgeComponentStatus = PurgeComponentStatus.IN_PROGRESS,
     val retryable: Boolean = state !in setOf("COMPLETED", "FAILED"),
+    val ledgerRevisionCount: Long = 0, val analysisRunCount: Long = 0, val reprocessingRunCount: Long = 0,
+    val countSnapshotStatus: String = "LEGACY_PARTIAL",
 ) {
     companion object {
         fun fromDomain(request: DeletionRequest): TradingDeletion {
@@ -47,7 +49,8 @@ data class TradingDeletion(
                 // Raw is excluded from backup. There is no persisted backup absence proof for subtree deletion.
                 if (request.scope.targetType == DeletionTargetType.TRADING_SOURCE_ARTIFACT) PurgeComponentStatus.NOT_APPLICABLE
                 else PurgeComponentStatus.IN_PROGRESS,
-                !request.state.terminal)
+                !request.state.terminal, resources.ledgerRevisions, resources.analysisRuns, resources.reprocessingRuns,
+                resources.snapshotStatus.name)
         }
     }
 }

@@ -16,12 +16,14 @@ class JdbcDeletionRequestPersistenceAdapter(private val jdbc: JdbcTemplate) : De
         val r = DeletionRequestPersistenceMapper.toRecord(request)
         jdbc.update("""INSERT INTO trading_deletion_requests (id, owner_member_id, target_type, target_id,
             requested_scope, state, deletion_generation, account_count, book_count, revoked_at, requested_at,
-            updated_at, backup_purge_due_at, import_session_count, artifact_count, attempt_count, completed_at, failure_code)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", r.id, r.ownerId, r.targetType,
+            updated_at, backup_purge_due_at, import_session_count, artifact_count, attempt_count, completed_at, failure_code,
+            ledger_revision_count,analysis_run_count,reprocessing_run_count,count_snapshot_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", r.id, r.ownerId, r.targetType,
             r.targetId, r.requestedScope, r.state, r.deletionGeneration, r.accountCount, r.bookCount,
             Timestamp.from(r.revokedAt), Timestamp.from(r.requestedAt), Timestamp.from(r.updatedAt),
             Timestamp.from(r.backupPurgeDueAt), r.importSessionCount, r.artifactCount, r.attemptCount,
-            r.completedAt?.let(Timestamp::from), r.failureCode)
+            r.completedAt?.let(Timestamp::from), r.failureCode, r.ledgerRevisionCount, r.analysisRunCount,
+            r.reprocessingRunCount, r.countSnapshotStatus)
     }
     override fun find(id: DeletionRequestId, owner: MemberId): DeletionRequest? = DeletionRequestQueries(jdbc)
         .find("d.id=? AND d.owner_member_id=?", id.value, owner.value)

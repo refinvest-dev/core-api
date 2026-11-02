@@ -152,8 +152,47 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 5a | 완료·머지 | [PR #101](https://github.com/refinvest-dev/core-api/pull/101), `eb6ec6a`·`0ca702a`, 정규화 inbound port·독립 ACK 실행과 commit/rollback·재전송 검증 |
 | 5b-1 | 완료·머지 | [PR #102](https://github.com/refinvest-dev/core-api/pull/102), `a53a1c4`, 원본 purge·orphan 실행 조율, reader drain·lease·backoff와 V15 |
 | 5b-2 | 완료·머지 | [PR #103](https://github.com/refinvest-dev/core-api/pull/103), `260d620`, R17 정책 시계·non-terminal 만료와 runtime 취소·늦은 publication 처리 |
-| 5c-1 | 구현·검증 완료·리뷰 대기 | [PR #104](https://github.com/refinvest-dev/core-api/pull/104), `33c2171`, 실패 의미·web DTO·전용 삭제 Reader와 checkpoint 기반 public component 상태 |
-| 5c-2 | 후속 범위 | R18 삭제 영향 범위 count의 요청 시점 snapshot과 저장·조회 |
+| 5c-1 | 완료·머지 | [PR #104](https://github.com/refinvest-dev/core-api/pull/104), `33c2171`, 실패 의미·web DTO·전용 삭제 Reader와 checkpoint 기반 public component 상태 |
+| 5c-2 | 구현·검증 완료·리뷰 대기 | [PR #105](https://github.com/refinvest-dev/core-api/pull/105), `0d589cd`, R18 요청 시점 일곱 count·provenance 저장과 V17, 실제 purge/replay E2E 통과 |
+
+### 5c-2 삭제 영향 범위 count snapshot
+
+- 구현은 [Core #105](https://github.com/refinvest-dev/core-api/pull/105), 계약은
+  [Context #45](https://github.com/refinvest-dev/context/pull/45), Web snapshot은
+  [Web #47](https://github.com/refinvest-dev/web/pull/47), 실행 검증은
+  [Integration #48](https://github.com/refinvest-dev/integration/pull/48)로 분리한다.
+  Context → Core/Web → Integration 순서로 반영한다.
+- `DeletionScopeInventory`가 기존 부모 command 잠금과 동일 transaction에서 owner/scope를 한 SQL snapshot으로
+  집계한다. 요청·tombstone·count·idempotency 결과는 함께 commit/rollback된다. 대량 row를 메모리에 적재하지 않는다.
+- DeletionRequest의 값 객체·Store·순수 Mapper·Reader·web DTO가 일곱 count와 provenance를 보존한다.
+  GET·purge 후 replay·remediation에서 다시 집계하지 않는다. 현재 저장 모델이 없는 Analysis/Reprocessing은
+  0이며 NormalizationRun을 analysisRuns로 세지 않는다. Count는 purge 완료 증거가 아니다.
+- [Context #45](https://github.com/refinvest-dev/context/pull/45)는 선택형 snapshotStatus를 정의한다.
+  누락/LEGACY_PARTIAL은 과거 부분 집계이며 0을 정확한 부재로 해석하지 않는다. V17은 기존 count·state·
+  version·attempt를 변경하지 않고 legacy로 보존한다. 현재 live row에서 과거 count를 복원하지 않는다.
+  배포·rollback은 [Count Snapshot Rollout](DELETION_COUNT_SNAPSHOT_ROLLOUT.md)을 따른다.
+- 수정 전 PostgreSQL에서 Book 하위 Session/artifact count가 0인 회귀를 재현했다. 수정 후 Trading Review
+  178개와 app 99개, 총 277개를 실제 실행·필요 범위 재검증으로 통과했다. 실제 PostgreSQL 70개에는 scope/owner
+  격리·빈 Account·실제 publication Revision·purge 후 replay·rollback 후 재집계·legacy migration·nonzero count
+  remediation과 실제 부모 잠금에 대기한 생성 요청의 거절을 포함한다. 최종 실패·오류·skip은 0개다.
+- 새 DB Flyway V1~V17·모듈 경계·실행 JAR와 Context/Core/Compute/Web snapshot·revision provenance·문서 26개,
+  선택 필드의 세 호환 사례·두 거절 사례를 검증했다. 중간 constructor 중복과 경합 fixture Member 중복 seed를
+  수정했고 Windows 소켓 오류가 난 범위를 재검증했다. 실패한 실행을 성공으로 세지 않는다.
+- 실제 E2E는 Core `0d589cd`·Integration `b9471b5`에서 종료 코드 0으로 통과했다. Book의 Session 1·artifact 2·
+  Revision 1과 나머지 Account의 Book 2·Session 2·artifact 4를 고정하고 실제 purge·primary 부재·동일 DELETE
+  replay를 확인했다. Session/raw-only count·정책 시계·ORCH-024~028·migration/replay 회귀도 통과했다.
+- 초기 psql 10014·canary DB 연결 실패·HTTP ConnectError 실행은 성공으로 세지 않았다. Revision이 있는
+  scope에서 발견한 E2E analytics 저장소 설정 누락은 Integration에서 보완했다. 최종 실행의 worker 소켓 오류
+  복구 2회는 원 로그와 함께 로컬 증적에 남겼다. 업무 상태·lease·삭제 증거를 강제로 변경하지 않았다.
+- 후보 커밋 조합의 [계약 CI](https://github.com/refinvest-dev/integration/actions/runs/41405900708)를 통과했다.
+  계산 입력·hash·version pin·generation·lease와 결정론은 바꾸지 않았다.
+
+### 다음 단계 6a
+
+5c-2 반영 후 기존 모듈의 schema를 Flyway 관리로 편입한다. `app`의 기본 Hibernate `ddl-auto: update`를
+대체하기 전에 새 DB 생성과 기존 DB 업그레이드 경로를 분리해 확인한다. Member/Subscription·Strategy·
+Backtest·Auth의 현재 매핑/제약·인덱스를 조사하고, 기존 데이터·immutable version/result·인증 family를
+보존하는 migration과 실제 PostgreSQL 검증을 준비한 뒤 `validate` 기동으로 전환한다.
 
 ### 5c-1 실패 의미와 public 조회 경계
 

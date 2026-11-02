@@ -18,6 +18,7 @@ import com.refinvest.core.tradingreview.port.TradingFailureKind
 import com.refinvest.core.tradingreview.port.account.TradingAccountStore
 import com.refinvest.core.tradingreview.port.book.TradingBookStore
 import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.port.deletion.DeletionScopeInventory
 import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
 import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionReader
 import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
@@ -47,6 +48,7 @@ open class TradingImportService(
     private val clock: Clock,
     private val revisions: TradingLedgerPublicationReader,
     private val reader: TradingImportSessionReader,
+    private val deletionInventory: DeletionScopeInventory,
 ) : TradingImportUseCase {
     @Transactional
     override fun create(bookId: TradingBookId, sourceTimezone: String, reviewTimezone: String,
@@ -232,9 +234,9 @@ open class TradingImportService(
         val now = clock.instant()
         val changed = session.requestDeletion(now)
         if (!sessions.update(changed)) throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
-        val count = session.artifacts.size.toLong()
         val deletion = DeletionRequest.request(ids.deletionId(), owner, DeletionScope.importSession(id),
-            changed.deletionGeneration, DeletionAffectedResources(0, 0, 1, count), now)
+            changed.deletionGeneration, deletionInventory.capture(DeletionScope.importSession(id), owner)
+                ?: throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT), now)
         deletions.insert(deletion)
         idempotency.complete(owner, operation, key, deletion.id.value)
         return TradingDeletion.fromDomain(deletion)

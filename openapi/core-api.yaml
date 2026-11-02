@@ -2481,6 +2481,7 @@ components:
       enum: [NOT_STARTED, IN_PROGRESS, COMPLETED, FAILED, NOT_APPLICABLE]
     AffectedResourceSummary:
       type: object
+      description: Requested logical resource counts. Missing snapshotStatus or LEGACY_PARTIAL denotes historical partial counts; zero is not verified absence. Counts are not purge completion evidence.
       required: [accounts, books, importSessions, artifacts, ledgerRevisions, analysisRuns, reprocessingRuns]
       properties:
         accounts: { type: integer, format: int64, minimum: 0 }
@@ -2490,6 +2491,10 @@ components:
         ledgerRevisions: { type: integer, format: int64, minimum: 0 }
         analysisRuns: { type: integer, format: int64, minimum: 0 }
         reprocessingRuns: { type: integer, format: int64, minimum: 0 }
+        snapshotStatus:
+          type: string
+          enum: [REQUEST_TIME_SNAPSHOT, LEGACY_PARTIAL]
+          description: Optional additive field. New requests use REQUEST_TIME_SNAPSHOT. Missing status is interpreted as LEGACY_PARTIAL.
     DeletionRequest:
       type: object
       required: [id, targetType, targetId, requestedScope, state, affectedResources, revokedAt, primaryPurgeStatus, objectPurgeStatus, computeRuntimePurgeStatus, backupPurgeStatus, retryable, requestedAt, updatedAt]

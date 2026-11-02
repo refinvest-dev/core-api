@@ -249,8 +249,10 @@ class JdbcTradingDeletionWorkStore(private val jdbc: JdbcTemplate, private val c
         val r = DeletionRequestPersistenceMapper.toRecord(root)
         jdbc.update("""INSERT INTO trading_deletion_requests(id,owner_member_id,target_type,target_id,
             requested_scope,state,deletion_generation,account_count,book_count,import_session_count,artifact_count,
-            revoked_at,requested_at,updated_at,backup_purge_due_at,remediation_of,legacy_coverage_unknown)
-            SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,legacy_coverage_unknown
+            revoked_at,requested_at,updated_at,backup_purge_due_at,remediation_of,
+            ledger_revision_count,analysis_run_count,reprocessing_run_count,count_snapshot_status,legacy_coverage_unknown)
+            SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,ledger_revision_count,analysis_run_count,
+            reprocessing_run_count,count_snapshot_status,legacy_coverage_unknown
             FROM trading_deletion_requests WHERE id=?""", r.id, r.ownerId, r.targetType, r.targetId,
             r.requestedScope, r.state, r.deletionGeneration, r.accountCount, r.bookCount, r.importSessionCount,
             r.artifactCount, Timestamp.from(r.revokedAt), Timestamp.from(r.requestedAt), Timestamp.from(r.updatedAt),

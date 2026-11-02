@@ -20,6 +20,7 @@ import com.refinvest.core.tradingreview.port.book.TradingBookDeletionCascade
 import com.refinvest.core.tradingreview.port.book.TradingBookReader
 import com.refinvest.core.tradingreview.port.book.TradingBookStore
 import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.port.deletion.DeletionScopeInventory
 import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -40,6 +41,7 @@ open class TradingReviewService(
     private val accountReader: TradingAccountReader,
     private val bookReader: TradingBookReader,
     private val bookDeletionCascade: TradingBookDeletionCascade,
+    private val deletionInventory: DeletionScopeInventory,
 ) : TradingAccountUseCase, TradingBookUseCase {
     @Transactional
     override fun create(venue: TradingVenue, displayName: String, key: String): TradingAccount {
@@ -87,11 +89,12 @@ open class TradingReviewService(
         val now = clock.instant()
         val deletingAccount = account.requestDeletion(now)
         if (!accounts.update(deletingAccount)) throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
-        val count = bookDeletionCascade.markDeleting(TradingAccountBookDeletion(
+        bookDeletionCascade.markDeleting(TradingAccountBookDeletion(
             deletingAccount.id, owner, deletingAccount.deletionGeneration, Math.addExact(account.version, 1), now,
         )) ?: throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
         val deletion = DeletionRequest.request(ids.deletionId(), owner, DeletionScope.account(id),
-            deletingAccount.deletionGeneration, DeletionAffectedResources(1, count), now)
+            deletingAccount.deletionGeneration, deletionInventory.capture(DeletionScope.account(id), owner)
+                ?: throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT), now)
         deletions.insert(deletion)
         idempotency.complete(owner, operation, key, deletion.id.value)
         return TradingDeletion.fromDomain(deletion)
@@ -155,7 +158,8 @@ open class TradingReviewService(
         val deletingBook = book.requestDeletion(now)
         if (!books.update(deletingBook)) throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
         val deletion = DeletionRequest.request(ids.deletionId(), owner, DeletionScope.book(id),
-            deletingBook.deletionGeneration, DeletionAffectedResources(0, 1), now)
+            deletingBook.deletionGeneration, deletionInventory.capture(DeletionScope.book(id), owner)
+                ?: throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT), now)
         deletions.insert(deletion)
         idempotency.complete(owner, operation, key, deletion.id.value)
         return TradingDeletion.fromDomain(deletion)
