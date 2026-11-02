@@ -28,6 +28,8 @@ val aggregateModuleDependencies = mapOf(
     ":auth:application" to setOf(":auth:port", ":member:port"),
     ":auth:adapter:persistence" to setOf(":auth:port"),
     ":auth:adapter:security" to setOf(":auth:port", ":member:port", ":strategy:port", ":backtest:port"),
+    // Cookie transport is shared with the OAuth success handler in the same feature.
+    ":auth:adapter:web" to setOf(":auth:port", ":auth:adapter:security", ":subscription:port"),
     ":strategy:domain" to setOf(":shared:kernel"),
     ":strategy:port" to setOf(":strategy:domain"),
     ":strategy:application" to setOf(":strategy:port"),
@@ -41,6 +43,11 @@ val aggregateModuleDependencies = mapOf(
     ":backtest:adapter:compute" to setOf(":backtest:port", ":shared:infrastructure"),
     ":backtest:adapter:web" to setOf(":backtest:port"),
     ":backtest:adapter:snowflake" to setOf(":backtest:port", ":shared:infrastructure"),
+    ":asset:domain" to emptySet(),
+    ":asset:port" to setOf(":asset:domain"),
+    ":asset:application" to setOf(":asset:port"),
+    ":asset:adapter:web" to setOf(":asset:port"),
+    ":asset:adapter:compute" to setOf(":asset:port", ":shared:infrastructure"),
     ":tradingreview:domain" to setOf(":shared:kernel"),
     ":tradingreview:port" to setOf(":tradingreview:domain"),
     ":tradingreview:application" to setOf(":tradingreview:port"),
@@ -51,12 +58,30 @@ val aggregateModuleDependencies = mapOf(
     ":tradingreview:adapter:uuid" to setOf(":tradingreview:port"),
     ":tradingreview:adapter:security" to setOf(":tradingreview:port", ":member:port"),
     ":tradingreview:adapter:snowflake" to setOf(":tradingreview:port", ":shared:infrastructure"),
+    ":shared:kernel" to emptySet(),
+    ":shared:infrastructure" to emptySet(),
+    ":app" to setOf(
+        ":member:application", ":member:adapter:persistence", ":member:adapter:snowflake",
+        ":subscription:application", ":subscription:adapter:persistence",
+        ":auth:application", ":auth:adapter:persistence", ":auth:adapter:security", ":auth:adapter:web",
+        ":strategy:application", ":strategy:port", ":strategy:adapter:persistence", ":strategy:adapter:snowflake", ":strategy:adapter:web",
+        ":backtest:application", ":backtest:port", ":backtest:adapter:persistence", ":backtest:adapter:compute", ":backtest:adapter:snowflake", ":backtest:adapter:web",
+        ":asset:application", ":asset:adapter:web", ":asset:adapter:compute",
+        ":tradingreview:application", ":tradingreview:port", ":tradingreview:adapter:persistence", ":tradingreview:adapter:web",
+        ":tradingreview:adapter:compute", ":tradingreview:adapter:storage", ":tradingreview:adapter:security",
+        ":tradingreview:adapter:snowflake", ":tradingreview:adapter:uuid", ":shared:infrastructure",
+    ),
 )
 
 tasks.register("verifyAggregateModuleBoundaries") {
     group = "verification"
-    description = "Verifies the refactored aggregate modules and their framework boundaries."
+    description = "Verifies every configured module and its framework boundaries."
     doLast {
+        val modules = subprojects.filter { it.buildFile.isFile }.map { it.path }.toSet()
+        check(modules == aggregateModuleDependencies.keys) {
+            "Module boundary coverage mismatch: missing=${modules - aggregateModuleDependencies.keys}, " +
+                "obsolete=${aggregateModuleDependencies.keys - modules}"
+        }
         aggregateModuleDependencies.forEach { (modulePath, allowed) ->
             val module = project(modulePath)
             val dependencies = module.configurations
@@ -66,27 +91,41 @@ tasks.register("verifyAggregateModuleBoundaries") {
             check(allowed.containsAll(dependencies)) {
                 "$modulePath has forbidden project dependencies: ${dependencies - allowed}"
             }
-            if (modulePath == ":tradingreview:adapter:compute") {
+            if (modulePath != ":app") {
                 listOf("compileClasspath", "testCompileClasspath").forEach { configuration ->
                     val applications = module.configurations.getByName(configuration).incoming.resolutionResult
                         .allComponents.mapNotNull { it.id as? ProjectComponentIdentifier }
-                        .map { it.projectPath }.filter { it.endsWith(":application") }
+                        .map { it.projectPath }.filter { it.endsWith(":application") && it != modulePath &&
+                            (configuration == "compileClasspath" || it.split(':')[1] != modulePath.split(':')[1]) }
                     check(applications.isEmpty()) { "$modulePath $configuration exposes application implementations: $applications" }
                 }
             }
-            if (":adapter:" !in modulePath) {
-                val technology = module.configurations.getByName("compileClasspath")
+            if (modulePath.endsWith(":domain") || modulePath.endsWith(":port") ||
+                modulePath.endsWith(":application") || modulePath == ":shared:kernel") {
+                val technology = listOf("compileClasspath", "runtimeClasspath").flatMap { configuration ->
+                    module.configurations.getByName(configuration)
                     .incoming.resolutionResult.allComponents.mapNotNull { it.id as? ModuleComponentIdentifier }
+                }.distinct()
                     .filter { id ->
                         id.group.startsWith("org.springframework.data") || id.group.startsWith("org.hibernate") ||
-                            id.group.startsWith("jakarta.persistence") || id.group == "org.postgresql" ||
+                            id.group.startsWith("jakarta.persistence") || id.group.startsWith("javax.persistence") ||
+                            id.group.startsWith("jakarta.servlet") || id.group.startsWith("javax.servlet") ||
+                            id.group.startsWith("org.springframework.security") || id.group == "org.postgresql" ||
+                            id.group.startsWith("org.flywaydb") || id.group.startsWith("io.r2dbc") ||
                             (id.group.startsWith("org.springframework.boot") && id.module != "spring-boot-dependencies") ||
-                            (id.group == "org.springframework" && id.module in setOf("spring-web", "spring-webmvc", "spring-jdbc", "spring-orm")) ||
+                            (id.group == "org.springframework" && (id.module.startsWith("spring-web") || id.module in setOf("spring-jdbc", "spring-orm", "spring-r2dbc"))) ||
                             (!modulePath.endsWith(":application") && id.group.startsWith("org.springframework"))
                     }
                 check(technology.isEmpty()) { "$modulePath exposes forbidden technology dependencies: $technology" }
             }
-            if (modulePath.endsWith(":application") || modulePath.endsWith(":adapter:security")) {
+            if (modulePath.startsWith(":shared:")) {
+                listOf("compileClasspath", "testCompileClasspath").forEach { configuration ->
+                    val features = module.configurations.getByName(configuration).incoming.resolutionResult
+                        .allComponents.mapNotNull { it.id as? ProjectComponentIdentifier }
+                        .map { it.projectPath }.filter { !it.startsWith(":shared:") }
+                    check(features.isEmpty()) { "$modulePath $configuration exposes feature implementations: $features" }
+                }
+            } else if (modulePath != ":app") {
                 val ownDomain = ":${modulePath.split(':')[1]}:domain"
                 listOf("compileClasspath", "testCompileClasspath").forEach { configuration ->
                     val foreignDomains = module.configurations.getByName(configuration).incoming.resolutionResult
@@ -96,6 +135,7 @@ tasks.register("verifyAggregateModuleBoundaries") {
                 }
             }
         }
+        logger.lifecycle("Verified module boundaries for ${modules.size} modules.")
     }
 }
 
