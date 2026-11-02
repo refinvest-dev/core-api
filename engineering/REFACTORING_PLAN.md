@@ -153,7 +153,8 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 5b-1 | 완료·머지 | [PR #102](https://github.com/refinvest-dev/core-api/pull/102), `a53a1c4`, 원본 purge·orphan 실행 조율, reader drain·lease·backoff와 V15 |
 | 5b-2 | 완료·머지 | [PR #103](https://github.com/refinvest-dev/core-api/pull/103), `260d620`, R17 정책 시계·non-terminal 만료와 runtime 취소·늦은 publication 처리 |
 | 5c-1 | 완료·머지 | [PR #104](https://github.com/refinvest-dev/core-api/pull/104), `33c2171`, 실패 의미·web DTO·전용 삭제 Reader와 checkpoint 기반 public component 상태 |
-| 5c-2 | 구현·검증 완료·리뷰 대기 | [PR #105](https://github.com/refinvest-dev/core-api/pull/105), `0d589cd`, R18 요청 시점 일곱 count·provenance 저장과 V17, 실제 purge/replay E2E 통과 |
+| 5c-2 | 완료·머지 | [PR #105](https://github.com/refinvest-dev/core-api/pull/105), `0d589cd`, R18 요청 시점 일곱 count·provenance 저장과 V17, 실제 purge/replay E2E 통과 |
+| 6a | 구현·검증 완료·리뷰 대기 | [PR #106](https://github.com/refinvest-dev/core-api/pull/106), V18~V21·Boot Flyway 자동 기동·Hibernate validate, app 104개·실제 JAR·Linux 전체 fixture/API/Web CI 통과 |
 
 ### 5c-2 삭제 영향 범위 count snapshot
 
@@ -187,12 +188,34 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 - 후보 커밋 조합의 [계약 CI](https://github.com/refinvest-dev/integration/actions/runs/41405900708)를 통과했다.
   계산 입력·hash·version pin·generation·lease와 결정론은 바꾸지 않았다.
 
-### 다음 단계 6a
+### 6a schema migration과 validate 기동
 
-5c-2 반영 후 기존 모듈의 schema를 Flyway 관리로 편입한다. `app`의 기본 Hibernate `ddl-auto: update`를
-대체하기 전에 새 DB 생성과 기존 DB 업그레이드 경로를 분리해 확인한다. Member/Subscription·Strategy·
-Backtest·Auth의 현재 매핑/제약·인덱스를 조사하고, 기존 데이터·immutable version/result·인증 family를
-보존하는 migration과 실제 PostgreSQL 검증을 준비한 뒤 `validate` 기동으로 전환한다.
+- V18 Subscription·V19 SocialIdentity/RefreshSession·V20 Strategy/Version/Condition·V21 BacktestRun/Result/Dispatch를
+  feature persistence 모듈에 추가했다. Member는 V1, quota/capacity는 V11, refresh family fence는 V12를 유지한다.
+- 기존 row·index·constraint·identity sequence·불변 version/result·OID payload·quota/예약·dispatch lease를
+  다시 만들지 않는다. 새 DB와 기존 DB upgrade를 별도 경로로 검증한 뒤 기본 `ddl-auto`를 `validate`로 바꿨다.
+- 실제 JAR 검증에서 Boot 4 Flyway 자동 설정 모듈 누락을 발견했다. Starter를 연결하고 Boot 자동 migration
+  뒤 전체 JPA 매핑 검증을 수행하는 회귀 테스트를 추가했다. 수동 Flyway 테스트만으로 기동 성공을 추정하지 않는다.
+- app 전체 104개(실제 PostgreSQL 28개)와 모듈 경계·실행 JAR가 통과했다. PostgreSQL에서는 새 DB·V17 + Hibernate
+  schema·Flyway 도입 전 baseline 0·잘못된 schema 거절·Boot 자동 기동의 다섯 경로를 검사했다. 한글 OID payload와
+  생성 sequence, 활성 Run만의 예약 복원도 확인했다. 초기 Windows listen 실패 실행은 성공으로 세지 않는다.
+- 실제 JAR의 빈 격리 DB 기동·V1~V21 적용·전략/버전 HTTP 생성·재기동 후 동일 조회·기존 버전 보존과 새 버전
+  추가가 통과했다. 배포와 rollback은 [Schema Migration Rollout](SCHEMA_MIGRATION_ROLLOUT.md)을 따른다.
+- [Integration #49](https://github.com/refinvest-dev/integration/pull/49)는 수동 fixture에서 모든 feature SQL을
+  적용하고 해당 경로의 Flyway 중복 실행만 끈다. Core 기본 validate는 유지하고 일반 API/Web smoke는 자동
+  Flyway 기동을 검사한다. [최종 후보 CI](https://github.com/refinvest-dev/integration/actions/runs/41422406898)는
+  Core `d5c9b02`·Integration `17e459f`의 API/Web과 전체 Trading fixture를 모두 통과했다. Fixture runtime은
+  473.776초이며 ORCH-024~028·raw 정책 시계·Book/Account count·canary·migration replay가 통과했다.
+  Worker 복구와 실패한 process-control exit는 0개다.
+- Windows의 listen/DB/HTTP 연결 오류 실행과 한 실행의 통제된 중단은 실패 증적으로 보존했다. Linux에서
+  발견한 Windows 전용 프로세스 종료 호출과 재사용 workflow를 가정하지 않은 검사도 보완했다. Migration
+  탐색 2개·process-control 4개·계약 전파 32개·발행 9개와 프로세스 식별 23 assertion을 관련 범위에서 검증했다.
+  최종 증적과 credential은 로컬/CI artifact에만 두고 커밋하지 않는다. Core → Integration 순서로 반영한다.
+
+### 다음 단계 6b
+
+공개 health 응답의 상세 범위와 다중 인스턴스 Snowflake node ID 설정·기동 검증을 정리한다. 6a의 schema
+관리와 별도 PR로 진행하고, 운영·개발 설정과 ID 충돌 방지 경계를 확인한다.
 
 ### 5c-1 실패 의미와 public 조회 경계
 
