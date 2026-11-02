@@ -20,8 +20,3 @@ spring:
             client-id: test-client-id
             client-secret: test-client-secret
             scope: openid
-
-management:
-  endpoint:
-    health:
-      show-details: always
