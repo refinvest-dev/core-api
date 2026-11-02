@@ -154,7 +154,8 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 5b-2 | 완료·머지 | [PR #103](https://github.com/refinvest-dev/core-api/pull/103), `260d620`, R17 정책 시계·non-terminal 만료와 runtime 취소·늦은 publication 처리 |
 | 5c-1 | 완료·머지 | [PR #104](https://github.com/refinvest-dev/core-api/pull/104), `33c2171`, 실패 의미·web DTO·전용 삭제 Reader와 checkpoint 기반 public component 상태 |
 | 5c-2 | 완료·머지 | [PR #105](https://github.com/refinvest-dev/core-api/pull/105), `0d589cd`, R18 요청 시점 일곱 count·provenance 저장과 V17, 실제 purge/replay E2E 통과 |
-| 6a | 구현·검증 완료·리뷰 대기 | [PR #106](https://github.com/refinvest-dev/core-api/pull/106), V18~V21·Boot Flyway 자동 기동·Hibernate validate, app 104개·실제 JAR·Linux 전체 fixture/API/Web CI 통과 |
+| 6a | Core 완료·머지 / Integration 리뷰 대기 | [Core #106](https://github.com/refinvest-dev/core-api/pull/106), [Integration #49](https://github.com/refinvest-dev/integration/pull/49), V18~V21·Boot Flyway 자동 기동·Hibernate validate, app 104개·실제 JAR·Linux 전체 fixture/API/Web CI 통과 |
+| 6b | 구현·로컬 검증 완료·후보 CI 확인 중 | health 상세 제한·명시적 node ID, app 109개·공통 ID 4개·실제 JAR 재기동과 누락 설정 거절, Integration identity 30 assertion 통과 |
 
 ### 5c-2 삭제 영향 범위 count snapshot
 
@@ -212,10 +213,31 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
   탐색 2개·process-control 4개·계약 전파 32개·발행 9개와 프로세스 식별 23 assertion을 관련 범위에서 검증했다.
   최종 증적과 credential은 로컬/CI artifact에만 두고 커밋하지 않는다. Core → Integration 순서로 반영한다.
 
-### 다음 단계 6b
+### 6b health와 명시적 node 설정
 
-공개 health 응답의 상세 범위와 다중 인스턴스 Snowflake node ID 설정·기동 검증을 정리한다. 6a의 schema
-관리와 별도 PR로 진행하고, 운영·개발 설정과 ID 충돌 방지 경계를 확인한다.
+- 공개 health는 `show-details: never`, `show-components: never`로 DB·디스크·예외 진단을 숨긴다.
+  표준 probe group 이름과 aggregate UP/200·DOWN/503 신호는 유지한다. 익명·access cookie·개발 scrape
+  credential 요청과 장애 contributor를 검증하고 기존 Prometheus 인가·loopback·API/CSRF 경계를 유지했다.
+- Snowflake node ID의 전역 기본값 0을 제거했다. 누락·빈 값·정수가 아닌 값·0~1023 밖의 값은 기동을
+  실패시킨다. 실제 실행 YAML을 읽는 회귀 테스트로 수정 전 누락 설정의 잘못된 기동을 재현했다.
+  동일 millisecond에 node 0과 1023이 생성한 512개 ID의 비중복을 검증했다.
+- app 109개(실제 PostgreSQL 28개 포함)·공통 ID 생성기 4개와 모듈 경계가 통과했다. Windows 소켓 오류의
+  실패 실행은 보존하고 영향받은 HTTP/health 테스트만 다시 실행해 최종 실패·오류·skip 0개를 확인했다.
+- 실제 JAR로 빈 격리 schema의 V1~V21 자동 migration·비공개 health·Strategy/version HTTP 생성을 검증했다.
+  같은 DB에서 node 0→1 재기동 후 기존 version 보존·새 version 추가와 생성 ID의 node bit를 확인했고,
+  node 설정을 제거한 별도 JAR의 비정상 종료도 확인했다. 전용 프로세스는 종료했다.
+- Integration은 primary 0을 명시하고 secondary 1·canary 2를 유지한다. 실제 Spring JSON override를 포함한
+  node ID를 프로세스 identity에 반영해 변경된 설정의 프로세스 재사용을 거절한다. 관련 30 assertion이 통과했다.
+- 후보 계약 CI와 API/Web smoke는 통과했다. 전체 Trading fixture 후보 CI는 확인 중이며 최종 결과를 별도 기록한다.
+- 운영자는 동시에 쓰는 writer마다 다른 node ID를 배정해야 한다. JVM 설정 검증은 분산 중복 할당을 탐지하지
+  않으며 registry/allocator를 추가하지 않았다. [운영 설정 절차](OPERATIONS_CONFIGURATION.md)를 따른다.
+  ID 형식·기존 ID·업무 API/schema·계산 hash와 결정론은 바꾸지 않았다. Credential·fixture·실행 증적은 커밋하지 않는다.
+
+### 다음 단계 6c
+
+전체 feature의 Aggregate·Store/Reader·Mapper·application/adapter 의존 경계를 다시 점검하고 R01~R18의
+미해결 여부를 근거와 함께 정리한다. 필요한 전체 경계·회귀·실제 PostgreSQL 및 cross-repository 검증을
+수행하고, 통과·실패·미실행과 운영상 제약을 구분해 리팩토링 완료 기준을 확인한다.
 
 ### 5c-1 실패 의미와 public 조회 경계
 
