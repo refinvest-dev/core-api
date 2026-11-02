@@ -1,6 +1,6 @@
-package com.refinvest.core.auth.adapter.security.cookie
+package com.refinvest.core.auth.adapter.web.cookie
 
-import com.refinvest.core.auth.adapter.security.config.RefInvestSecurityProperties
+import com.refinvest.core.auth.adapter.web.config.AuthWebProperties
 import com.refinvest.core.auth.port.inbound.login.SocialLoginResult
 import com.refinvest.core.auth.port.inbound.session.RefreshSessionResult
 import jakarta.servlet.http.HttpServletResponse
@@ -13,7 +13,7 @@ import java.time.Instant
 
 @Component
 class AuthCookieWriter(
-    private val properties: RefInvestSecurityProperties,
+    private val properties: AuthWebProperties,
     private val clock: Clock,
 ) {
     fun write(response: HttpServletResponse, result: SocialLoginResult) {

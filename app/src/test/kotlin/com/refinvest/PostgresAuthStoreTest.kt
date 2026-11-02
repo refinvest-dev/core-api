@@ -322,7 +322,9 @@ class PostgresAuthStoreTest {
             tx.execute { SocialLoginService(identities, store, issuer, createMember, memberReader).execute(command) }
         fun refresh(session: RefreshSession) = tx.execute {
             RefreshSessionService(store, GetMemberUseCase { GetMemberResult(it.memberId, MemberRole.ADMIN) }, issuer,
-                Clock.fixed(NOW, ZoneOffset.UTC)).execute(RefreshSessionCommand(session.jti, session.memberId, session.familyId, session.tokenFingerprint))
+                Clock.fixed(NOW, ZoneOffset.UTC), com.refinvest.core.auth.port.outbound.token.RefreshTokenParser {
+                    com.refinvest.core.auth.port.outbound.token.RefreshTokenClaims(session.jti, session.memberId, session.familyId, session.tokenFingerprint)
+                }, tx).execute(RefreshSessionCommand("verified-test-refresh"))
         }
         fun flush() = entityManager.flush()
         fun load(jti: UUID): RefreshSession? = tx.execute { store.findByJti(jti) }

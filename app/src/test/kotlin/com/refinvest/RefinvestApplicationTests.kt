@@ -19,8 +19,8 @@ import com.refinvest.core.backtest.port.inbound.execution.StartBacktestRunComman
 import com.refinvest.core.strategy.port.outbound.id.StrategyIdGenerator
 import com.refinvest.core.backtest.port.outbound.id.BacktestRunIdGenerator
 import com.refinvest.core.auth.domain.RefreshSession
-import com.refinvest.core.auth.adapter.security.oauth.ReturnToAuthorizationRequestResolver
-import com.refinvest.core.auth.adapter.security.oauth.SocialLoginSuccessHandler
+import com.refinvest.core.auth.adapter.web.oauth.ReturnToAuthorizationRequestResolver
+import com.refinvest.core.auth.adapter.web.oauth.SocialLoginSuccessHandler
 import com.refinvest.core.auth.port.outbound.token.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.token.IssuedAuthenticationTokens
 import com.refinvest.core.auth.port.outbound.persistence.RefreshSessionStore
@@ -95,6 +95,8 @@ import kotlin.test.assertTrue
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.jpa.hibernate.ddl-auto=create-drop",
+        "refinvest.security.cookie-secure=true",
+        "refinvest.security.cookie-same-site=Lax",
         "refinvest.trading-review.retention-enabled=false",
     ],
 )
@@ -443,6 +445,55 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `unverifiable refresh credentials never change an active family`() {
+        val issued = issueRefreshSession(memberId = 4070L)
+        fun invalidClaims(issuer: String = "https://test.refinvest.local", audience: String = "refinvest-core-api-test",
+                          expiresAt: Instant = Instant.now().plusSeconds(3600)): String = jwtEncoder.encode(
+            JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), JwtClaimsSet.builder()
+                .issuer(issuer).audience(listOf(audience)).subject("4070")
+                .issuedAt(Instant.now().minusSeconds(600)).expiresAt(expiresAt)
+                .id(issued.refreshJti.toString()).claim("familyId", issued.refreshFamilyId.toString())
+                .claim("typ", "refresh").claim("role", "MEMBER").build()),
+        ).tokenValue
+        for (raw in listOf(null, "", "malformed", issued.accessToken, issued.refreshToken + "x",
+                invalidClaims(issuer = "https://wrong-issuer.example"), invalidClaims(audience = "wrong-audience"),
+                invalidClaims(expiresAt = Instant.now().minusSeconds(180)))) {
+            val request = post("/auth/refresh").cookie(Cookie("XSRF-TOKEN", "test-csrf"))
+                .header("X-XSRF-TOKEN", "test-csrf")
+            if (raw != null) request.cookie(Cookie("REFINVEST_REFRESH_TOKEN", raw))
+            mockMvc.perform(request).andExpect(status().isUnauthorized)
+            assertNull(refreshSession(issued.refreshJti).revokedAt)
+        }
+    }
+
+    @Test
+    fun `refresh and logout require CSRF before changing a family`() {
+        val issued = issueRefreshSession(memberId = 4071L)
+        for (endpoint in listOf("/auth/refresh", "/auth/logout")) {
+            mockMvc.perform(post(endpoint).cookie(Cookie("REFINVEST_REFRESH_TOKEN", issued.refreshToken)))
+                .andExpect(status().isForbidden)
+            assertNull(refreshSession(issued.refreshJti).revokedAt)
+        }
+    }
+
+    @Test
+    fun `logout clears cookies and servlet state even without a valid credential`() {
+        val issued = issueRefreshSession(memberId = 4072L)
+        for (raw in listOf(null, "malformed", issued.accessToken)) {
+            val session = MockHttpSession()
+            val request = post("/auth/logout").session(session).cookie(Cookie("XSRF-TOKEN", "test-csrf"))
+                .header("X-XSRF-TOKEN", "test-csrf")
+            if (raw != null) request.cookie(Cookie("REFINVEST_REFRESH_TOKEN", raw))
+            val response = mockMvc.perform(request).andExpect(status().isNoContent).andReturn().response
+            assertTrue(session.isInvalid)
+            for (name in listOf("REFINVEST_ACCESS_TOKEN", "REFINVEST_REFRESH_TOKEN", "JSESSIONID")) {
+                assertTrue(response.getHeaders("Set-Cookie").any { it.startsWith("$name=") && it.contains("Max-Age=0") })
+            }
+            assertNull(refreshSession(issued.refreshJti).revokedAt)
+        }
+    }
+
+    @Test
     fun `refresh endpoint rotates cookies and detects refresh token replay`() {
         val issued = issueRefreshSession(memberId = 401L)
 
@@ -452,6 +503,7 @@ class RefinvestApplicationTests(
         val cookies = first.headers().allValues("set-cookie")
         assertTrue(cookies.any { it.startsWith("REFINVEST_ACCESS_TOKEN=") && it.contains("HttpOnly") }, cookies.toString())
         assertTrue(cookies.any { it.startsWith("REFINVEST_REFRESH_TOKEN=") && it.contains("Path=/auth") }, cookies.toString())
+        assertTrue(cookies.all { it.contains("SameSite=Lax") && it.contains("; Secure") }, "Authentication cookie attributes must match the configured policy")
         assertFalse(refreshSession(issued.refreshJti).revokedAt == null)
         assertEquals(1L, jdbcTemplate.queryForObject(
             "select count(*) from refresh_sessions where family_id = ? and revoked_at is null",

@@ -1,4 +1,4 @@
-package com.refinvest.core.auth.adapter.security.error
+package com.refinvest.core.auth.adapter.web.error
 
 data class SecurityErrorResponse(
     val code: String,

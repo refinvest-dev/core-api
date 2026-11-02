@@ -62,11 +62,11 @@ R01~R18의 기존 수정은 아래 검증 경로와 대조한다. 이 표는 새
 
 | ID | 근거 | 판단과 후속 작업 |
 |---|---|---|
-| R19 | `auth/adapter/web/.../AuthController.kt`, `auth/adapter/security/.../cookie/AuthCookieWriter.kt` | Controller가 outbound RefreshTokenParser와 다른 concrete adapter를 직접 주입한다. 현재 JWT 검증·refresh 회전·logout은 동작하지만 inbound-only 규칙 정리는 남아 있다. Raw credential 처리의 inbound 진입점과 HTTP cookie/OAuth helper의 기술 소유권을 별도 PR에서 정리하고 replay·폐기·쿠키/CSRF 회귀를 재검증한다. |
+| R19 | `auth/adapter/web/.../AuthController.kt`, web `SecurityConfiguration`과 security `JwtConfiguration` | 6c-2/[PR #109](https://github.com/refinvest-dev/core-api/pull/109)에서 raw credential을 inbound로 받고 application이 parser를 호출한다. 검증된 요청만 DB transaction에 진입하며 HTTP helper는 web이 소유한다. Web의 업무 의존성은 inbound port이며 security adapter 구현체와 직접 의존하지 않는다. 최신 회귀 검증은 PR 참조. |
 | R20 | `tradingreview/port/.../TradingReviewPorts.kt`, `TradingImportPorts.kt` | Account/Book/Import의 inbound 계약과 idempotency·storage 등 outbound capability 및 모델이 같은 파일에 혼재한다. Web DTO로 변환하므로 Aggregate 자체를 HTTP 응답으로 직렬화하는 문제와는 구분한다. 기능별 Command/Query/Result와 inbound/outbound 계약 파일을 나누는 후속 PR이 필요하다. |
 
-6c-1은 전체 검증의 누락과 위 classpath 노출을 보완한다. R19와 R20까지 끝났다고 표시하지 않는다.
-6c-2 Auth 진입점, 6c-3 Trading Review port 구성 순으로 분리한 뒤 6c의 최종 완료 여부를 다시 판단한다.
+6c-1은 전체 검증의 누락과 위 classpath 노출을 보완했다. 6c-2에서 R19 구현을 마쳤으며 PR 리뷰 후
+6c-3의 R20 Trading Review port 구성을 정리한다. R20을 남긴 채 6c 전체를 완료로 표시하지 않는다.
 정본에만 있는 향후 AnalysisRun/Reprocessing 기능의 미구현은 이번 리팩토링에서 새 기능으로 구현하지 않는다.
 
 ## Operational Constraints
@@ -95,7 +95,11 @@ R01~R18의 기존 수정은 아래 검증 경로와 대조한다. 이 표는 새
   29개 모듈·499개 테스트(실제 PostgreSQL 10개 suite·144개)를 실제 실행해 통과했다. 실패·오류·skip은
   0개이며 실행 JAR도 빌드했다. 이후 순수 계층의 기술 의존성 차단 보완은 로컬 경계 검사를 통과했다.
   최신 head의 CI 상태는 PR check에서 확인한다.
-- Context 문서 snapshot 26개가 일치한다. Production Kotlin·업무 API/schema/hash·ID 형식·계산 결정론
+- 6c-1은 Context 문서 snapshot 26개가 일치하며 Production Kotlin·업무 API/schema/hash·ID 형식·계산 결정론
   변경은 없다. 따라서 6b의 실제 JAR·API/Web·전체 Trading [후보 CI](https://github.com/refinvest-dev/integration/actions/runs/41471547547)를
   기존 runtime 증적으로 참조하고 이번 CI와 구분한다. R19/R20 정리 뒤 필요한 통합 회귀를 다시 수행한다.
+- 6c-2는 Auth application 단위 23개·web 단위 5개와 신규 source 경계를 검사한다. Credential 검증 실패의
+  DB transaction 미시작과 쿠키 전송 속성을 검증하며, Spring Boot HTTP·PostgreSQL·API/Web 후보 CI를
+  [PR #109](https://github.com/refinvest-dev/core-api/pull/109)에서 확인한다. 설정 키·claim·wire 의미와 계산
+  결정론은 바꾸지 않는다. 로컬 소켓 오류와 테스트 설정 가정 수정은 통과 결과와 구분한다.
 - Credential·fixture·임시 init script와 실행 증적은 커밋하지 않는다.
