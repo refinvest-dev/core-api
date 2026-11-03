@@ -31,9 +31,11 @@
 
 ## 3. Ports, services, and adapters
 
-- Inbound use case와 Command/Query/Result는 `<feature>:port`에 기능 단위로 둔다.
+- Inbound use case와 Command/Query/Result는 `<feature>:port`의 `port/inbound/<기능>`에 둔다.
   전역 `command/`, `query/`, `result/`, `usecase/` 디렉터리는 만들지 않는다.
-- Outbound capability interface도 `<feature>:port`에 둔다. Command persistence는
+- Outbound capability interface와 해당 모델은 같은 모듈의 `port/outbound/<capability>`에 둔다.
+  Inbound/outbound 계약을 같은 디렉터리·파일에 섞지 않는다. 방향 분리를 위해 업무 모델을 일괄
+  `common`으로 옮기지 않으며, 양쪽이 실제 공유하는 타입은 근거와 소유권을 명시한다. Command persistence는
   `{Domain}Store`, 독립적인 read-only 조회는 `{Domain}Reader`를 사용한다. Aggregate를
   검증하기 위한 command-side 조회는 Store 책임이다.
 - Application service는 `<feature>:application`에서 inbound port를 구현하고 outbound

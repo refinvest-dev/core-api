@@ -9,6 +9,10 @@
 6c-2/3 후속 변경은 Core #109/#110으로 머지됐으며 최종 main 조합은
 [Refactoring Handoff](REFACTORING_HANDOFF.md)에서 별도로 기록한다.
 
+Subscription 등과의 후속 비교에서 port 방향·서비스 책임·일반 persistence 구성의 일관성 항목을
+추가 식별했다. 구체적인 T01~T12와 PR 순서는 [Trading Review Structure Alignment](TRADING_REVIEW_ALIGNMENT_PLAN.md)를
+따른다. 아래 R01~R20의 기존 완료 기록과 후속 구조 개선의 미구현 상태는 구분한다.
+
 ## Aggregate and Persistence
 
 | Feature | 현재 Root | 저장/복원 경계 |
