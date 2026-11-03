@@ -1,13 +1,13 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.idempotency.IdempotencyClaim
-import com.refinvest.core.tradingreview.port.idempotency.TradingIdempotencyStore
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.outbound.idempotency.IdempotencyClaim
+import com.refinvest.core.tradingreview.port.outbound.idempotency.TradingIdempotencyStore
 
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.TradingFailureKind
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 

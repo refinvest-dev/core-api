@@ -1,6 +1,10 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.importsession.*
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.RawArtifactPurgeOutcome
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.RawArtifactRetentionClaim
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.RawArtifactRetentionCompletion
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingArtifactRetention
+
 import java.sql.Timestamp
 import java.time.Duration
 import java.time.Instant

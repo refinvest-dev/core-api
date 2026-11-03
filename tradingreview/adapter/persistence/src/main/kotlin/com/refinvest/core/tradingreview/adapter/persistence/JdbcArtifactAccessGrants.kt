@@ -1,17 +1,17 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactAccessGrantIssuer
-import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactReadGrant
-import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactReadGrantRedeemer
-import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactRedemption
-import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.outbound.artifactgrant.ArtifactAccessGrantIssuer
+import com.refinvest.core.tradingreview.port.outbound.artifactgrant.ArtifactReadGrant
+import com.refinvest.core.tradingreview.port.outbound.artifactgrant.ArtifactReadGrantRedeemer
+import com.refinvest.core.tradingreview.port.outbound.artifactgrant.ArtifactRedemption
+import com.refinvest.core.tradingreview.port.outbound.storage.raw.RawArtifactStorage
 
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.TradingFailureKind
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.sql.Timestamp

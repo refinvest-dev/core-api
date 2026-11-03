@@ -1,8 +1,9 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
+
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.TradingFailure
-import com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.api.Timeout
 import java.nio.file.Files

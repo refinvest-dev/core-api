@@ -1,11 +1,22 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.inbound.deletion.process.TradingDeletionUseCase
+import com.refinvest.core.tradingreview.port.inbound.deletion.remediate.RemediateTradingDeletionCommand
+import com.refinvest.core.tradingreview.port.inbound.deletion.remediate.RemediateTradingDeletionUseCase
+import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletionClient
+import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletionOutcome
+import com.refinvest.core.tradingreview.port.outbound.identity.TradingIdGenerator
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionWorkItem
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.TradingDeletionWorkStore
+import com.refinvest.core.tradingreview.port.outbound.storage.analytics.TradingAnalyticsArtifactStore
+import com.refinvest.core.tradingreview.port.outbound.storage.raw.RawArtifactStorage
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.LegacyTradingTemporaryCopies
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactWorkspaces
+
 import com.refinvest.core.tradingreview.domain.DeletionRequest
 import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
-import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
-import com.refinvest.core.tradingreview.port.analytics.input.TradingAnalyticsArtifactStore
-import com.refinvest.core.tradingreview.port.identity.TradingIdGenerator
-import com.refinvest.core.tradingreview.port.deletion.*
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
@@ -79,7 +90,7 @@ class TradingDeletionService(
         }
     }
 
-    override fun remediate(failedId: DeletionRequestId): DeletionRequest = transactions.execute {
-        store.remediate(failedId, ids.deletionId(), clock.instant())
+    override fun execute(command: RemediateTradingDeletionCommand): TradingDeletion = transactions.execute {
+        store.remediate(command.failedId, ids.deletionId(), clock.instant()).let(TradingDeletion::fromDomain)
     } ?: error("Remediation transaction did not return a request")
 }

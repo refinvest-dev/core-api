@@ -1,6 +1,9 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import com.refinvest.core.tradingreview.port.deletion.*
+import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletion
+import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletionClient
+import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletionOutcome
+
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.MediaType

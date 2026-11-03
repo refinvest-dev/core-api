@@ -1,5 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import java.util.UUID
@@ -10,7 +12,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import com.refinvest.core.tradingreview.port.TradingFailure
 
 class LocalTradingAnalyticsArtifactStoreTest {
     @TempDir lateinit var directory: Path

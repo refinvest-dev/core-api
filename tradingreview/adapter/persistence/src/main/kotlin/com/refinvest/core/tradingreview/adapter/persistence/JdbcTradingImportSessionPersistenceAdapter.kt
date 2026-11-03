@@ -1,13 +1,14 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.pagination.TradingPage
+import com.refinvest.core.tradingreview.port.outbound.persistence.TradingPageReadModel
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingImportSessionReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingImportSessionStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingSourceArtifactReader
 
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.TradingImportSession
 import com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.importsession.*
 import java.sql.Timestamp
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.JdbcTemplate
@@ -52,7 +53,6 @@ class JdbcTradingImportSessionPersistenceAdapter(private val jdbc: JdbcTemplate)
             record.failure?.userAction, record.failure?.occurredAt?.let(Timestamp::from))
     }
 
-
     override fun find(id: TradingImportSessionId, owner: MemberId): TradingImportSession? = find(id, owner, false)
 
     override fun find(id: TradingImportSessionId, owner: MemberId, forUpdate: Boolean): TradingImportSession? {
@@ -63,16 +63,15 @@ class JdbcTradingImportSessionPersistenceAdapter(private val jdbc: JdbcTemplate)
         return TradingImportSessionPersistenceMapper.toDomain(complete(record))
     }
 
-    override fun list(bookId: TradingBookId, owner: MemberId, page: Int, size: Int): TradingPage<TradingImportSession> {
+    override fun list(bookId: TradingBookId, owner: MemberId, page: Int, size: Int): TradingPageReadModel<TradingImportSession> {
         val total = jdbc.queryForObject("""SELECT count(*) FROM trading_import_sessions
             WHERE trading_book_id=? AND owner_member_id=? AND deletion_pending=false""",
             Long::class.java, bookId.value, owner.value) ?: 0L
         val items = jdbc.query("""SELECT * FROM trading_import_sessions WHERE trading_book_id=?
             AND owner_member_id=? AND deletion_pending=false ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?""",
             { rs, _ -> TradingImportSessionPersistenceMapper.toDomain(complete(TradingImportRows.session(rs))) }, bookId.value, owner.value, size, page.toLong() * size)
-        return TradingPage(items, page, size, total)
+        return TradingPageReadModel(items, page, size, total)
     }
-
 
     @Transactional
     override fun update(session: TradingImportSession): Boolean {

@@ -1,8 +1,9 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
-import com.refinvest.core.tradingreview.port.importsession.CleanupTradingRawOrphansUseCase
-import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactReader
+import com.refinvest.core.tradingreview.port.inbound.retention.cleanup.CleanupTradingRawOrphansUseCase
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingSourceArtifactReader
+import com.refinvest.core.tradingreview.port.outbound.storage.raw.RawArtifactStorage
+
 import java.time.Clock
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service

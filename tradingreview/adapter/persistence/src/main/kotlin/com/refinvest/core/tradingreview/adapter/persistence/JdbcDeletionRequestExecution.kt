@@ -1,7 +1,8 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionRequestExecution
+
 import com.refinvest.core.tradingreview.domain.DeletionRequest
-import com.refinvest.core.tradingreview.port.deletion.DeletionRequestExecution
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.support.TransactionSynchronizationManager

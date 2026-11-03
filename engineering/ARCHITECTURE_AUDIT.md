@@ -12,6 +12,9 @@
 Subscription 등과의 후속 비교에서 port 방향·서비스 책임·일반 persistence 구성의 일관성 항목을
 추가 식별했다. 구체적인 T01~T12와 PR 순서는 [Trading Review Structure Alignment](TRADING_REVIEW_ALIGNMENT_PLAN.md)를
 따른다. 아래 R01~R20의 기존 완료 기록과 후속 구조 개선의 미구현 상태는 구분한다.
+후속 순서 1은 [Core #113](https://github.com/refinvest-dev/core-api/pull/113)에서 port 방향·조회 결과 소유권과
+grant/spool의 inbound 진입점을 구현했다. 전체 inbound 29개 및 Web/Scheduler의 경계를 검사하며,
+T06 이후 서비스 구성·JPA 저장 기준·큰 실행 구현의 개선은 후속 계획으로 남는다.
 
 ## Aggregate and Persistence
 

@@ -1,6 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.importsession.PurgeExpiredTradingRawArtifactsUseCase
+import com.refinvest.core.tradingreview.port.inbound.retention.purge.PurgeExpiredTradingRawArtifactsUseCase
+
 import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
 import java.util.concurrent.atomic.AtomicLong

@@ -1,15 +1,16 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.normalization.TradingNormalizationTransitionGate
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultStoreFailure
-import com.refinvest.core.tradingreview.port.normalization.result.TradingNormalizationResultStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.LedgerPublication
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.LedgerRevisionStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.TradingLedgerPublication
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationResultStoreFailure
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationResultStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationTransitionGate
 
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.LedgerRevision
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.ledger.*
 import java.sql.Timestamp
 import java.time.Clock
 import java.time.Instant
@@ -220,7 +221,6 @@ class JdbcLedgerRevisionPersistenceAdapter(
         jdbc.update("DELETE FROM trading_normalization_result_staging WHERE run_id=?::uuid", run.id.value)
         return true
     }
-
 
     private fun bound(p: LedgerPublication): Boolean {
         val r = p.revision

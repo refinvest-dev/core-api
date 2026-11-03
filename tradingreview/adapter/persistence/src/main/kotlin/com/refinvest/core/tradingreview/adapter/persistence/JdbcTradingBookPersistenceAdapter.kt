@@ -1,13 +1,12 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.pagination.TradingPage
+import com.refinvest.core.tradingreview.port.outbound.persistence.TradingPageReadModel
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingBookReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingBookStore
 
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.book.TradingBookReader
-import com.refinvest.core.tradingreview.port.book.TradingBookStore
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.util.UUID
@@ -42,13 +41,13 @@ class JdbcTradingBookPersistenceAdapter(private val jdbc: JdbcTemplate) : Tradin
             mapOf("id" to id.value, "owner" to owner.value), { rs, _ -> TradingBookPersistenceMapper.toDomain(record(rs)) }).firstOrNull()
     }
 
-    override fun list(accountId: TradingAccountId, owner: MemberId, page: Int, size: Int): TradingPage<TradingBook> {
+    override fun list(accountId: TradingAccountId, owner: MemberId, page: Int, size: Int): TradingPageReadModel<TradingBook> {
         val parameters = mapOf("owner" to owner.value, "size" to size, "offset" to page.toLong() * size, "account" to accountId.value)
         val total = sql.queryForObject("SELECT count(*) FROM trading_books WHERE account_id=:account AND owner_member_id=:owner AND status='ACTIVE'", parameters, Long::class.java) ?: 0L
         val items = sql.query("""SELECT * FROM trading_books WHERE account_id=:account AND owner_member_id=:owner AND status='ACTIVE'
             ORDER BY created_at DESC, id DESC LIMIT :size OFFSET :offset""", parameters,
             { rs, _ -> TradingBookPersistenceMapper.toDomain(record(rs)) })
-        return TradingPage(items, page, size, total)
+        return TradingPageReadModel(items, page, size, total)
     }
 
     @Transactional

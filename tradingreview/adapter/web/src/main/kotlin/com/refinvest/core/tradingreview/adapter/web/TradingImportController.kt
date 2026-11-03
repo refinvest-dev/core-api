@@ -1,25 +1,26 @@
 package com.refinvest.core.tradingreview.adapter.web
 
-import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactResult
-import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
-import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactUseCase
-import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionQuery
-import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsQuery
-import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsUseCase
-import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactCommand
-import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactUseCase
-import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionUseCase
-
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionView
-import com.refinvest.core.tradingreview.port.importsession.upload.TradingUploadMetadata
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionView
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingSourceArtifactResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.deleteartifact.DeleteTradingSourceArtifactUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.get.GetTradingImportSessionQuery
+import com.refinvest.core.tradingreview.port.inbound.importsession.get.GetTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.list.ListTradingImportsQuery
+import com.refinvest.core.tradingreview.port.inbound.importsession.list.ListTradingImportsUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.TradingUploadMetadata
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadTradingImportArtifactCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadTradingImportArtifactUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.retry.RetryTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.normalization.retry.RetryTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.validate.ValidateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.normalization.validate.ValidateTradingImportSessionUseCase
 
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
@@ -30,8 +31,6 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionI
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.TradingFailureKind
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank

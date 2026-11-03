@@ -1,10 +1,11 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import com.refinvest.core.tradingreview.port.normalization.AcknowledgeTradingNormalizationResultUseCase
-import com.refinvest.core.tradingreview.port.normalization.CleanupTradingNormalizationStagingUseCase
-import com.refinvest.core.tradingreview.port.normalization.DispatchTradingNormalizationUseCase
-import com.refinvest.core.tradingreview.port.normalization.PollTradingNormalizationUseCase
-import com.refinvest.core.tradingreview.port.normalization.ReceiveTradingNormalizationResultUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.acknowledge.AcknowledgeTradingNormalizationResultUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.cleanup.CleanupTradingNormalizationStagingUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.dispatch.DispatchTradingNormalizationUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.poll.PollTradingNormalizationUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.receive.ReceiveTradingNormalizationResultUseCase
+
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component

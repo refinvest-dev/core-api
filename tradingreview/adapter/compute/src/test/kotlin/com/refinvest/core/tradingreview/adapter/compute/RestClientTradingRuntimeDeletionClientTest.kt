@@ -1,7 +1,9 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
+import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletion
+import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletionOutcome
+
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.deletion.*
 import java.time.Instant
 import kotlin.test.*
 import org.springframework.http.HttpStatus

@@ -1,15 +1,12 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import org.springframework.beans.factory.annotation.Value
-import org.springframework.scheduling.annotation.Scheduled
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.LegacyTradingTemporaryCopies
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingResultSpoolCleanup
+
 import org.springframework.stereotype.Component
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.time.Clock
-import java.time.Duration
-import com.refinvest.core.tradingreview.port.deletion.LegacyTradingTemporaryCopies
-import com.refinvest.core.tradingreview.port.deletion.TradingArtifactWorkspaces
 
 /** Only ciphertext is written here. The per-download key is held in process memory. */
 internal object NormalizationResultSpool {
@@ -41,21 +38,7 @@ internal object NormalizationResultSpool {
 }
 
 @Component
-class NormalizationResultSpoolSweeper(
-    private val clock: Clock,
-    private val workspaces: TradingArtifactWorkspaces,
-    @Value("\${refinvest.trading-review.normalization.delivery.spool-orphan-retention:PT24H}")
-    private val retention: Duration,
-) : LegacyTradingTemporaryCopies {
-    init {
-        require(!retention.isNegative && !retention.isZero && retention <= Duration.ofHours(24))
-    }
-
-    @Scheduled(fixedDelayString = "\${refinvest.trading-review.normalization.delivery.spool-sweep-delay-ms:3600000}")
-    fun sweep(): Int {
-        val cutoff = clock.instant().minus(retention)
-        return NormalizationResultSpool.cleanupOlderThan(cutoff) + workspaces.cleanupOrphans(cutoff, 100)
-    }
-
+class LegacyNormalizationResultSpoolAdapter : LegacyTradingTemporaryCopies, TradingResultSpoolCleanup {
+    override fun cleanupOlderThan(cutoff: java.time.Instant) = NormalizationResultSpool.cleanupOlderThan(cutoff)
     override fun absent() = NormalizationResultSpool.absent()
 }

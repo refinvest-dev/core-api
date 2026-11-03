@@ -1,8 +1,9 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationRuntime
+
 import com.refinvest.core.tradingreview.domain.importsession.*
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.normalization.*
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.datasource.DataSourceTransactionManager

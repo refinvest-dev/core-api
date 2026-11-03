@@ -1,49 +1,79 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.account.create.CreateTradingAccountCommand
-import com.refinvest.core.tradingreview.port.account.delete.DeleteTradingAccountCommand
-import com.refinvest.core.tradingreview.port.account.get.GetTradingAccountQuery
-import com.refinvest.core.tradingreview.port.book.create.CreateTradingBookCommand
-import com.refinvest.core.tradingreview.port.book.delete.DeleteTradingBookCommand
-import com.refinvest.core.tradingreview.port.book.get.GetTradingBookQuery
-import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
-import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionQuery
-import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactCommand
-import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.inbound.account.create.CreateTradingAccountCommand
+import com.refinvest.core.tradingreview.port.inbound.account.delete.DeleteTradingAccountCommand
+import com.refinvest.core.tradingreview.port.inbound.account.get.GetTradingAccountQuery
+import com.refinvest.core.tradingreview.port.inbound.artifactgrant.redeem.RedeemTradingArtifactGrantCommand
+import com.refinvest.core.tradingreview.port.inbound.book.TradingBookResult
+import com.refinvest.core.tradingreview.port.inbound.book.create.CreateTradingBookCommand
+import com.refinvest.core.tradingreview.port.inbound.book.delete.DeleteTradingBookCommand
+import com.refinvest.core.tradingreview.port.inbound.book.get.GetTradingBookQuery
+import com.refinvest.core.tradingreview.port.inbound.deletion.PurgeComponentStatus
+import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.inbound.deletion.get.GetTradingDeletionRequestQuery
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.get.GetTradingImportSessionQuery
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.TradingUploadMetadata
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadArtifactResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadTradingImportArtifactCommand
+import com.refinvest.core.tradingreview.port.inbound.normalization.acknowledge.AcknowledgeTradingNormalizationResultUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.retry.RetryTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.normalization.validate.ValidateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.outbound.artifactgrant.ArtifactAccessGrantIssuer
+import com.refinvest.core.tradingreview.port.outbound.artifactgrant.ArtifactReadGrant
+import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletion
+import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletionClient
+import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletionOutcome
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationGrantUpdate
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationJobStatus
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationStatusLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationSubmission
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.TradingNormalizationComputeClient
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationAckOutcome
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationPayloadFile
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationPayloadLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultDescriptor
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.result.TradingNormalizationResultClient
+import com.refinvest.core.tradingreview.port.outbound.idempotency.IdempotencyClaim
+import com.refinvest.core.tradingreview.port.outbound.identity.LedgerRevisionIdGenerator
+import com.refinvest.core.tradingreview.port.outbound.identity.TradingIdGenerator
+import com.refinvest.core.tradingreview.port.outbound.identity.TradingNormalizationIdGenerator
+import com.refinvest.core.tradingreview.port.outbound.member.TradingMemberProvider
+import com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingNormalizationRetryPolicy
+import com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingNormalizationSettings
+import com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingRetryJitter
+import com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingAccountBookDeletion
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.RawArtifactPurgeOutcome
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.RawArtifactRetentionCompletion
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.LedgerPublication
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.PublishedLedgerSummary
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.TradingLedgerPublication
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.TradingLedgerPublicationReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationAdmission
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationDispatchLease
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationGrantAttemptAdvance
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationJobRetry
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationPayloadAcknowledgement
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationResultStoreFailure
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationStagedItem
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationSubmissionReceipt
+import com.refinvest.core.tradingreview.port.outbound.storage.analytics.AnalyticsInputArtifact
+import com.refinvest.core.tradingreview.port.outbound.storage.analytics.TradingAnalyticsArtifactStore
+import com.refinvest.core.tradingreview.port.outbound.storage.raw.RawArtifactStorage
+import com.refinvest.core.tradingreview.port.outbound.storage.raw.StagedRawArtifact
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.LegacyTradingTemporaryCopies
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactWorkspaces
 
-import com.refinvest.core.tradingreview.port.analytics.input.AnalyticsInputArtifact
-import com.refinvest.core.tradingreview.port.analytics.input.TradingAnalyticsArtifactStore
-import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactAccessGrantIssuer
-import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactReadGrant
-import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
-import com.refinvest.core.tradingreview.port.artifactstorage.StagedRawArtifact
-import com.refinvest.core.tradingreview.port.idempotency.IdempotencyClaim
-import com.refinvest.core.tradingreview.port.identity.TradingIdGenerator
-import com.refinvest.core.tradingreview.port.importsession.upload.UploadArtifactResult
-import com.refinvest.core.tradingreview.port.ledger.PublishedLedgerSummary
-import com.refinvest.core.tradingreview.port.ledger.TradingLedgerPublicationReader
-import com.refinvest.core.tradingreview.port.member.TradingMemberProvider
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationGrantUpdate
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationJobStatus
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationStatusLookup
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationSubmission
-import com.refinvest.core.tradingreview.port.normalization.compute.TradingNormalizationComputeClient
-import com.refinvest.core.tradingreview.port.normalization.policy.TradingNormalizationRetryPolicy
-import com.refinvest.core.tradingreview.port.normalization.policy.TradingNormalizationSettings
-import com.refinvest.core.tradingreview.port.normalization.policy.TradingRetryJitter
-import com.refinvest.core.tradingreview.port.normalization.policy.TradingVersionPins
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationAckOutcome
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationPayloadAcknowledgement
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationPayloadFile
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationPayloadLookup
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultDescriptor
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultLookup
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultStoreFailure
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationStagedItem
-import com.refinvest.core.tradingreview.port.normalization.result.TradingNormalizationResultClient
+import com.refinvest.core.tradingreview.application.RedeemTradingArtifactGrantService
 
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.application.GetTradingDeletionRequestService
@@ -77,18 +107,6 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.importsession.upload.TradingUploadMetadata
-import com.refinvest.core.tradingreview.port.account.TradingAccountResult
-import com.refinvest.core.tradingreview.port.book.TradingBookResult
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionResult
-import com.refinvest.core.tradingreview.port.TradingFailureKind
-import com.refinvest.core.tradingreview.port.book.TradingAccountBookDeletion
-import com.refinvest.core.tradingreview.port.deletion.*
-import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
-import com.refinvest.core.tradingreview.port.importsession.*
-import com.refinvest.core.tradingreview.port.ledger.*
-import com.refinvest.core.tradingreview.port.normalization.*
 import java.sql.Connection
 import java.sql.DriverManager
 import java.time.Clock
@@ -120,7 +138,7 @@ class PostgresTradingReviewStoreTest {
     private val noPublished = object : TradingLedgerPublicationReader {
         override fun publishedForSession(sessionId: TradingImportSessionId, owner: MemberId): PublishedLedgerSummary? = null
     }
-    private val normalizationIds = object : com.refinvest.core.tradingreview.port.normalization.TradingNormalizationIdGenerator {
+    private val normalizationIds = object : com.refinvest.core.tradingreview.port.outbound.identity.TradingNormalizationIdGenerator {
         override fun runId() = NormalizationRunId(UUID.randomUUID().toString())
         override fun dispatchId() = UUID.randomUUID().toString()
         override fun attemptToken() = UUID.randomUUID().toString()
@@ -257,7 +275,8 @@ class PostgresTradingReviewStoreTest {
         assertEquals(legacy.affectedResources, repaired.affectedResources)
         assertEquals(repaired.affectedResources, store.find(repaired.id, legacy.owner)?.affectedResources)
         assertEquals(7L, store.find(legacy.id, legacy.owner)?.version)
-        assertEquals("LEGACY_PARTIAL", JdbcDeletionRequestReader(jdbc).find(legacy.id, legacy.owner)?.countSnapshotStatus)
+        assertEquals(DeletionCountSnapshotStatus.LEGACY_PARTIAL,
+            JdbcDeletionRequestReader(jdbc).find(legacy.id, legacy.owner)?.affectedResources?.snapshotStatus)
         val exact = DeletionRequest.request(DeletionRequestId(72310), MemberId(1), DeletionScope.book(TradingBookId(72311)),
             1, DeletionAffectedResources(0, 1, 2, 4, 3, 5, 6), now)
         store.insert(exact)
@@ -277,7 +296,7 @@ class PostgresTradingReviewStoreTest {
         val request = DeletionRequest.request(DeletionRequestId(7101), MemberId(1), DeletionScope.book(TradingBookId(7102)),
             1, DeletionAffectedResources(0, 1), now)
         store.insert(request)
-        val requested = assertNotNull(reader.find(request.id, request.owner))
+        val requested = TradingDeletion.fromDomain(assertNotNull(reader.find(request.id, request.owner)))
         assertEquals(PurgeComponentStatus.NOT_STARTED, requested.primaryPurgeStatus)
         assertEquals(PurgeComponentStatus.NOT_STARTED, requested.objectPurgeStatus) // zero counters do not define scope
         assertEquals(PurgeComponentStatus.NOT_STARTED, requested.computeRuntimePurgeStatus)
@@ -297,7 +316,7 @@ class PostgresTradingReviewStoreTest {
         }
         val service = GetTradingDeletionRequestService(member, reader)
         repeat(2) {
-            val view = service.get(request.id.value)
+            val view = service.execute(GetTradingDeletionRequestQuery(request.id))
             assertEquals("FAILED", view.state)
             assertEquals(PurgeComponentStatus.COMPLETED, view.primaryPurgeStatus)
             assertEquals(PurgeComponentStatus.COMPLETED, view.computeRuntimePurgeStatus)
@@ -307,7 +326,7 @@ class PostgresTradingReviewStoreTest {
         }
         assertEquals(persisted, DeletionRequestPersistenceMapper.toRecord(assertNotNull(store.find(request.id, request.owner))))
         member.id = MemberId(2)
-        assertEquals(TradingFailureKind.NOT_FOUND, assertFailsWith<TradingFailure> { service.get(request.id.value) }.kind)
+        assertEquals(TradingFailureKind.NOT_FOUND, assertFailsWith<TradingFailure> { service.execute(GetTradingDeletionRequestQuery(request.id)) }.kind)
         assertNull(reader.find(request.id, MemberId(2)))
 
         // V13 preserves historical COMPLETED labels but deliberately does not manufacture absence checkpoints.
@@ -316,7 +335,7 @@ class PostgresTradingReviewStoreTest {
         store.insert(legacy)
         jdbc.update("""UPDATE trading_deletion_requests SET state='COMPLETED',completed_at=?,updated_at=? WHERE id=?""",
             java.sql.Timestamp.from(now.plusSeconds(10)), java.sql.Timestamp.from(now.plusSeconds(10)), legacy.id.value)
-        val view = assertNotNull(reader.find(legacy.id, legacy.owner))
+        val view = TradingDeletion.fromDomain(assertNotNull(reader.find(legacy.id, legacy.owner)))
         assertEquals("COMPLETED", view.state)
         assertEquals(PurgeComponentStatus.IN_PROGRESS, view.primaryPurgeStatus)
         assertEquals(PurgeComponentStatus.IN_PROGRESS, view.objectPurgeStatus)
@@ -2590,10 +2609,10 @@ class PostgresTradingReviewStoreTest {
         val service = com.refinvest.core.tradingreview.application.TradingNormalizationService(
             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
             review, review, imports, review, runs,
-            object : com.refinvest.core.tradingreview.port.normalization.policy.TradingVersionPins {
+            object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins {
                 override fun currentJson() = versions
-            }, object : com.refinvest.core.tradingreview.port.normalization.policy.TradingNormalizationSettings {
-                override fun retryPolicy() = com.refinvest.core.tradingreview.port.normalization.policy.TradingNormalizationRetryPolicy(
+            }, object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingNormalizationSettings {
+                override fun retryPolicy() = com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingNormalizationRetryPolicy(
                     "retry-v1", 3, java.time.Duration.ofMinutes(1), java.time.Duration.ofSeconds(1),
                     java.time.Duration.ofSeconds(10), "NONE")
                 override fun instrumentTermsJson() = currentInstrumentTerms
@@ -2882,7 +2901,7 @@ class PostgresTradingReviewStoreTest {
             transactions.execute { service.execute(CreateTradingBookCommand(account.id, "Blocked", TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "new-book")) }
         }.kind)
         deletionWorker(jdbc, transactions, emptyStorage(), clock).purgePending()
-        assertEquals("COMPLETED", GetTradingDeletionRequestService(member, JdbcDeletionRequestReader(jdbc)).get(deletion.id).state)
+        assertEquals("COMPLETED", GetTradingDeletionRequestService(member, JdbcDeletionRequestReader(jdbc)).execute(GetTradingDeletionRequestQuery(DeletionRequestId(deletion.id))).state)
         assertEquals(TradingFailureKind.NO_LONGER_AVAILABLE, assertFailsWith<TradingFailure> { service.execute(GetTradingBookQuery(book.id)) }.kind)
         member.id = MemberId(2)
         assertEquals(TradingFailureKind.NOT_FOUND, assertFailsWith<TradingFailure> { service.execute(GetTradingBookQuery(book.id)) }.kind)
@@ -2939,7 +2958,7 @@ class PostgresTradingReviewStoreTest {
             javax.crypto.spec.SecretKeySpec(ByteArray(32) { it.toByte() }, "AES"), "test-v1")
         val service = com.refinvest.core.tradingreview.application.TradingImportService(
             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) }, ids, accountStore, accountStore, importStore, importStore,
-            accountStore, accountStore, storage, object : com.refinvest.core.tradingreview.port.normalization.policy.TradingVersionPins {
+            accountStore, accountStore, storage, object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins {
                 override fun currentJson() = "{\"versionSetHash\":\"exact\"}"
             }, transactions, Clock.fixed(now, ZoneOffset.UTC), noPublished, importStore, JdbcDeletionScopeInventory(jdbc))
         val session = transactions.execute { service.execute(CreateTradingImportSessionCommand(book.id, "UTC", "UTC", TradingPositionMode.ONE_WAY, null, null, "create-import")) }
@@ -3011,12 +3030,12 @@ class PostgresTradingReviewStoreTest {
         val storage = com.refinvest.core.tradingreview.adapter.storage.LocalEncryptedRawArtifactStorage(root,
             javax.crypto.spec.SecretKeySpec(ByteArray(32) { it.toByte() }, "AES"), "test-v1")
         val nextId = java.util.concurrent.atomic.AtomicLong(704)
-        fun runPair(firstBytes: ByteArray, secondBytes: ByteArray, role: TradingArtifactRole): List<Result<com.refinvest.core.tradingreview.port.importsession.upload.UploadArtifactResult>> {
+        fun runPair(firstBytes: ByteArray, secondBytes: ByteArray, role: TradingArtifactRole): List<Result<com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadArtifactResult>> {
             val start = java.util.concurrent.CountDownLatch(1)
             val executor = Executors.newFixedThreadPool(2)
             try {
                 val inputs = listOf(firstBytes, secondBytes)
-                val futures = inputs.mapIndexed { index, bytes -> executor.submit<Result<com.refinvest.core.tradingreview.port.importsession.upload.UploadArtifactResult>> {
+                val futures = inputs.mapIndexed { index, bytes -> executor.submit<Result<com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadArtifactResult>> {
                     DriverManager.getConnection(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"),
                         System.getenv("TRADING_REVIEW_TEST_DB_USER"), System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD")).use { connection ->
                         connection.schema = setup.schema
@@ -3033,7 +3052,7 @@ class PostgresTradingReviewStoreTest {
                         val service = com.refinvest.core.tradingreview.application.TradingImportService(
                             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
                             ids, reviewStore, reviewStore, importStore, importStore, reviewStore, reviewStore,
-                            storage, object : com.refinvest.core.tradingreview.port.normalization.policy.TradingVersionPins {
+                            storage, object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins {
                                 override fun currentJson() = "{}"
                             }, TransactionTemplate(DataSourceTransactionManager(dataSource)),
                             Clock.fixed(now, ZoneOffset.UTC), noPublished, importStore, JdbcDeletionScopeInventory(workerJdbc))
@@ -3094,7 +3113,7 @@ class PostgresTradingReviewStoreTest {
             return com.refinvest.core.tradingreview.application.TradingImportService(
                 object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) }, ids,
                 reviews, reviews, imports, imports, reviews, reviews, storage,
-                object : com.refinvest.core.tradingreview.port.normalization.policy.TradingVersionPins { override fun currentJson() = "{}" },
+                object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins { override fun currentJson() = "{}" },
                 TransactionTemplate(DataSourceTransactionManager(source)), Clock.fixed(now, ZoneOffset.UTC),
                 noPublished, imports, JdbcDeletionScopeInventory(connectionJdbc))
         }
@@ -3105,7 +3124,7 @@ class PostgresTradingReviewStoreTest {
             .joinToString("") { "%02x".format(it) }
         val executor = Executors.newSingleThreadExecutor()
         try {
-            val upload = executor.submit<Result<com.refinvest.core.tradingreview.port.importsession.upload.UploadArtifactResult>> {
+            val upload = executor.submit<Result<com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadArtifactResult>> {
                 DriverManager.getConnection(System.getenv("TRADING_REVIEW_TEST_JDBC_URL"),
                     System.getenv("TRADING_REVIEW_TEST_DB_USER"), System.getenv("TRADING_REVIEW_TEST_DB_PASSWORD")).use { connection ->
                     connection.schema = setup.schema
@@ -3176,7 +3195,7 @@ class PostgresTradingReviewStoreTest {
                         val service = com.refinvest.core.tradingreview.application.TradingImportService(
                             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
                             ids, reviews, reviews, imports, imports, reviews, reviews, storage,
-                            object : com.refinvest.core.tradingreview.port.normalization.policy.TradingVersionPins {
+                            object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins {
                                 override fun currentJson() = "{}"
                             }, TransactionTemplate(DataSourceTransactionManager(dataSource)),
                             Clock.fixed(now, ZoneOffset.UTC), noPublished, imports, JdbcDeletionScopeInventory(workerJdbc))
@@ -3225,6 +3244,7 @@ class PostgresTradingReviewStoreTest {
         }
         val grants = JdbcArtifactAccessGrants(jdbc, storage, Clock.fixed(now, ZoneOffset.UTC),
             "https://core.test", "synthetic-internal-key")
+        val redemption = RedeemTradingArtifactGrantService(grants)
         val target = grantSource(jdbc, 3001, MemberId(1))
         val sibling = grantSource(jdbc, 3011, MemberId(1), target.account)
         val unrelated = grantSource(jdbc, 3021, MemberId(1))
@@ -3254,7 +3274,7 @@ class PostgresTradingReviewStoreTest {
                 imports.find(fixture.artifact.artifactId, MemberId(1))?.retentionStatus)
             assertEquals(TradingImportStatus.VALIDATING,
                 imports.find(fixture.sessionId, MemberId(1))?.status)
-            val failure = assertFailsWith<TradingFailure> { grants.redeem(issued.getValue(fixture)) }
+            val failure = assertFailsWith<TradingFailure> { redemption.execute(RedeemTradingArtifactGrantCommand(issued.getValue(fixture))) }
             assertEquals("RESOURCE_NOT_FOUND", failure.code)
             assertEquals(TradingFailureKind.NOT_FOUND, failure.kind)
             val issueFailure = assertFailsWith<TradingFailure> { issue(fixture) }
@@ -3265,9 +3285,9 @@ class PostgresTradingReviewStoreTest {
         assertEquals(0L, jdbc.queryForObject(
             "SELECT count(*) FROM trading_artifact_read_grants WHERE consumed_at IS NOT NULL", Long::class.java))
         for (fixture in fixtures - revoked.toSet()) {
-            assertEquals("synthetic raw", grants.redeem(issued.getValue(fixture)).input.bufferedReader().use { it.readText() })
+            assertEquals("synthetic raw", redemption.execute(RedeemTradingArtifactGrantCommand(issued.getValue(fixture))).input.bufferedReader().use { it.readText() })
             assertEquals("RESOURCE_NOT_FOUND", assertFailsWith<TradingFailure> {
-                grants.redeem(issued.getValue(fixture))
+                redemption.execute(RedeemTradingArtifactGrantCommand(issued.getValue(fixture)))
             }.code)
         }
         assertEquals(fixtures.size - revoked.size, opened)
@@ -3312,12 +3332,12 @@ class PostgresTradingReviewStoreTest {
         return GrantSource(account, book.id, session.id, pinned, dispatch.id, token)
     }
 
-    private fun emptyStorage() = object : com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage {
-        override fun preparePublication(staged: com.refinvest.core.tradingreview.port.artifactstorage.StagedRawArtifact, role: TradingArtifactRole) = error("not used")
-        override fun purgeCopies(scope: com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope) = true
+    private fun emptyStorage() = object : com.refinvest.core.tradingreview.port.outbound.storage.raw.RawArtifactStorage {
+        override fun preparePublication(staged: com.refinvest.core.tradingreview.port.outbound.storage.raw.StagedRawArtifact, role: TradingArtifactRole) = error("not used")
+        override fun purgeCopies(scope: com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope) = true
         override fun putStaging(source: java.io.InputStream, maxBytes: Long, artifactId: TradingSourceArtifactId, sessionId: TradingImportSessionId):
-            com.refinvest.core.tradingreview.port.artifactstorage.StagedRawArtifact = error("Unused")
-        override fun promote(staged: com.refinvest.core.tradingreview.port.artifactstorage.StagedRawArtifact, finalKey: String) = Unit
+            com.refinvest.core.tradingreview.port.outbound.storage.raw.StagedRawArtifact = error("Unused")
+        override fun promote(staged: com.refinvest.core.tradingreview.port.outbound.storage.raw.StagedRawArtifact, finalKey: String) = Unit
         override fun completePublication(finalKey: String) = Unit
         override fun open(key: String, wrappedDek: ByteArray, keyVersion: String,
                           artifactId: TradingSourceArtifactId): java.io.InputStream = error("Unused")
@@ -3503,9 +3523,9 @@ class PostgresTradingReviewStoreTest {
     private fun deletionWorker(jdbc: JdbcTemplate, tx: TransactionTemplate, storage: RawArtifactStorage,
                                clock: Clock, analytics: TradingAnalyticsArtifactStore? = null,
                                runtimeClient: TradingRuntimeDeletionClient? = null): TradingDeletionWorker {
-        val workspaces = object : com.refinvest.core.tradingreview.port.deletion.TradingArtifactWorkspaces {
-            override fun acquire(scope: com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope) = error("not used")
-            override fun purge(scope: com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope) = true
+        val workspaces = object : com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactWorkspaces {
+            override fun acquire(scope: com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope) = error("not used")
+            override fun purge(scope: com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope) = true
             override fun cleanupOrphans(olderThan: Instant, limit: Int) = 0
         }
         val files = analytics ?: object : TradingAnalyticsArtifactStore {
@@ -3513,13 +3533,13 @@ class PostgresTradingReviewStoreTest {
             override fun open(coreReferenceId: String) = error("not used")
             override fun purgeRevision(revisionId: String) = true
         }
-        val runtime = object : com.refinvest.core.tradingreview.port.deletion.TradingRuntimeDeletionClient {
-            override fun purge(command: com.refinvest.core.tradingreview.port.deletion.TradingRuntimeDeletion): TradingRuntimeDeletionOutcome {
+        val runtime = object : com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletionClient {
+            override fun purge(command: com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletion): TradingRuntimeDeletionOutcome {
                 check(!org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
                 return TradingRuntimeDeletionOutcome.Absent(clock.instant())
             }
         }
-        val legacy = object : com.refinvest.core.tradingreview.port.deletion.LegacyTradingTemporaryCopies {
+        val legacy = object : com.refinvest.core.tradingreview.port.outbound.storage.workspace.LegacyTradingTemporaryCopies {
             override fun absent() = true
         }
         val ids = object : TradingIdGenerator {

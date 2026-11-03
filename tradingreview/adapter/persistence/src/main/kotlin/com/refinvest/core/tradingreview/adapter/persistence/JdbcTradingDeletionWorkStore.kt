@@ -1,8 +1,13 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletion
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionWorkItem
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionWorkLease
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.TradingDeletionWorkStore
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
+
 import com.refinvest.core.tradingreview.domain.DeletionRequest
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.deletion.*
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.support.TransactionSynchronizationManager
@@ -502,7 +507,6 @@ class JdbcTradingDeletionWorkStore(private val jdbc: JdbcTemplate, private val c
         val payloadId: String, val payloadSha256: String, val resultHash: String,
         val attemptToken: String, val deletionGeneration: Long, val retryPolicyJson: String,
         val expiresAt: java.time.Instant, val currentGeneration: Long)
-
 
     private fun DeletionRequest.toRequest() = Request(id.value, owner.value, scope.targetType.name,
         scope.target.value, state.name)

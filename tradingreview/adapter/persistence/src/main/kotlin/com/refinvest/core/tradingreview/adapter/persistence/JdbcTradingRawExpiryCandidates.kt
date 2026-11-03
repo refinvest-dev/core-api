@@ -1,8 +1,10 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingRawExpiryCandidate
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingRawExpiryCandidates
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.importsession.*
 import java.sql.Timestamp
 import java.time.Instant
 import org.springframework.jdbc.core.JdbcTemplate

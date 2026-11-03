@@ -1,12 +1,13 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.outbound.storage.analytics.AnalyticsInputArtifact
+import com.refinvest.core.tradingreview.port.outbound.storage.analytics.TradingAnalyticsArtifactStore
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactWorkspaces
+
 import com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId
-import com.refinvest.core.tradingreview.port.analytics.input.AnalyticsInputArtifact
-import com.refinvest.core.tradingreview.port.analytics.input.TradingAnalyticsArtifactStore
-import com.refinvest.core.tradingreview.port.TradingFailure
-import com.refinvest.core.tradingreview.port.TradingFailureKind
-import com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope
-import com.refinvest.core.tradingreview.port.deletion.TradingArtifactWorkspaces
 import java.io.FilterInputStream
 import java.io.FilterOutputStream
 import java.io.InputStream

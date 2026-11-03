@@ -1,6 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
-import com.refinvest.core.tradingreview.port.importsession.CleanupTradingRawOrphansUseCase
+import com.refinvest.core.tradingreview.port.inbound.retention.cleanup.CleanupTradingRawOrphansUseCase
+
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.scheduling.annotation.Scheduled

@@ -1,8 +1,18 @@
 package com.refinvest
 
-import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
-import com.refinvest.core.tradingreview.port.idempotency.TradingIdempotencyStore
-import com.refinvest.core.tradingreview.port.ledger.TradingLedgerPublicationReader
+import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.outbound.idempotency.TradingIdempotencyStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.account.TradingAccountStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingBookStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionRequestReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingArtifactRetention
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingImportSessionStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingSourceArtifactReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.LedgerPublication
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.TradingLedgerPublicationReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationAdmission
+import com.refinvest.core.tradingreview.port.outbound.storage.raw.RawArtifactStorage
 
 import java.nio.file.Files
 import java.nio.file.Path
@@ -98,8 +108,8 @@ class TradingAccountBookBoundaryTest {
         }
         assertFalse(Files.exists(persistence.resolve("JdbcTradingReviewStore.kt")))
         assertFalse(Files.exists(persistence.resolve("JdbcTradingImportStore.kt")))
-        listOf("account", "book", "importsession", "normalization", "ledger", "deletion").forEach { aggregate ->
-            Files.walk(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/$aggregate")).use { files ->
+        listOf("inbound", "outbound").forEach { direction ->
+            Files.walk(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/$direction")).use { files ->
                 files.filter { it.toString().endsWith(".kt") }.forEach { file ->
                     assertFalse(Regex("org\\.springframework|java\\.(sql|net)|java\\.io\\.(?!(?:InputStream|OutputStream)\\b)|java\\.nio\\.file|javax\\.crypto").containsMatchIn(Files.readString(file)))
                 }
@@ -118,7 +128,7 @@ class TradingAccountBookBoundaryTest {
         val child = Files.readString(domain.resolve("importsession/TradingSourceArtifact.kt"))
         assertTrue(child.contains("DomainEntity<TradingSourceArtifactId>"))
         assertFalse(child.contains("AggregateRoot") || child.contains("data class TradingSourceArtifact"))
-        val store = Files.readString(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/importsession/TradingImportSessionStore.kt"))
+        val store = Files.readString(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/outbound/persistence/importsession/TradingImportSessionStore.kt"))
         assertTrue(store.contains("update(session: TradingImportSession)"))
         val service = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/TradingImportService.kt"))
         assertTrue(service.contains("session.recordUpload("))

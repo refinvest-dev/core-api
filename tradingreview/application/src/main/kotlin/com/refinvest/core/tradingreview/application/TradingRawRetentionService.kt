@@ -1,8 +1,13 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
-import com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope
-import com.refinvest.core.tradingreview.port.importsession.*
+import com.refinvest.core.tradingreview.port.inbound.retention.purge.PurgeExpiredTradingRawArtifactsUseCase
+import com.refinvest.core.tradingreview.port.inbound.retention.purge.TradingRawRetentionResult
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.RawArtifactPurgeOutcome
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.RawArtifactRetentionCompletion
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingArtifactRetention
+import com.refinvest.core.tradingreview.port.outbound.storage.raw.RawArtifactStorage
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
+
 import java.time.Clock
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate

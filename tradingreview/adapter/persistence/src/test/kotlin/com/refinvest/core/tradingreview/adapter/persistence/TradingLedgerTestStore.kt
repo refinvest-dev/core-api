@@ -1,16 +1,16 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.ledger.TradingLedgerPublicationReader
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultDescriptor
-import com.refinvest.core.tradingreview.port.normalization.result.TradingNormalizationResultStore
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultDescriptor
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.LedgerPublication
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.TradingLedgerPublication
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.TradingLedgerPublicationReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationDispatchLease
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationResultStore
 
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.LedgerRevision
 import com.refinvest.core.tradingreview.domain.importsession.*
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.ledger.*
-import com.refinvest.core.tradingreview.port.normalization.NormalizationDispatchLease
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset

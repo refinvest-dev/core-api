@@ -1,6 +1,19 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultDescriptor
+import com.refinvest.core.tradingreview.port.outbound.artifactgrant.ArtifactReadGrant
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationGrantUpdate
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationJobStatus
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationStatusLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationSubmission
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationAckOutcome
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationPayloadLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultDescriptor
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultLookup
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationPayloadAcknowledgement
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactLease
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactWorkspaces
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingTemporaryArtifact
 
 import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
 import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
@@ -17,16 +30,6 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
 import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
-import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactReadGrant
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationAckOutcome
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationGrantUpdate
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationJobStatus
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationPayloadAcknowledgement
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationPayloadLookup
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultLookup
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationStatusLookup
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationSubmission
-import com.refinvest.core.tradingreview.port.deletion.*
 import java.io.File
 import java.net.URI
 import java.nio.file.Files
@@ -361,7 +364,7 @@ class RestClientTradingNormalizationClientTest {
     }
 
     private fun testDescriptor(payloadId: String, byteSize: Long) =
-        com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultDescriptor(
+        com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultDescriptor(
             "job-1", "logical-1", "10000000-0000-0000-0000-000000000001", payloadId, byteSize, "a".repeat(64),
             "attempt-1", 0, "b".repeat(64), "TRADING_INPUT_SET_HASH_V1", emptyMap(),
             "TRADING_NORMALIZATION_RESULT_V1", "TRADING_NORMALIZATION_RESULT_HASH_V1",
