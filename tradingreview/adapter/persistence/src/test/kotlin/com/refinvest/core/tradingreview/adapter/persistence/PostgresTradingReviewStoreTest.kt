@@ -78,7 +78,6 @@ import com.refinvest.core.tradingreview.application.RedeemTradingArtifactGrantSe
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.application.GetTradingDeletionRequestService
 import com.refinvest.core.tradingreview.application.NormalizationInputFingerprint
-import com.refinvest.core.tradingreview.application.TradingReviewService
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
@@ -828,7 +827,7 @@ class PostgresTradingReviewStoreTest {
         val jdbc: JdbcTemplate, val store: JdbcTradingImportSessionPersistenceAdapter,
         val admission: JdbcTradingNormalizationAdmissionAdapter, val tx: TransactionTemplate,
         val current: TradingImportSession, val time: java.util.concurrent.atomic.AtomicReference<Instant>,
-        val review: TradingReviewService,
+        val review: TradingAccountBookTestServices,
     )
 
     private fun normalizationAdmissionFixture(connection: Connection): AdmissionFixture {
@@ -1432,7 +1431,7 @@ class PostgresTradingReviewStoreTest {
         }
     }
 
-    private fun accountBookFixture(connection: Connection, seedMembers: Boolean = true): Triple<TradingReviewService, TransactionTemplate, TradingReviewTestStores> {
+    private fun accountBookFixture(connection: Connection, seedMembers: Boolean = true): Triple<TradingAccountBookTestServices, TransactionTemplate, TradingReviewTestStores> {
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
         if (seedMembers) members(jdbc)
@@ -1443,7 +1442,7 @@ class PostgresTradingReviewStoreTest {
             override fun bookId() = TradingBookId(next++)
             override fun deletionId() = DeletionRequestId(next++)
         }
-        val service = TradingReviewService(object : TradingMemberProvider {
+        val service = TradingAccountBookTestServices(object : TradingMemberProvider {
             override fun currentMemberId() = MemberId(1)
         }, ids, stores, stores, stores, stores, Clock.fixed(now, ZoneOffset.UTC),
             stores.accountReader, stores.bookReader, stores.bookDeletionCascade, JdbcDeletionScopeInventory(jdbc))
@@ -2874,7 +2873,7 @@ class PostgresTradingReviewStoreTest {
             override fun deletionId() = DeletionRequestId(next++)
         }
         val clock = Clock.fixed(now, ZoneOffset.UTC)
-        val service = TradingReviewService(member, ids, store, store, store, store, clock,
+        val service = TradingAccountBookTestServices(member, ids, store, store, store, store, clock,
             store.accountReader, store.bookReader, store.bookDeletionCascade, JdbcDeletionScopeInventory(jdbc))
         val account = transactions.execute { service.execute(CreateTradingAccountCommand(TradingVenue.BINANCE, "Primary", "create-account")) }
         assertEquals(account.id, transactions.execute {
@@ -2956,7 +2955,7 @@ class PostgresTradingReviewStoreTest {
         }
         val storage = com.refinvest.core.tradingreview.adapter.storage.LocalEncryptedRawArtifactStorage(root,
             javax.crypto.spec.SecretKeySpec(ByteArray(32) { it.toByte() }, "AES"), "test-v1")
-        val service = com.refinvest.core.tradingreview.application.TradingImportService(
+        val service = TradingImportTestServices(
             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) }, ids, accountStore, accountStore, importStore, importStore,
             accountStore, accountStore, storage, object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins {
                 override fun currentJson() = "{\"versionSetHash\":\"exact\"}"
@@ -3049,7 +3048,7 @@ class PostgresTradingReviewStoreTest {
                             override fun sourceArtifactId() = TradingSourceArtifactId(nextId.getAndIncrement())
                             override fun deletionId() = DeletionRequestId(nextId.getAndIncrement())
                         }
-                        val service = com.refinvest.core.tradingreview.application.TradingImportService(
+                        val service = TradingImportTestServices(
                             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
                             ids, reviewStore, reviewStore, importStore, importStore, reviewStore, reviewStore,
                             storage, object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins {
@@ -3099,7 +3098,7 @@ class PostgresTradingReviewStoreTest {
         val storage = com.refinvest.core.tradingreview.adapter.storage.LocalEncryptedRawArtifactStorage(root,
             javax.crypto.spec.SecretKeySpec(ByteArray(32) { it.toByte() }, "AES"), "test-v1")
         val nextId = java.util.concurrent.atomic.AtomicLong(804)
-        fun service(connection: Connection): com.refinvest.core.tradingreview.application.TradingImportService {
+        fun service(connection: Connection): TradingImportTestServices {
             val source = SingleConnectionDataSource(connection, true)
             val connectionJdbc = JdbcTemplate(source)
             val reviews = TradingReviewTestStores(connectionJdbc)
@@ -3110,7 +3109,7 @@ class PostgresTradingReviewStoreTest {
                 override fun sourceArtifactId() = TradingSourceArtifactId(nextId.getAndIncrement())
                 override fun deletionId() = DeletionRequestId(nextId.getAndIncrement())
             }
-            return com.refinvest.core.tradingreview.application.TradingImportService(
+            return TradingImportTestServices(
                 object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) }, ids,
                 reviews, reviews, imports, imports, reviews, reviews, storage,
                 object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins { override fun currentJson() = "{}" },
@@ -3192,7 +3191,7 @@ class PostgresTradingReviewStoreTest {
                             override fun deletionId() = DeletionRequestId(9999L)
                         }
                         val storage = emptyStorage()
-                        val service = com.refinvest.core.tradingreview.application.TradingImportService(
+                        val service = TradingImportTestServices(
                             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
                             ids, reviews, reviews, imports, imports, reviews, reviews, storage,
                             object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins {
@@ -3258,7 +3257,7 @@ class PostgresTradingReviewStoreTest {
             override fun bookId() = error("Unused")
             override fun deletionId() = DeletionRequestId(3900L)
         }
-        val service = TradingReviewService(object : TradingMemberProvider {
+        val service = TradingAccountBookTestServices(object : TradingMemberProvider {
             override fun currentMemberId() = MemberId(1)
         }, ids, review, review, review, review, Clock.fixed(now, ZoneOffset.UTC),
             review.accountReader, review.bookReader, review.bookDeletionCascade, JdbcDeletionScopeInventory(jdbc))
