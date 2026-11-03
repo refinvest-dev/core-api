@@ -1,5 +1,8 @@
 package com.refinvest.core.tradingreview.adapter.web
 
+import com.refinvest.core.tradingreview.port.account.TradingAccountUseCase
+import com.refinvest.core.tradingreview.port.book.TradingBookUseCase
+
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId

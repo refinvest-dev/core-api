@@ -2,9 +2,9 @@ package com.refinvest.core.tradingreview.application
 
 import com.refinvest.core.tradingreview.domain.DeletionRequest
 import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
-import com.refinvest.core.tradingreview.port.RawArtifactStorage
-import com.refinvest.core.tradingreview.port.TradingAnalyticsArtifactStore
-import com.refinvest.core.tradingreview.port.TradingIdGenerator
+import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
+import com.refinvest.core.tradingreview.port.analytics.input.TradingAnalyticsArtifactStore
+import com.refinvest.core.tradingreview.port.identity.TradingIdGenerator
 import com.refinvest.core.tradingreview.port.deletion.*
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate

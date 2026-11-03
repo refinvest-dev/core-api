@@ -1,6 +1,7 @@
-package com.refinvest.core.tradingreview.port
+package com.refinvest.core.tradingreview.port.normalization
 
-/** Shared database fence. Admission/publication checks retain a lock until their transaction ends. */
+
+
 interface TradingNormalizationTransitionGate {
     fun requireAdmission()
     fun publicationAllowed(): Boolean

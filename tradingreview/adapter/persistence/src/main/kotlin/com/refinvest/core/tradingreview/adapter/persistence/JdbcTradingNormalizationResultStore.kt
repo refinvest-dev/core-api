@@ -1,5 +1,11 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.normalization.result.NormalizationPayloadAcknowledgement
+import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultDescriptor
+import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultStoreFailure
+import com.refinvest.core.tradingreview.port.normalization.result.NormalizationStagedItem
+import com.refinvest.core.tradingreview.port.normalization.result.TradingNormalizationResultStore
+
 import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
 import com.refinvest.core.tradingreview.domain.valueobject.NormalizationDispatchStatus
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch

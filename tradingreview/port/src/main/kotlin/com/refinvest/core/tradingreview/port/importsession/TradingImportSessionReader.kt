@@ -3,7 +3,7 @@ package com.refinvest.core.tradingreview.port.importsession
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.TradingImportSession
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.TradingPage
+import com.refinvest.core.tradingreview.port.pagination.TradingPage
 
 interface TradingImportSessionReader {
     fun find(id: TradingImportSessionId, owner: MemberId): TradingImportSession?

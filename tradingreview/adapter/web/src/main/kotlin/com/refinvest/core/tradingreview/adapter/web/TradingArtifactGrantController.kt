@@ -1,6 +1,6 @@
 package com.refinvest.core.tradingreview.adapter.web
 
-import com.refinvest.core.tradingreview.port.ArtifactReadGrantRedeemer
+import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactReadGrantRedeemer
 import org.springframework.core.io.InputStreamResource
 import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseEntity

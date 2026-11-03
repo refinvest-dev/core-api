@@ -1,6 +1,6 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.RawArtifactStorage
+import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
 import com.refinvest.core.tradingreview.port.importsession.CleanupTradingRawOrphansUseCase
 import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactReader
 import java.time.Clock

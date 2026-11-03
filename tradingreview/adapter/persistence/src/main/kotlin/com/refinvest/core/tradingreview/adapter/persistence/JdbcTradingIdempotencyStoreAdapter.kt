@@ -1,5 +1,8 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.idempotency.IdempotencyClaim
+import com.refinvest.core.tradingreview.port.idempotency.TradingIdempotencyStore
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.*

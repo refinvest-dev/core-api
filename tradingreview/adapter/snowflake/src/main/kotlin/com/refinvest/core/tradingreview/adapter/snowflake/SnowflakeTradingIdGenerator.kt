@@ -7,7 +7,7 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
-import com.refinvest.core.tradingreview.port.TradingIdGenerator
+import com.refinvest.core.tradingreview.port.identity.TradingIdGenerator
 import org.springframework.stereotype.Component
 
 @Component

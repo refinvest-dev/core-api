@@ -1,8 +1,8 @@
 package com.refinvest.core.tradingreview.application
 
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
-import com.refinvest.core.tradingreview.port.NormalizationStagedItem
-import com.refinvest.core.tradingreview.port.TradingNormalizationResultStore
+import com.refinvest.core.tradingreview.port.normalization.result.NormalizationStagedItem
+import com.refinvest.core.tradingreview.port.normalization.result.TradingNormalizationResultStore
 import tools.jackson.databind.ObjectMapper
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest

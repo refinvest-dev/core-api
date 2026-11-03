@@ -1,8 +1,8 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.RawArtifactStorage
-import com.refinvest.core.tradingreview.port.StagedRawArtifact
+import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
+import com.refinvest.core.tradingreview.port.artifactstorage.StagedRawArtifact
 import com.refinvest.core.tradingreview.port.TradingFailure
 import com.refinvest.core.tradingreview.port.TradingFailureKind
 import com.refinvest.core.tradingreview.port.deletion.*
