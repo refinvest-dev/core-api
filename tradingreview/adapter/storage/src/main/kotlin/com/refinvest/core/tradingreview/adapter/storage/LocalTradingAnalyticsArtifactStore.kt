@@ -1,8 +1,8 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
 import com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionId
-import com.refinvest.core.tradingreview.port.AnalyticsInputArtifact
-import com.refinvest.core.tradingreview.port.TradingAnalyticsArtifactStore
+import com.refinvest.core.tradingreview.port.analytics.input.AnalyticsInputArtifact
+import com.refinvest.core.tradingreview.port.analytics.input.TradingAnalyticsArtifactStore
 import com.refinvest.core.tradingreview.port.TradingFailure
 import com.refinvest.core.tradingreview.port.TradingFailureKind
 import com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope

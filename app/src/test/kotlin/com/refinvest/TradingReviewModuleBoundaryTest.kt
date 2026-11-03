@@ -14,9 +14,13 @@ class TradingReviewModuleBoundaryTest {
         val web = imports(root.resolve("tradingreview/adapter/web/src/main/kotlin"))
         assertTrue(domain.none { it.startsWith("org.springframework") || it.startsWith("jakarta.persistence") ||
             it.startsWith("jakarta.servlet") || it.contains(".adapter.") || it.contains(".backtest.") })
-        assertTrue(application.none { it.contains(".adapter.") || it.startsWith("jakarta.persistence") ||
-            it.startsWith("jakarta.servlet") || it.contains(".backtest.") || it.contains(".compute.") })
-        assertTrue(web.none { it.contains(".persistence.") || it.contains(".backtest.") || it.contains(".compute.") })
+        val forbiddenApplication = application.filter { it.contains(".adapter.") || it.startsWith("jakarta.persistence") ||
+            it.startsWith("jakarta.servlet") || it.contains(".backtest.") ||
+            (it.contains(".compute.") && !it.startsWith("com.refinvest.core.tradingreview.port.normalization.compute.")) }
+        assertTrue(forbiddenApplication.isEmpty(), "Forbidden application imports: $forbiddenApplication")
+        val forbiddenWeb = web.filter { it.contains(".persistence.") || it.contains(".backtest.") ||
+            it.contains(".compute.") }
+        assertTrue(forbiddenWeb.isEmpty(), "Forbidden web imports: $forbiddenWeb")
     }
 
     private fun workspaceRoot(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }

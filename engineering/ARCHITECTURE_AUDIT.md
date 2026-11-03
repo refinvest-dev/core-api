@@ -63,10 +63,11 @@ R01~R18의 기존 수정은 아래 검증 경로와 대조한다. 이 표는 새
 | ID | 근거 | 판단과 후속 작업 |
 |---|---|---|
 | R19 | `auth/adapter/web/.../AuthController.kt`, web `SecurityConfiguration`과 security `JwtConfiguration` | 6c-2/[PR #109](https://github.com/refinvest-dev/core-api/pull/109)에서 raw credential을 inbound로 받고 application이 parser를 호출한다. 검증된 요청만 DB transaction에 진입하며 HTTP helper는 web이 소유한다. Web의 업무 의존성은 inbound port이며 security adapter 구현체와 직접 의존하지 않는다. 최신 회귀 검증은 PR 참조. |
-| R20 | `tradingreview/port/.../TradingReviewPorts.kt`, `TradingImportPorts.kt` | Account/Book/Import의 inbound 계약과 idempotency·storage 등 outbound capability 및 모델이 같은 파일에 혼재한다. Web DTO로 변환하므로 Aggregate 자체를 HTTP 응답으로 직렬화하는 문제와는 구분한다. 기능별 Command/Query/Result와 inbound/outbound 계약 파일을 나누는 후속 PR이 필요하다. |
+| R20 | `tradingreview/port/.../account`, `book`, `importsession`, `normalization` | 6c-3/[PR #110](https://github.com/refinvest-dev/core-api/pull/110)에서 기능별 CQR/inbound 16개와 capability별 계약 파일로 분리했다. 결과 그래프는 Aggregate/Entity와 storage key를 노출하지 않으며 HTTP DTO는 port 결과에서 변환한다. Store/Reader와 원자적 capability는 유지한다. 최종 전체 검증과 리뷰 상태는 PR 참조. |
 
-6c-1은 전체 검증의 누락과 위 classpath 노출을 보완했다. 6c-2에서 R19 구현을 마쳤으며 PR 리뷰 후
-6c-3의 R20 Trading Review port 구성을 정리한다. R20을 남긴 채 6c 전체를 완료로 표시하지 않는다.
+6c-1은 전체 검증의 누락과 위 classpath 노출을 보완했다. 6c-2의 R19는 #109로 머지됐다.
+6c-3은 R20 코드 정리와 전체 회귀 검증을 마쳤으며 #110 리뷰·머지를 기다린다. 이번 점검에서 추가로
+식별한 R19/R20의 구현 완료와 아래 운영 제약 해소를 구분한다.
 정본에만 있는 향후 AnalysisRun/Reprocessing 기능의 미구현은 이번 리팩토링에서 새 기능으로 구현하지 않는다.
 
 ## Operational Constraints
@@ -103,3 +104,12 @@ R01~R18의 기존 수정은 아래 검증 경로와 대조한다. 이 표는 새
   [PR #109](https://github.com/refinvest-dev/core-api/pull/109)에서 확인한다. 설정 키·claim·wire 의미와 계산
   결정론은 바꾸지 않는다. 로컬 소켓 오류와 테스트 설정 가정 수정은 통과 결과와 구분한다.
 - Credential·fixture·임시 init script와 실행 증적은 커밋하지 않는다.
+- 6c-3은 로컬 port/application/web/persistence/app 경계 137개가 통과했으며 PostgreSQL Trading Review
+  70개를 포함한다. 정상 outbound compute port를 구현체로 오인한 경계 검사 실패 후 허용 범위를 해당
+  port로 한정하고 다시 통과했다. 결과 그래프·단일 CQR 입력, 원본 만료 정각과 role projection을 검증한다.
+  `537d25e`의 [Core CI](https://github.com/refinvest-dev/core-api/actions/runs/41605083219)는 30개 모듈·514개 테스트,
+  실제 PostgreSQL 10개 suite·144개와 실행 JAR·결과 gate를 통과했다. 실패·오류·skip은 0개다.
+  [계약 CI](https://github.com/refinvest-dev/integration/actions/runs/41605084847)와 [API/Web·전체 Trading 후보 CI](https://github.com/refinvest-dev/integration/actions/runs/41605088749)도
+  같은 Core 코드에서 통과했다. API smoke·브라우저 11개와 전체 Trading raw-policy/schema fixture를
+  포함하며 고정 ref는 실행 계획의 6c-3 기록을 따른다. 업무 API/schema/hash·ID와 계산 결정론 변경은 없다.
+  문서 후속 커밋을 포함한 최신 head 검사는 #110에서 확인한다.

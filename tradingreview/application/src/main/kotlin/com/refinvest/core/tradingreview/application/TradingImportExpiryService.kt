@@ -2,7 +2,7 @@ package com.refinvest.core.tradingreview.application
 
 import com.refinvest.core.tradingreview.domain.DeletionRequest
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.TradingIdGenerator
+import com.refinvest.core.tradingreview.port.identity.TradingIdGenerator
 import com.refinvest.core.tradingreview.port.account.TradingAccountStore
 import com.refinvest.core.tradingreview.port.book.TradingBookStore
 import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore

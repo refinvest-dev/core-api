@@ -1,5 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.pagination.TradingPage
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.TradingImportSession
 import com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact

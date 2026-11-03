@@ -1,7 +1,27 @@
 package com.refinvest.core.tradingreview.adapter.web
 
+import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactResult
+import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
+import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactUseCase
+import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionQuery
+import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsQuery
+import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsUseCase
+import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactCommand
+import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactUseCase
+import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionUseCase
+
+import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionView
+import com.refinvest.core.tradingreview.port.importsession.upload.TradingUploadMetadata
+
 import com.refinvest.core.tradingreview.domain.*
-import com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
 import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
@@ -16,7 +36,6 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import java.io.IOException
-import java.time.Clock
 import java.time.Instant
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -40,10 +59,10 @@ data class TradingSourceArtifactResponse(
     val coverage: Any?, val rawExpiresAt: Instant, val uploadedAt: Instant, val deletedAt: Instant?,
 ) {
     companion object {
-        fun from(a: TradingSourceArtifact, now: Instant) = TradingSourceArtifactResponse(
+        fun from(a: TradingSourceArtifactResult) = TradingSourceArtifactResponse(
             a.id.value.toString(), a.sessionId.value.toString(), a.role, a.filename, a.contentType,
             a.byteSize, a.sha256, a.dialectCandidate, null, null, "UPLOADED", a.retentionStatus,
-            a.rawReparseAvailable(now), null, a.rawExpiresAt, a.uploadedAt, a.deletedAt)
+            a.rawReparseAvailable, null, a.rawExpiresAt, a.uploadedAt, a.deletedAt)
     }
 }
 
@@ -59,11 +78,10 @@ data class TradingImportSessionResponse(
     val qualitySummary: JsonNode? = null, val createdLedgerRevisionId: String? = null,
 ) {
     companion object {
-        fun from(view: TradingImportSessionView, now: Instant, mapper: ObjectMapper): TradingImportSessionResponse {
+        fun from(view: TradingImportSessionView, mapper: ObjectMapper): TradingImportSessionResponse {
             val session = view.session
-            val uploaded = view.artifacts.filter { it.retentionStatus == TradingArtifactRetentionStatus.ACTIVE }
-                .map { it.role }.sortedBy { it.name }
-            val missing = session.missingArtifactRoles(view.artifacts).sortedBy { it.name }
+            val uploaded = session.uploadedArtifactRoles
+            val missing = session.missingArtifactRoles
             val published = view.published
             val qualitySummary = published?.let {
                 val report = mapper.readValue(it.qualityReportJson, Map::class.java)
@@ -73,11 +91,11 @@ data class TradingImportSessionResponse(
             }
             return TradingImportSessionResponse(session.id.value.toString(), session.bookId.value.toString(),
                 session.sourceTimezone, session.reviewTimezone, session.declaredPositionMode, session.status,
-                view.artifacts.map { TradingSourceArtifactResponse.from(it, now) }, session.dataPolicyVersion,
+                view.artifacts.map { TradingSourceArtifactResponse.from(it) }, session.dataPolicyVersion,
                 session.retentionPolicy, session.maskingPolicyVersion, session.evidenceRetention,
                 session.deletionPolicyVersion, mapper.readTree(session.versionSetJson), session.createdAt,
                 session.validationStartedAt,
-                uploaded, missing, session.canValidate(view.artifacts), session.failure?.let(TradingImportFailureResponse::from),
+                uploaded, missing, session.canValidate, session.failure?.let(TradingImportFailureResponse::from),
                 published?.publishedAt ?: session.failure?.occurredAt,
                 qualitySummary, published?.revisionId)
         }
@@ -94,35 +112,42 @@ data class TradingImportFailureResponse(val code: String, val retryable: Boolean
 
 @RestController
 @RequestMapping("/trading-books/{tradingBookId}/imports")
-class TradingBookImportController(private val imports: TradingImportUseCase, private val mapper: ObjectMapper,
-                                  private val clock: Clock) {
+class TradingBookImportController(
+    private val createImport: CreateTradingImportSessionUseCase,
+    private val getImport: GetTradingImportSessionUseCase,
+    private val listImports: ListTradingImportsUseCase,
+    private val mapper: ObjectMapper,
+) {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun create(@PathVariable tradingBookId: Long, @RequestHeader("Idempotency-Key") key: String,
                @Valid @RequestBody request: CreateTradingImportSessionRequest): TradingImportSessionResponse {
-        val session = imports.create(TradingBookId(tradingBookId), request.sourceTimezone, request.reviewTimezone,
-            request.declaredPositionMode, request.dataPolicyVersion, request.clientRequestReference, key)
-        return TradingImportSessionResponse.from(imports.get(session.id), clock.instant(), mapper)
+        val session = createImport.execute(CreateTradingImportSessionCommand(TradingBookId(tradingBookId), request.sourceTimezone, request.reviewTimezone, request.declaredPositionMode, request.dataPolicyVersion, request.clientRequestReference, key))
+        return TradingImportSessionResponse.from(getImport.execute(GetTradingImportSessionQuery(session.id)), mapper)
     }
 
     @GetMapping
     fun list(@PathVariable tradingBookId: Long, @RequestParam(defaultValue = "0") page: Int,
              @RequestParam(defaultValue = "20") size: Int): TradingPageResponse<TradingImportSessionResponse> {
-        val result = imports.list(TradingBookId(tradingBookId), page, size)
-        return TradingPageResponse(result.items.map { TradingImportSessionResponse.from(it, clock.instant(), mapper) },
+        val result = listImports.execute(ListTradingImportsQuery(TradingBookId(tradingBookId), page, size))
+        return TradingPageResponse(result.items.map { TradingImportSessionResponse.from(it, mapper) },
             result.page, result.size, result.total)
     }
 }
 
 @RestController
 @RequestMapping("/trading-import-sessions")
-class TradingImportSessionController(private val imports: TradingImportUseCase,
-                                     private val normalization: TradingNormalizationUseCase,
-                                     private val mapper: ObjectMapper,
-                                     private val clock: Clock) {
+class TradingImportSessionController(
+    private val getImport: GetTradingImportSessionUseCase,
+    private val validateImport: ValidateTradingImportSessionUseCase,
+    private val retryImport: RetryTradingImportSessionUseCase,
+    private val deleteImport: DeleteTradingImportSessionUseCase,
+    private val uploadArtifact: UploadTradingImportArtifactUseCase,
+    private val mapper: ObjectMapper,
+) {
     @GetMapping("/{importSessionId}")
     fun get(@PathVariable importSessionId: Long) = TradingImportSessionResponse.from(
-        imports.get(TradingImportSessionId(importSessionId)), clock.instant(), mapper)
+        getImport.execute(GetTradingImportSessionQuery(TradingImportSessionId(importSessionId))), mapper)
 
     @PostMapping("/{importSessionId}/validation")
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -131,25 +156,22 @@ class TradingImportSessionController(private val imports: TradingImportUseCase,
         if (!request.isObject || request.size() > 1 ||
             (request.size() == 1 && !request.has("targetVersionSet")))
             throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
-        normalization.validate(TradingImportSessionId(importSessionId),
-            request.path("targetVersionSet").takeIf { !it.isMissingNode && !it.isNull }?.toString(), key)
-        return TradingImportSessionResponse.from(imports.get(TradingImportSessionId(importSessionId)),
-            clock.instant(), mapper)
+        validateImport.execute(ValidateTradingImportSessionCommand(TradingImportSessionId(importSessionId), request.path("targetVersionSet").takeIf { !it.isMissingNode && !it.isNull }?.toString(), key))
+        return TradingImportSessionResponse.from(getImport.execute(GetTradingImportSessionQuery(TradingImportSessionId(importSessionId))), mapper)
     }
 
     @PostMapping("/{importSessionId}/retry")
     @ResponseStatus(HttpStatus.ACCEPTED)
     fun retry(@PathVariable importSessionId: Long, @RequestHeader("Idempotency-Key") key: String):
         TradingImportSessionResponse {
-        normalization.retry(TradingImportSessionId(importSessionId), key)
-        return TradingImportSessionResponse.from(imports.get(TradingImportSessionId(importSessionId)),
-            clock.instant(), mapper)
+        retryImport.execute(RetryTradingImportSessionCommand(TradingImportSessionId(importSessionId), key))
+        return TradingImportSessionResponse.from(getImport.execute(GetTradingImportSessionQuery(TradingImportSessionId(importSessionId))), mapper)
     }
 
     @DeleteMapping("/{importSessionId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
     fun delete(@PathVariable importSessionId: Long, @RequestHeader("Idempotency-Key") key: String) =
-        TradingDeletionResponse.from(imports.delete(TradingImportSessionId(importSessionId), key))
+        TradingDeletionResponse.from(deleteImport.execute(DeleteTradingImportSessionCommand(TradingImportSessionId(importSessionId), key)))
 
     @PostMapping("/{importSessionId}/artifacts", consumes = ["multipart/form-data"])
     fun upload(@PathVariable importSessionId: Long, @RequestHeader("Idempotency-Key") key: String,
@@ -163,16 +185,16 @@ class TradingImportSessionController(private val imports: TradingImportUseCase,
                 reader.nextPart() ?: throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
             } else first
             if (file.name != "file") throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
-            val result = imports.uploadDeferred(TradingImportSessionId(importSessionId), file.body, key) {
+            val result = uploadArtifact.execute(UploadTradingImportArtifactCommand(TradingImportSessionId(importSessionId), file.body, key, metadata = {
                 val parsed = metadata ?: (reader.nextPart() ?: throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST))
                     .let(::readMetadata)
                 if (reader.nextPart() != null) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
                 if (file.contentType?.substringBefore(';') != parsed.contentType)
                     throw TradingFailure("UNSUPPORTED_MEDIA_TYPE", TradingFailureKind.UNSUPPORTED_MEDIA)
                 parsed
-            }
+            }))
             return ResponseEntity.status(if (result.created) HttpStatus.CREATED else HttpStatus.OK)
-                .body(TradingSourceArtifactResponse.from(result.artifact, clock.instant()))
+                .body(TradingSourceArtifactResponse.from(result.artifact))
         } catch (failure: TradingFailure) { throw failure }
           catch (_: IOException) { throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST) }
           catch (_: IllegalArgumentException) { throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST) }
@@ -207,9 +229,11 @@ class TradingImportSessionController(private val imports: TradingImportUseCase,
 
 @RestController
 @RequestMapping("/trading-source-artifacts")
-class TradingSourceArtifactController(private val imports: TradingImportUseCase) {
+class TradingSourceArtifactController(
+    private val deleteArtifact: DeleteTradingSourceArtifactUseCase,
+) {
     @DeleteMapping("/{artifactId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
     fun delete(@PathVariable artifactId: Long, @RequestHeader("Idempotency-Key") key: String) =
-        TradingDeletionResponse.from(imports.deleteArtifact(TradingSourceArtifactId(artifactId), key))
+        TradingDeletionResponse.from(deleteArtifact.execute(DeleteTradingSourceArtifactCommand(TradingSourceArtifactId(artifactId), key)))
 }

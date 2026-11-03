@@ -1,5 +1,30 @@
 package com.refinvest.core.tradingreview.adapter.web
 
+import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionResult
+import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactResult
+import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
+import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactUseCase
+import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionQuery
+import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsQuery
+import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsUseCase
+import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactCommand
+import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactUseCase
+import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionUseCase
+
+import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionView
+import com.refinvest.core.tradingreview.port.importsession.upload.TradingUploadMetadata
+import com.refinvest.core.tradingreview.port.importsession.upload.UploadArtifactResult
+import com.refinvest.core.tradingreview.port.ledger.PublishedLedgerSummary
+import com.refinvest.core.tradingreview.port.pagination.TradingPage
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact
@@ -41,20 +66,16 @@ class TradingImportControllerTest {
     private val deletion = TradingDeletion(90, MemberId(30), "TRADING_IMPORT_SESSION", 10,
         "IMPORT_SESSION_SUBTREE", "REQUESTED", 1, 0, 0, now, now, now, now.plusSeconds(86400),
         importSessionCount = 1, artifactCount = 2)
-    private val imports = object : TradingImportUseCase {
-        override fun create(bookId: TradingBookId, sourceTimezone: String, reviewTimezone: String,
-                            mode: TradingPositionMode, dataPolicyVersion: String?, clientRequestReference: String?,
-                            key: String) = session
-        override fun get(id: TradingImportSessionId) = TradingImportSessionView(currentSession, artifacts.toList(), published)
-        override fun list(bookId: TradingBookId, page: Int, size: Int) = TradingPage(listOf(get(session.id)), page, size, 1)
-        override fun upload(id: TradingImportSessionId, role: TradingArtifactRole, filename: String,
-                            contentType: String, declaredSize: Long, declaredSha256: String,
-                            dialectCandidate: String, source: InputStream, key: String) =
-            uploadDeferred(id, source, key) {
-                TradingUploadMetadata(role, filename, contentType, declaredSize, declaredSha256, dialectCandidate)
-            }
-        override fun uploadDeferred(id: TradingImportSessionId, source: InputStream, key: String,
-                                    metadata: () -> TradingUploadMetadata): UploadArtifactResult {
+    private val imports = object : CreateTradingImportSessionUseCase, GetTradingImportSessionUseCase, ListTradingImportsUseCase,
+        UploadTradingImportArtifactUseCase, DeleteTradingImportSessionUseCase, DeleteTradingSourceArtifactUseCase {
+        override fun execute(command: CreateTradingImportSessionCommand) = TradingImportSessionResult.fromDomain(session)
+        override fun execute(query: GetTradingImportSessionQuery) = TradingImportSessionView.fromDomain(currentSession, artifacts.toList(), published, now)
+        override fun execute(query: ListTradingImportsQuery) = TradingPage(listOf(execute(GetTradingImportSessionQuery(session.id))), query.page, query.size, 1)
+        override fun execute(command: UploadTradingImportArtifactCommand): UploadArtifactResult {
+            val id = command.id
+            val source = command.source
+            val metadata = command.metadata
+
             val bytes = source.readAllBytes()
             val value = metadata()
             assertEquals(10L, id.value)
@@ -65,17 +86,18 @@ class TradingImportControllerTest {
                 "objects/00000000-0000-0000-0000-000000000040", byteArrayOf(1), "test-v1",
                 TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(86400), null, null, 0)
             artifacts.add(artifact)
-            return UploadArtifactResult(artifact, true)
-        }
-        override fun delete(id: TradingImportSessionId, key: String) = deletion
-        override fun deleteArtifact(id: TradingSourceArtifactId, key: String) = deletion
+            return UploadArtifactResult(TradingSourceArtifactResult.fromDomain(artifact, now), true)
+                }
+        override fun execute(command: DeleteTradingImportSessionCommand) = deletion
+        override fun execute(command: DeleteTradingSourceArtifactCommand) = deletion
+    }
+    private val normalization = object : ValidateTradingImportSessionUseCase, RetryTradingImportSessionUseCase {
+        override fun execute(command: ValidateTradingImportSessionCommand) = TradingImportSessionResult.fromDomain(session)
+        override fun execute(command: RetryTradingImportSessionCommand) = TradingImportSessionResult.fromDomain(session)
     }
     private val mvc = MockMvcBuilders.standaloneSetup(
-        TradingBookImportController(imports, mapper, Clock.fixed(now, ZoneOffset.UTC)),
-        TradingImportSessionController(imports, object : TradingNormalizationUseCase {
-            override fun validate(id: TradingImportSessionId, targetVersionSetJson: String?, key: String) = session
-            override fun retry(id: TradingImportSessionId, key: String) = session
-        }, mapper, Clock.fixed(now, ZoneOffset.UTC)),
+        TradingBookImportController(imports, imports, imports, mapper),
+        TradingImportSessionController(imports, normalization, normalization, imports, imports, mapper),
         TradingSourceArtifactController(imports),
     ).setControllerAdvice(TradingReviewExceptionHandler()).build()
 

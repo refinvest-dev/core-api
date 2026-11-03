@@ -1,5 +1,9 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.ledger.TradingLedgerPublicationReader
+import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultDescriptor
+import com.refinvest.core.tradingreview.port.normalization.result.TradingNormalizationResultStore
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.LedgerRevision
 import com.refinvest.core.tradingreview.domain.importsession.*

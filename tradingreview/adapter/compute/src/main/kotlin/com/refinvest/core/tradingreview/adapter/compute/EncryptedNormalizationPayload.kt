@@ -1,6 +1,6 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import com.refinvest.core.tradingreview.port.NormalizationPayloadFile
+import com.refinvest.core.tradingreview.port.normalization.result.NormalizationPayloadFile
 import com.refinvest.core.tradingreview.port.deletion.TradingArtifactLease
 import com.refinvest.core.tradingreview.port.deletion.TradingTemporaryArtifact
 import java.io.FilterInputStream

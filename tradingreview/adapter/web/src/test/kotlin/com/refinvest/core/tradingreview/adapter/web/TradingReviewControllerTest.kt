@@ -1,5 +1,26 @@
 package com.refinvest.core.tradingreview.adapter.web
 
+import com.refinvest.core.tradingreview.port.account.TradingAccountResult
+import com.refinvest.core.tradingreview.port.account.create.CreateTradingAccountCommand
+import com.refinvest.core.tradingreview.port.account.create.CreateTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.account.delete.DeleteTradingAccountCommand
+import com.refinvest.core.tradingreview.port.account.delete.DeleteTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.account.get.GetTradingAccountQuery
+import com.refinvest.core.tradingreview.port.account.get.GetTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.account.list.ListTradingAccountsQuery
+import com.refinvest.core.tradingreview.port.account.list.ListTradingAccountsUseCase
+import com.refinvest.core.tradingreview.port.book.TradingBookResult
+import com.refinvest.core.tradingreview.port.book.create.CreateTradingBookCommand
+import com.refinvest.core.tradingreview.port.book.create.CreateTradingBookUseCase
+import com.refinvest.core.tradingreview.port.book.delete.DeleteTradingBookCommand
+import com.refinvest.core.tradingreview.port.book.delete.DeleteTradingBookUseCase
+import com.refinvest.core.tradingreview.port.book.get.GetTradingBookQuery
+import com.refinvest.core.tradingreview.port.book.get.GetTradingBookUseCase
+import com.refinvest.core.tradingreview.port.book.list.ListTradingBooksQuery
+import com.refinvest.core.tradingreview.port.book.list.ListTradingBooksUseCase
+
+import com.refinvest.core.tradingreview.port.pagination.TradingPage
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.*
@@ -30,22 +51,20 @@ class TradingReviewControllerTest {
     private val deletion = TradingDeletion(13, MemberId(1), "TRADING_BOOK", 12, "BOOK_SUBTREE", "REQUESTED",
         1, 0, 1, now, now, now, now.plusSeconds(30L * 24 * 3600))
 
-    private val accounts = object : TradingAccountUseCase {
-        override fun create(venue: TradingVenue, displayName: String, key: String) = account
-        override fun get(id: TradingAccountId) = account
-        override fun list(page: Int, size: Int) = TradingPage(listOf(account), page, size, 1)
-        override fun delete(id: TradingAccountId, key: String) = deletion
+    private val accounts = object : CreateTradingAccountUseCase, GetTradingAccountUseCase, ListTradingAccountsUseCase, DeleteTradingAccountUseCase {
+        override fun execute(command: CreateTradingAccountCommand) = TradingAccountResult.fromDomain(account)
+        override fun execute(query: GetTradingAccountQuery) = TradingAccountResult.fromDomain(account)
+        override fun execute(query: ListTradingAccountsQuery) = TradingPage(listOf(TradingAccountResult.fromDomain(account)), query.page, query.size, 1)
+        override fun execute(command: DeleteTradingAccountCommand) = deletion
     }
-    private val books = object : TradingBookUseCase {
-        override fun create(accountId: TradingAccountId, displayName: String, productFamily: TradingProductFamily,
-                            positionMode: TradingPositionMode, settlementAsset: TradingSettlementAsset,
-                            reviewTimezone: String, key: String) = book
-        override fun get(id: TradingBookId) = book
-        override fun list(accountId: TradingAccountId, page: Int, size: Int) = TradingPage(listOf(book), page, size, 1)
-        override fun delete(id: TradingBookId, key: String) = deletion
+    private val books = object : CreateTradingBookUseCase, GetTradingBookUseCase, ListTradingBooksUseCase, DeleteTradingBookUseCase {
+        override fun execute(command: CreateTradingBookCommand) = TradingBookResult.fromDomain(book)
+        override fun execute(query: GetTradingBookQuery) = TradingBookResult.fromDomain(book)
+        override fun execute(query: ListTradingBooksQuery) = TradingPage(listOf(TradingBookResult.fromDomain(book)), query.page, query.size, 1)
+        override fun execute(command: DeleteTradingBookCommand) = deletion
     }
     private val mvc = MockMvcBuilders.standaloneSetup(
-        TradingAccountController(accounts, books), TradingBookController(books),
+        TradingAccountController(accounts, accounts, accounts, accounts, books, books), TradingBookController(books, books),
         TradingDeletionController(object : GetTradingDeletionRequestUseCase { override fun get(id: Long) = deletion }),
     ).setControllerAdvice(TradingReviewExceptionHandler()).build()
 

@@ -1,5 +1,11 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactAccessGrantIssuer
+import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactReadGrant
+import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactReadGrantRedeemer
+import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactRedemption
+import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
+
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId

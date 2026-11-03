@@ -2,7 +2,7 @@ package com.refinvest.core.tradingreview.adapter.persistence
 
 import com.refinvest.core.tradingreview.port.TradingFailure
 import com.refinvest.core.tradingreview.port.TradingFailureKind
-import com.refinvest.core.tradingreview.port.TradingNormalizationTransitionGate
+import com.refinvest.core.tradingreview.port.normalization.TradingNormalizationTransitionGate
 import java.util.concurrent.Semaphore
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.JdbcTemplate

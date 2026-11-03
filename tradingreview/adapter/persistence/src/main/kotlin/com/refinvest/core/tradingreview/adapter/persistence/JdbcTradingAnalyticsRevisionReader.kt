@@ -1,7 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.AnalyticsRevisionSource
-import com.refinvest.core.tradingreview.port.TradingAnalyticsRevisionReader
+import com.refinvest.core.tradingreview.port.analytics.input.AnalyticsRevisionSource
+import com.refinvest.core.tradingreview.port.analytics.input.TradingAnalyticsRevisionReader
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.PreparedStatementCreator
 import org.springframework.jdbc.core.RowCallbackHandler

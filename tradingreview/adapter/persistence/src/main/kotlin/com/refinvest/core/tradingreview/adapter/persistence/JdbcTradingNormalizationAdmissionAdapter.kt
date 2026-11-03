@@ -3,7 +3,7 @@ package com.refinvest.core.tradingreview.adapter.persistence
 import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
 import com.refinvest.core.tradingreview.domain.importsession.*
 import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
-import com.refinvest.core.tradingreview.port.TradingNormalizationTransitionGate
+import com.refinvest.core.tradingreview.port.normalization.TradingNormalizationTransitionGate
 import com.refinvest.core.tradingreview.port.normalization.*
 import java.sql.Timestamp
 import java.time.Clock
