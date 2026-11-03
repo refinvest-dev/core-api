@@ -47,3 +47,6 @@ DB migration이나 기존 ID 변환은 없다. Rollback에서도 명시적 node 
 실행 설정을 읽는 기동 검증은 node ID 누락·잘못된 값·양 끝 경계를 검사한다. 동일 millisecond의 두 node가
 생성한 512개 ID의 비중복, 공개 health의 정상/장애 신호와 상세 차단, 개발 metrics 인가도 검증한다.
 실제 JAR와 후보 CI 결과는 작업 계획 및 연결 PR에 기록하며 credential·로컬 증적은 커밋하지 않는다.
+
+Core #107과 Integration #49/#50은 main에 반영됐다. 머지 후 main 조합 검증과 대상 운영 환경에서
+별도로 필요한 node 배정·시계·노출 설정 증거는 [Refactoring Handoff](REFACTORING_HANDOFF.md)에서 확인한다.

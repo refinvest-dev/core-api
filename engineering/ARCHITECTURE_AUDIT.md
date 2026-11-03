@@ -2,10 +2,12 @@
 
 ## Scope
 
-2026-11-03 기준 Core `7ff4dbf` 이후 6c 점검이다. ADR-018, ADR-019~020과 로컬 AGENTS 규칙을 기준으로
-Gradle 46개 모듈의 production Kotlin 550개 파일을 목록화하고 계층 의존성, Aggregate 저장/복원,
+최초 6c-1 점검은 Core `7ff4dbf` 이후 상태를 대상으로 했다. ADR-018, ADR-019~020과 로컬 AGENTS 규칙을 기준으로
+당시 Gradle 46개 모듈의 production Kotlin 550개 파일을 목록화하고 계층 의존성, Aggregate 저장/복원,
 검증 진입점을 대조했다. 파일 목록화와 자동 경계 검사는 모든 업무 불변식의 수학적 증명을 뜻하지 않는다.
 제품 계약과 향후 미구현 Use Case를 새로 정의하지 않는다.
+6c-2/3 후속 변경은 Core #109/#110으로 머지됐으며 최종 main 조합은
+[Refactoring Handoff](REFACTORING_HANDOFF.md)에서 별도로 기록한다.
 
 ## Aggregate and Persistence
 
@@ -41,7 +43,7 @@ production adapter가 application 구현을 참조하거나 test가 다른 featu
 기존 feature별 source 검사에 Asset·공통 계층과 전체 persistence Mapper 검사를 추가했다.
 Source 정규식 검사는 정적 참조 검사이며 reflection·동적 로딩까지 보장하지 않는다.
 
-## Remaining Structure Work
+## Findings and Regression Coverage
 
 R01~R18의 기존 수정은 아래 검증 경로와 대조한다. 이 표는 새 기능의 구현 완료 선언이 아니다.
 
@@ -57,7 +59,7 @@ R01~R18의 기존 수정은 아래 검증 경로와 대조한다. 이 표는 새
 | R13 | web 실패 DTO와 checkpoint 기반 삭제 Reader, `PostgresTradingReviewStoreTest` 및 app HTTP 회귀 |
 | R14 | V1~V21와 Hibernate validate, `CoreSchemaMigrationTest`·기존 Flyway/refresh fence migration 회귀 |
 | R15 | 공개 health·명시적 node ID와 서로 다른 node ID 비중복, `OperationsConfigurationTest`, health/metrics 및 Snowflake 테스트 |
-| R16 | 전체 46개 모듈 coverage·실제 classpath, 29개 모듈의 실행 리포트 gate와 Core 자체 CI |
+| R16 | 전체 46개 모듈 coverage·실제 classpath와 Core 자체 CI, 실행 리포트 gate는 6c-1의 29개에서 6c-3의 30개 테스트 모듈로 확대 |
 | R17/R18 | 정책 시계·late publication 차단과 요청 시점 삭제 count, `PostgresTradingReviewStoreTest` 및 선행 전체 Trading 후보 CI |
 
 | ID | 근거 | 판단과 후속 작업 |
@@ -66,7 +68,7 @@ R01~R18의 기존 수정은 아래 검증 경로와 대조한다. 이 표는 새
 | R20 | `tradingreview/port/.../account`, `book`, `importsession`, `normalization` | 6c-3/[PR #110](https://github.com/refinvest-dev/core-api/pull/110)에서 기능별 CQR/inbound 16개와 capability별 계약 파일로 분리했다. 결과 그래프는 Aggregate/Entity와 storage key를 노출하지 않으며 HTTP DTO는 port 결과에서 변환한다. Store/Reader와 원자적 capability는 유지한다. 최종 전체 검증과 리뷰 상태는 PR 참조. |
 
 6c-1은 전체 검증의 누락과 위 classpath 노출을 보완했다. 6c-2의 R19는 #109로 머지됐다.
-6c-3은 R20 코드 정리와 전체 회귀 검증을 마쳤으며 #110 리뷰·머지를 기다린다. 이번 점검에서 추가로
+6c-3의 R20 코드 정리와 전체 회귀 검증도 #110으로 머지됐다. 이번 점검에서 추가로
 식별한 R19/R20의 구현 완료와 아래 운영 제약 해소를 구분한다.
 정본에만 있는 향후 AnalysisRun/Reprocessing 기능의 미구현은 이번 리팩토링에서 새 기능으로 구현하지 않는다.
 
@@ -78,8 +80,10 @@ R01~R18의 기존 수정은 아래 검증 경로와 대조한다. 이 표는 새
   [Operations Configuration](OPERATIONS_CONFIGURATION.md)을 따른다.
 - Compute 0017의 단일 transaction migration 진단은 SQLSTATE `55006`으로 rollback되는 기존 제약이다.
   기존 `psql -f` 경계의 migration/replay 통과와 구분하며 Core 변경으로 해결됐다고 표시하지 않는다.
-- Integration #50은 #49의 후속 브랜치에 머지됐다. #49가 main에 반영되기 전에는 해당 후보 ref를 지정해
-  검증하며 Integration main만으로 6a/6b harness가 반영됐다고 추정하지 않는다.
+- Integration #49는 `801241f`로 main에 반영됐고 #50도 포함한다. 이전 후보 CI와 머지 후 main 조합의
+  검증은 [완료·인계 기록](REFACTORING_HANDOFF.md)에서 구분한다. Integration 반영 대기를 현재 제약으로 남기지 않는다.
+- 실제 운영 DB 전환·writer 배정과 배포 환경 점검 증거는 아직 확인하지 않았다. 인계 기록의 적용 전
+  확인 항목과 기존 운영 절차를 따르며 CI 성공을 운영 배포 완료로 해석하지 않는다.
 
 ## Validation
 
