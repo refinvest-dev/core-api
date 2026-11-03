@@ -1,8 +1,9 @@
 package com.refinvest.core.config
 
-import com.refinvest.core.tradingreview.port.TradingFailure
-import com.refinvest.core.tradingreview.port.TradingFailureKind
-import com.refinvest.core.tradingreview.port.normalization.policy.TradingVersionPins
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins
+
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper

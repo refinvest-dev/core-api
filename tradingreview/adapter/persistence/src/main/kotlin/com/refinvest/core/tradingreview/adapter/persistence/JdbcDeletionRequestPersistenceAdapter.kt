@@ -1,9 +1,10 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionRequestStore
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.DeletionRequest
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
 import java.sql.Timestamp
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository

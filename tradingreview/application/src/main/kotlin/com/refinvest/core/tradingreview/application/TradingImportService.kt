@@ -1,31 +1,43 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionResult
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionView
-import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactResult
-import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
-import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactUseCase
-import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionQuery
-import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsQuery
-import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsUseCase
-import com.refinvest.core.tradingreview.port.importsession.upload.UploadArtifactResult
-import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactCommand
-import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactUseCase
-
-import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
-import com.refinvest.core.tradingreview.port.idempotency.IdempotencyClaim
-import com.refinvest.core.tradingreview.port.idempotency.TradingIdempotencyStore
-import com.refinvest.core.tradingreview.port.identity.TradingIdGenerator
-import com.refinvest.core.tradingreview.port.importsession.upload.TradingUploadMetadata
-import com.refinvest.core.tradingreview.port.ledger.TradingLedgerPublicationReader
-import com.refinvest.core.tradingreview.port.member.TradingMemberProvider
-import com.refinvest.core.tradingreview.port.normalization.policy.TradingVersionPins
-import com.refinvest.core.tradingreview.port.pagination.TradingPage
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.inbound.importsession.PublishedLedgerResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionView
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingSourceArtifactResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.deleteartifact.DeleteTradingSourceArtifactUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.get.GetTradingImportSessionQuery
+import com.refinvest.core.tradingreview.port.inbound.importsession.get.GetTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.list.ListTradingImportsQuery
+import com.refinvest.core.tradingreview.port.inbound.importsession.list.ListTradingImportsUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.TradingUploadMetadata
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadArtifactResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadTradingImportArtifactCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadTradingImportArtifactUseCase
+import com.refinvest.core.tradingreview.port.inbound.pagination.TradingPage
+import com.refinvest.core.tradingreview.port.outbound.idempotency.IdempotencyClaim
+import com.refinvest.core.tradingreview.port.outbound.idempotency.TradingIdempotencyStore
+import com.refinvest.core.tradingreview.port.outbound.identity.TradingIdGenerator
+import com.refinvest.core.tradingreview.port.outbound.member.TradingMemberProvider
+import com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins
+import com.refinvest.core.tradingreview.port.outbound.persistence.TradingPageReadModel
+import com.refinvest.core.tradingreview.port.outbound.persistence.account.TradingAccountStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingBookStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionScopeInventory
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingImportSessionReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingImportSessionStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingSourceArtifactReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.PublishedLedgerSummary
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.TradingLedgerPublicationReader
+import com.refinvest.core.tradingreview.port.outbound.storage.raw.RawArtifactStorage
 
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.DeletionAffectedResources
@@ -40,16 +52,6 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.TradingFailureKind
-import com.refinvest.core.tradingreview.port.account.TradingAccountStore
-import com.refinvest.core.tradingreview.port.book.TradingBookStore
-import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
-import com.refinvest.core.tradingreview.port.deletion.DeletionScopeInventory
-import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionReader
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
-import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactReader
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -85,14 +87,14 @@ open class TradingImportService(
 
     @Transactional(readOnly = true)
     override fun execute(query: GetTradingImportSessionQuery): TradingImportSessionView =
-        getSession(query.id).let { TradingImportSessionView.fromDomain(it.session, it.artifacts, it.published, clock.instant()) }
+        getSession(query.id).toResult(clock.instant())
 
     @Transactional(readOnly = true)
     override fun execute(query: ListTradingImportsQuery): TradingPage<TradingImportSessionView> =
         listSessions(query.bookId, query.page, query.size).let { page ->
             val now = clock.instant()
             TradingPage(page.items.map {
-                TradingImportSessionView.fromDomain(it.session, it.artifacts, it.published, now)
+                it.toResult(now)
             }, page.page, page.size, page.total)
         }
 
@@ -157,7 +159,7 @@ open class TradingImportService(
                 revisions.publishedForSession(id, owner) else null)
     }
 
-    private fun listSessions(bookId: TradingBookId, page: Int, size: Int): TradingPage<LoadedImportSession> {
+    private fun listSessions(bookId: TradingBookId, page: Int, size: Int): TradingPageReadModel<LoadedImportSession> {
         if (page < 0 || size !in 1..100) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
         val owner = members.currentMemberId()
         val book = books.find(bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
@@ -165,7 +167,7 @@ open class TradingImportService(
         if (book.status != TradingLifecycleStatus.ACTIVE || account.status != TradingLifecycleStatus.ACTIVE)
             throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         val result = reader.list(bookId, owner, page, size)
-        return TradingPage(result.items.map { session -> LoadedImportSession(session,
+        return TradingPageReadModel(result.items.map { session -> LoadedImportSession(session,
             session.artifacts, if (session.status == TradingImportStatus.ACCEPTED)
                 revisions.publishedForSession(session.id, owner) else null) }, page, size, result.total)
     }
@@ -329,7 +331,12 @@ open class TradingImportService(
         return TradingDeletion.fromDomain(deletion)
     }
 
-    private data class LoadedImportSession(val session: TradingImportSession, val artifacts: List<com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact>, val published: com.refinvest.core.tradingreview.port.ledger.PublishedLedgerSummary?)
+    private fun LoadedImportSession.toResult(now: java.time.Instant) = TradingImportSessionView.fromDomain(
+        session, artifacts, published?.let {
+            PublishedLedgerResult(it.revisionId, it.qualityReportJson, it.capabilityJson, it.publishedAt)
+        }, now)
+
+    private data class LoadedImportSession(val session: TradingImportSession, val artifacts: List<com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact>, val published: com.refinvest.core.tradingreview.port.outbound.persistence.ledger.PublishedLedgerSummary?)
     private data class StoredUpload(val artifact: com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact, val created: Boolean)
 
     private fun missing(deleted: Boolean) = TradingFailure(if (deleted) "RESOURCE_DELETED" else "RESOURCE_NOT_FOUND",

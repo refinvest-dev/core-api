@@ -1,11 +1,12 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.outbound.storage.raw.RawArtifactStorage
+import com.refinvest.core.tradingreview.port.outbound.storage.raw.StagedRawArtifact
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
+
 import com.refinvest.core.tradingreview.domain.valueobject.*
-import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
-import com.refinvest.core.tradingreview.port.artifactstorage.StagedRawArtifact
-import com.refinvest.core.tradingreview.port.TradingFailure
-import com.refinvest.core.tradingreview.port.TradingFailureKind
-import com.refinvest.core.tradingreview.port.deletion.*
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.nio.file.Files

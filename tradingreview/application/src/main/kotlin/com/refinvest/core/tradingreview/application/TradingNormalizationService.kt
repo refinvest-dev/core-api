@@ -1,17 +1,25 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionResult
-import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionUseCase
-
-import com.refinvest.core.tradingreview.port.idempotency.IdempotencyClaim
-import com.refinvest.core.tradingreview.port.idempotency.TradingIdempotencyStore
-import com.refinvest.core.tradingreview.port.member.TradingMemberProvider
-import com.refinvest.core.tradingreview.port.normalization.TradingNormalizationTransitionGate
-import com.refinvest.core.tradingreview.port.normalization.policy.TradingNormalizationSettings
-import com.refinvest.core.tradingreview.port.normalization.policy.TradingVersionPins
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionResult
+import com.refinvest.core.tradingreview.port.inbound.normalization.retry.RetryTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.normalization.retry.RetryTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.validate.ValidateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.normalization.validate.ValidateTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.outbound.idempotency.IdempotencyClaim
+import com.refinvest.core.tradingreview.port.outbound.idempotency.TradingIdempotencyStore
+import com.refinvest.core.tradingreview.port.outbound.identity.TradingNormalizationIdGenerator
+import com.refinvest.core.tradingreview.port.outbound.member.TradingMemberProvider
+import com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingNormalizationSettings
+import com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins
+import com.refinvest.core.tradingreview.port.outbound.persistence.account.TradingAccountStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingBookStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingImportSessionStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationAdmission
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationAdmission
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationRunReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationTransitionGate
 
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationArtifactInput
@@ -26,12 +34,6 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.TradingFailureKind
-import com.refinvest.core.tradingreview.port.account.TradingAccountStore
-import com.refinvest.core.tradingreview.port.book.TradingBookStore
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
-import com.refinvest.core.tradingreview.port.normalization.*
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock

@@ -1,29 +1,28 @@
 package com.refinvest.core.tradingreview.adapter.web
 
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionResult
-import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactResult
-import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
-import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactUseCase
-import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionQuery
-import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsQuery
-import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsUseCase
-import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactCommand
-import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactUseCase
-import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionUseCase
-
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionView
-import com.refinvest.core.tradingreview.port.importsession.upload.TradingUploadMetadata
-import com.refinvest.core.tradingreview.port.importsession.upload.UploadArtifactResult
-import com.refinvest.core.tradingreview.port.ledger.PublishedLedgerSummary
-import com.refinvest.core.tradingreview.port.pagination.TradingPage
+import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.inbound.importsession.PublishedLedgerResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionView
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingSourceArtifactResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.deleteartifact.DeleteTradingSourceArtifactUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.get.GetTradingImportSessionQuery
+import com.refinvest.core.tradingreview.port.inbound.importsession.get.GetTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.list.ListTradingImportsQuery
+import com.refinvest.core.tradingreview.port.inbound.importsession.list.ListTradingImportsUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadArtifactResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadTradingImportArtifactCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadTradingImportArtifactUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.retry.RetryTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.normalization.retry.RetryTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.validate.ValidateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.normalization.validate.ValidateTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.pagination.TradingPage
 
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
@@ -36,8 +35,6 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionI
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
 import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
 import java.io.InputStream
 import java.security.MessageDigest
 import java.time.Clock
@@ -61,7 +58,7 @@ class TradingImportControllerTest {
         "SOURCE_EVIDENCE_MASK_V1", "BOOK_LIFECYCLE", "TRADING_DELETION_V1",
         "{\"versionSetHash\":\"exact\"}", TradingImportStatus.RECEIVED, 0, false, now, now, 0)
     private var currentSession = session
-    private var published: PublishedLedgerSummary? = null
+    private var published: PublishedLedgerResult? = null
     private val artifacts = mutableListOf<TradingSourceArtifact>()
     private val deletion = TradingDeletion(90, MemberId(30), "TRADING_IMPORT_SESSION", 10,
         "IMPORT_SESSION_SUBTREE", "REQUESTED", 1, 0, 0, now, now, now, now.plusSeconds(86400),
@@ -162,7 +159,7 @@ class TradingImportControllerTest {
         assertEquals(false, failed.hasNonNull("createdLedgerRevisionId"))
 
         currentSession = restoreSession(status = TradingImportStatus.ACCEPTED)
-        published = PublishedLedgerSummary("revision-1",
+        published = PublishedLedgerResult("revision-1",
             """{"qualityStatus":"ACCEPTABLE","rowCountsByArtifactRole":{"TRADE_HISTORY":1},"ignoredNonTradingRowCounts":{},"validationIssues":[],"reconciliationStatusCounts":{},"excludedReasonCounts":{}}""",
             """["CLOSED_OUTCOME"]""", now)
         val accepted = mapper.readTree(mvc.perform(get("/trading-import-sessions/10"))

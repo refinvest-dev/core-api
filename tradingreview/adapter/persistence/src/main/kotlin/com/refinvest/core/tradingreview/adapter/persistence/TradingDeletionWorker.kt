@@ -1,6 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.deletion.TradingDeletionUseCase
+import com.refinvest.core.tradingreview.port.inbound.deletion.process.TradingDeletionUseCase
+
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component

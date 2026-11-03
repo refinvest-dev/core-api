@@ -1,5 +1,8 @@
 package com.refinvest.core.tradingreview.port.importsession
 
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingSourceArtifactResult
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.TradingAccount
 import com.refinvest.core.tradingreview.domain.TradingBook

@@ -1,8 +1,12 @@
 package com.refinvest.core.tradingreview.adapter.storage
 
-import com.refinvest.core.tradingreview.port.TradingFailure
-import com.refinvest.core.tradingreview.port.TradingFailureKind
-import com.refinvest.core.tradingreview.port.deletion.*
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactLease
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactWorkspaces
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingTemporaryArtifact
+
 import java.io.InputStream
 import java.io.OutputStream
 import java.lang.ref.ReferenceQueue

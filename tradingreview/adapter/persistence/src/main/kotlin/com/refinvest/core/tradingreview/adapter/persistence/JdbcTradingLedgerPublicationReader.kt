@@ -1,9 +1,10 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.PublishedLedgerSummary
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.TradingLedgerPublicationReader
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
-import com.refinvest.core.tradingreview.port.ledger.TradingLedgerPublicationReader
-import com.refinvest.core.tradingreview.port.ledger.PublishedLedgerSummary
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 

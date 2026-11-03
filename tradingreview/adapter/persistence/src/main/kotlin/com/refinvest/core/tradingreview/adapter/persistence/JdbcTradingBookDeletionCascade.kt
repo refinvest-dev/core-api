@@ -1,7 +1,8 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
-import com.refinvest.core.tradingreview.port.book.TradingAccountBookDeletion
-import com.refinvest.core.tradingreview.port.book.TradingBookDeletionCascade
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingAccountBookDeletion
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingBookDeletionCascade
+
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository

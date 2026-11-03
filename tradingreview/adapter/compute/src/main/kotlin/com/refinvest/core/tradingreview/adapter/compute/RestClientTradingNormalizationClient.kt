@@ -1,24 +1,25 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import com.refinvest.core.tradingreview.port.artifactgrant.ArtifactReadGrant
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationGrantUpdate
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationJobStatus
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationStatusLookup
-import com.refinvest.core.tradingreview.port.normalization.compute.NormalizationSubmission
-import com.refinvest.core.tradingreview.port.normalization.compute.TradingNormalizationComputeClient
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationAckOutcome
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationPayloadAcknowledgement
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationPayloadLookup
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultDescriptor
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultLookup
-import com.refinvest.core.tradingreview.port.normalization.result.TradingNormalizationResultClient
+import com.refinvest.core.tradingreview.port.outbound.artifactgrant.ArtifactReadGrant
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationGrantUpdate
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationJobStatus
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationStatusLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationSubmission
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.TradingNormalizationComputeClient
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationAckOutcome
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationPayloadLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultDescriptor
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.result.TradingNormalizationResultClient
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationPayloadAcknowledgement
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactWorkspaces
 
 import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
 import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultDeliveryPolicy
 import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
-import com.refinvest.core.tradingreview.port.*
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.MediaType
@@ -29,8 +30,6 @@ import tools.jackson.databind.ObjectMapper
 import java.net.http.HttpClient
 import java.time.Duration
 import java.time.Instant
-import com.refinvest.core.tradingreview.port.deletion.TradingArtifactWorkspaces
-import com.refinvest.core.tradingreview.port.deletion.TradingArtifactScope
 import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
 import java.security.DigestInputStream
 import java.security.MessageDigest

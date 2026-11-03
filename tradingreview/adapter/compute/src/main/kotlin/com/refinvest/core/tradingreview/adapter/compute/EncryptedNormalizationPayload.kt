@@ -1,8 +1,9 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationPayloadFile
-import com.refinvest.core.tradingreview.port.deletion.TradingArtifactLease
-import com.refinvest.core.tradingreview.port.deletion.TradingTemporaryArtifact
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationPayloadFile
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactLease
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingTemporaryArtifact
+
 import java.io.FilterInputStream
 import java.io.InputStream
 import javax.crypto.Cipher

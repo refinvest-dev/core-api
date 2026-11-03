@@ -1,29 +1,40 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.account.TradingAccountResult
-import com.refinvest.core.tradingreview.port.account.create.CreateTradingAccountCommand
-import com.refinvest.core.tradingreview.port.account.create.CreateTradingAccountUseCase
-import com.refinvest.core.tradingreview.port.account.delete.DeleteTradingAccountCommand
-import com.refinvest.core.tradingreview.port.account.delete.DeleteTradingAccountUseCase
-import com.refinvest.core.tradingreview.port.account.get.GetTradingAccountQuery
-import com.refinvest.core.tradingreview.port.account.get.GetTradingAccountUseCase
-import com.refinvest.core.tradingreview.port.account.list.ListTradingAccountsQuery
-import com.refinvest.core.tradingreview.port.account.list.ListTradingAccountsUseCase
-import com.refinvest.core.tradingreview.port.book.TradingBookResult
-import com.refinvest.core.tradingreview.port.book.create.CreateTradingBookCommand
-import com.refinvest.core.tradingreview.port.book.create.CreateTradingBookUseCase
-import com.refinvest.core.tradingreview.port.book.delete.DeleteTradingBookCommand
-import com.refinvest.core.tradingreview.port.book.delete.DeleteTradingBookUseCase
-import com.refinvest.core.tradingreview.port.book.get.GetTradingBookQuery
-import com.refinvest.core.tradingreview.port.book.get.GetTradingBookUseCase
-import com.refinvest.core.tradingreview.port.book.list.ListTradingBooksQuery
-import com.refinvest.core.tradingreview.port.book.list.ListTradingBooksUseCase
-
-import com.refinvest.core.tradingreview.port.idempotency.IdempotencyClaim
-import com.refinvest.core.tradingreview.port.idempotency.TradingIdempotencyStore
-import com.refinvest.core.tradingreview.port.identity.TradingIdGenerator
-import com.refinvest.core.tradingreview.port.member.TradingMemberProvider
-import com.refinvest.core.tradingreview.port.pagination.TradingPage
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.inbound.account.TradingAccountResult
+import com.refinvest.core.tradingreview.port.inbound.account.create.CreateTradingAccountCommand
+import com.refinvest.core.tradingreview.port.inbound.account.create.CreateTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.inbound.account.delete.DeleteTradingAccountCommand
+import com.refinvest.core.tradingreview.port.inbound.account.delete.DeleteTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.inbound.account.get.GetTradingAccountQuery
+import com.refinvest.core.tradingreview.port.inbound.account.get.GetTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.inbound.account.list.ListTradingAccountsQuery
+import com.refinvest.core.tradingreview.port.inbound.account.list.ListTradingAccountsUseCase
+import com.refinvest.core.tradingreview.port.inbound.book.TradingBookResult
+import com.refinvest.core.tradingreview.port.inbound.book.create.CreateTradingBookCommand
+import com.refinvest.core.tradingreview.port.inbound.book.create.CreateTradingBookUseCase
+import com.refinvest.core.tradingreview.port.inbound.book.delete.DeleteTradingBookCommand
+import com.refinvest.core.tradingreview.port.inbound.book.delete.DeleteTradingBookUseCase
+import com.refinvest.core.tradingreview.port.inbound.book.get.GetTradingBookQuery
+import com.refinvest.core.tradingreview.port.inbound.book.get.GetTradingBookUseCase
+import com.refinvest.core.tradingreview.port.inbound.book.list.ListTradingBooksQuery
+import com.refinvest.core.tradingreview.port.inbound.book.list.ListTradingBooksUseCase
+import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.inbound.pagination.TradingPage
+import com.refinvest.core.tradingreview.port.outbound.idempotency.IdempotencyClaim
+import com.refinvest.core.tradingreview.port.outbound.idempotency.TradingIdempotencyStore
+import com.refinvest.core.tradingreview.port.outbound.identity.TradingIdGenerator
+import com.refinvest.core.tradingreview.port.outbound.member.TradingMemberProvider
+import com.refinvest.core.tradingreview.port.outbound.persistence.TradingPageReadModel
+import com.refinvest.core.tradingreview.port.outbound.persistence.account.TradingAccountReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.account.TradingAccountStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingAccountBookDeletion
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingBookDeletionCascade
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingBookReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingBookStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionScopeInventory
 
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.DeletionAffectedResources
@@ -36,17 +47,6 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
 import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
 import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.TradingFailureKind
-import com.refinvest.core.tradingreview.port.account.TradingAccountReader
-import com.refinvest.core.tradingreview.port.account.TradingAccountStore
-import com.refinvest.core.tradingreview.port.book.TradingAccountBookDeletion
-import com.refinvest.core.tradingreview.port.book.TradingBookDeletionCascade
-import com.refinvest.core.tradingreview.port.book.TradingBookReader
-import com.refinvest.core.tradingreview.port.book.TradingBookStore
-import com.refinvest.core.tradingreview.port.deletion.DeletionRequestStore
-import com.refinvest.core.tradingreview.port.deletion.DeletionScopeInventory
-import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
@@ -129,7 +129,7 @@ open class TradingReviewService(
         return account
     }
 
-    private fun listAccounts(page: Int, size: Int): TradingPage<TradingAccount> {
+    private fun listAccounts(page: Int, size: Int): TradingPageReadModel<TradingAccount> {
         validPage(page, size)
         return accountReader.list(members.currentMemberId(), page, size)
     }
@@ -190,7 +190,7 @@ open class TradingReviewService(
         return book
     }
 
-    private fun listBooks(accountId: TradingAccountId, page: Int, size: Int): TradingPage<TradingBook> {
+    private fun listBooks(accountId: TradingAccountId, page: Int, size: Int): TradingPageReadModel<TradingBook> {
         validPage(page, size)
         getAccount(accountId)
         return bookReader.list(accountId, members.currentMemberId(), page, size)

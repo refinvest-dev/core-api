@@ -1,10 +1,12 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingImportSessionStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationAdmission
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationAdmission
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationTransitionGate
+
 import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
 import com.refinvest.core.tradingreview.domain.importsession.*
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionStore
-import com.refinvest.core.tradingreview.port.normalization.TradingNormalizationTransitionGate
-import com.refinvest.core.tradingreview.port.normalization.*
 import java.sql.Timestamp
 import java.time.Clock
 import org.springframework.jdbc.core.ConnectionCallback

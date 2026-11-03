@@ -1,25 +1,26 @@
 package com.refinvest.core.tradingreview.adapter.web
 
-import com.refinvest.core.tradingreview.port.account.TradingAccountResult
-import com.refinvest.core.tradingreview.port.account.create.CreateTradingAccountCommand
-import com.refinvest.core.tradingreview.port.account.create.CreateTradingAccountUseCase
-import com.refinvest.core.tradingreview.port.account.delete.DeleteTradingAccountCommand
-import com.refinvest.core.tradingreview.port.account.delete.DeleteTradingAccountUseCase
-import com.refinvest.core.tradingreview.port.account.get.GetTradingAccountQuery
-import com.refinvest.core.tradingreview.port.account.get.GetTradingAccountUseCase
-import com.refinvest.core.tradingreview.port.account.list.ListTradingAccountsQuery
-import com.refinvest.core.tradingreview.port.account.list.ListTradingAccountsUseCase
-import com.refinvest.core.tradingreview.port.book.TradingBookResult
-import com.refinvest.core.tradingreview.port.book.create.CreateTradingBookCommand
-import com.refinvest.core.tradingreview.port.book.create.CreateTradingBookUseCase
-import com.refinvest.core.tradingreview.port.book.delete.DeleteTradingBookCommand
-import com.refinvest.core.tradingreview.port.book.delete.DeleteTradingBookUseCase
-import com.refinvest.core.tradingreview.port.book.get.GetTradingBookQuery
-import com.refinvest.core.tradingreview.port.book.get.GetTradingBookUseCase
-import com.refinvest.core.tradingreview.port.book.list.ListTradingBooksQuery
-import com.refinvest.core.tradingreview.port.book.list.ListTradingBooksUseCase
-
-import com.refinvest.core.tradingreview.port.pagination.TradingPage
+import com.refinvest.core.tradingreview.port.inbound.account.TradingAccountResult
+import com.refinvest.core.tradingreview.port.inbound.account.create.CreateTradingAccountCommand
+import com.refinvest.core.tradingreview.port.inbound.account.create.CreateTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.inbound.account.delete.DeleteTradingAccountCommand
+import com.refinvest.core.tradingreview.port.inbound.account.delete.DeleteTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.inbound.account.get.GetTradingAccountQuery
+import com.refinvest.core.tradingreview.port.inbound.account.get.GetTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.inbound.account.list.ListTradingAccountsQuery
+import com.refinvest.core.tradingreview.port.inbound.account.list.ListTradingAccountsUseCase
+import com.refinvest.core.tradingreview.port.inbound.book.TradingBookResult
+import com.refinvest.core.tradingreview.port.inbound.book.create.CreateTradingBookCommand
+import com.refinvest.core.tradingreview.port.inbound.book.create.CreateTradingBookUseCase
+import com.refinvest.core.tradingreview.port.inbound.book.delete.DeleteTradingBookCommand
+import com.refinvest.core.tradingreview.port.inbound.book.delete.DeleteTradingBookUseCase
+import com.refinvest.core.tradingreview.port.inbound.book.get.GetTradingBookQuery
+import com.refinvest.core.tradingreview.port.inbound.book.get.GetTradingBookUseCase
+import com.refinvest.core.tradingreview.port.inbound.book.list.ListTradingBooksQuery
+import com.refinvest.core.tradingreview.port.inbound.book.list.ListTradingBooksUseCase
+import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.inbound.deletion.get.GetTradingDeletionRequestUseCase
+import com.refinvest.core.tradingreview.port.inbound.pagination.TradingPage
 
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
@@ -30,9 +31,6 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
 import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
 import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
-import com.refinvest.core.tradingreview.port.*
-import com.refinvest.core.tradingreview.port.deletion.GetTradingDeletionRequestUseCase
-import com.refinvest.core.tradingreview.port.deletion.TradingDeletion
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals

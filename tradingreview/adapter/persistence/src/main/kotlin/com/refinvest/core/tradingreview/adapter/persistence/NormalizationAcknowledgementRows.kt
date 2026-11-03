@@ -1,7 +1,8 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultDescriptor
+
 import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationResultDescriptor
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID

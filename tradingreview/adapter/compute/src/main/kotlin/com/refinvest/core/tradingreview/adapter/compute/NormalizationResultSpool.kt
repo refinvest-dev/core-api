@@ -1,5 +1,8 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.LegacyTradingTemporaryCopies
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactWorkspaces
+
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -8,8 +11,6 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Duration
-import com.refinvest.core.tradingreview.port.deletion.LegacyTradingTemporaryCopies
-import com.refinvest.core.tradingreview.port.deletion.TradingArtifactWorkspaces
 
 /** Only ciphertext is written here. The per-download key is held in process memory. */
 internal object NormalizationResultSpool {

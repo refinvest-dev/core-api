@@ -16,7 +16,7 @@ class TradingReviewModuleBoundaryTest {
             it.startsWith("jakarta.servlet") || it.contains(".adapter.") || it.contains(".backtest.") })
         val forbiddenApplication = application.filter { it.contains(".adapter.") || it.startsWith("jakarta.persistence") ||
             it.startsWith("jakarta.servlet") || it.contains(".backtest.") ||
-            (it.contains(".compute.") && !it.startsWith("com.refinvest.core.tradingreview.port.normalization.compute.")) }
+            (it.contains(".compute.") && !it.startsWith("com.refinvest.core.tradingreview.port.outbound.compute.")) }
         assertTrue(forbiddenApplication.isEmpty(), "Forbidden application imports: $forbiddenApplication")
         val forbiddenWeb = web.filter { it.contains(".persistence.") || it.contains(".backtest.") ||
             it.contains(".compute.") }

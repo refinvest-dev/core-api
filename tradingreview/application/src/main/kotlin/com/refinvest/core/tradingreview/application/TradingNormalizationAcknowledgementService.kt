@@ -1,10 +1,11 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.normalization.result.NormalizationAckOutcome
-import com.refinvest.core.tradingreview.port.normalization.result.TradingNormalizationResultClient
-import com.refinvest.core.tradingreview.port.normalization.result.TradingNormalizationResultStore
-import com.refinvest.core.tradingreview.port.normalization.policy.TradingRetryJitter
-import com.refinvest.core.tradingreview.port.normalization.AcknowledgeTradingNormalizationResultUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.acknowledge.AcknowledgeTradingNormalizationResultUseCase
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationAckOutcome
+import com.refinvest.core.tradingreview.port.outbound.compute.result.TradingNormalizationResultClient
+import com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingRetryJitter
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationResultStore
+
 import java.time.Clock
 import java.time.Duration
 import java.util.UUID

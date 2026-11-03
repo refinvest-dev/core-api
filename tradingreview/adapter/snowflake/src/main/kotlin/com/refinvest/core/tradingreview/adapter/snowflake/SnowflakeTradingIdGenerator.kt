@@ -1,5 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.snowflake
 
+import com.refinvest.core.tradingreview.port.outbound.identity.TradingIdGenerator
+
 import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
 
 import com.refinvest.core.shared.infrastructure.id.SnowflakeIdGenerator
@@ -7,7 +9,6 @@ import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
-import com.refinvest.core.tradingreview.port.identity.TradingIdGenerator
 import org.springframework.stereotype.Component
 
 @Component
