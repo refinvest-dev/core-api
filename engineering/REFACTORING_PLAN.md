@@ -57,7 +57,7 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | R17 | Raw 정책 시계 | upload의 24시간 expiry가 accepted/rejected 전이에서 갱신되지 않으며 non-terminal TTL의 runtime 취소 연결이 없음 | 5b-2에서 terminal 시계 고정·실제 expiry 요청·generation fence와 늦은 발행 거절 구현, 아래 검증 기록 참조 |
 | R18 | 삭제 영향 범위 count | Book 삭제는 Book 1개만, Account 삭제는 Account/Book 수만 요청에 고정하며 하위 Session/artifact와 Revision/Run 수를 충분히 저장하지 않음 | 5c-2에서 요청 시점 scope snapshot·영속 count와 replay/조회·legacy 복원을 검증; 현재 count를 부재 증거로 쓰지 않음 |
 | R19 | Auth HTTP 진입점 | Controller가 outbound token parser와 concrete security adapter를 직접 의존 | 6c-2/[Core #109](https://github.com/refinvest-dev/core-api/pull/109)에서 raw credential 업무 진입점·HTTP 기술 소유권 분리, 검증된 요청만 transaction 진입 |
-| R20 | Trading Review port 구성 | Account/Book/Import inbound 계약과 storage/idempotency outbound capability·모델이 파일에 혼재 | 6c-3에서 기능별 Command/Query/Result와 계약 파일 분리, Aggregate 저장·기존 wire 의미 보존 |
+| R20 | Trading Review port 구성 | Account/Book/Import inbound 계약과 storage/idempotency outbound capability·모델이 파일에 혼재 | 6c-3/[Core #110](https://github.com/refinvest-dev/core-api/pull/110)에서 기능별 Command/Query/Result와 계약 파일 분리, Aggregate 저장·기존 wire 의미 보존 |
 
 주요 근거 파일:
 
@@ -162,7 +162,8 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 6a | Core 완료·머지 / Integration 리뷰 대기 | [Core #106](https://github.com/refinvest-dev/core-api/pull/106), [Integration #49](https://github.com/refinvest-dev/integration/pull/49), V18~V21·Boot Flyway 자동 기동·Hibernate validate, app 104개·실제 JAR·Linux 전체 fixture/API/Web CI 통과 |
 | 6b | Core 완료·머지 / Integration 선행 PR 대기 | [Core #107](https://github.com/refinvest-dev/core-api/pull/107) 머지, [Integration #50](https://github.com/refinvest-dev/integration/pull/50)은 #49 후속 브랜치에 머지, app 109개·공통 ID 4개·실제 JAR·Linux 전체 fixture/API/Web 통과 |
 | 6c-1 | 완료·머지 | [Core #108](https://github.com/refinvest-dev/core-api/pull/108), 전체 46개 모듈 경계·로컬/Linux 499개 테스트(실제 PG 144개)·report gate, [재점검](ARCHITECTURE_AUDIT.md)에서 R19/R20 후속 범위 식별 |
-| 6c-2 | 구현·리뷰 대기 | [Core #109](https://github.com/refinvest-dev/core-api/pull/109), raw credential inbound 처리와 transaction 경계, HTTP 구성요소 web 소유·adapter 직접 의존 제거, 최신 검증 결과는 PR 참조 |
+| 6c-2 | 완료·머지 | [Core #109](https://github.com/refinvest-dev/core-api/pull/109), raw credential inbound 처리와 transaction 경계, HTTP 구성요소 web 소유·adapter 직접 의존 제거, 전체 Core 510개·실제 PG 144개 및 API/Web 후보 CI 통과 |
+| 6c-3 | 구현 완료·리뷰 대기 | [Core #110](https://github.com/refinvest-dev/core-api/pull/110), 기능별 inbound 16개·Entity 없는 결과·capability 분리, Core 전체 514개·실제 PG 144개 및 계약·API/Web·전체 Trading 후보 CI 통과 |
 
 ### 5c-2 삭제 영향 범위 count snapshot
 
@@ -280,7 +281,36 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
   logout 쿠키/세션 정리를 추가했다. 로컬 Windows listen 오류와 새 쿠키 테스트의 잘못된 기본값 가정은
   구분하며, 쿠키 테스트는 Secure=true·SameSite=Lax를 명시해 검증한다. 최신 전체 Core/PostgreSQL
   CI와 실제 API/Web smoke 결과·후보 ref는 PR에 기록한다.
-- 업무 API/schema/hash와 계산 결정론 영향은 없다. 다음 구현 범위는 R20/6c-3이며 전체 완료는 아니다.
+- 업무 API/schema/hash와 계산 결정론 영향은 없다. #109는 머지됐으며 R20/6c-3을 아래 PR로 이어간다.
+
+### 6c-3 Trading Review 기능별 계약과 결과 모델
+
+- [Core #110](https://github.com/refinvest-dev/core-api/pull/110)은 혼합 파일의 capability·모델 선언 44개를
+  기능별 package와 독립 파일로 옮긴다. 첫 커밋에서 선언 내용의 보존과 전체 호출부 컴파일을 확인했다.
+  다음 커밋은 업무 인터페이스 4개를 단일 Command/Query 입력을 받는 inbound port 16개로 바꾼다.
+- Application은 기존 Aggregate 생성·행위와 Store/Reader를 유지하며 port 결과 모델을 반환한다.
+  결과에는 Aggregate·소속 Entity·object key·wrapped DEK·key version을 담지 않는다. Controller는
+  업무별 inbound port와 web DTO 변환을 소유하며 원본 정책 시계는 application의 조회 결과에 반영한다.
+- 업로드의 metadata callback은 file stream을 소비한 뒤 실행한다. 외부 파일 작업과 짧은 DB transaction,
+  idempotency fingerprint·owner 잠금·CAS/generation·publication·삭제 의미는 유지한다. 저장 상태와
+  불변식을 검사하는 PostgreSQL 테스트는 결과 DTO 대신 Store에서 Aggregate를 다시 조회한다.
+- 로컬 port 2개·application 26개·web 12개·persistence 85개·app 경계 12개, 합계 137개가 통과했다.
+  persistence에는 실제 PostgreSQL Trading Review 70개가 포함된다. 실패·오류·skip은 0개다.
+  경계 검사에서 정상적인 `port.normalization.compute`를 구현 의존성으로 오인한 실패는 보존하고,
+  해당 port만 허용하도록 고친 뒤 경계 검사와 마지막 서비스 빌드를 다시 통과했다.
+- 결과 그래프의 Entity 비노출·기능별 단일 CQR 진입점과 raw 만료 시각 직전/정각·artifact role projection을
+  검사한다. Context snapshot 26개와 `git diff --check`도 통과했다. `537d25e`의 [Core Linux CI](https://github.com/refinvest-dev/core-api/actions/runs/41605083219)는
+  30개 테스트 모듈·514개 테스트와 실행 JAR·결과 gate를 통과했다. 실제 PostgreSQL 10개 suite·144개를
+  포함하며 실패·오류·skip은 0개다. 문서 후속 커밋을 포함한 최신 head 검사는 PR에서 확인한다.
+- [계약 CI](https://github.com/refinvest-dev/integration/actions/runs/41605084847)와 [API/Web 및 전체 Trading CI](https://github.com/refinvest-dev/integration/actions/runs/41605088749)도
+  같은 Core `537d25e`에서 통과했다. API smoke·브라우저 11개와 전체 Trading raw-policy/schema fixture를
+  실행했다. 고정 ref는 Context `b970e1b`, Compute `d75ff4d`, Web `c2e09d6`, Integration `13006c9`다.
+- 통합 artifact에서 raw policy clock·삭제 count snapshot·version pin 시나리오의 PASS, process-control
+  13개 종료 코드 0과 worker 자동 복구 없이 통과한 사실을 확인했다. Integration 사전 process-control의
+  Windows 전용 1개 skip은 Core 전체 회귀의 skip 0개와 구분한다.
+- 업무 HTTP/OpenAPI·schema·Compute payload·계산 hash와 ID 형식 변경은 없으며 계산 결정론 영향은 없다.
+  Integration #49 후보에 대한 검증과 Integration main 반영을 구분한다. 기존 Snowflake node 배정·재시작
+  high-water mark, Compute 0017 단일 transaction 진단과 schema 운영 절차는 그대로 적용한다.
 
 ### 5c-1 실패 의미와 public 조회 경계
 
