@@ -7,5 +7,3 @@ sealed interface NormalizationResultLookup {
     data class Retry(val code: String) : NormalizationResultLookup
     data class Rejected(val code: String) : NormalizationResultLookup
 }
-
-/** A temporary HTTP entity body. Production downloads use encrypted spool bytes. */

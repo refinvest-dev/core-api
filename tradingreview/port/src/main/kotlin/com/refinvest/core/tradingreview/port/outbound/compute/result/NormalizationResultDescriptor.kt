@@ -3,6 +3,7 @@ package com.refinvest.core.tradingreview.port.outbound.compute.result
 import com.refinvest.core.tradingreview.domain.*
 import java.time.Instant
 
+/** Transport bytes stay outside durable state; the descriptor contains only safe opaque identities and digests. */
 data class NormalizationResultDescriptor(
     val jobId: String,
     val logicalJobId: String,

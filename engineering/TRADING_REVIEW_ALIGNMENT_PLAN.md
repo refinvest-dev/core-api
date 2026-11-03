@@ -58,10 +58,12 @@ tradingreview/port/
     persistence/{account,book,importsession,ledger,deletion,normalization}/
     compute/{normalization,result,deletion}/
     storage/{raw,workspace,analytics}/
+    artifactgrant/
     identity/
     member/
     idempotency/
     normalization/policy/
+  common/failure/
 ```
 
 - UseCase와 Command/Query/Result는 `inbound/<기능>`이 소유한다. 전체 command/query/result 디렉토리를
@@ -114,4 +116,38 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
 경계 검사로 확인하며, 새로운 동작 테스트는 실제 책임·동시성 보장 변경을 검증하는 데 사용한다.
 기존 514개 테스트의 성공만으로 새 구조 기준까지 완료됐다고 표시하지 않는다.
 
-현재 상태: 비교·실행 계획 작성 단계. Port 재배치·서비스 분리·JPA 전환은 아직 구현하지 않았다.
+## Progress
+
+- 계획·규칙은 [Core #112](https://github.com/refinvest-dev/core-api/pull/112)로 머지됐다.
+- 순서 1은 [Core #113](https://github.com/refinvest-dev/core-api/pull/113)에서 구현했다. 실제 후속 검증 결과를
+  아래에 기록하며, 기능별 Service 분리·일반 저장의 JPA 전환·큰 실행 구현 정리는 순서 2~6으로 남는다.
+
+### PR 1: Port Direction and Entry Points
+
+- 기존 115개 파일의 선언 135개를 방향·capability별 독립 파일로 재배치했다. 첫 재배치에서 의도한 조회
+  계약 5개 외 130개 선언과 persistence 42개 파일의 SQL 보존을 확인했다. 공통 위치는 양쪽이 사용하는
+  실패 의미 두 타입으로 한정하고, 페이지·삭제·발행 모델을 common으로 몰아넣지 않았다.
+- 페이지는 outbound `TradingPageReadModel`과 inbound `TradingPage`로 나눴다. 발행 summary도 별도
+  `PublishedLedgerResult`로 변환한다. 삭제 Reader는 Subscription처럼 Domain을 반환하며 application이
+  `TradingDeletion` Result를 만든다. Root 복원 SQL과 체크포인트 projection의 의미는 유지했다.
+- grant Controller는 `RedeemTradingArtifactGrantUseCase`를 호출한다. 기존 atomic consume·owner/상위 삭제
+  gate·single-use와 원본 stream을 보존한다. 새 application은 stream을 미리 읽거나 닫지 않고 DB
+  transaction을 추가하지 않는다. 민감 token Command는 진단 문자열에 credential을 포함하지 않는다.
+- 삭제 조회·복구를 Query/Command 기반 진입점으로 정리하고 remediation의 Root 반환을 제거했다.
+  결과 spool의 기술 Scheduler도 inbound use case로 진입한다. application이 기존 spool/workspace 정리를
+  조율하며 설정 키·retention 24시간 상한·동일 cutoff·순서와 100개 한도를 유지한다. 별도 DB transaction은 없다.
+- 전체 inbound 29개에서 Entity/Root·outbound 모델 비노출을 검사한다. 인자가 있는 요청은 단일
+  Command/Query를 받으며 인자가 없는 worker에 빈 Command를 만들지 않는다. Web/Scheduler의 outbound
+  직접 참조, 양방향 계약 참조와 파일·package 소유권도 검사한다.
+- 수정 전 확대 검사에서 Root 반환과 outbound 사용을 실패로 재현했다. 새 경로 이전의 source 검사 실패와
+  Windows PostgreSQL `Bad address: connect` 실패를 보존하고, 최종 관련 147개 테스트를 다시 실행해
+  실패·오류·skip 0개를 확인했다. Port 2개·application 30개·web 14개·persistence 85개·app 경계 16개다.
+  grant의 상위 삭제 차단·owner 격리·single-use는 새 inbound service를 거쳐 실제 DB로 검증한다.
+- [Core CI](https://github.com/refinvest-dev/core-api/actions/runs/41668865521), [계약 CI](https://github.com/refinvest-dev/integration/actions/runs/41668952961),
+  [API/Web·전체 Trading CI](https://github.com/refinvest-dev/integration/actions/runs/41668959722)는 Core `34c52e0`를
+  고정해 실행한다. Context `0bcdf79`, Compute `113b0e2`, Web `9354dfe`, Integration `801241f`를 조합하며
+  최종 결과는 PR에 기록한다. Core CI는 30개 테스트 모듈·524개 테스트와 실행 JAR·결과 gate를 통과했다.
+  실제 PostgreSQL 10개 suite·144개를 포함하며 실패·오류·skip은 0개다. 계약 CI도 통과했다.
+  로컬 계약·Context snapshot 26개와 Normalization/Analytics vector도 일치했다.
+- HTTP/OpenAPI·schema·SQL 조건·version/generation/lease·retention 및 계산 hash 의미 변경은 없으며
+  계산 결정론 영향은 없다. 이 단계에서 JPA 전환이나 포괄 Service 분리를 완료했다고 표시하지 않는다.

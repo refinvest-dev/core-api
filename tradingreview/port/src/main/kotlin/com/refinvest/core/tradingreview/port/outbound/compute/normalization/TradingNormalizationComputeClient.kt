@@ -14,5 +14,3 @@ interface TradingNormalizationComputeClient {
                      current: NormalizationJobStatus, nextAttemptToken: String,
                      grants: List<ArtifactReadGrant>, updateKey: String): NormalizationGrantUpdate
 }
-
-/** Transport bytes stay outside durable state; the descriptor contains only safe opaque identities and digests. */

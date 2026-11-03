@@ -7,6 +7,7 @@ import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import java.time.Duration
 import java.time.Instant
 
+/** Transactional result state. Calls are made within the application transaction template. */
 interface TradingNormalizationResultStore {
     fun claimReady(now: Instant, lease: Duration, workerId: String): NormalizationDispatch?
     /** Must be called inside the same transaction as each staging mutation. */
