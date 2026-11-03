@@ -8,6 +8,11 @@
 0~6c-3 코드 변경과 Integration #49/#50은 main에 반영됐다. 최종 main 조합 검증과 실제 운영 적용의
 미확인 항목은 [Refactoring Handoff](REFACTORING_HANDOFF.md)에서 구분한다.
 
+다른 bounded context와 비교한 Trading Review의 후속 구조 정리는
+[Trading Review Structure Alignment](TRADING_REVIEW_ALIGNMENT_PLAN.md)를 따른다. 기존 완료 기록은
+당시의 불변식·저장 경계·동시성 및 검증 범위를 뜻하며, 후속 목록의 port 방향·서비스 구성·일반 저장
+방식까지 이미 정리됐다는 뜻으로 확장하지 않는다.
+
 ## 1. 목표와 변경 기준
 
 기준은 ADR-018의 feature-centric Hexagonal 구조이며, 관련 업무 계약은 ADR-013,
