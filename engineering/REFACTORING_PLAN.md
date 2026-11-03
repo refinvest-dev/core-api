@@ -5,6 +5,9 @@
 [AGENTS.md](../AGENTS.md), 커밋·PR·머지 규칙은 [GIT_WORKFLOW.md](../docs/GIT_WORKFLOW.md)를 따른다.
 이 문서의 작업 상태와 PR 링크는 작업을 완료할 때 갱신한다.
 
+0~6c-3 코드 변경과 Integration #49/#50은 main에 반영됐다. 최종 main 조합 검증과 실제 운영 적용의
+미확인 항목은 [Refactoring Handoff](REFACTORING_HANDOFF.md)에서 구분한다.
+
 ## 1. 목표와 변경 기준
 
 기준은 ADR-018의 feature-centric Hexagonal 구조이며, 관련 업무 계약은 ADR-013,
@@ -159,11 +162,15 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
 | 5b-2 | 완료·머지 | [PR #103](https://github.com/refinvest-dev/core-api/pull/103), `260d620`, R17 정책 시계·non-terminal 만료와 runtime 취소·늦은 publication 처리 |
 | 5c-1 | 완료·머지 | [PR #104](https://github.com/refinvest-dev/core-api/pull/104), `33c2171`, 실패 의미·web DTO·전용 삭제 Reader와 checkpoint 기반 public component 상태 |
 | 5c-2 | 완료·머지 | [PR #105](https://github.com/refinvest-dev/core-api/pull/105), `0d589cd`, R18 요청 시점 일곱 count·provenance 저장과 V17, 실제 purge/replay E2E 통과 |
-| 6a | Core 완료·머지 / Integration 리뷰 대기 | [Core #106](https://github.com/refinvest-dev/core-api/pull/106), [Integration #49](https://github.com/refinvest-dev/integration/pull/49), V18~V21·Boot Flyway 자동 기동·Hibernate validate, app 104개·실제 JAR·Linux 전체 fixture/API/Web CI 통과 |
-| 6b | Core 완료·머지 / Integration 선행 PR 대기 | [Core #107](https://github.com/refinvest-dev/core-api/pull/107) 머지, [Integration #50](https://github.com/refinvest-dev/integration/pull/50)은 #49 후속 브랜치에 머지, app 109개·공통 ID 4개·실제 JAR·Linux 전체 fixture/API/Web 통과 |
+| 6a | 완료·머지 | [Core #106](https://github.com/refinvest-dev/core-api/pull/106)과 [Integration #49](https://github.com/refinvest-dev/integration/pull/49) main 반영, V18~V21·Boot Flyway 자동 기동·Hibernate validate, 당시 app 104개·실제 JAR·Linux 전체 fixture/API/Web CI 통과 |
+| 6b | 완료·머지 | [Core #107](https://github.com/refinvest-dev/core-api/pull/107) 및 [Integration #50](https://github.com/refinvest-dev/integration/pull/50) 반영; #50도 #49를 통해 main에 포함, 당시 app 109개·공통 ID 4개·실제 JAR·Linux 전체 fixture/API/Web 통과 |
 | 6c-1 | 완료·머지 | [Core #108](https://github.com/refinvest-dev/core-api/pull/108), 전체 46개 모듈 경계·로컬/Linux 499개 테스트(실제 PG 144개)·report gate, [재점검](ARCHITECTURE_AUDIT.md)에서 R19/R20 후속 범위 식별 |
 | 6c-2 | 완료·머지 | [Core #109](https://github.com/refinvest-dev/core-api/pull/109), raw credential inbound 처리와 transaction 경계, HTTP 구성요소 web 소유·adapter 직접 의존 제거, 전체 Core 510개·실제 PG 144개 및 API/Web 후보 CI 통과 |
-| 6c-3 | 구현 완료·리뷰 대기 | [Core #110](https://github.com/refinvest-dev/core-api/pull/110), 기능별 inbound 16개·Entity 없는 결과·capability 분리, Core 전체 514개·실제 PG 144개 및 계약·API/Web·전체 Trading 후보 CI 통과 |
+| 6c-3 | 완료·머지 | [Core #110](https://github.com/refinvest-dev/core-api/pull/110), 기능별 inbound 16개·Entity 없는 결과·capability 분리, Core 전체 514개·실제 PG 144개 및 계약·API/Web·전체 Trading 후보 CI 통과 |
+
+마지막 코드 반영은 Core `9f9046d`, Integration `801241f`다. 후보 조합의 과거 검증 기록은 아래에
+보존하며, 머지된 다섯 저장소 main 조합의 고정 ref·최종 CI와 운영 인계는
+[완료·인계 기록](REFACTORING_HANDOFF.md)을 따른다. 코드 리팩토링 완료를 운영 DB 전환·배포 완료로 해석하지 않는다.
 
 ### 5c-2 삭제 영향 범위 count snapshot
 
@@ -309,7 +316,7 @@ schema 변경은 해당 단계에 포함하며, 6a까지 미뤄서 중간 commit
   13개 종료 코드 0과 worker 자동 복구 없이 통과한 사실을 확인했다. Integration 사전 process-control의
   Windows 전용 1개 skip은 Core 전체 회귀의 skip 0개와 구분한다.
 - 업무 HTTP/OpenAPI·schema·Compute payload·계산 hash와 ID 형식 변경은 없으며 계산 결정론 영향은 없다.
-  Integration #49 후보에 대한 검증과 Integration main 반영을 구분한다. 기존 Snowflake node 배정·재시작
+  당시 Integration #49 후보 검증과 이후 `801241f`의 main 반영을 구분한다. 기존 Snowflake node 배정·재시작
   high-water mark, Compute 0017 단일 transaction 진단과 schema 운영 절차는 그대로 적용한다.
 
 ### 5c-1 실패 의미와 public 조회 경계

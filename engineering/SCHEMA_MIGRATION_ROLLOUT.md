@@ -63,5 +63,6 @@ Integration `17e459f`의 일반 API/Web 및 전체 Trading fixture를 모두 통
 473.776초이며 worker 복구 없이 ORCH-024~028·삭제 count·정책 시계·canary·migration replay를 통과했다.
 
 [Core #106](https://github.com/refinvest-dev/core-api/pull/106) →
-[Integration #49](https://github.com/refinvest-dev/integration/pull/49) 순서로 반영한다. 수동 fixture의 초기화
+[Integration #49](https://github.com/refinvest-dev/integration/pull/49) 순서로 main 반영을 마쳤다. 수동 fixture의 초기화
 주체와 선택형 Linux CI 실행 방법은 Integration README를 따른다.
+머지 후 main 조합 검증과 대상 운영 DB의 미확인 전환 증거는 [Refactoring Handoff](REFACTORING_HANDOFF.md)를 따른다.
