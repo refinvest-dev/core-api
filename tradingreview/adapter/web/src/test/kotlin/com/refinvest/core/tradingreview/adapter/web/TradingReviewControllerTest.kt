@@ -1,5 +1,13 @@
 package com.refinvest.core.tradingreview.adapter.web
 
+import com.refinvest.core.tradingreview.adapter.web.account.TradingAccountController
+import com.refinvest.core.tradingreview.adapter.web.book.TradingAccountBookController
+import com.refinvest.core.tradingreview.adapter.web.book.TradingBookController
+import com.refinvest.core.tradingreview.adapter.web.deletion.AffectedResourceSummary
+import com.refinvest.core.tradingreview.adapter.web.deletion.TradingDeletionController
+import com.refinvest.core.tradingreview.adapter.web.deletion.TradingDeletionResponse
+import com.refinvest.core.tradingreview.adapter.web.error.TradingReviewExceptionHandler
+
 import com.refinvest.core.tradingreview.port.inbound.account.TradingAccountResult
 import com.refinvest.core.tradingreview.port.inbound.account.create.CreateTradingAccountCommand
 import com.refinvest.core.tradingreview.port.inbound.account.create.CreateTradingAccountUseCase
@@ -63,7 +71,7 @@ class TradingReviewControllerTest {
         override fun execute(command: DeleteTradingBookCommand) = deletion
     }
     private val mvc = MockMvcBuilders.standaloneSetup(
-        TradingAccountController(accounts, accounts, accounts, accounts, books, books), TradingBookController(books, books),
+        TradingAccountController(accounts, accounts, accounts, accounts), TradingAccountBookController(books, books), TradingBookController(books, books),
         TradingDeletionController(object : GetTradingDeletionRequestUseCase { override fun execute(query: GetTradingDeletionRequestQuery) = deletion }),
     ).setControllerAdvice(TradingReviewExceptionHandler()).build()
 
@@ -92,6 +100,18 @@ class TradingReviewControllerTest {
             .andExpect(status().isAccepted).andExpect(jsonPath("$.state").value("REQUESTED"))
         mvc.perform(get("/trading-deletion-requests/13"))
             .andExpect(status().isOk).andExpect(jsonPath("$.affectedResources.books").value(1))
+    }
+
+    @Test
+    fun `nested book collection keeps the response shape and safe error responses`() {
+        mvc.perform(get("/trading-accounts/11/books?page=0&size=20"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].tradingAccountId").value("11"))
+            .andExpect(jsonPath("$.total").value(1))
+        mvc.perform(post("/trading-accounts/11/books").contentType("application/json")
+            .content("""{"displayName":"Futures","productFamily":"LINEAR_PERPETUAL","positionMode":"ONE_WAY","settlementAsset":"USDT","reviewTimezone":"UTC"}"""))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("REQUEST_INVALID"))
     }
 
     @Test

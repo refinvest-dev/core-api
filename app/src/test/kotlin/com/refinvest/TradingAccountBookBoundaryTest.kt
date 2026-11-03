@@ -36,7 +36,7 @@ class TradingAccountBookBoundaryTest {
         val query = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/GetTradingDeletionRequestService.kt"))
         assertTrue(query.contains("DeletionRequestReader"))
         assertFalse(query.contains("DeletionRequestStore") || query.contains(".insert(") || query.contains(".update("))
-        val response = Files.readString(root.resolve("tradingreview/adapter/web/src/main/kotlin/com/refinvest/core/tradingreview/adapter/web/TradingReviewController.kt"))
+        val response = Files.readString(root.resolve("tradingreview/adapter/web/src/main/kotlin/com/refinvest/core/tradingreview/adapter/web/deletion/TradingDeletionResponse.kt"))
         assertFalse(response.contains("when (value.state)") || response.contains("if (value.artifactCount"))
     }
 
@@ -130,7 +130,7 @@ class TradingAccountBookBoundaryTest {
         assertFalse(child.contains("AggregateRoot") || child.contains("data class TradingSourceArtifact"))
         val store = Files.readString(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/outbound/persistence/importsession/TradingImportSessionStore.kt"))
         assertTrue(store.contains("update(session: TradingImportSession)"))
-        val service = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/TradingImportService.kt"))
+        val service = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/importsession/upload/UploadTradingImportArtifactService.kt"))
         assertTrue(service.contains("session.recordUpload("))
         assertFalse(service.contains("artifacts.insert(") || service.contains("markDeletionPending("))
     }
@@ -188,7 +188,8 @@ class TradingAccountBookBoundaryTest {
         val queries = Files.readString(persistence.resolve("DeletionRequestQueries.kt"))
         assertTrue(adapter.contains("insert(request: DeletionRequest)") && queries.contains("DeletionRequestPersistenceMapper.toDomain("))
         assertFalse(adapter.contains("TradingIdempotencyStore") || adapter.contains("TradingAccountStore"))
-        listOf("TradingReviewService.kt", "TradingImportService.kt").forEach { name ->
+        listOf("account/delete/DeleteTradingAccountService.kt", "book/delete/DeleteTradingBookService.kt",
+            "importsession/delete/DeleteTradingImportSessionService.kt", "importsession/deleteartifact/DeleteTradingSourceArtifactService.kt").forEach { name ->
             val source = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/$name"))
             assertTrue(source.contains("DeletionRequest.request(") && source.contains("TradingDeletion.fromDomain("))
             assertFalse(source.contains("val deletion = TradingDeletion(") || source.contains("DeletionRequest.restore("))

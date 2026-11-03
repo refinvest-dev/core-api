@@ -1,8 +1,7 @@
-package com.refinvest.core.tradingreview.adapter.web
+package com.refinvest.core.tradingreview.adapter.web.artifactgrant
 
 import com.refinvest.core.tradingreview.port.inbound.artifactgrant.redeem.RedeemTradingArtifactGrantCommand
 import com.refinvest.core.tradingreview.port.inbound.artifactgrant.redeem.RedeemTradingArtifactGrantUseCase
-
 import org.springframework.core.io.InputStreamResource
 import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseEntity

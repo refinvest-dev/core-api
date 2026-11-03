@@ -1,8 +1,15 @@
-package com.refinvest.core.tradingreview.adapter.web
+package com.refinvest.core.tradingreview.adapter.web.error
 
+import com.refinvest.core.tradingreview.adapter.web.account.TradingAccountController
+import com.refinvest.core.tradingreview.adapter.web.artifact.TradingSourceArtifactController
+import com.refinvest.core.tradingreview.adapter.web.artifactgrant.TradingArtifactGrantController
+import com.refinvest.core.tradingreview.adapter.web.book.TradingAccountBookController
+import com.refinvest.core.tradingreview.adapter.web.book.TradingBookController
+import com.refinvest.core.tradingreview.adapter.web.deletion.TradingDeletionController
+import com.refinvest.core.tradingreview.adapter.web.importsession.TradingBookImportController
+import com.refinvest.core.tradingreview.adapter.web.importsession.TradingImportSessionController
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
-
 import java.time.Instant
 import java.util.UUID
 import org.springframework.core.Ordered
@@ -16,11 +23,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 
-data class TradingErrorResponse(val code: String, val message: String, val traceId: String, val retryable: Boolean,
-                                val userAction: String? = null, val occurredAt: Instant? = null)
-
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = [TradingAccountController::class, TradingBookController::class,
+@RestControllerAdvice(assignableTypes = [TradingAccountController::class, TradingAccountBookController::class, TradingBookController::class,
     TradingDeletionController::class, TradingBookImportController::class, TradingImportSessionController::class, TradingSourceArtifactController::class, TradingArtifactGrantController::class])
 class TradingReviewExceptionHandler {
     @ExceptionHandler(TradingFailure::class)

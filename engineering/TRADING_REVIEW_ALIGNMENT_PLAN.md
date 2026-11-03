@@ -20,7 +20,7 @@ Context 문서나 OpenAPI를 Core에서 직접 수정하지 않는다. 이 계�
 | 일반 Aggregate 저장 | `SubscriptionStore.save(Subscription)`와 command 조회의 Member 잠금, 별도 Reader | `insert/update(Boolean)`와 SQL 조건·row 추출·parameter 구성이 각 adapter에 반복 |
 | JPA 모델 변환 | Subscription·Member·Strategy도 별도 PersistenceMapper 사용 | Mapper 분리 자체는 차이가 아님. JDBC Record·ResultSet·SQL parameter를 함께 관리하는 비용을 비교해야 함 |
 | 조회 모델 | Strategy는 outbound `StrategyPageReadModel`과 inbound `ListStrategiesResult`를 구분 | `TradingPage`, `TradingDeletion`, `PublishedLedgerSummary`가 inbound 결과와 outbound 조회에 연결돼 있음 |
-| Web 구성 | Strategy의 기능/resource별 web package와 DTO | Trading Review의 Controller 8개와 여러 request/response가 두 포괄 파일 등에 모여 있음 |
+| Web 구성 | Strategy의 기능/resource별 web package와 DTO | 당시 Trading Review의 Controller 7개와 여러 request/response가 두 포괄 파일 등에 모여 있음 |
 
 파일 수는 기능 복잡도나 품질 지표로 사용하지 않는다. 위 숫자는 검토한 source 범위다. Subscription의
 단순한 모델을 Ledger 발행·worker queue에 그대로 적용하지 않고, 일반 업무 구조의 일관성을 참고한다.
@@ -120,7 +120,8 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
 
 - 계획·규칙은 [Core #112](https://github.com/refinvest-dev/core-api/pull/112)로 머지됐다.
 - 순서 1은 [Core #113](https://github.com/refinvest-dev/core-api/pull/113)에서 구현했다. 실제 후속 검증 결과를
-  아래에 기록하며, 기능별 Service 분리·일반 저장의 JPA 전환·큰 실행 구현 정리는 순서 2~6으로 남는다.
+  아래에 기록한다. 순서 2는 [Core #114](https://github.com/refinvest-dev/core-api/pull/114)에서 구현·검증했으며,
+  일반 저장의 JPA 전환·큰 실행 구현 정리는 순서 3~6으로 남는다.
 
 ### PR 1: Port Direction and Entry Points
 
@@ -151,3 +152,56 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
   로컬 계약·Context snapshot 26개와 Normalization/Analytics vector도 일치했다.
 - HTTP/OpenAPI·schema·SQL 조건·version/generation/lease·retention 및 계산 hash 의미 변경은 없으며
   계산 결정론 영향은 없다. 이 단계에서 JPA 전환이나 포괄 Service 분리를 완료했다고 표시하지 않는다.
+
+### PR 2: Use Case Services and Resource Web Adapters
+
+- `TradingReviewService`의 Account/Book 8개와 `TradingImportService`의 6개 진입점을 각각의
+  `application/{account,book,importsession}/<기능>` Service로 분리했다. 각 서비스는 inbound 하나만
+  구현하고 실제 사용하는 outbound port를 주입받는다. 조회는 2~6개, 명령은 5~10개 의존성을 가지며,
+  기존 포괄 서비스에 다시 위임하는 production facade는 두지 않았다.
+- 명령과 read-only 조회의 transaction 설정을 유지했다. 업로드의 파일 staging·발행과 deferred metadata는
+  DB transaction 밖에 있으며, `TransactionTemplate` 안의 Account→Book→Session 잠금·Root 변경·CAS·
+  idempotency 완료 순서를 보존했다. 재요청과 저장 충돌 때의 불필요한 파일 정리도 같은 경계에서 수행한다.
+- 순수한 key/page 검증·실패 구분·request fingerprint만 공유한다. fingerprint의 UTF-8 byte 길이·NUL·
+  필드 순서와 operation ID를 유지하고 한글 이름의 고정 벡터로 확인했다. 정규화의 별도 hash 규칙을
+  이 helper로 통합하지 않는다. Import 조회의 발행 summary 변환과 페이지당 한 번의 시각 평가도 유지한다.
+- Controller·Request·Response는 resource별 package로 옮겼다. Account 하위 Book collection은
+  `book/TradingAccountBookController`로 분리해 전체 Controller는 8개가 됐다. 모든 Controller에 동일한
+  안전한 예외 처리를 적용하며 URL·HTTP status·JSON 형태와 multipart stream 처리를 보존했다.
+- 업무 메서드 13개와 Web 선언 20개의 보존을 비교했다. Book 목록의 기존 부모 조회·lifecycle 검사는
+  다른 application service를 의존하지 않도록 해당 Service로 옮겼다. PostgreSQL의 기존 경합·삭제·
+  재요청 시나리오는 테스트 전용 조립체를 통해 실제 새 서비스를 실행하며 production 호환용 클래스는 없다.
+- 수정 전 포괄 서비스가 새 구조 검사에서 실패함을 확인했다. 새 검사에서는 기능별 구현·package·의존성·
+  transaction과 Controller의 inbound 진입·공통 예외 처리 범위를 확인한다. 단위 테스트는 생성/재요청/
+  저장 실패와 업로드의 metadata·외부 I/O·잠금·CAS 실패 정리를 검증한다.
+- 최종 로컬 관련 테스트 157개가 통과했다. Port 2개·application 37개·web 15개·persistence 85개·app
+  경계 18개이며 실패·오류·skip은 0개다. 모듈 경계와 실행 JAR도 확인했다. 초기 테스트 대역의 Kotlin
+  typed ID JVM 표현과 한글 벡터 기대값을 바로잡았고, Windows `Bad address: connect/listen` 실패 실행을
+  성공 집계에 포함하지 않았다. 수정·재실행 뒤 실제 suite 수와 native exit code를 확인했다.
+- [Core 전체 CI](https://github.com/refinvest-dev/core-api/actions/runs/41675023226), [계약 CI](https://github.com/refinvest-dev/integration/actions/runs/41675098590),
+  [API/Web·전체 Trading CI](https://github.com/refinvest-dev/integration/actions/runs/41675103472)는 Core `a34b7a2`를
+  고정해 실행한다. Context `0bcdf79`, Compute `113b0e2`, Web `9354dfe`, Integration `801241f`를 사용한다.
+  세 CI 모두 통과했다. Core는 30개 모듈·534개 테스트와 실행 JAR·결과 gate를 확인했으며, 실제 PostgreSQL
+  10개 suite·144개를 포함해 실패·오류·skip이 0개다. API/Web의 브라우저 11개도 통과했다. 로컬 Context
+  문서 26개·OpenAPI·Normalization/Analytics vector 동기화도 통과했다.
+- 전체 Trading fixture의 artifact에서도 5개 저장소 고정 커밋 일치를 확인했다. Raw policy clock 4개·삭제
+  count snapshot 2개·version pin 시나리오 8개는 모두 PASS이고 process control 13개는 종료 코드 0이다.
+  worker 복구 이벤트는 없으며 fixture 실행 시간은 483.234초다. Integration 사전 검사의 Windows 전용
+  1 skip은 Core 전체 테스트의 skip 0개와 구분한다. Compute atomic-runner migration의 SQLSTATE 55006
+  진단은 기존 제약이며 이 구조 변경으로 해결됐다고 표시하지 않는다.
+- SQL·schema·Domain·port·Core↔Compute 계약과 계산 결정론 규칙은 바꾸지 않았다. Normalization admission/
+  worker·Deletion 실행 구조는 순서 5의 범위이며, 이 PR로 모든 application 정리가 끝났다고 표시하지 않는다.
+
+### Next: Account and Book JPA Baseline
+
+1. Account/Book의 기존 schema에 맞는 JPA Entity·`{Aggregate}JpaStore`와 순수한
+   `{Aggregate}PersistenceMapper`를 구성한다. Root 사이 참조는 ID로 유지하며 하위 collection 전체 로딩이나
+   cascade를 새 Aggregate 경계로 삼지 않는다. 신규 insert와 기존 snapshot 저장의 의미를 구분한다.
+2. Aggregate Store와 독립 Reader를 구성하고 owner·불변 필드·expected version·deletion generation 및
+   Account 부모 잠금을 보존한다. 최신 Entity를 재조회했다는 이유로 오래된 Domain version을 덮어쓰지 않는다.
+   Subscription의 단순 저장 형태는 참고하되 Trading Review의 동시성 방어를 생략하지 않는다.
+3. 기존 JDBC cascade·publication capability와 JPA가 같은 transaction에 참여하는지 검증한다. JDBC가
+   갱신한 뒤의 persistence context와 rollback도 확인한다. 대용량 Ledger와 worker의 원자적 SQL은 유지한다.
+4. 실제 PostgreSQL에서 매핑 round-trip·schema validate·stale snapshot 거절·부모 삭제와 자식 생성 경합·
+   잠금 순서·idempotency rollback을 재실행한다. Account/Book 기준이 검증된 뒤 Session/DeletionRequest의
+   일반 저장에 적용할 범위를 순서 4에서 확정한다.
