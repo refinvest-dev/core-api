@@ -1,10 +1,15 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionResult
+import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.normalization.retry.RetryTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.normalization.validate.ValidateTradingImportSessionUseCase
+
 import com.refinvest.core.tradingreview.port.idempotency.IdempotencyClaim
 import com.refinvest.core.tradingreview.port.idempotency.TradingIdempotencyStore
 import com.refinvest.core.tradingreview.port.member.TradingMemberProvider
 import com.refinvest.core.tradingreview.port.normalization.TradingNormalizationTransitionGate
-import com.refinvest.core.tradingreview.port.normalization.TradingNormalizationUseCase
 import com.refinvest.core.tradingreview.port.normalization.policy.TradingNormalizationSettings
 import com.refinvest.core.tradingreview.port.normalization.policy.TradingVersionPins
 
@@ -51,16 +56,16 @@ open class TradingNormalizationService(
     private val transition: TradingNormalizationTransitionGate,
     private val admissions: TradingNormalizationAdmission,
     private val identifiers: TradingNormalizationIdGenerator,
-) : TradingNormalizationUseCase {
+) : ValidateTradingImportSessionUseCase, RetryTradingImportSessionUseCase {
     private val strictMapper = JsonMapper.builder()
         .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build()
     @Transactional
-    override fun validate(id: TradingImportSessionId, targetVersionSetJson: String?, key: String): TradingImportSession =
-        admit(id, targetVersionSetJson, key, false)
+    override fun execute(command: ValidateTradingImportSessionCommand): TradingImportSessionResult =
+        TradingImportSessionResult.fromDomain(admit(command.id, command.targetVersionSetJson, command.key, false))
 
     @Transactional
-    override fun retry(id: TradingImportSessionId, key: String): TradingImportSession =
-        admit(id, null, key, true)
+    override fun execute(command: RetryTradingImportSessionCommand): TradingImportSessionResult =
+        TradingImportSessionResult.fromDomain(admit(command.id, null, command.key, true))
 
     private fun admit(id: TradingImportSessionId, requestedVersions: String?, key: String,
                       retry: Boolean): TradingImportSession {

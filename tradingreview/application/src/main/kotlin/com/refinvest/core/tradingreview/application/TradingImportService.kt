@@ -1,13 +1,27 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionResult
+import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionView
+import com.refinvest.core.tradingreview.port.importsession.TradingSourceArtifactResult
+import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.importsession.create.CreateTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.importsession.delete.DeleteTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
+import com.refinvest.core.tradingreview.port.importsession.deleteartifact.DeleteTradingSourceArtifactUseCase
+import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionQuery
+import com.refinvest.core.tradingreview.port.importsession.get.GetTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsQuery
+import com.refinvest.core.tradingreview.port.importsession.list.ListTradingImportsUseCase
+import com.refinvest.core.tradingreview.port.importsession.upload.UploadArtifactResult
+import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactCommand
+import com.refinvest.core.tradingreview.port.importsession.upload.UploadTradingImportArtifactUseCase
+
 import com.refinvest.core.tradingreview.port.artifactstorage.RawArtifactStorage
 import com.refinvest.core.tradingreview.port.idempotency.IdempotencyClaim
 import com.refinvest.core.tradingreview.port.idempotency.TradingIdempotencyStore
 import com.refinvest.core.tradingreview.port.identity.TradingIdGenerator
-import com.refinvest.core.tradingreview.port.importsession.TradingImportSessionView
-import com.refinvest.core.tradingreview.port.importsession.TradingImportUseCase
 import com.refinvest.core.tradingreview.port.importsession.upload.TradingUploadMetadata
-import com.refinvest.core.tradingreview.port.importsession.upload.UploadArtifactResult
 import com.refinvest.core.tradingreview.port.ledger.TradingLedgerPublicationReader
 import com.refinvest.core.tradingreview.port.member.TradingMemberProvider
 import com.refinvest.core.tradingreview.port.normalization.policy.TradingVersionPins
@@ -62,9 +76,40 @@ open class TradingImportService(
     private val revisions: TradingLedgerPublicationReader,
     private val reader: TradingImportSessionReader,
     private val deletionInventory: DeletionScopeInventory,
-) : TradingImportUseCase {
+) : CreateTradingImportSessionUseCase, GetTradingImportSessionUseCase, ListTradingImportsUseCase,
+    UploadTradingImportArtifactUseCase, DeleteTradingImportSessionUseCase, DeleteTradingSourceArtifactUseCase {
     @Transactional
-    override fun create(bookId: TradingBookId, sourceTimezone: String, reviewTimezone: String,
+    override fun execute(command: CreateTradingImportSessionCommand): TradingImportSessionResult =
+        TradingImportSessionResult.fromDomain(createSession(command.bookId, command.sourceTimezone,
+            command.reviewTimezone, command.mode, command.dataPolicyVersion, command.clientRequestReference, command.key))
+
+    @Transactional(readOnly = true)
+    override fun execute(query: GetTradingImportSessionQuery): TradingImportSessionView =
+        getSession(query.id).let { TradingImportSessionView.fromDomain(it.session, it.artifacts, it.published, clock.instant()) }
+
+    @Transactional(readOnly = true)
+    override fun execute(query: ListTradingImportsQuery): TradingPage<TradingImportSessionView> =
+        listSessions(query.bookId, query.page, query.size).let { page ->
+            val now = clock.instant()
+            TradingPage(page.items.map {
+                TradingImportSessionView.fromDomain(it.session, it.artifacts, it.published, now)
+            }, page.page, page.size, page.total)
+        }
+
+    override fun execute(command: UploadTradingImportArtifactCommand): UploadArtifactResult =
+        uploadDeferred(command.id, command.source, command.key, command.metadata).let {
+            UploadArtifactResult(TradingSourceArtifactResult.fromDomain(it.artifact, clock.instant()), it.created)
+        }
+
+    @Transactional
+    override fun execute(command: DeleteTradingImportSessionCommand): TradingDeletion =
+        deleteSession(command.id, command.key)
+
+    @Transactional
+    override fun execute(command: DeleteTradingSourceArtifactCommand): TradingDeletion =
+        deleteArtifact(command.id, command.key)
+
+    private fun createSession(bookId: TradingBookId, sourceTimezone: String, reviewTimezone: String,
                         mode: TradingPositionMode, dataPolicyVersion: String?, clientRequestReference: String?,
                         key: String): TradingImportSession {
         validKey(key)
@@ -99,8 +144,7 @@ open class TradingImportService(
         }
     }
 
-    @Transactional(readOnly = true)
-    override fun get(id: TradingImportSessionId): TradingImportSessionView {
+    private fun getSession(id: TradingImportSessionId): LoadedImportSession {
         val owner = members.currentMemberId()
         val session = reader.find(id, owner) ?: throw missing(reader.deleted(id, owner))
         if (session.deletionPending) throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
@@ -108,13 +152,12 @@ open class TradingImportService(
         val account = accounts.find(book.accountId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
         if (book.status != TradingLifecycleStatus.ACTIVE || account.status != TradingLifecycleStatus.ACTIVE)
             throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
-        return TradingImportSessionView(session, session.artifacts,
+        return LoadedImportSession(session, session.artifacts,
             if (session.status == TradingImportStatus.ACCEPTED)
                 revisions.publishedForSession(id, owner) else null)
     }
 
-    @Transactional(readOnly = true)
-    override fun list(bookId: TradingBookId, page: Int, size: Int): TradingPage<TradingImportSessionView> {
+    private fun listSessions(bookId: TradingBookId, page: Int, size: Int): TradingPage<LoadedImportSession> {
         if (page < 0 || size !in 1..100) throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
         val owner = members.currentMemberId()
         val book = books.find(bookId, owner) ?: throw TradingFailure("RESOURCE_NOT_FOUND", TradingFailureKind.NOT_FOUND)
@@ -122,20 +165,13 @@ open class TradingImportService(
         if (book.status != TradingLifecycleStatus.ACTIVE || account.status != TradingLifecycleStatus.ACTIVE)
             throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
         val result = reader.list(bookId, owner, page, size)
-        return TradingPage(result.items.map { session -> TradingImportSessionView(session,
+        return TradingPage(result.items.map { session -> LoadedImportSession(session,
             session.artifacts, if (session.status == TradingImportStatus.ACCEPTED)
                 revisions.publishedForSession(session.id, owner) else null) }, page, size, result.total)
     }
 
-    override fun upload(id: TradingImportSessionId, role: TradingArtifactRole, filename: String,
-                        contentType: String, declaredSize: Long, declaredSha256: String,
-                        dialectCandidate: String, source: InputStream, key: String): UploadArtifactResult =
-        uploadDeferred(id, source, key) {
-            TradingUploadMetadata(role, filename, contentType, declaredSize, declaredSha256, dialectCandidate)
-        }
-
-    override fun uploadDeferred(id: TradingImportSessionId, source: InputStream, key: String,
-                                metadata: () -> TradingUploadMetadata): UploadArtifactResult {
+    private fun uploadDeferred(id: TradingImportSessionId, source: InputStream, key: String,
+                                metadata: () -> TradingUploadMetadata): StoredUpload {
         validKey(key)
         val owner = members.currentMemberId()
         val preflight = sessions.find(id, owner) ?: throw missing(sessions.deleted(id, owner))
@@ -190,7 +226,7 @@ open class TradingImportService(
                 if (claim is IdempotencyClaim.Replayed) {
                     val existing = artifacts.find(TradingSourceArtifactId(claim.resourceId), owner)
                         ?: throw TradingFailure("RESOURCE_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
-                    return@execute UploadArtifactResult(existing, false)
+                    return@execute StoredUpload(existing, false)
                 }
                 val existing = session.artifacts.singleOrNull { it.role == role }
                 if (existing != null) {
@@ -198,7 +234,7 @@ open class TradingImportService(
                     if (existing.retentionStatus != TradingArtifactRetentionStatus.ACTIVE)
                         throw TradingFailure("SOURCE_ARTIFACT_DELETED", TradingFailureKind.NO_LONGER_AVAILABLE)
                     idempotency.complete(owner, "uploadTradingImportArtifact", key, existing.id.value)
-                    return@execute UploadArtifactResult(existing, false)
+                    return@execute StoredUpload(existing, false)
                 }
                 val now = clock.instant()
                 val changed = session.recordUpload(artifactId, role, contentType, staged.byteSize, staged.sha256,
@@ -206,7 +242,7 @@ open class TradingImportService(
                 if (!sessions.update(changed)) throw TradingFailure("CONCURRENT_MODIFICATION", TradingFailureKind.CONFLICT)
                 val artifact = changed.artifacts.single { it.id == artifactId }
                 idempotency.complete(owner, "uploadTradingImportArtifact", key, artifactId.value)
-                UploadArtifactResult(artifact, true)
+                StoredUpload(artifact, true)
             } ?: throw TradingFailure("TEMPORARY_DEPENDENCY_FAILURE", TradingFailureKind.DEPENDENCY_UNAVAILABLE)
             if (!result.created) storage.delete(publishedKey)
             return result
@@ -222,8 +258,7 @@ open class TradingImportService(
         }
     }
 
-    @Transactional
-    override fun delete(id: TradingImportSessionId, key: String): TradingDeletion {
+    private fun deleteSession(id: TradingImportSessionId, key: String): TradingDeletion {
         validKey(key)
         val owner = members.currentMemberId()
         val operation = "deleteTradingImportSession"
@@ -255,8 +290,7 @@ open class TradingImportService(
         return TradingDeletion.fromDomain(deletion)
     }
 
-    @Transactional
-    override fun deleteArtifact(id: TradingSourceArtifactId, key: String): TradingDeletion {
+    private fun deleteArtifact(id: TradingSourceArtifactId, key: String): TradingDeletion {
         validKey(key)
         val owner = members.currentMemberId()
         val operation = "deleteTradingSourceArtifact"
@@ -294,6 +328,9 @@ open class TradingImportService(
         idempotency.complete(owner, operation, key, deletion.id.value)
         return TradingDeletion.fromDomain(deletion)
     }
+
+    private data class LoadedImportSession(val session: TradingImportSession, val artifacts: List<com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact>, val published: com.refinvest.core.tradingreview.port.ledger.PublishedLedgerSummary?)
+    private data class StoredUpload(val artifact: com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact, val created: Boolean)
 
     private fun missing(deleted: Boolean) = TradingFailure(if (deleted) "RESOURCE_DELETED" else "RESOURCE_NOT_FOUND",
         if (deleted) TradingFailureKind.NO_LONGER_AVAILABLE else TradingFailureKind.NOT_FOUND)

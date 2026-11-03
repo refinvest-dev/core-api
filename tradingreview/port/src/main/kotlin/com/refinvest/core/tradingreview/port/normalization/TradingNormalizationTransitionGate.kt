@@ -1,7 +1,5 @@
 package com.refinvest.core.tradingreview.port.normalization
 
-
-
 interface TradingNormalizationTransitionGate {
     fun requireAdmission()
     fun publicationAllowed(): Boolean

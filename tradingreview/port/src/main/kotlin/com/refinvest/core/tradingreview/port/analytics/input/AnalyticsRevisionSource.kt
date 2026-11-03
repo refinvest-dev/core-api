@@ -1,8 +1,5 @@
 package com.refinvest.core.tradingreview.port.analytics.input
 
-import java.io.OutputStream
-import java.io.InputStream
-
 data class AnalyticsRevisionSource(
     val revisionId: String,
     val resultSchemaVersion: String,

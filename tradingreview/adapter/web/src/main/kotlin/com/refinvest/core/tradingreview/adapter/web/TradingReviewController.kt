@@ -1,7 +1,24 @@
 package com.refinvest.core.tradingreview.adapter.web
 
-import com.refinvest.core.tradingreview.port.account.TradingAccountUseCase
-import com.refinvest.core.tradingreview.port.book.TradingBookUseCase
+import com.refinvest.core.tradingreview.port.account.TradingAccountResult
+import com.refinvest.core.tradingreview.port.account.create.CreateTradingAccountCommand
+import com.refinvest.core.tradingreview.port.account.create.CreateTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.account.delete.DeleteTradingAccountCommand
+import com.refinvest.core.tradingreview.port.account.delete.DeleteTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.account.get.GetTradingAccountQuery
+import com.refinvest.core.tradingreview.port.account.get.GetTradingAccountUseCase
+import com.refinvest.core.tradingreview.port.account.list.ListTradingAccountsQuery
+import com.refinvest.core.tradingreview.port.account.list.ListTradingAccountsUseCase
+import com.refinvest.core.tradingreview.port.book.TradingBookResult
+import com.refinvest.core.tradingreview.port.book.create.CreateTradingBookCommand
+import com.refinvest.core.tradingreview.port.book.create.CreateTradingBookUseCase
+import com.refinvest.core.tradingreview.port.book.delete.DeleteTradingBookCommand
+import com.refinvest.core.tradingreview.port.book.delete.DeleteTradingBookUseCase
+import com.refinvest.core.tradingreview.port.book.get.GetTradingBookQuery
+import com.refinvest.core.tradingreview.port.book.get.GetTradingBookUseCase
+import com.refinvest.core.tradingreview.port.book.list.ListTradingBooksQuery
+import com.refinvest.core.tradingreview.port.book.list.ListTradingBooksUseCase
+
 
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
@@ -38,7 +55,7 @@ data class CreateTradingBookRequest(
 data class TradingAccountResponse(val id: String, val venue: TradingVenue, val displayName: String,
                                   val status: String, val createdAt: Instant) {
     companion object {
-        fun from(account: TradingAccount) = TradingAccountResponse(account.id.value.toString(), account.venue,
+        fun from(account: TradingAccountResult) = TradingAccountResponse(account.id.value.toString(), account.venue,
             account.displayName, account.status.name, account.createdAt)
     }
 }
@@ -48,7 +65,7 @@ data class TradingBookResponse(val id: String, val tradingAccountId: String, val
                                val settlementAsset: TradingSettlementAsset, val reviewTimezone: String,
                                val status: String, val createdAt: Instant) {
     companion object {
-        fun from(book: TradingBook) = TradingBookResponse(book.id.value.toString(), book.accountId.value.toString(),
+        fun from(book: TradingBookResult) = TradingBookResponse(book.id.value.toString(), book.accountId.value.toString(),
             book.venue, book.productFamily, book.positionMode, book.settlementAsset, book.reviewTimezone,
             book.status.name, book.createdAt)
     }
@@ -86,52 +103,61 @@ data class TradingDeletionFailure(val code: String, val message: String, val ret
 
 @RestController
 @RequestMapping("/trading-accounts")
-class TradingAccountController(private val accounts: TradingAccountUseCase, private val books: TradingBookUseCase) {
+class TradingAccountController(
+    private val createAccount: CreateTradingAccountUseCase,
+    private val getAccount: GetTradingAccountUseCase,
+    private val listAccounts: ListTradingAccountsUseCase,
+    private val deleteAccount: DeleteTradingAccountUseCase,
+    private val createBook: CreateTradingBookUseCase,
+    private val listBooks: ListTradingBooksUseCase,
+) {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun create(@RequestHeader("Idempotency-Key") key: String,
                @Valid @RequestBody request: CreateTradingAccountRequest) =
-        TradingAccountResponse.from(accounts.create(request.venue, request.displayName, key))
+        TradingAccountResponse.from(createAccount.execute(CreateTradingAccountCommand(request.venue, request.displayName, key)))
 
     @GetMapping("/{tradingAccountId}")
-    fun get(@PathVariable tradingAccountId: Long) = TradingAccountResponse.from(accounts.get(TradingAccountId(tradingAccountId)))
+    fun get(@PathVariable tradingAccountId: Long) = TradingAccountResponse.from(getAccount.execute(GetTradingAccountQuery(TradingAccountId(tradingAccountId))))
 
     @GetMapping
     fun list(@RequestParam(defaultValue = "0") page: Int, @RequestParam(defaultValue = "20") size: Int): TradingPageResponse<TradingAccountResponse> {
-        val result = accounts.list(page, size)
+        val result = listAccounts.execute(ListTradingAccountsQuery(page, size))
         return TradingPageResponse(result.items.map(TradingAccountResponse::from), result.page, result.size, result.total)
     }
 
     @DeleteMapping("/{tradingAccountId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
     fun delete(@PathVariable tradingAccountId: Long, @RequestHeader("Idempotency-Key") key: String) =
-        TradingDeletionResponse.from(accounts.delete(TradingAccountId(tradingAccountId), key))
+        TradingDeletionResponse.from(deleteAccount.execute(DeleteTradingAccountCommand(TradingAccountId(tradingAccountId), key)))
 
     @PostMapping("/{tradingAccountId}/books")
     @ResponseStatus(HttpStatus.CREATED)
     fun createBook(@PathVariable tradingAccountId: Long, @RequestHeader("Idempotency-Key") key: String,
                    @Valid @RequestBody request: CreateTradingBookRequest) = TradingBookResponse.from(
-        books.create(TradingAccountId(tradingAccountId), request.displayName, request.productFamily,
-            request.positionMode, request.settlementAsset, request.reviewTimezone, key))
+        createBook.execute(CreateTradingBookCommand(TradingAccountId(tradingAccountId), request.displayName, request.productFamily, request.positionMode, request.settlementAsset, request.reviewTimezone, key)))
 
     @GetMapping("/{tradingAccountId}/books")
     fun listBooks(@PathVariable tradingAccountId: Long, @RequestParam(defaultValue = "0") page: Int,
                   @RequestParam(defaultValue = "20") size: Int): TradingPageResponse<TradingBookResponse> {
-        val result = books.list(TradingAccountId(tradingAccountId), page, size)
+        val result = listBooks.execute(ListTradingBooksQuery(TradingAccountId(tradingAccountId), page, size))
         return TradingPageResponse(result.items.map(TradingBookResponse::from), result.page, result.size, result.total)
     }
 }
 
 @RestController
 @RequestMapping("/trading-books")
-class TradingBookController(private val books: TradingBookUseCase) {
+class TradingBookController(
+    private val getBook: GetTradingBookUseCase,
+    private val deleteBook: DeleteTradingBookUseCase,
+) {
     @GetMapping("/{tradingBookId}")
-    fun get(@PathVariable tradingBookId: Long) = TradingBookResponse.from(books.get(TradingBookId(tradingBookId)))
+    fun get(@PathVariable tradingBookId: Long) = TradingBookResponse.from(getBook.execute(GetTradingBookQuery(TradingBookId(tradingBookId))))
 
     @DeleteMapping("/{tradingBookId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
     fun delete(@PathVariable tradingBookId: Long, @RequestHeader("Idempotency-Key") key: String) =
-        TradingDeletionResponse.from(books.delete(TradingBookId(tradingBookId), key))
+        TradingDeletionResponse.from(deleteBook.execute(DeleteTradingBookCommand(TradingBookId(tradingBookId), key)))
 }
 
 @RestController
