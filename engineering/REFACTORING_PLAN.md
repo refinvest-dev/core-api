@@ -13,6 +13,10 @@
 당시의 불변식·저장 경계·동시성 및 검증 범위를 뜻하며, 후속 목록의 port 방향·서비스 구성·일반 저장
 방식까지 이미 정리됐다는 뜻으로 확장하지 않는다.
 
+후속 순서 1의 port 경계는 Core #113으로 반영됐고, 순서 2의 기능별 Service·resource별 Web 구성은
+[Core #114](https://github.com/refinvest-dev/core-api/pull/114)에서 구현·검증했다. 다음은 Account/Book의
+JPA 저장 기준 구현이며, Session/DeletionRequest 일반 저장과 실행 capability 정리는 후속으로 남는다.
+
 ## 1. 목표와 변경 기준
 
 기준은 ADR-018의 feature-centric Hexagonal 구조이며, 관련 업무 계약은 ADR-013,
@@ -34,7 +38,8 @@ read-only query -> Reader -> read model -> Result -> web DTO
 - NormalizationRun·TradingSourceArtifact는 정본상 ImportSession 소속이다. 저장 코드 분리를 위해
   독립 Aggregate로 승격하지 않는다. Account·Book·Session·LedgerRevision·DeletionRequest의
   Root 여부는 [Persistence 계약](../docs/TRADING_REVIEW_PERSISTENCE.md)의 matrix를 따른다.
-- Trading Review의 JDBC를 우선 유지한다. JPA 전환은 별도 근거와 검증을 갖춘 작업으로 제안한다.
+- 기존 불변식·저장 경계 보완 단계는 Trading Review의 JDBC를 유지했다. 후속 구조 정리에서는 위 계획의
+  순서 3~4에 따라 일반 Aggregate 저장의 JPA 전환을 검증하며, worker·대량 발행의 원자적 SQL은 유지한다.
 - 대용량 Revision/Result는 stream/batch로 처리한다. 저장 API를 단순화하려고 모든 row를 적재하지 않는다.
 - schema/wire/hash 의미를 바꿔야 하면 context 정본을 먼저 변경·동기화한다.
 
