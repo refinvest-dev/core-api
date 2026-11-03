@@ -1,5 +1,7 @@
 package com.refinvest.core.tradingreview.adapter.web
 
+import com.refinvest.core.tradingreview.adapter.web.error.TradingReviewExceptionHandler
+
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
 

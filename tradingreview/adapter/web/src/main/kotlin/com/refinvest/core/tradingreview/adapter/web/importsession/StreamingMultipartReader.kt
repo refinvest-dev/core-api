@@ -1,8 +1,7 @@
-package com.refinvest.core.tradingreview.adapter.web
+package com.refinvest.core.tradingreview.adapter.web.importsession
 
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
-
 import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream

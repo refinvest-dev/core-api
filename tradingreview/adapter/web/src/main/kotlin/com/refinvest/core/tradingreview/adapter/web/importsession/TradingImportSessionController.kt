@@ -1,19 +1,15 @@
-package com.refinvest.core.tradingreview.adapter.web
+package com.refinvest.core.tradingreview.adapter.web.importsession
 
+import com.refinvest.core.tradingreview.adapter.web.artifact.TradingSourceArtifactResponse
+import com.refinvest.core.tradingreview.adapter.web.deletion.TradingDeletionResponse
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
-import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionView
-import com.refinvest.core.tradingreview.port.inbound.importsession.TradingSourceArtifactResult
-import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionCommand
-import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionUseCase
 import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionCommand
 import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.inbound.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
-import com.refinvest.core.tradingreview.port.inbound.importsession.deleteartifact.DeleteTradingSourceArtifactUseCase
 import com.refinvest.core.tradingreview.port.inbound.importsession.get.GetTradingImportSessionQuery
 import com.refinvest.core.tradingreview.port.inbound.importsession.get.GetTradingImportSessionUseCase
-import com.refinvest.core.tradingreview.port.inbound.importsession.list.ListTradingImportsQuery
-import com.refinvest.core.tradingreview.port.inbound.importsession.list.ListTradingImportsUseCase
 import com.refinvest.core.tradingreview.port.inbound.importsession.upload.TradingUploadMetadata
 import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadTradingImportArtifactCommand
 import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadTradingImportArtifactUseCase
@@ -21,118 +17,21 @@ import com.refinvest.core.tradingreview.port.inbound.normalization.retry.RetryTr
 import com.refinvest.core.tradingreview.port.inbound.normalization.retry.RetryTradingImportSessionUseCase
 import com.refinvest.core.tradingreview.port.inbound.normalization.validate.ValidateTradingImportSessionCommand
 import com.refinvest.core.tradingreview.port.inbound.normalization.validate.ValidateTradingImportSessionUseCase
-
-import com.refinvest.core.tradingreview.domain.*
-import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
-import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
-import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
-import com.refinvest.core.tradingreview.domain.valueobject.TradingImportFailure
-import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
-import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
-import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
-import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import jakarta.servlet.http.HttpServletRequest
-import jakarta.validation.Valid
-import jakarta.validation.constraints.NotBlank
 import java.io.IOException
-import java.time.Instant
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
-import org.springframework.web.bind.annotation.*
+import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
+import org.springframework.web.bind.annotation.RestController
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
-
-data class CreateTradingImportSessionRequest(
-    @field:NotBlank val sourceTimezone: String,
-    @field:NotBlank val reviewTimezone: String,
-    val declaredPositionMode: TradingPositionMode,
-    val dataPolicyVersion: String? = null,
-    val clientRequestReference: String? = null,
-)
-
-data class TradingSourceArtifactResponse(
-    val id: String, val importSessionId: String, val role: TradingArtifactRole, val filename: String?,
-    val contentType: String, val byteSize: Long, val sha256: String, val dialectCandidate: String,
-    val detectedDialect: String?, val schemaFingerprint: String?, val uploadStatus: String,
-    val retentionStatus: TradingArtifactRetentionStatus, val rawReparseAvailable: Boolean,
-    val coverage: Any?, val rawExpiresAt: Instant, val uploadedAt: Instant, val deletedAt: Instant?,
-) {
-    companion object {
-        fun from(a: TradingSourceArtifactResult) = TradingSourceArtifactResponse(
-            a.id.value.toString(), a.sessionId.value.toString(), a.role, a.filename, a.contentType,
-            a.byteSize, a.sha256, a.dialectCandidate, null, null, "UPLOADED", a.retentionStatus,
-            a.rawReparseAvailable, null, a.rawExpiresAt, a.uploadedAt, a.deletedAt)
-    }
-}
-
-data class TradingImportSessionResponse(
-    val id: String, val tradingBookId: String, val sourceTimezone: String, val reviewTimezone: String,
-    val declaredPositionMode: TradingPositionMode, val status: TradingImportStatus,
-    val artifacts: List<TradingSourceArtifactResponse>, val dataPolicyVersion: String,
-    val retentionPolicy: String, val maskingPolicyVersion: String, val evidenceRetention: String,
-    val deletionPolicyVersion: String, val versions: JsonNode, val createdAt: Instant,
-    val validationStartedAt: Instant?, val uploadedArtifactRoles: List<TradingArtifactRole>,
-    val missingArtifactRoles: List<TradingArtifactRole>, val canValidate: Boolean,
-    val failure: TradingImportFailureResponse?, val completedAt: Instant?,
-    val qualitySummary: JsonNode? = null, val createdLedgerRevisionId: String? = null,
-) {
-    companion object {
-        fun from(view: TradingImportSessionView, mapper: ObjectMapper): TradingImportSessionResponse {
-            val session = view.session
-            val uploaded = session.uploadedArtifactRoles
-            val missing = session.missingArtifactRoles
-            val published = view.published
-            val qualitySummary = published?.let {
-                val report = mapper.readValue(it.qualityReportJson, Map::class.java)
-                    .entries.associate { entry -> entry.key.toString() to entry.value }
-                val capabilities = mapper.readValue(it.capabilityJson, List::class.java)
-                mapper.readTree(mapper.writeValueAsString(report + ("capability" to capabilities)))
-            }
-            return TradingImportSessionResponse(session.id.value.toString(), session.bookId.value.toString(),
-                session.sourceTimezone, session.reviewTimezone, session.declaredPositionMode, session.status,
-                view.artifacts.map { TradingSourceArtifactResponse.from(it) }, session.dataPolicyVersion,
-                session.retentionPolicy, session.maskingPolicyVersion, session.evidenceRetention,
-                session.deletionPolicyVersion, mapper.readTree(session.versionSetJson), session.createdAt,
-                session.validationStartedAt,
-                uploaded, missing, session.canValidate, session.failure?.let(TradingImportFailureResponse::from),
-                published?.publishedAt ?: session.failure?.occurredAt,
-                qualitySummary, published?.revisionId)
-        }
-    }
-}
-
-data class TradingImportFailureResponse(val code: String, val retryable: Boolean, val userAction: String,
-                                        val occurredAt: Instant) {
-    companion object {
-        fun from(failure: TradingImportFailure) = TradingImportFailureResponse(
-            failure.code, failure.retryable, failure.userAction, failure.occurredAt)
-    }
-}
-
-@RestController
-@RequestMapping("/trading-books/{tradingBookId}/imports")
-class TradingBookImportController(
-    private val createImport: CreateTradingImportSessionUseCase,
-    private val getImport: GetTradingImportSessionUseCase,
-    private val listImports: ListTradingImportsUseCase,
-    private val mapper: ObjectMapper,
-) {
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    fun create(@PathVariable tradingBookId: Long, @RequestHeader("Idempotency-Key") key: String,
-               @Valid @RequestBody request: CreateTradingImportSessionRequest): TradingImportSessionResponse {
-        val session = createImport.execute(CreateTradingImportSessionCommand(TradingBookId(tradingBookId), request.sourceTimezone, request.reviewTimezone, request.declaredPositionMode, request.dataPolicyVersion, request.clientRequestReference, key))
-        return TradingImportSessionResponse.from(getImport.execute(GetTradingImportSessionQuery(session.id)), mapper)
-    }
-
-    @GetMapping
-    fun list(@PathVariable tradingBookId: Long, @RequestParam(defaultValue = "0") page: Int,
-             @RequestParam(defaultValue = "20") size: Int): TradingPageResponse<TradingImportSessionResponse> {
-        val result = listImports.execute(ListTradingImportsQuery(TradingBookId(tradingBookId), page, size))
-        return TradingPageResponse(result.items.map { TradingImportSessionResponse.from(it, mapper) },
-            result.page, result.size, result.total)
-    }
-}
 
 @RestController
 @RequestMapping("/trading-import-sessions")
@@ -224,15 +123,4 @@ class TradingImportSessionController(
             throw TradingFailure("REQUEST_INVALID", TradingFailureKind.INVALID_REQUEST)
         return TradingUploadMetadata(role, filename, contentType, size, sha, dialect)
     }
-}
-
-@RestController
-@RequestMapping("/trading-source-artifacts")
-class TradingSourceArtifactController(
-    private val deleteArtifact: DeleteTradingSourceArtifactUseCase,
-) {
-    @DeleteMapping("/{artifactId}")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    fun delete(@PathVariable artifactId: Long, @RequestHeader("Idempotency-Key") key: String) =
-        TradingDeletionResponse.from(deleteArtifact.execute(DeleteTradingSourceArtifactCommand(TradingSourceArtifactId(artifactId), key)))
 }

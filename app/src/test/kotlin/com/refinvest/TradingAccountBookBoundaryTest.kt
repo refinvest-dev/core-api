@@ -36,7 +36,7 @@ class TradingAccountBookBoundaryTest {
         val query = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/GetTradingDeletionRequestService.kt"))
         assertTrue(query.contains("DeletionRequestReader"))
         assertFalse(query.contains("DeletionRequestStore") || query.contains(".insert(") || query.contains(".update("))
-        val response = Files.readString(root.resolve("tradingreview/adapter/web/src/main/kotlin/com/refinvest/core/tradingreview/adapter/web/TradingReviewController.kt"))
+        val response = Files.readString(root.resolve("tradingreview/adapter/web/src/main/kotlin/com/refinvest/core/tradingreview/adapter/web/deletion/TradingDeletionResponse.kt"))
         assertFalse(response.contains("when (value.state)") || response.contains("if (value.artifactCount"))
     }
 

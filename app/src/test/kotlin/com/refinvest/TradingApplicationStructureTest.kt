@@ -8,8 +8,30 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
+import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.RestControllerAdvice
 
 class TradingApplicationStructureTest {
+    @Test
+    fun `resource controllers stay in separate packages and share the safe failure advice`() {
+        val sourceRoot = workspaceRoot().resolve("tradingreview/adapter/web/src/main/kotlin")
+        val types = kotlinClasses(sourceRoot)
+        val controllers = types.filter { it.isAnnotationPresent(RestController::class.java) }
+        assertEquals(8, controllers.size)
+        controllers.forEach { controller ->
+            assertTrue(controller.packageName != "com.refinvest.core.tradingreview.adapter.web", controller.name)
+            assertTrue(controller.constructors.single().parameterTypes.all {
+                it.name.startsWith("com.refinvest.core.tradingreview.port.inbound.") ||
+                    it.name == "tools.jackson.databind.ObjectMapper"
+            }, controller.name)
+            val file = sourceRoot.resolve(controller.name.replace('.', '/') + ".kt")
+            assertTrue(Files.exists(file), "Each resource controller must have its own source file: $controller")
+        }
+        val advice = types.single { it.isAnnotationPresent(RestControllerAdvice::class.java) }
+            .getAnnotation(RestControllerAdvice::class.java)
+        assertEquals(controllers.toSet(), advice.assignableTypes.map { it.java }.toSet())
+    }
+
     @Test
     fun `account book and import services each implement one use case in its feature package`() {
         val root = workspaceRoot()
