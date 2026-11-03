@@ -1,5 +1,8 @@
 package com.refinvest
 
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -13,6 +16,54 @@ import java.lang.reflect.TypeVariable
 import com.refinvest.core.common.domain.DomainEntity
 
 class TradingPortBoundaryTest {
+
+    @Test
+    fun `every inbound use case returns a result without domain entities or outbound models`() {
+        var checked = 0
+        Files.walk(portRoot().resolve("inbound")).use { files ->
+            files.filter { it.toString().endsWith(".kt") }.forEach { file ->
+                val source = Files.readString(file)
+                val pkg = Regex("(?m)^package ([\\w.]+)").find(source)!!.groupValues[1]
+                Regex("(?:fun )?interface (\\w+UseCase)\\b").findAll(source).forEach { declaration ->
+                    val type = Class.forName(pkg + "." + declaration.groupValues[1])
+                    type.declaredMethods.forEach { method ->
+                        if (method.parameterCount > 0) {
+                            assertEquals("execute", method.name, type.name)
+                            assertEquals(1, method.parameterCount, type.name)
+                            val input = method.parameterTypes.single()
+                            assertTrue(input.simpleName.endsWith("Command") || input.simpleName.endsWith("Query"), type.name)
+                        }
+                        checkResult(method.genericReturnType, mutableSetOf())
+                    }
+                    checked++
+                }
+            }
+        }
+        assertTrue(checked >= 29, "Inbound inventory unexpectedly shrank: $checked")
+    }
+
+    @Test
+    fun `web and schedulers call inbound contracts instead of outbound capabilities`() {
+        val adapters = portRoot().parents().first { Files.exists(it.resolve("settings.gradle.kts")) }
+            .resolve("tradingreview/adapter")
+        Files.list(adapters).use { modules ->
+            modules.filter { Files.isDirectory(it) }.forEach { module ->
+                val sources = module.resolve("src/main/kotlin")
+                if (Files.exists(sources)) Files.walk(sources).use { files ->
+                    files.filter { it.toString().endsWith(".kt") }.forEach { file ->
+                        val source = Files.readString(file)
+                        if (module.fileName.toString() == "web" || source.contains("@Scheduled")) {
+                            assertFalse(source.contains("com.refinvest.core.tradingreview.port.outbound."),
+                                "Outbound capability used by inbound adapter: $file")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun Path.parents(): Sequence<Path> = generateSequence(this) { it.parent }
+
     @Test
     fun `port packages express direction and keep contract models in their owner`() {
         val root = portRoot()
@@ -77,7 +128,12 @@ class TradingPortBoundaryTest {
             type.bounds.forEach { checkResult(it, visited) }
         } else if (type is Class<*>) {
             assertFalse(DomainEntity::class.java.isAssignableFrom(type), "Domain entity in inbound result: $type")
+            assertFalse(type.packageName.startsWith("com.refinvest.core.tradingreview.port.outbound"),
+                "Outbound model in inbound result: $type")
+            if (type.isArray) checkResult(type.componentType, visited)
             if (type.packageName.startsWith("com.refinvest.core.tradingreview.port")) {
+                type.declaredFields.filterNot { java.lang.reflect.Modifier.isStatic(it.modifiers) }
+                    .forEach { checkResult(it.genericType, visited) }
                 type.declaredMethods.filter { it.name.startsWith("get") && it.parameterCount == 0 }
                     .forEach { checkResult(it.genericReturnType, visited) }
             }

@@ -1,4 +1,4 @@
-package com.refinvest.core.tradingreview.port.importsession
+package com.refinvest.core.tradingreview.port.inbound.importsession
 
 import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionResult
 import com.refinvest.core.tradingreview.port.inbound.importsession.TradingSourceArtifactResult

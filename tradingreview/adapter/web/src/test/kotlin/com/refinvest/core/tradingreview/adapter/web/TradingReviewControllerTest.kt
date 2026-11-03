@@ -19,6 +19,7 @@ import com.refinvest.core.tradingreview.port.inbound.book.get.GetTradingBookUseC
 import com.refinvest.core.tradingreview.port.inbound.book.list.ListTradingBooksQuery
 import com.refinvest.core.tradingreview.port.inbound.book.list.ListTradingBooksUseCase
 import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.inbound.deletion.get.GetTradingDeletionRequestQuery
 import com.refinvest.core.tradingreview.port.inbound.deletion.get.GetTradingDeletionRequestUseCase
 import com.refinvest.core.tradingreview.port.inbound.pagination.TradingPage
 
@@ -63,7 +64,7 @@ class TradingReviewControllerTest {
     }
     private val mvc = MockMvcBuilders.standaloneSetup(
         TradingAccountController(accounts, accounts, accounts, accounts, books, books), TradingBookController(books, books),
-        TradingDeletionController(object : GetTradingDeletionRequestUseCase { override fun get(id: Long) = deletion }),
+        TradingDeletionController(object : GetTradingDeletionRequestUseCase { override fun execute(query: GetTradingDeletionRequestQuery) = deletion }),
     ).setControllerAdvice(TradingReviewExceptionHandler()).build()
 
     @Test

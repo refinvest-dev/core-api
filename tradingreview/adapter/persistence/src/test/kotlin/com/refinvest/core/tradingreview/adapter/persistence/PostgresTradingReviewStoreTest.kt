@@ -5,12 +5,14 @@ import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
 import com.refinvest.core.tradingreview.port.inbound.account.create.CreateTradingAccountCommand
 import com.refinvest.core.tradingreview.port.inbound.account.delete.DeleteTradingAccountCommand
 import com.refinvest.core.tradingreview.port.inbound.account.get.GetTradingAccountQuery
+import com.refinvest.core.tradingreview.port.inbound.artifactgrant.redeem.RedeemTradingArtifactGrantCommand
 import com.refinvest.core.tradingreview.port.inbound.book.TradingBookResult
 import com.refinvest.core.tradingreview.port.inbound.book.create.CreateTradingBookCommand
 import com.refinvest.core.tradingreview.port.inbound.book.delete.DeleteTradingBookCommand
 import com.refinvest.core.tradingreview.port.inbound.book.get.GetTradingBookQuery
 import com.refinvest.core.tradingreview.port.inbound.deletion.PurgeComponentStatus
 import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.inbound.deletion.get.GetTradingDeletionRequestQuery
 import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionResult
 import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionCommand
 import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionCommand
@@ -70,6 +72,8 @@ import com.refinvest.core.tradingreview.port.outbound.storage.raw.StagedRawArtif
 import com.refinvest.core.tradingreview.port.outbound.storage.workspace.LegacyTradingTemporaryCopies
 import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
 import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactWorkspaces
+
+import com.refinvest.core.tradingreview.application.RedeemTradingArtifactGrantService
 
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.application.GetTradingDeletionRequestService
@@ -312,7 +316,7 @@ class PostgresTradingReviewStoreTest {
         }
         val service = GetTradingDeletionRequestService(member, reader)
         repeat(2) {
-            val view = service.get(request.id.value)
+            val view = service.execute(GetTradingDeletionRequestQuery(request.id))
             assertEquals("FAILED", view.state)
             assertEquals(PurgeComponentStatus.COMPLETED, view.primaryPurgeStatus)
             assertEquals(PurgeComponentStatus.COMPLETED, view.computeRuntimePurgeStatus)
@@ -322,7 +326,7 @@ class PostgresTradingReviewStoreTest {
         }
         assertEquals(persisted, DeletionRequestPersistenceMapper.toRecord(assertNotNull(store.find(request.id, request.owner))))
         member.id = MemberId(2)
-        assertEquals(TradingFailureKind.NOT_FOUND, assertFailsWith<TradingFailure> { service.get(request.id.value) }.kind)
+        assertEquals(TradingFailureKind.NOT_FOUND, assertFailsWith<TradingFailure> { service.execute(GetTradingDeletionRequestQuery(request.id)) }.kind)
         assertNull(reader.find(request.id, MemberId(2)))
 
         // V13 preserves historical COMPLETED labels but deliberately does not manufacture absence checkpoints.
@@ -2897,7 +2901,7 @@ class PostgresTradingReviewStoreTest {
             transactions.execute { service.execute(CreateTradingBookCommand(account.id, "Blocked", TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "new-book")) }
         }.kind)
         deletionWorker(jdbc, transactions, emptyStorage(), clock).purgePending()
-        assertEquals("COMPLETED", GetTradingDeletionRequestService(member, JdbcDeletionRequestReader(jdbc)).get(deletion.id).state)
+        assertEquals("COMPLETED", GetTradingDeletionRequestService(member, JdbcDeletionRequestReader(jdbc)).execute(GetTradingDeletionRequestQuery(DeletionRequestId(deletion.id))).state)
         assertEquals(TradingFailureKind.NO_LONGER_AVAILABLE, assertFailsWith<TradingFailure> { service.execute(GetTradingBookQuery(book.id)) }.kind)
         member.id = MemberId(2)
         assertEquals(TradingFailureKind.NOT_FOUND, assertFailsWith<TradingFailure> { service.execute(GetTradingBookQuery(book.id)) }.kind)
@@ -3240,6 +3244,7 @@ class PostgresTradingReviewStoreTest {
         }
         val grants = JdbcArtifactAccessGrants(jdbc, storage, Clock.fixed(now, ZoneOffset.UTC),
             "https://core.test", "synthetic-internal-key")
+        val redemption = RedeemTradingArtifactGrantService(grants)
         val target = grantSource(jdbc, 3001, MemberId(1))
         val sibling = grantSource(jdbc, 3011, MemberId(1), target.account)
         val unrelated = grantSource(jdbc, 3021, MemberId(1))
@@ -3269,7 +3274,7 @@ class PostgresTradingReviewStoreTest {
                 imports.find(fixture.artifact.artifactId, MemberId(1))?.retentionStatus)
             assertEquals(TradingImportStatus.VALIDATING,
                 imports.find(fixture.sessionId, MemberId(1))?.status)
-            val failure = assertFailsWith<TradingFailure> { grants.redeem(issued.getValue(fixture)) }
+            val failure = assertFailsWith<TradingFailure> { redemption.execute(RedeemTradingArtifactGrantCommand(issued.getValue(fixture))) }
             assertEquals("RESOURCE_NOT_FOUND", failure.code)
             assertEquals(TradingFailureKind.NOT_FOUND, failure.kind)
             val issueFailure = assertFailsWith<TradingFailure> { issue(fixture) }
@@ -3280,9 +3285,9 @@ class PostgresTradingReviewStoreTest {
         assertEquals(0L, jdbc.queryForObject(
             "SELECT count(*) FROM trading_artifact_read_grants WHERE consumed_at IS NOT NULL", Long::class.java))
         for (fixture in fixtures - revoked.toSet()) {
-            assertEquals("synthetic raw", grants.redeem(issued.getValue(fixture)).input.bufferedReader().use { it.readText() })
+            assertEquals("synthetic raw", redemption.execute(RedeemTradingArtifactGrantCommand(issued.getValue(fixture))).input.bufferedReader().use { it.readText() })
             assertEquals("RESOURCE_NOT_FOUND", assertFailsWith<TradingFailure> {
-                grants.redeem(issued.getValue(fixture))
+                redemption.execute(RedeemTradingArtifactGrantCommand(issued.getValue(fixture)))
             }.code)
         }
         assertEquals(fixtures.size - revoked.size, opened)

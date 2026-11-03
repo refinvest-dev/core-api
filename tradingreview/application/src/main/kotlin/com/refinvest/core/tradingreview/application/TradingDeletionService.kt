@@ -1,6 +1,8 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
 import com.refinvest.core.tradingreview.port.inbound.deletion.process.TradingDeletionUseCase
+import com.refinvest.core.tradingreview.port.inbound.deletion.remediate.RemediateTradingDeletionCommand
 import com.refinvest.core.tradingreview.port.inbound.deletion.remediate.RemediateTradingDeletionUseCase
 import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletionClient
 import com.refinvest.core.tradingreview.port.outbound.compute.deletion.TradingRuntimeDeletionOutcome
@@ -88,7 +90,7 @@ class TradingDeletionService(
         }
     }
 
-    override fun remediate(failedId: DeletionRequestId): DeletionRequest = transactions.execute {
-        store.remediate(failedId, ids.deletionId(), clock.instant())
+    override fun execute(command: RemediateTradingDeletionCommand): TradingDeletion = transactions.execute {
+        store.remediate(command.failedId, ids.deletionId(), clock.instant()).let(TradingDeletion::fromDomain)
     } ?: error("Remediation transaction did not return a request")
 }

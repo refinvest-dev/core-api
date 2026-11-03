@@ -20,7 +20,10 @@ import com.refinvest.core.tradingreview.port.inbound.book.list.ListTradingBooksQ
 import com.refinvest.core.tradingreview.port.inbound.book.list.ListTradingBooksUseCase
 import com.refinvest.core.tradingreview.port.inbound.deletion.PurgeComponentStatus
 import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.inbound.deletion.get.GetTradingDeletionRequestQuery
 import com.refinvest.core.tradingreview.port.inbound.deletion.get.GetTradingDeletionRequestUseCase
+
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
 
 import com.refinvest.core.tradingreview.domain.*
 import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
@@ -162,5 +165,5 @@ class TradingBookController(
 @RequestMapping("/trading-deletion-requests")
 class TradingDeletionController(private val getDeletion: GetTradingDeletionRequestUseCase) {
     @GetMapping("/{deletionRequestId}")
-    fun get(@PathVariable deletionRequestId: Long) = TradingDeletionResponse.from(getDeletion.get(deletionRequestId))
+    fun get(@PathVariable deletionRequestId: Long) = TradingDeletionResponse.from(getDeletion.execute(GetTradingDeletionRequestQuery(DeletionRequestId(deletionRequestId))))
 }
