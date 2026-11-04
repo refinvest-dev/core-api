@@ -122,7 +122,8 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
 - 순서 1은 [Core #113](https://github.com/refinvest-dev/core-api/pull/113)에서 구현했다. 실제 후속 검증 결과를
   아래에 기록한다. 순서 2는 [Core #114](https://github.com/refinvest-dev/core-api/pull/114)로 반영됐다.
   순서 3의 Account/Book JPA 구현은 [Core #115](https://github.com/refinvest-dev/core-api/pull/115)이며,
-  Session/DeletionRequest 일반 저장·큰 실행 구현 정리는 순서 4~6으로 남는다.
+  순서 4의 Session/DeletionRequest 일반 저장은 [Core #116](https://github.com/refinvest-dev/core-api/pull/116)에서
+  구현했다. 실행·정책·기술 책임의 정리와 전체 인계는 순서 5~6으로 남는다.
 
 ### PR 1: Port Direction and Entry Points
 
@@ -224,21 +225,50 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
 - Core 전체 CI는 30개 모듈·541개 테스트와 모듈 경계·실행 JAR·결과 gate를 통과했다. 실제 PostgreSQL
   10개 suite·150개를 포함하며 실패·오류·skip은 0개다. 계약 CI도 통과했다. 이후 문서만 추가한 최종 HEAD의
   필수 CI 결과와 API/Web·전체 Trading fixture 증적은 같은 PR에서 구분해 확인한다.
-- Core 전체 CI는 30개 모듈·541개 테스트와 모듈 경계·실행 JAR·결과 gate를 통과했다. 실제 PostgreSQL
-  10개 suite·150개를 포함하며 실패·오류·skip은 0개다. 계약 CI도 통과했다. 이후 문서만 추가한 최종 HEAD의
-  필수 CI 결과와 API/Web·전체 Trading fixture 증적은 같은 PR에서 구분해 확인한다.
 - JPA/JDBC 참여는 [Spring transaction 지원](https://docs.spring.io/spring-framework/reference/data-access/orm/jpa.html),
   값이 같은 저장의 즉시 version 증가는 [Hibernate 잠금 동작](https://docs.jboss.org/hibernate/stable/core/javadocs/org/hibernate/LockMode.html)을
   참고하고 실제 PostgreSQL로 검증했다. 계산 hash·wire 계약·결정론 영향은 없다. 기존 운영 적용 제약은
   별도 Handoff의 범위를 유지한다.
 
-### Next: Session and Deletion Request General Persistence
+### PR 4: Session and Deletion Request General Persistence
 
-1. Session Store의 일반 저장·복원과 admission/publication·retention/deletion CAS를 먼저 분류한다.
-   Artifact/NormalizationRun은 기존 Session 소속 경계를 지키며, ORM 연관관계나 orphan removal을 일괄 적용하지 않는다.
-2. 일반 저장의 JPA 적용 범위를 확정하고 Store/Reader·순수 Mapper를 구성한다. Root/child version·역할 슬롯·
-   retry pin·부모 lifecycle/generation과 bounded 복원을 보존하며 대용량 Ledger/result를 적재하지 않는다.
-3. DeletionRequest의 요청 Root 저장·조회와 실행 lease/item/checkpoint capability를 구분한다.
-   요청 시점 count/checklist·tombstone·복구 projection을 유지하고 stale 작업이 진행 상태를 바꾸지 못하게 한다.
-4. 실제 PostgreSQL의 경합·rollback과 혼용 transaction을 회귀 검증한다. Normalization·Deletion 실행/정책의
-   더 큰 분해는 순서 5에 남기며, 이번 단계의 일반 저장 범위와 섞지 않는다.
+- Session/Artifact의 JPA 모델과 Root `TradingImportSessionJpaStore`, 기술적인 자식 row repository를 구성했다.
+  Store·Session Reader·Artifact Reader는 각각의 adapter로 나눴다. Artifact 쓰기는 Session Store가 수행하며
+  독립적인 child Store를 port에 추가하지 않는다. ORM collection/cascade/orphan removal도 추가하지 않았다.
+- 기존 Session 저장 전 조건을 pure write plan으로 분리하고 원본 검증 구문 보존을 비교했다. Pin·불변 필드·
+  version/generation·역할 슬롯과 자식 version을 모두 검증한 뒤 JPA로 저장한다. Account→Book→Session→
+  Artifact 잠금 순서와 false일 때 무변경을 지킨다. Root의 값이 같은 저장과 실제로 바뀐 자식의 version은
+  각각 정확히 한 번 증가하며 overflow는 쓰기 전에 거절한다. 새 ID는 persist로 저장한다.
+- Root/자식의 scalar constructor projection과 동일 Mapper로 복원한다. 역할 슬롯 2개와 현재 Run만 읽고
+  Ledger/result는 적재하지 않는다. 현재 NormalizationRun의 bounded JDBC 조회·매핑은 유지한다. Admission·
+  publication·raw retention·lease가 소유하는 원자적 SQL과 Root/Run 소속 경계도 유지한다.
+- DeletionRequest는 JPA 일반 Store/Reader로 구성했다. Root와 checkpoint의 모든 scalar 값을 한 JPQL
+  constructor projection으로 읽고 동일한 Domain Mapper로 복원한다. 실제 query 실행 1회와 cache의 이전
+  Root를 재사용하지 않는 결과를 검증했다. 작업 진행 version은 기존 Domain 동작에 따라 증가하며,
+  요청 시점 count/checklist·tombstone·remediation과 worker의 lease/checkpoint SQL은 유지한다.
+- 실제 Hikari pool에서 JPA/JDBC backend 연결 일치와 Account·Book·Session·Artifact·DeletionRequest·
+  idempotency의 동시 rollback을 확인했다. 현재 fresh schema는 20개 이상 Entity와 함께 validate한다.
+  의도적으로 일부 migration을 보류하는 역사 fixture는 ORM DDL을 실행하지 않고, 현재 mapping의 validate는
+  app의 별도 schema 회귀가 담당한다. DB migration·Domain·port·wire/hash/결정론 변경은 없다.
+- Session 구현 `538cf1f`와 삭제 요청 구현 `497fa2a`를 분리했다. 로컬 persistence 94개와 app 27개,
+  총 121개 회귀 시나리오를 확인했다. 중간 nullable 매핑과 삭제 Domain의 version 기대값을 수정했고,
+  Windows 연결 오류 실행을 보존한 뒤 해당 범위를 다시 실행했다. 최종 사례별 실패·오류·skip은 0개다.
+  기존 Context 문서 26개·OpenAPI·Normalization/Analytics vector 동기화도 통과했다.
+- [Core 전체 CI](https://github.com/refinvest-dev/core-api/actions/runs/41766857390)는 30개 모듈·547개 테스트와
+  모듈 경계·실행 JAR·결과 gate를 통과했다. 실제 PostgreSQL 10개 suite·152개를 포함하며 실패·오류·skip은
+  0개다. [계약 CI](https://github.com/refinvest-dev/integration/actions/runs/41766994664)와
+  [API/Web·전체 Trading CI](https://github.com/refinvest-dev/integration/actions/runs/41766998081)는 Core `497fa2a`,
+  Context `0bcdf79`, Compute `113b0e2`, Web `9354dfe`, Integration `801241f`를 고정한다. 최종 HEAD와 통합
+  artifact의 커밋·정책·종료 증적은 [Core #116](https://github.com/refinvest-dev/core-api/pull/116)에 기록한다.
+
+### Next: Normalization and Deletion Runtime Responsibilities
+
+1. Validate/Retry admission의 기능별 진입점과 실제 공유하는 검증·정책을 정리한다. 포괄 서비스를 이름만
+   바꾸거나 단순 위임 facade로 남기지 않으며 retry pin/hash와 기존 admission 원자성을 유지한다.
+2. 영속 dispatch/attempt ID 생성은 generator port를 기준으로 정리한다. Lease token 같은 기술 식별자는
+   성격을 먼저 분류하며 모든 UUID를 같은 방식으로 대체하지 않는다. 외부 HTTP/file 작업과 DB transaction,
+   잠금 후 lease/시각 재검증·발행/ACK 순서를 회귀 검증한다.
+3. Grant 발급/사용의 DB·서명·storage 책임과 큰 Deletion 실행 구현의 분리 지점을 검토한다. 단순 파일 분할이나
+   하나의 원자적 연산을 여러 transaction으로 나누는 방식을 피하고 single-use·stale 무변경을 유지한다.
+4. 실행·정책·기술 capability별로 작은 PR을 구성한다. 마지막 순서 6에서 전체 구조와 main 조합을 점검하며
+   미구현 제품 기능과 운영 적용 제약은 기존 Handoff와 구분한다.

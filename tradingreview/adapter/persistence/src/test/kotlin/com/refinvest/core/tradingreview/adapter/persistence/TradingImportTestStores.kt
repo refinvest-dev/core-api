@@ -16,8 +16,10 @@ import org.springframework.transaction.support.TransactionTemplate
 /** Fixture composition only. Production writes artifacts exclusively through the Session Store. */
 internal class TradingImportTestStores(
     private val jdbc: JdbcTemplate,
-    private val aggregate: JdbcTradingImportSessionPersistenceAdapter = JdbcTradingImportSessionPersistenceAdapter(jdbc),
-) : TradingImportSessionStore by aggregate, TradingImportSessionReader by aggregate, TradingSourceArtifactReader by aggregate {
+    private val aggregate: TradingImportSessionStore = TradingJpaTestContexts.context(requireNotNull(jdbc.dataSource)).getBean(TradingImportSessionStore::class.java),
+    private val reader: TradingImportSessionReader = TradingJpaTestContexts.context(requireNotNull(jdbc.dataSource)).getBean(TradingImportSessionReader::class.java),
+    private val artifacts: TradingSourceArtifactReader = TradingJpaTestContexts.context(requireNotNull(jdbc.dataSource)).getBean(TradingSourceArtifactReader::class.java),
+) : TradingImportSessionStore by aggregate, TradingImportSessionReader by reader, TradingSourceArtifactReader by artifacts {
     override fun deleted(id: TradingImportSessionId, owner: MemberId) = aggregate.deleted(id, owner)
 
     override fun insert(session: TradingImportSession) {

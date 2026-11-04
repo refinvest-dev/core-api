@@ -8,6 +8,20 @@ import java.util.UUID
 import kotlin.test.*
 
 class TradingImportSessionPersistenceMapperTest {
+    @Test
+    fun jpaRowsPreserveScalarPinsAndArtifactBytesWithoutLoadingChildrenInTheMapper() {
+        val record = TradingImportSessionPersistenceMapper.toRecord(session)
+        val rootRow = TradingImportSessionPersistenceMapper.toRecord(TradingImportSessionPersistenceMapper.toEntity(record))
+        assertEquals(record.copy(artifacts = emptyList(), normalizationRun = null), rootRow)
+        val artifact = record.artifacts.single()
+        val entity = TradingImportSessionPersistenceMapper.toEntity(artifact)
+        val restored = TradingImportSessionPersistenceMapper.toRecord(entity)
+        assertEquals(artifact.copy(wrappedDek = null), restored.copy(wrappedDek = null))
+        assertTrue(requireNotNull(artifact.wrappedDek).contentEquals(requireNotNull(restored.wrappedDek)))
+        requireNotNull(entity.wrappedDek)[0] = 99
+        assertEquals(1.toByte(), requireNotNull(artifact.wrappedDek)[0])
+        assertEquals(1.toByte(), requireNotNull(restored.wrappedDek)[0])
+    }
     private val now = Instant.parse("2026-01-01T00:00:00Z")
     private val account = TradingAccount.create(TradingAccountId(1), MemberId(7), TradingVenue.BINANCE, "A", now)
     private val book = TradingBook.create(TradingBookId(2), account, "B", TradingProductFamily.LINEAR_PERPETUAL,

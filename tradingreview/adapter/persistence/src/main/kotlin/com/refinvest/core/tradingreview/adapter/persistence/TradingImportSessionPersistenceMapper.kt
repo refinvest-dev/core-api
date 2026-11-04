@@ -106,4 +106,127 @@ internal object TradingImportSessionPersistenceMapper {
         version = record.version,
     )
 
+    fun toEntity(domain: TradingImportSession) = toEntity(toRecord(domain))
+
+    fun toEntity(record: TradingImportSessionRecord) = TradingImportSessionJpaEntity(
+        id = record.id,
+        bookId = record.bookId,
+        owner = record.owner,
+        sourceTimezone = record.sourceTimezone,
+        reviewTimezone = record.reviewTimezone,
+        declaredPositionMode = record.declaredPositionMode,
+        dataPolicyVersion = record.dataPolicyVersion,
+        retentionPolicy = record.retentionPolicy,
+        maskingPolicyVersion = record.maskingPolicyVersion,
+        evidenceRetention = record.evidenceRetention,
+        deletionPolicyVersion = record.deletionPolicyVersion,
+        versionSetJson = record.versionSetJson,
+        status = record.status,
+        deletionGeneration = record.deletionGeneration,
+        deletionPending = record.deletionPending,
+        createdAt = record.createdAt,
+        updatedAt = record.updatedAt,
+        version = record.version,
+        validationStartedAt = record.validationStartedAt,
+        activeNormalizationRunId = record.activeNormalizationRunId?.let(java.util.UUID::fromString),
+        createdLedgerRevisionId = record.createdLedgerRevisionId,
+        acceptedAt = record.acceptedAt,
+        rejectedAt = record.rejectedAt,
+        rawExpiredAt = record.rawExpiredAt,
+        failureCode = record.failure?.code,
+        failureRetryable = record.failure?.retryable,
+        failureUserAction = record.failure?.userAction,
+        failureOccurredAt = record.failure?.occurredAt,
+    )
+
+    fun toRecord(entity: TradingImportSessionJpaEntity) = TradingImportSessionRecord(
+        id = entity.id,
+        bookId = entity.bookId,
+        owner = entity.owner,
+        sourceTimezone = entity.sourceTimezone,
+        reviewTimezone = entity.reviewTimezone,
+        declaredPositionMode = entity.declaredPositionMode,
+        dataPolicyVersion = entity.dataPolicyVersion,
+        retentionPolicy = entity.retentionPolicy,
+        maskingPolicyVersion = entity.maskingPolicyVersion,
+        evidenceRetention = entity.evidenceRetention,
+        deletionPolicyVersion = entity.deletionPolicyVersion,
+        versionSetJson = entity.versionSetJson,
+        status = entity.status,
+        deletionGeneration = entity.deletionGeneration,
+        deletionPending = entity.deletionPending,
+        createdAt = entity.createdAt,
+        updatedAt = entity.updatedAt,
+        version = entity.version,
+        validationStartedAt = entity.validationStartedAt,
+        activeNormalizationRunId = entity.activeNormalizationRunId?.toString(),
+        failure = entity.failureCode?.let { TradingImportFailureRecord(it, requireNotNull(entity.failureRetryable), requireNotNull(entity.failureUserAction), requireNotNull(entity.failureOccurredAt)) },
+        createdLedgerRevisionId = entity.createdLedgerRevisionId,
+        acceptedAt = entity.acceptedAt,
+        rejectedAt = entity.rejectedAt,
+        rawExpiredAt = entity.rawExpiredAt,
+    )
+
+    fun apply(record: TradingImportSessionRecord, entity: TradingImportSessionJpaEntity) {
+        entity.status = record.status
+        entity.deletionGeneration = record.deletionGeneration
+        entity.deletionPending = record.deletionPending
+        entity.updatedAt = record.updatedAt
+        entity.validationStartedAt = record.validationStartedAt
+        entity.activeNormalizationRunId = record.activeNormalizationRunId?.let(java.util.UUID::fromString)
+        entity.rejectedAt = record.rejectedAt
+        entity.rawExpiredAt = record.rawExpiredAt
+        entity.failureCode = record.failure?.code
+        entity.failureRetryable = record.failure?.retryable
+        entity.failureUserAction = record.failure?.userAction
+        entity.failureOccurredAt = record.failure?.occurredAt
+    }
+
+    fun toEntity(domain: TradingSourceArtifact) = toEntity(toRecord(domain))
+
+    fun toEntity(record: TradingSourceArtifactRecord) = TradingSourceArtifactJpaEntity(
+        id = record.id,
+        sessionId = record.sessionId,
+        role = record.role,
+        filename = record.filename,
+        contentType = record.contentType,
+        byteSize = record.byteSize,
+        sha256 = record.sha256,
+        dialectCandidate = record.dialectCandidate,
+        objectKey = record.objectKey,
+        wrappedDek = record.wrappedDek?.copyOf(),
+        keyVersion = record.keyVersion,
+        retentionStatus = record.retentionStatus,
+        uploadedAt = record.uploadedAt,
+        rawExpiresAt = record.rawExpiresAt,
+        deletedAt = record.deletedAt,
+        deletionFailure = record.deletionFailure,
+        version = record.version,
+    )
+
+    fun toRecord(entity: TradingSourceArtifactJpaEntity) = TradingSourceArtifactRecord(
+        id = entity.id,
+        sessionId = entity.sessionId,
+        role = entity.role,
+        filename = entity.filename,
+        contentType = entity.contentType,
+        byteSize = entity.byteSize,
+        sha256 = entity.sha256,
+        dialectCandidate = entity.dialectCandidate,
+        objectKey = entity.objectKey,
+        wrappedDek = entity.wrappedDek?.copyOf(),
+        keyVersion = entity.keyVersion,
+        retentionStatus = entity.retentionStatus,
+        uploadedAt = entity.uploadedAt,
+        rawExpiresAt = entity.rawExpiresAt,
+        deletedAt = entity.deletedAt,
+        deletionFailure = entity.deletionFailure,
+        version = entity.version,
+    )
+
+    fun apply(record: TradingSourceArtifactRecord, entity: TradingSourceArtifactJpaEntity) {
+        entity.retentionStatus = record.retentionStatus
+        entity.rawExpiresAt = record.rawExpiresAt
+    }
+
 }

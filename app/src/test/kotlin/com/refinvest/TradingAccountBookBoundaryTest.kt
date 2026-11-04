@@ -101,9 +101,13 @@ class TradingAccountBookBoundaryTest {
             val mapper = Files.readString(persistence.resolve("${aggregate}PersistenceMapper.kt"))
             assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|\\.create\\(|\\.rename\\(|\\.requestDeletion\\(").containsMatchIn(mapper))
             assertTrue(mapper.contains("$aggregate.restore("))
-            val adapterName = if (aggregate == "TradingImportSession") "Jdbc${aggregate}PersistenceAdapter.kt" else "Jpa${aggregate}StoreAdapter.kt"
+            val adapterName = "Jpa${aggregate}StoreAdapter.kt"
             val adapter = Files.readString(persistence.resolve(adapterName))
-            assertTrue(adapter.contains("${aggregate}PersistenceMapper.toDomain(") ||
+            if (aggregate == "TradingImportSession") {
+                assertTrue(adapter.contains("TradingImportSessionSnapshots"))
+                val snapshots = Files.readString(persistence.resolve("TradingImportSessionSnapshots.kt"))
+                assertTrue(snapshots.contains("${aggregate}PersistenceMapper.toDomain("))
+            } else assertTrue(adapter.contains("${aggregate}PersistenceMapper.toDomain(") ||
                 adapter.contains("${aggregate}PersistenceMapper::toDomain"))
             val foreign = if (aggregate == "TradingAccount") "TradingBookStore" else "TradingAccountStore"
             assertFalse(adapter.contains(foreign) || adapter.contains("TradingIdempotencyStore") || adapter.contains("TradingDeletionStore"))
@@ -186,9 +190,11 @@ class TradingAccountBookBoundaryTest {
         assertTrue(mapper.contains("DeletionRequest.restore("))
         assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|\\.request\\(").containsMatchIn(mapper))
         assertFalse(Files.exists(persistence.resolve("JdbcTradingDeletionStoreAdapter.kt")))
-        val adapter = Files.readString(persistence.resolve("JdbcDeletionRequestPersistenceAdapter.kt"))
+        val adapter = Files.readString(persistence.resolve("JpaDeletionRequestStoreAdapter.kt"))
         val queries = Files.readString(persistence.resolve("DeletionRequestQueries.kt"))
         assertTrue(adapter.contains("insert(request: DeletionRequest)") && queries.contains("DeletionRequestPersistenceMapper.toDomain("))
+        val snapshots = Files.readString(persistence.resolve("DeletionRequestSnapshots.kt"))
+        assertTrue(snapshots.contains("DeletionRequestPersistenceMapper.toDomain("))
         assertFalse(adapter.contains("TradingIdempotencyStore") || adapter.contains("TradingAccountStore"))
         listOf("account/delete/DeleteTradingAccountService.kt", "book/delete/DeleteTradingBookService.kt",
             "importsession/delete/DeleteTradingImportSessionService.kt", "importsession/deleteartifact/DeleteTradingSourceArtifactService.kt").forEach { name ->
