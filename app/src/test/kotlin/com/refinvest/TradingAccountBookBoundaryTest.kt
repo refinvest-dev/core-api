@@ -154,10 +154,17 @@ class TradingAccountBookBoundaryTest {
         assertTrue(mapper.contains("NormalizationRun.restore("))
         assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|admitNormalization").containsMatchIn(mapper))
         assertFalse(Files.exists(persistence.resolve("JdbcTradingNormalizationStore.kt")))
-        val application = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/TradingNormalizationService.kt"))
-        assertTrue(application.contains("session.admitNormalization("))
-        assertTrue(application.contains("admissions.admit(NormalizationAdmission("))
-        assertFalse(application.contains("runs.insert(") || application.contains("UUID.randomUUID"))
+        val application = root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/normalization")
+        val factory = Files.readString(application.resolve("NormalizationAdmissionFactory.kt"))
+        assertTrue(factory.contains("session.admitNormalization("))
+        assertTrue(factory.contains("NormalizationAdmission(session, admitted, dispatch)"))
+        assertFalse(factory.contains("runs.insert(") || factory.contains("UUID.randomUUID") || factory.contains("admissions.admit("))
+        for (feature in listOf("validate", "retry")) {
+            val name = if (feature == "validate") "Validate" else "Retry"
+            val service = Files.readString(application.resolve("$feature/${name}TradingImportSessionService.kt"))
+            assertTrue(service.contains("admissions.admit(admission)"))
+            assertFalse(service.contains("runs.insert(") || service.contains("UUID.randomUUID"))
+        }
     }
 
     @Test
