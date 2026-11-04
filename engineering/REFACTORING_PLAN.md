@@ -18,8 +18,9 @@
 구현은 [Core #115](https://github.com/refinvest-dev/core-api/pull/115)로 반영됐다. Session/DeletionRequest의
 일반 저장은 [Core #116](https://github.com/refinvest-dev/core-api/pull/116)에서 구현했다. 순서 5의 첫 범위인
 validation/retry admission 진입점과 공유 검증 정리는 [Core #117](https://github.com/refinvest-dev/core-api/pull/117)로
-반영됐다. Dispatch/Poll worker와 실행 ID·잠금 후 만료 검증은 [Core #118](https://github.com/refinvest-dev/core-api/pull/118)에서
-구현한다. 다음은 grant/storage·삭제 기술 책임 정리이며, 마지막 전체 구조 점검과 main 인계는 순서 6에 남긴다.
+반영됐다. Dispatch/Poll worker와 실행 ID·잠금 후 만료 검증은 [Core #118](https://github.com/refinvest-dev/core-api/pull/118)로
+반영됐다. Grant DB·서명·storage 책임 분리는 [Core #119](https://github.com/refinvest-dev/core-api/pull/119)에서 구현한다.
+다음은 Deletion worker의 실행·기술 책임 정리이며, 마지막 전체 구조 점검과 main 인계는 순서 6에 남긴다.
 
 ## 1. 목표와 변경 기준
 
