@@ -124,8 +124,9 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
   순서 3의 Account/Book JPA 구현은 [Core #115](https://github.com/refinvest-dev/core-api/pull/115)이며,
   순서 4의 Session/DeletionRequest 일반 저장은 [Core #116](https://github.com/refinvest-dev/core-api/pull/116)에서
   구현했다. 순서 5의 첫 범위인 validation/retry admission 진입점 정리는
-  [Core #117](https://github.com/refinvest-dev/core-api/pull/117)에서 구현한다. 나머지 실행·기술 책임과
-  전체 인계는 아래 후속 범위로 남는다.
+  [Core #117](https://github.com/refinvest-dev/core-api/pull/117)로 반영됐다. Dispatch/Poll worker와 실행 ID,
+  잠금 후 만료 검증은 [Core #118](https://github.com/refinvest-dev/core-api/pull/118)에서 구현한다.
+  나머지 grant·삭제 기술 책임과 전체 인계는 아래 후속 범위로 남는다.
 
 ### PR 1: Port Direction and Entry Points
 
@@ -283,12 +284,34 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
 - DB schema·Domain·port·HTTP/Compute 계약과 hash·결정론 영향은 없다. Admission의 원자적 SQL과
   worker의 lease/CAS·publication/ACK 경계를 유지한다. 이 PR이 순서 5 전체 완료를 의미하지 않는다.
 
-### Next: Normalization Runtime Identifiers and External Capabilities
+### PR 5-2: Normalization Dispatch and Poll Workers
 
-1. 영속 dispatch/attempt ID 생성은 generator port를 기준으로 정리한다. Lease token 같은 기술 식별자는
-   성격을 먼저 분류하며 모든 UUID를 같은 방식으로 대체하지 않는다. 외부 HTTP/file 작업과 DB transaction,
-   잠금 후 lease/시각 재검증·발행/ACK 순서를 회귀 검증한다.
-2. Grant 발급/사용의 DB·서명·storage 책임과 큰 Deletion 실행 구현의 분리 지점을 검토한다. 단순 파일 분할이나
-   하나의 원자적 연산을 여러 transaction으로 나누는 방식을 피하고 single-use·stale 무변경을 유지한다.
+- `DispatchTradingNormalizationService`와 `PollTradingNormalizationService`는 각각 하나의 inbound use case를
+  구현한다. 각 서비스가 claim과 결과 반영의 짧은 transaction, DB transaction 밖의 Compute·grant 호출을
+  직접 조율한다. 기존 포괄 worker나 위임 facade는 남기지 않는다. Publication과 ACK는 기존 경계를 유지한다.
+- 공유 `NormalizationRetrySchedule`은 pinned retry policy·지연 계산을 담당하며 시각을 선택하거나 I/O를
+  수행하지 않는다. `NormalizationWorkerLifecycle`은 기존 current 실행 검사와 실패 전이를 공유한다.
+  원본 retry 계산·실패 전이·dispatch 흐름 구문의 보존을 비교했다. 영속성 SQL과 schema는 바꾸지 않는다.
+- 영속 dispatch/attempt는 기존 generator port를 사용하고, grant-update의 독립 요청 key에는
+  `grantUpdateKey()`를 추가해 UUID adapter가 구현한다. Worker는 Run ID를 재생성하지 않으며
+  claim lease owner는 별도 기술 nonce로 유지한다. 서로 다른 의미의 식별자를 같은 용도로 바꾸지 않는다.
+- 기존 grant 갱신의 잠금 전 시각 재사용 문제를 테스트 시계로 재현했다. 잠금 대기 중 lease/deadline이
+  만료돼도 attempt·외부 처리가 이어지는 회귀 2개가 수정 전 실패했다. 수정 후 Session 잠금 뒤 시각으로
+  claim owner/lease와 deadline을 검사하며, 정확한 만료 시점도 만료로 판정한다. 만료된 claim은 변경 없이
+  반환하고, 최종 쓰기에는 기존 runtime CAS를 유지한다. 실패 XML과 로그는 로컬 증적으로 보존했다.
+- Worker 회귀 4개는 lease/deadline 경계, generator가 만든 token/key 전달, transaction 밖 grant/Compute
+  호출과 V2 retry pin을 확인한다. 기존 PostgreSQL fixture도 두 서비스로 연결하고 실제 submit callback의
+  transaction 부재를 검사한다. 구조 검사는 worker별 단일 use case와 포괄 transaction 부재를 확인한다.
+- 구현 커밋은 `427ff46`이다. 로컬 application 45개·persistence 94개·app 구조/경계 23개, 총 162개와
+  모듈 경계·실행 JAR을 통과했다. 실패·오류·skip은 0개다. Context 문서 26개·OpenAPI와 고정 vector
+  동기화도 확인했다. 최종 Core 필수 CI와 고정 커밋의 API/Web·전체 Trading fixture 결과는
+  [Core #118](https://github.com/refinvest-dev/core-api/pull/118)에 기록한다. Domain·wire/hash·결정론 영향은 없다.
+
+### Next: Grant and Deletion External Capabilities
+
+1. Grant 발급/사용의 DB·서명·storage 책임을 정리한다. Single-use·owner·상위 삭제와 stream lifetime을
+   유지하고, 외부 file 작업을 DB transaction에 포함하지 않는다. 발급과 사용을 한 포괄 adapter에 다시 모으지 않는다.
+2. 큰 Deletion 실행 구현의 분리 지점을 별도 PR로 검토한다. 단순 파일 분할이나 하나의 원자적 연산을
+   여러 transaction으로 나누는 방식을 피하고 checkpoint·lease·stale 무변경과 정확한 삭제 범위를 유지한다.
 3. 실행·정책·기술 capability별로 작은 PR을 구성한다. 마지막 순서 6에서 전체 구조와 main 조합을 점검하며
    미구현 제품 기능과 운영 적용 제약은 기존 Handoff와 구분한다.

@@ -96,6 +96,40 @@ class TradingApplicationStructureTest {
         }, "Input creation must not lock, store, claim idempotency, or choose the current time")
     }
 
+    @Test
+    fun `normalization dispatch and poll own separate orchestration and short transaction boundaries`() {
+        val root = workspaceRoot()
+        val prefix = "com.refinvest.core.tradingreview"
+        val contracts = kotlinClasses(root.resolve("tradingreview/port/src/main/kotlin"))
+            .filter { it.simpleName in setOf("DispatchTradingNormalizationUseCase", "PollTradingNormalizationUseCase") }
+        assertEquals(2, contracts.size)
+        val application = kotlinClasses(root.resolve("tradingreview/application/src/main/kotlin"))
+        val workers = application.filter { type -> contracts.any { it.isAssignableFrom(type) } }
+        assertEquals(2, workers.size)
+        contracts.forEach { contract ->
+            val worker = workers.single { contract.isAssignableFrom(it) }
+            assertEquals(listOf(contract), worker.interfaces.toList(), worker.name)
+            assertEquals(contract.packageName.replace(".port.inbound.", ".application."), worker.packageName)
+            assertEquals(null, worker.getAnnotation(Transactional::class.java), worker.name)
+            assertTrue(worker.declaredMethods.none { it.isAnnotationPresent(Transactional::class.java) }, worker.name)
+            assertTrue(worker.constructors.single().parameterTypes.all {
+                it.name.startsWith("$prefix.port.outbound.") || it == Clock::class.java ||
+                    it == TransactionTemplate::class.java || it.name == "tools.jackson.databind.ObjectMapper" ||
+                    it.name in setOf("$prefix.application.normalization.NormalizationRetrySchedule",
+                        "$prefix.application.normalization.NormalizationWorkerLifecycle")
+            }, worker.name)
+            val source = Files.readString(root.resolve("tradingreview/application/src/main/kotlin")
+                .resolve(worker.name.replace('.', '/') + ".kt"))
+            assertEquals(1, Regex("UUID\\.randomUUID\\(\\)").findAll(source).count(),
+                "Only the per-claim lease owner is generated locally: ${worker.name}")
+        }
+        assertTrue(application.none { it.simpleName == "TradingNormalizationDispatcher" })
+        val schedule = application.single { it.simpleName == "NormalizationRetrySchedule" }
+        assertTrue(schedule.constructors.single().parameterTypes.none {
+            it == Clock::class.java || it.name.contains(".persistence.") || it.name.contains(".compute.")
+        }, "Pinned retry calculation must not choose a time or perform I/O")
+    }
+
     private fun kotlinClasses(root: Path): List<Class<*>> = Files.walk(root).use { files ->
         files.filter { it.toString().endsWith(".kt") }.flatMap { file ->
             val source = Files.readString(file)
