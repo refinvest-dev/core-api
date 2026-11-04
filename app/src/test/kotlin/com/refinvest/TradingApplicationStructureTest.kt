@@ -65,6 +65,37 @@ class TradingApplicationStructureTest {
         }
     }
 
+    @Test
+    fun `normalization entry points own distinct use cases and share only admission support`() {
+        val root = workspaceRoot()
+        val prefix = "com.refinvest.core.tradingreview"
+        val contracts = kotlinClasses(root.resolve("tradingreview/port/src/main/kotlin"))
+            .filter { it.simpleName in setOf("ValidateTradingImportSessionUseCase", "RetryTradingImportSessionUseCase") }
+        assertEquals(2, contracts.size)
+        val application = kotlinClasses(root.resolve("tradingreview/application/src/main/kotlin"))
+        val services = application.filter { type -> contracts.any { it.isAssignableFrom(type) } }
+        assertEquals(2, services.size)
+        contracts.forEach { contract ->
+            val service = services.single { contract.isAssignableFrom(it) }
+            assertEquals(listOf(contract), service.interfaces.toList(), service.name)
+            assertEquals(contract.packageName.replace(".port.inbound.", ".application."), service.packageName)
+            assertTrue(service.constructors.single().parameterTypes.all {
+                it.name.startsWith("$prefix.port.outbound.") || it == Clock::class.java ||
+                    it.name in setOf("$prefix.application.normalization.NormalizationAdmissionGuard",
+                        "$prefix.application.normalization.NormalizationAdmissionFactory")
+            }, "Use cases must own orchestration without delegating to another service: ${service.name}")
+            val transaction = service.declaredMethods.single { it.name == "execute" }
+                .getAnnotation(Transactional::class.java)
+            assertTrue(transaction != null && !transaction.readOnly, service.name)
+        }
+        assertTrue(application.none { it.simpleName == "TradingNormalizationService" })
+        val factory = application.single { it.simpleName == "NormalizationAdmissionFactory" }
+        assertTrue(factory.interfaces.isEmpty())
+        assertTrue(factory.constructors.single().parameterTypes.none {
+            it == Clock::class.java || it.name.contains(".persistence.") || it.name.contains(".idempotency.")
+        }, "Input creation must not lock, store, claim idempotency, or choose the current time")
+    }
+
     private fun kotlinClasses(root: Path): List<Class<*>> = Files.walk(root).use { files ->
         files.filter { it.toString().endsWith(".kt") }.flatMap { file ->
             val source = Files.readString(file)

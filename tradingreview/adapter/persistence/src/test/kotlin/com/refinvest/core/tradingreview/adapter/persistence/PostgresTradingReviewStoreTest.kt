@@ -2805,9 +2805,10 @@ class PostgresTradingReviewStoreTest {
             override fun withZone(zone: java.time.ZoneId) = this
         }
         var currentInstrumentTerms = "[]"
-        val service = com.refinvest.core.tradingreview.application.TradingNormalizationService(
+        val admissionGuard = com.refinvest.core.tradingreview.application.normalization.NormalizationAdmissionGuard(
             object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) },
-            review, review, imports, review, runs,
+            review, review, imports, JdbcTradingNormalizationTransitionGate(jdbc))
+        val admissionFactory = com.refinvest.core.tradingreview.application.normalization.NormalizationAdmissionFactory(
             object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins {
                 override fun currentJson() = versions
             }, object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingNormalizationSettings {
@@ -2816,14 +2817,18 @@ class PostgresTradingReviewStoreTest {
                     java.time.Duration.ofSeconds(10), "NONE")
                 override fun instrumentTermsJson() = currentInstrumentTerms
                 override fun resultDeliveryPolicy() = deliveryPolicy
-            }, mapper, workerClock, JdbcTradingNormalizationTransitionGate(jdbc),
-            JdbcTradingNormalizationAdmissionAdapter(jdbc, imports, workerClock, JdbcTradingNormalizationTransitionGate(jdbc)), normalizationIds)
+            }, mapper, normalizationIds)
+        val admissionStore = JdbcTradingNormalizationAdmissionAdapter(jdbc, imports, workerClock, JdbcTradingNormalizationTransitionGate(jdbc))
+        val validateImport = com.refinvest.core.tradingreview.application.normalization.validate.ValidateTradingImportSessionService(
+            admissionGuard, admissionFactory, imports, review, runs, admissionStore, workerClock)
+        val retryImport = com.refinvest.core.tradingreview.application.normalization.retry.RetryTradingImportSessionService(
+            admissionGuard, admissionFactory, imports, review, admissionStore, workerClock)
         jdbc.execute("SELECT trading_normalization_transition_control('PAUSE',0,'test-validation')")
         for (retry in listOf(false, true)) {
             val failure = assertFailsWith<TradingFailure> {
                 transactions.execute {
-                    if (retry) service.execute(RetryTradingImportSessionCommand(session.id, "same-public-key"))
-                    else service.execute(ValidateTradingImportSessionCommand(session.id, null, "same-public-key"))
+                    if (retry) retryImport.execute(RetryTradingImportSessionCommand(session.id, "same-public-key"))
+                    else validateImport.execute(ValidateTradingImportSessionCommand(session.id, null, "same-public-key"))
                 }
             }
             assertEquals("TEMPORARY_DEPENDENCY_FAILURE", failure.code)
@@ -2835,7 +2840,7 @@ class PostgresTradingReviewStoreTest {
         jdbc.execute("SELECT trading_normalization_transition_control('VERIFY',1,'test-validation-http')")
         jdbc.execute("SELECT trading_normalization_transition_control('RESUME',1,'test-validation-http')")
         assertEquals("MISSING_REQUIRED_ARTIFACT", assertFailsWith<TradingFailure> {
-            transactions.execute { service.execute(ValidateTradingImportSessionCommand(session.id, null, "missing-position")) }
+            transactions.execute { validateImport.execute(ValidateTradingImportSessionCommand(session.id, null, "missing-position")) }
         }.code)
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
         assertEquals(TradingImportStatus.RECEIVED, imports.find(session.id, MemberId(1))?.status)
@@ -2845,10 +2850,10 @@ class PostgresTradingReviewStoreTest {
                 "AUTO", "objects/${UUID.randomUUID()}", byteArrayOf(1), "test-v1",
                 TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(3600), null, null, 0))
         }
-        val started = transactions.execute { service.execute(ValidateTradingImportSessionCommand(session.id, null, "same-public-key")) }!!
+        val started = transactions.execute { validateImport.execute(ValidateTradingImportSessionCommand(session.id, null, "same-public-key")) }!!
         assertEquals(TradingImportStatus.VALIDATING, started.status)
         assertNotNull(started.activeNormalizationRunId)
-        val replay = transactions.execute { service.execute(ValidateTradingImportSessionCommand(session.id, null, "validate-again")) }!!
+        val replay = transactions.execute { validateImport.execute(ValidateTradingImportSessionCommand(session.id, null, "validate-again")) }!!
         assertEquals(started.activeNormalizationRunId, replay.activeNormalizationRunId)
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
         assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_dispatches", Long::class.java))
@@ -2909,7 +2914,7 @@ class PostgresTradingReviewStoreTest {
         assertEquals(TradingImportStatus.PROCESSING_FAILED, imports.find(session.id, MemberId(1))?.status)
         assertEquals("TEMPORARY_DEPENDENCY_FAILURE", runs.findRun(active.id.value)?.lastFailureCode)
         currentInstrumentTerms = """[{"instrumentId":"CHANGED_CURRENT_CONFIGURATION"}]"""
-        val retried = transactions.execute { service.execute(RetryTradingImportSessionCommand(session.id, "retry-once")) }!!
+        val retried = transactions.execute { retryImport.execute(RetryTradingImportSessionCommand(session.id, "retry-once")) }!!
         assertEquals(TradingImportStatus.VALIDATING, retried.status)
         assertEquals(active.input.instrumentTermsJson, imports.find(retried.id, MemberId(1))?.normalizationRun?.input?.instrumentTermsJson)
         assertTrue(retried.activeNormalizationRunId != active.id)
@@ -2920,7 +2925,7 @@ class PostgresTradingReviewStoreTest {
             jdbc.queryForObject("""SELECT result_schema_version FROM trading_normalization_dispatches
                 WHERE run_id=?::uuid""", String::class.java, retried.activeNormalizationRunId!!.value))
         assertEquals(retried.activeNormalizationRunId,
-            transactions.execute { service.execute(RetryTradingImportSessionCommand(session.id, "retry-once")) }!!.activeNormalizationRunId)
+            transactions.execute { retryImport.execute(RetryTradingImportSessionCommand(session.id, "retry-once")) }!!.activeNormalizationRunId)
         assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_runs", Long::class.java))
         val alwaysRetry = object : TradingNormalizationComputeClient {
             override fun submit(run: NormalizationRun, dispatch: NormalizationDispatch,
@@ -2950,13 +2955,13 @@ class PostgresTradingReviewStoreTest {
         jdbc.update("UPDATE trading_source_artifacts SET raw_expires_at=?, uploaded_at=? WHERE import_session_id=?",
             java.sql.Timestamp.from(now.minusSeconds(1)), java.sql.Timestamp.from(now.minusSeconds(86401)), session.id.value)
         assertEquals("SOURCE_ARTIFACT_EXPIRED", assertFailsWith<TradingFailure> {
-            transactions.execute { service.execute(RetryTradingImportSessionCommand(session.id, "retry-expired")) }
+            transactions.execute { retryImport.execute(RetryTradingImportSessionCommand(session.id, "retry-expired")) }
         }.code)
         assertEquals(TradingImportStatus.PROCESSING_FAILED, imports.find(session.id, MemberId(1))?.status)
         assertEquals(2L, jdbc.queryForObject("SELECT count(*) FROM trading_normalization_dispatches", Long::class.java))
         jdbc.update("UPDATE trading_source_artifacts SET raw_expires_at=? WHERE import_session_id=?",
             java.sql.Timestamp.from(now.plusSeconds(3600)), session.id.value)
-        val again = transactions.execute { service.execute(RetryTradingImportSessionCommand(session.id, "retry-after-exhaustion")) }!!
+        val again = transactions.execute { retryImport.execute(RetryTradingImportSessionCommand(session.id, "retry-after-exhaustion")) }!!
         assertEquals(retried.activeNormalizationRunId, runs.findRun(again.activeNormalizationRunId!!)?.retryOfRunId)
         assertEquals(NormalizationResultVersionPin.V1,
             runs.findRun(again.activeNormalizationRunId!!)?.resultVersionPin)
