@@ -11,7 +11,6 @@ import com.refinvest.core.tradingreview.domain.valueobject.*
 import java.sql.Timestamp
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 
 /** Fixture composition only. Production writes artifacts exclusively through the Session Store. */
@@ -23,12 +22,12 @@ internal class TradingImportTestStores(
 
     override fun insert(session: TradingImportSession) {
         if (jdbc.execute(ConnectionCallback { !it.autoCommit }) == true) aggregate.insert(session)
-        else TransactionTemplate(DataSourceTransactionManager(requireNotNull(jdbc.dataSource))).executeWithoutResult { aggregate.insert(session) }
+        else TransactionTemplate(tradingTestTransactions(requireNotNull(jdbc.dataSource))).executeWithoutResult { aggregate.insert(session) }
     }
 
     override fun update(session: TradingImportSession): Boolean =
         if (jdbc.execute(ConnectionCallback { !it.autoCommit }) == true) aggregate.update(session)
-        else TransactionTemplate(DataSourceTransactionManager(requireNotNull(jdbc.dataSource))).execute { aggregate.update(session) }!!
+        else TransactionTemplate(tradingTestTransactions(requireNotNull(jdbc.dataSource))).execute { aggregate.update(session) }!!
 
     fun seedValidation(id: TradingImportSessionId, runId: String, now: java.time.Instant): Boolean = jdbc.update(
         """UPDATE trading_import_sessions SET status='VALIDATING',active_normalization_run_id=?::uuid,

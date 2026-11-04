@@ -15,16 +15,21 @@ import org.springframework.jdbc.core.JdbcTemplate
 
 /** Test fixture composition only; production adapters each implement one aggregate or capability. */
 internal class TradingReviewTestStores(
-    val accountAdapter: JdbcTradingAccountPersistenceAdapter,
-    val bookAdapter: JdbcTradingBookPersistenceAdapter,
+    val accountAdapter: TradingAccountStore,
+    val bookAdapter: TradingBookStore,
     val deletionAdapter: JdbcDeletionRequestPersistenceAdapter,
     val idempotencyAdapter: JdbcTradingIdempotencyStoreAdapter,
     val bookDeletionCascade: JdbcTradingBookDeletionCascade,
+    val accountReader: TradingAccountReader,
+    val bookReader: TradingBookReader,
 ) : TradingAccountStore by accountAdapter, TradingBookStore by bookAdapter,
     DeletionRequestStore by deletionAdapter, TradingIdempotencyStore by idempotencyAdapter {
-    constructor(jdbc: JdbcTemplate) : this(JdbcTradingAccountPersistenceAdapter(jdbc),
-        JdbcTradingBookPersistenceAdapter(jdbc), JdbcDeletionRequestPersistenceAdapter(jdbc),
-        JdbcTradingIdempotencyStoreAdapter(jdbc), JdbcTradingBookDeletionCascade(jdbc))
+    constructor(jdbc: JdbcTemplate) : this(
+        TradingJpaTestContexts.context(requireNotNull(jdbc.dataSource)).getBean(TradingAccountStore::class.java),
+        TradingJpaTestContexts.context(requireNotNull(jdbc.dataSource)).getBean(TradingBookStore::class.java), JdbcDeletionRequestPersistenceAdapter(jdbc),
+        JdbcTradingIdempotencyStoreAdapter(jdbc), JdbcTradingBookDeletionCascade(jdbc),
+        TradingJpaTestContexts.context(requireNotNull(jdbc.dataSource)).getBean(TradingAccountReader::class.java),
+        TradingJpaTestContexts.context(requireNotNull(jdbc.dataSource)).getBean(TradingBookReader::class.java))
     fun insert(value: TradingDeletion) {
         deletionAdapter.insert(DeletionRequestPersistenceMapper.toDomain(DeletionRequestRecord(
             value.id, value.owner.value, value.targetType, value.targetId, value.requestedScope, value.state,
@@ -32,8 +37,6 @@ internal class TradingReviewTestStores(
             value.revokedAt, value.requestedAt, value.updatedAt, value.backupPurgeDueAt, value.completedAt, value.failureCode, 0)))
     }
     fun find(id: Long, owner: MemberId): TradingDeletion? = deletionAdapter.find(DeletionRequestId(id), owner)?.let(TradingDeletion::fromDomain)
-    val accountReader: TradingAccountReader get() = accountAdapter
-    val bookReader: TradingBookReader get() = bookAdapter
     fun list(owner: MemberId, page: Int, size: Int) = accountReader.list(owner, page, size)
     fun list(accountId: TradingAccountId, owner: MemberId, page: Int, size: Int) = bookReader.list(accountId, owner, page, size)
 }

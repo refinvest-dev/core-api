@@ -5,7 +5,7 @@ import com.refinvest.core.tradingreview.domain.TradingBook
 import com.refinvest.core.tradingreview.domain.valueobject.*
 
 internal object TradingBookPersistenceMapper {
-    fun toRecord(domain: TradingBook): TradingBookRecord = TradingBookRecord(
+    fun toEntity(domain: TradingBook): TradingBookJpaEntity = TradingBookJpaEntity(
         id = domain.id.value,
         accountId = domain.accountId.value,
         ownerMemberId = domain.owner.value,
@@ -23,13 +23,21 @@ internal object TradingBookPersistenceMapper {
         latestLedgerRevisionId = domain.latestLedgerRevisionId?.value,
     )
 
-    fun toDomain(record: TradingBookRecord): TradingBook = TradingBook.restore(
-        id = TradingBookId(record.id), accountId = TradingAccountId(record.accountId), owner = MemberId(record.ownerMemberId),
-        venue = TradingVenue.valueOf(record.venue), name = record.displayName,
-        family = TradingProductFamily.valueOf(record.productFamily), mode = TradingPositionMode.valueOf(record.positionMode),
-        asset = TradingSettlementAsset.valueOf(record.settlementAsset), timezone = record.reviewTimezone,
-        status = TradingLifecycleStatus.valueOf(record.status), generation = record.deletionGeneration,
-        createdAt = record.createdAt, updatedAt = record.updatedAt, version = record.version,
-        latestLedgerRevisionId = record.latestLedgerRevisionId?.let(::LedgerRevisionId),
+    fun toDomain(entity: TradingBookJpaEntity): TradingBook = TradingBook.restore(
+        id = TradingBookId(entity.id), accountId = TradingAccountId(entity.accountId), owner = MemberId(entity.ownerMemberId),
+        venue = TradingVenue.valueOf(entity.venue), name = entity.displayName,
+        family = TradingProductFamily.valueOf(entity.productFamily), mode = TradingPositionMode.valueOf(entity.positionMode),
+        asset = TradingSettlementAsset.valueOf(entity.settlementAsset), timezone = entity.reviewTimezone,
+        status = TradingLifecycleStatus.valueOf(entity.status), generation = entity.deletionGeneration,
+        createdAt = entity.createdAt, updatedAt = entity.updatedAt, version = entity.version,
+        latestLedgerRevisionId = entity.latestLedgerRevisionId?.let(::LedgerRevisionId),
     )
+
+    fun apply(domain: TradingBook, entity: TradingBookJpaEntity) {
+        entity.displayName = domain.displayName
+        entity.status = domain.status.name
+        entity.deletionGeneration = domain.deletionGeneration
+        entity.updatedAt = domain.updatedAt
+    }
+
 }
