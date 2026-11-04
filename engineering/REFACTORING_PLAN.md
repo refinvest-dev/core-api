@@ -20,8 +20,10 @@
 validation/retry admission 진입점과 공유 검증 정리는 [Core #117](https://github.com/refinvest-dev/core-api/pull/117)로
 반영됐다. Dispatch/Poll worker와 실행 ID·잠금 후 만료 검증은 [Core #118](https://github.com/refinvest-dev/core-api/pull/118)로
 반영됐다. Grant DB·서명·storage 책임 분리는 [Core #119](https://github.com/refinvest-dev/core-api/pull/119)로 반영됐다.
-Purge·복구·삭제 DB 작업 책임은 [Core #120](https://github.com/refinvest-dev/core-api/pull/120)에서 구현한다.
-다음은 순서 6의 전체 모듈 구조 대조와 main 조합 검증·인계다. Branch 구현 완료와 main 최종 인계는 구분한다.
+Purge·복구·삭제 DB 작업 책임은 [Core #120](https://github.com/refinvest-dev/core-api/pull/120)로 반영됐다.
+순서 6은 main `a4f5717`의 전체 모듈 구조와 통합 조합을 재점검했다. Asset/Strategy의 공유 모델 소유권과
+Web 실패 의미 경계 R21/R22를 보완하며, [최신 Audit](ARCHITECTURE_AUDIT.md)과
+[Handoff](REFACTORING_HANDOFF.md)에 main 검증·이번 branch 검증·운영 미확인 항목을 구분한다.
 
 ## 1. 목표와 변경 기준
 
@@ -77,6 +79,8 @@ read-only query -> Reader -> read model -> Result -> web DTO
 | R18 | 삭제 영향 범위 count | Book 삭제는 Book 1개만, Account 삭제는 Account/Book 수만 요청에 고정하며 하위 Session/artifact와 Revision/Run 수를 충분히 저장하지 않음 | 5c-2에서 요청 시점 scope snapshot·영속 count와 replay/조회·legacy 복원을 검증; 현재 count를 부재 증거로 쓰지 않음 |
 | R19 | Auth HTTP 진입점 | Controller가 outbound token parser와 concrete security adapter를 직접 의존 | 6c-2/[Core #109](https://github.com/refinvest-dev/core-api/pull/109)에서 raw credential 업무 진입점·HTTP 기술 소유권 분리, 검증된 요청만 transaction 진입 |
 | R20 | Trading Review port 구성 | Account/Book/Import inbound 계약과 storage/idempotency outbound capability·모델이 파일에 혼재 | 6c-3/[Core #110](https://github.com/refinvest-dev/core-api/pull/110)에서 기능별 Command/Query/Result와 계약 파일 분리, Aggregate 저장·기존 wire 의미 보존 |
+| R21 | Port 모델 소유권 | Asset inbound query→outbound enum, Strategy Reader→inbound 정의 참조 | [Core #121](https://github.com/refinvest-dev/core-api/pull/121)에서 실제 공유 모델 소유권 명시와 방향 검사 보완. main 반영 전 상태와 구분 |
+| R22 | Asset Web 실패 의미 | Web advice가 outbound 예외 참조 | #121에서 공통 실패 의미와 Web HTTP 매핑 분리, 전 Web outbound 참조 검사 |
 
 주요 근거 파일:
 

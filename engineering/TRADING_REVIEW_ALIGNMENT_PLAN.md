@@ -51,7 +51,7 @@ tradingreview/port/
     book/{create,get,list,delete}/
     importsession/{create,get,list,upload,delete,deleteartifact}/
     normalization/{validate,retry,dispatch,poll,receive,acknowledge,cleanup}/
-    deletion/{get,process,remediate}/
+    deletion/{get,purge,remediate}/
     retention/{expire,purge,cleanup}/
     artifactgrant/redeem/
   outbound/
@@ -128,8 +128,10 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
   [Core #117](https://github.com/refinvest-dev/core-api/pull/117)로 반영됐다. Dispatch/Poll worker와 실행 ID,
   잠금 후 만료 검증은 [Core #118](https://github.com/refinvest-dev/core-api/pull/118)로 반영됐다.
   Grant DB·서명·storage 책임은 [Core #119](https://github.com/refinvest-dev/core-api/pull/119)로 반영됐다.
-  Purge·복구·삭제 DB 작업 책임은 [Core #120](https://github.com/refinvest-dev/core-api/pull/120)에서 구현한다.
-  다음은 순서 6의 전체 구조 대조와 main 조합 검증·인계다.
+  Purge·복구·삭제 DB 작업 책임은 [Core #120](https://github.com/refinvest-dev/core-api/pull/120)로 반영됐다.
+  순서 6은 main `a4f5717`의 전체 구조와 통합 조합을 재점검했다. Asset/Strategy의 공유 모델 소유권·Web
+  실패 의미 경계 보완과 branch 검증은 [최신 Audit](ARCHITECTURE_AUDIT.md), main 증적·제품 미구현과
+  운영 미확인 범위는 [Handoff](REFACTORING_HANDOFF.md)에 구분한다.
 
 ### PR 1: Port Direction and Entry Points
 
@@ -358,11 +360,15 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
   고정 vector 동기화도 확인했다. 최종 Core 필수 CI와 고정 커밋의 API/Web·전체 Trading 증적은
   [Core #120](https://github.com/refinvest-dev/core-api/pull/120)에 기록한다. Domain·schema·wire/hash·결정론 영향은 없다.
 
-### Next: Whole Repository Audit and Main Handoff
+### PR 6: Whole Repository Audit and Main Handoff
 
-1. Controller/Scheduler→inbound→application→outbound→technology adapter 경로와 Aggregate·typed ID·Store/Reader·
-   Mapper, 타 feature 참조와 Gradle 경계를 전체 모듈에서 대조한다. 파일 크기만으로 추가 분리를 결정하지 않는다.
-2. 이번 PR 반영 뒤 main 조합의 Core 전체 PostgreSQL/JUnit·경계·실행 JAR, 계약·고정 vector와 API/Web·전체
-   Trading fixture를 고정 커밋으로 검증한다. Branch 구현 증적과 실제 main 조합 증적을 구분한다.
-3. 구조 점검 결과와 남은 미구현 제품 기능·운영 적용 제약을 Handoff에 기록한다. 기존 Compute migration의
-   실행 경계 등 별도 운영 제약까지 해소됐다는 의미로 구조 리팩토링의 완료를 확장하지 않는다.
+- #120 병합 main `a4f5717`의 46개 모듈·production Kotlin 729개, Root 11개·PersistenceMapper 13개와
+  Controller/Scheduler→inbound→application→outbound→technology adapter 경계를 재점검했다.
+  [Audit](ARCHITECTURE_AUDIT.md)에 feature별 목록·근거와 R21/R22의 보완을 기록한다.
+- Asset·Strategy에서 실제 공유하는 모델과 실패 의미만 중립 소유권을 명시하고 전 feature의 방향 검사와
+  Web outbound 참조 검사를 추가했다. `3b5c95a`/[Core #121](https://github.com/refinvest-dev/core-api/pull/121)의
+  보완은 main 검증과 구분한다. 기존 필드·enum·실행 구문, Domain·schema·wire/hash 의미는 보존한다.
+- 병합된 main 조합은 Core 573개(PostgreSQL 154개), 계약·API/Web 브라우저 11개·전체 Trading fixture가
+  통과했다. 고정 커밋·실행 링크·artifact 대조와 branch 검증의 결과/한계는 [Handoff](REFACTORING_HANDOFF.md)를 따른다.
+- 신규 AnalysisRun/Reprocessing 제품 기능과 실제 운영 DB 전환·writer 배정·Compute migration 제약은
+  별도 범위로 유지한다. #121은 검토·병합 전이며 운영 적용 증적을 대신하지 않는다.
