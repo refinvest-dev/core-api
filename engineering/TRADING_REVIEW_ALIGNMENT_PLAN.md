@@ -127,8 +127,9 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
   구현했다. 순서 5의 첫 범위인 validation/retry admission 진입점 정리는
   [Core #117](https://github.com/refinvest-dev/core-api/pull/117)로 반영됐다. Dispatch/Poll worker와 실행 ID,
   잠금 후 만료 검증은 [Core #118](https://github.com/refinvest-dev/core-api/pull/118)로 반영됐다.
-  Grant DB·서명·storage 책임은 [Core #119](https://github.com/refinvest-dev/core-api/pull/119)에서 구현한다.
-  나머지 삭제 기술 책임과 전체 인계는 아래 후속 범위로 남는다.
+  Grant DB·서명·storage 책임은 [Core #119](https://github.com/refinvest-dev/core-api/pull/119)로 반영됐다.
+  Purge·복구·삭제 DB 작업 책임은 [Core #120](https://github.com/refinvest-dev/core-api/pull/120)에서 구현한다.
+  다음은 순서 6의 전체 구조 대조와 main 조합 검증·인계다.
 
 ### PR 1: Port Direction and Entry Points
 
@@ -333,9 +334,35 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
   154개, 경계·실행 JAR gate를 통과했다. 최종 HEAD와 API/Web·전체 Trading 증적은
   [Core #119](https://github.com/refinvest-dev/core-api/pull/119)에 기록한다.
 
-### Next: Deletion Runtime Responsibilities
+### PR 5-4: Deletion Runtime Responsibilities
 
-1. 큰 Deletion 실행 구현의 분리 지점을 별도 PR로 검토한다. 단순 파일 분할이나 하나의 원자적 연산을
-   여러 transaction으로 나누는 방식을 피하고 checkpoint·lease·stale 무변경과 정확한 삭제 범위를 유지한다.
-2. 실행·정책·기술 capability별로 작은 PR을 구성한다. 마지막 순서 6에서 전체 구조와 main 조합을 점검하며
-   미구현 제품 기능과 운영 적용 제약은 기존 Handoff와 구분한다.
+- Purge와 실패 요청 복구를 각각 하나의 inbound use case로 나눴다. Scheduler는 명시적인 purge port를
+  호출한다. `PurgeTradingDeletionService`는 claim→plan→외부 처리→진행 반영을 조율하고,
+  `RemediateTradingDeletionService`는 ID generator와 독립 복구 capability를 사용한다. 포괄 서비스나
+  이를 감싼 위임 facade는 남기지 않는다.
+- 외부 HTTP/object/file 부재 확인은 `DeletionExternalPurger`로 분리했다. DB·clock·Root 전이를 소유하지
+  않는다. Purge는 caller transaction을 중단하고 DB 작업만 짧은 transaction으로 실행한다. Partial 성공은
+  뒤의 외부 오류에도 보존하며 Pending은 오류 예산으로 세지 않는다. 기존 지연·배치·SLA 의미도 유지한다.
+- `JdbcTradingDeletionWorkStore`는 lease·Root 진행 조율을 유지한다. Durable manifest·item evidence는
+  `DeletionWorksetRows`, scope 선택·primary purge·stale ACK outbox는 `DeletionScopeRows`가 담당한다.
+  두 helper는 같은 JdbcTemplate과 caller transaction에 참여한다. 하나의 원자적 finish를 여러 transaction으로
+  나누지 않는다. 일반 요청 Aggregate의 JPA Store/Reader는 변경하지 않는다.
+- 실패 요청 잠금과 원본 보존·복구 replay·새 Root 및 manifest/evidence 복사는 독립 remediation adapter와
+  조건 모델로 분리했다. 같은 transaction에서 처리하고 기존 count snapshot·legacy provenance·scope/generation을
+  보존한다. SQL 문자열 77개와 claim·plan·finish·잠금 후 lease guard의 제어 흐름을 원본과 비교했다.
+- 새 application 회귀 5개는 부분 성공 뒤 오류, Runtime Pending과 caller transaction 중단·복원, 정확한
+  24시간 SLA 경계, copy scope별 외부 capability, 단일 transaction의 복구 ID/조건 전달을 검증한다.
+  기존 PostgreSQL 삭제·lease·복구·checkpoint 회귀도 새 서비스와 capability로 연결했다.
+- 구현은 `6dd2ab2`다. 로컬 application 51개·security 6개·persistence 96개·app 구조/경계 25개,
+  총 178개와 모듈 경계·실행 JAR이 통과했다. 실패·오류·skip은 0개다. Context 문서 26개·OpenAPI와
+  고정 vector 동기화도 확인했다. 최종 Core 필수 CI와 고정 커밋의 API/Web·전체 Trading 증적은
+  [Core #120](https://github.com/refinvest-dev/core-api/pull/120)에 기록한다. Domain·schema·wire/hash·결정론 영향은 없다.
+
+### Next: Whole Repository Audit and Main Handoff
+
+1. Controller/Scheduler→inbound→application→outbound→technology adapter 경로와 Aggregate·typed ID·Store/Reader·
+   Mapper, 타 feature 참조와 Gradle 경계를 전체 모듈에서 대조한다. 파일 크기만으로 추가 분리를 결정하지 않는다.
+2. 이번 PR 반영 뒤 main 조합의 Core 전체 PostgreSQL/JUnit·경계·실행 JAR, 계약·고정 vector와 API/Web·전체
+   Trading fixture를 고정 커밋으로 검증한다. Branch 구현 증적과 실제 main 조합 증적을 구분한다.
+3. 구조 점검 결과와 남은 미구현 제품 기능·운영 적용 제약을 Handoff에 기록한다. 기존 Compute migration의
+   실행 경계 등 별도 운영 제약까지 해소됐다는 의미로 구조 리팩토링의 완료를 확장하지 않는다.

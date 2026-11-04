@@ -7,6 +7,7 @@ import com.refinvest.core.tradingreview.application.normalization.poll.PollTradi
 
 import com.refinvest.core.tradingreview.adapter.security.HmacArtifactGrantTokens
 import com.refinvest.core.tradingreview.adapter.security.SignedArtifactAccessGrantIssuer
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionRemediation
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
 import com.refinvest.core.tradingreview.port.inbound.account.create.CreateTradingAccountCommand
@@ -478,8 +479,8 @@ class PostgresTradingReviewStoreTest {
         val legacy = assertNotNull(store.find(DeletionRequestId(72300), MemberId(1)))
         assertEquals(DeletionAffectedResources(0, 1, 3, 5, snapshotStatus = DeletionCountSnapshotStatus.LEGACY_PARTIAL), legacy.affectedResources)
         val tx = TransactionTemplate(tradingTestTransactions(SingleConnectionDataSource(connection, true)))
-        val repaired = tx.execute { JdbcTradingDeletionWorkStore(jdbc, Clock.fixed(now, ZoneOffset.UTC))
-            .remediate(legacy.id, DeletionRequestId(72302), now.plusSeconds(20)) }!!
+        val repaired = tx.execute { JdbcTradingDeletionRemediationAdapter(jdbc)
+            .remediate(DeletionRemediation(legacy.id, DeletionRequestId(72302), now.plusSeconds(20))) }!!
         assertEquals(legacy.affectedResources, repaired.affectedResources)
         assertEquals(repaired.affectedResources, store.find(repaired.id, legacy.owner)?.affectedResources)
         assertEquals(7L, store.find(legacy.id, legacy.owner)?.version)
@@ -490,8 +491,8 @@ class PostgresTradingReviewStoreTest {
         store.insert(exact)
         val failed = exact.start(now.plusSeconds(1)).recordFailure(now.plusSeconds(2), 1)
         assertTrue(tx.execute { JdbcDeletionRequestExecution(jdbc).commit(exact, failed) }!!)
-        val exactRemediation = tx.execute { JdbcTradingDeletionWorkStore(jdbc, Clock.fixed(now, ZoneOffset.UTC))
-            .remediate(exact.id, DeletionRequestId(72312), now.plusSeconds(20)) }!!
+        val exactRemediation = tx.execute { JdbcTradingDeletionRemediationAdapter(jdbc)
+            .remediate(DeletionRemediation(exact.id, DeletionRequestId(72312), now.plusSeconds(20))) }!!
         assertEquals(exact.affectedResources, store.find(exactRemediation.id, exact.owner)?.affectedResources)
     }
 
@@ -759,10 +760,10 @@ class PostgresTradingReviewStoreTest {
         assertEquals(DeletionRequestState.CANCELLING_JOBS,
             stores.deletionAdapter.find(DeletionRequestId(parent.id), MemberId(1))?.state)
         val work = JdbcTradingDeletionWorkStore(jdbc, Clock.fixed(now.plusSeconds(501), ZoneOffset.UTC))
-        val remediation = tx.execute { work.remediate(child.id, DeletionRequestId(89312), now.plusSeconds(501)) }!!
+        val remediation = tx.execute { JdbcTradingDeletionRemediationAdapter(jdbc).remediate(DeletionRemediation(child.id, DeletionRequestId(89312), now.plusSeconds(501))) }!!
         assertEquals(original.revokedAt, remediation.revokedAt)
         assertEquals(original.deletionGeneration, remediation.deletionGeneration)
-        assertEquals(remediation.id, tx.execute { work.remediate(child.id, DeletionRequestId(89313), now.plusSeconds(501)) }!!.id)
+        assertEquals(remediation.id, tx.execute { JdbcTradingDeletionRemediationAdapter(jdbc).remediate(DeletionRemediation(child.id, DeletionRequestId(89313), now.plusSeconds(501))) }!!.id)
         deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(510), ZoneOffset.UTC)).purgePending()
         deletionWorker(jdbc, tx, emptyStorage(), Clock.fixed(now.plusSeconds(520), ZoneOffset.UTC)).purgePending()
         assertEquals(DeletionRequestState.COMPLETED, stores.deletionAdapter.find(remediation.id, child.owner)?.state)
@@ -3855,13 +3856,10 @@ class PostgresTradingReviewStoreTest {
         val legacy = object : com.refinvest.core.tradingreview.port.outbound.storage.workspace.LegacyTradingTemporaryCopies {
             override fun absent() = true
         }
-        val ids = object : TradingIdGenerator {
-            override fun accountId() = error("not used")
-            override fun bookId() = error("not used")
-            override fun deletionId() = error("not used")
-        }
-        return TradingDeletionWorker(com.refinvest.core.tradingreview.application.TradingDeletionService(
-            JdbcTradingDeletionWorkStore(jdbc, clock), tx, storage, files, workspaces, runtimeClient ?: runtime, legacy, clock, ids))
+        return TradingDeletionWorker(com.refinvest.core.tradingreview.application.deletion.purge.PurgeTradingDeletionService(
+            JdbcTradingDeletionWorkStore(jdbc, clock), tx,
+            com.refinvest.core.tradingreview.application.deletion.purge.DeletionExternalPurger(
+                storage, files, workspaces, runtimeClient ?: runtime, legacy), clock))
     }
 
     private fun withDatabase(applyPinMigration: Boolean = true, applyDeletionMigration: Boolean = true,
