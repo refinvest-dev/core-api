@@ -12,8 +12,8 @@ import com.refinvest.core.asset.domain.SeriesSnapshot
 import com.refinvest.core.asset.domain.exception.DatasetSnapshotNotFoundException
 import com.refinvest.core.asset.port.outbound.compute.AssetDataClient
 import com.refinvest.core.asset.port.outbound.compute.AssetSeriesQuery
-import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorCode
-import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorException
+import com.refinvest.core.asset.port.common.failure.SeriesDataErrorCode
+import com.refinvest.core.asset.port.common.failure.SeriesDataErrorException
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import com.refinvest.core.shared.infrastructure.http.HttpClientTimeouts

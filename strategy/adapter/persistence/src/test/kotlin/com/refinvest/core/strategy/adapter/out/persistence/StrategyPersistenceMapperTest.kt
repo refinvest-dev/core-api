@@ -4,7 +4,7 @@ import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.strategy.domain.Strategy
 import com.refinvest.core.strategy.domain.strategy.StrategyVersion
 import com.refinvest.core.strategy.domain.valueobject.*
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyMetricOperandForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyMetricOperandForBacktest
 import java.time.Instant
 import kotlin.test.*
 

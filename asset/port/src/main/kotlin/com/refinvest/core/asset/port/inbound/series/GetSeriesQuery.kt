@@ -1,6 +1,6 @@
 package com.refinvest.core.asset.port.inbound.series
 
-import com.refinvest.core.asset.port.outbound.compute.SeriesMetric
+import com.refinvest.core.asset.port.common.series.SeriesMetric
 import java.time.LocalDate
 
 data class GetSeriesQuery(

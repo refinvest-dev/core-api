@@ -3,9 +3,9 @@ package com.refinvest.core.asset.adapter.out.compute
 import com.refinvest.core.asset.domain.AssetCalendar
 import com.refinvest.core.asset.domain.exception.DatasetSnapshotNotFoundException
 import com.refinvest.core.asset.port.outbound.compute.AssetSeriesQuery
-import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorCode
-import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorException
-import com.refinvest.core.asset.port.outbound.compute.SeriesMetric
+import com.refinvest.core.asset.port.common.failure.SeriesDataErrorCode
+import com.refinvest.core.asset.port.common.failure.SeriesDataErrorException
+import com.refinvest.core.asset.port.common.series.SeriesMetric
 import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
 import org.springframework.test.web.client.MockRestServiceServer

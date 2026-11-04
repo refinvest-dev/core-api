@@ -9,11 +9,11 @@ import com.refinvest.core.strategy.domain.valueobject.TimeBasedExit
 import com.refinvest.core.strategy.port.outbound.persistence.StrategyReadModel
 import com.refinvest.core.strategy.port.outbound.persistence.StrategyVersionReadModel
 import com.refinvest.core.strategy.port.outbound.persistence.version.StrategyVersionBacktestReadModel
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyConditionForBacktest
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyLiteralOperandForBacktest
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyMetricOperandForBacktest
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyMetricReferenceForBacktest
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyVersionForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyConditionForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyLiteralOperandForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyMetricOperandForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyMetricReferenceForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyVersionForBacktest
 
 internal object StrategyReadModelMapper {
     fun toReadModel(entity: StrategyJpaEntity): StrategyReadModel {

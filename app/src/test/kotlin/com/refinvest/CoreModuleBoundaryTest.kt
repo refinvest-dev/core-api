@@ -8,6 +8,34 @@ import kotlin.test.assertTrue
 
 class CoreModuleBoundaryTest {
     @Test
+    fun portDirectionsNeverDependOnEachOtherAndSharedModelsRemainNeutral() {
+        features.forEach { feature ->
+            sources("$feature/port/src/main/kotlin").forEach { file ->
+                val source = Files.readString(file)
+                val direction = Regex("package com\\.refinvest\\.core\\.$feature\\.port\\.(inbound|outbound|common)\\b")
+                    .find(source)?.groupValues?.get(1)
+                assertTrue(direction != null, "Port contract has no direction or explicit shared ownership: $file")
+                val references = Regex("com\\.refinvest\\.core\\.[a-z]+\\.port\\.(inbound|outbound)\\b")
+                    .findAll(source).map { it.groupValues[1] }.toSet()
+                assertTrue(references.all { it == direction }, "Port direction dependency in $file: $references")
+            }
+        }
+    }
+
+    @Test
+    fun webAdaptersNeverUseOutboundContracts() {
+        features.map { workspaceRoot().resolve("$it/adapter/web/src/main/kotlin") }
+            .filter(Files::exists).forEach { directory ->
+                Files.walk(directory).use { paths ->
+                    paths.filter { it.toString().endsWith(".kt") }.forEach { file ->
+                        assertFalse(Regex("com\\.refinvest\\.core\\.[a-z]+\\.port\\.outbound\\b")
+                            .containsMatchIn(Files.readString(file)), "Outbound dependency in Web adapter: $file")
+                    }
+                }
+            }
+    }
+
+    @Test
     fun assetLayersKeepFrameworkAndImplementationBoundaries() {
         listOf("domain", "port", "application", "adapter/web", "adapter/compute").forEach { layer ->
             sources("asset/$layer/src/main/kotlin").forEach { file ->
@@ -57,4 +85,10 @@ class CoreModuleBoundaryTest {
 
     private fun workspaceRoot(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
         .first { Files.exists(it.resolve("settings.gradle.kts")) }
+
+    private val features: List<String> = Files.list(workspaceRoot()).use { paths ->
+        paths.filter { Files.isDirectory(it.resolve("port/src/main/kotlin")) }
+            .map { it.fileName.toString() }.sorted().toList()
+            .also { assertTrue(it.isNotEmpty(), "Missing feature port source roots") }
+    }
 }

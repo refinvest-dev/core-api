@@ -1,6 +1,6 @@
-package com.refinvest.core.strategy.port.inbound.version.backtest
+package com.refinvest.core.strategy.port.common.backtest
 
-/** Provider-neutral StrategyVersion representation consumed by the backtest application boundary. */
+/** Immutable provider-neutral definition shared by the Reader projection and cross-feature lookup result. */
 data class StrategyVersionForBacktest(
     val primarySignalAsset: String,
     val conditions: List<StrategyConditionForBacktest>,

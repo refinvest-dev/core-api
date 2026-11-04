@@ -20,9 +20,9 @@ import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestCo
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchLease
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestQuery
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyConditionOperandForBacktest
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyMetricReferenceForBacktest
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyVersionForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyConditionOperandForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyMetricReferenceForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyVersionForBacktest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
@@ -114,8 +114,8 @@ open class DispatchPendingBacktestsService(
     )
 
     private fun StrategyConditionOperandForBacktest.toComputePayload(): ComputeConditionOperandPayload = when (this) {
-        is com.refinvest.core.strategy.port.inbound.version.backtest.StrategyLiteralOperandForBacktest -> LiteralOperandPayload(value)
-        is com.refinvest.core.strategy.port.inbound.version.backtest.StrategyMetricOperandForBacktest -> MetricOperandPayload(value.toComputePayload())
+        is com.refinvest.core.strategy.port.common.backtest.StrategyLiteralOperandForBacktest -> LiteralOperandPayload(value)
+        is com.refinvest.core.strategy.port.common.backtest.StrategyMetricOperandForBacktest -> MetricOperandPayload(value.toComputePayload())
     }
 
     private fun StrategyMetricReferenceForBacktest.toComputePayload(): MetricReferencePayload =

@@ -5,6 +5,7 @@ import com.refinvest.core.backtest.application.dispatch.DispatchPendingBacktests
 import com.refinvest.core.backtest.adapter.out.compute.RestClientComputeClient
 import com.refinvest.core.backtest.adapter.out.compute.RestClientComputeBacktestStatusClient
 import com.refinvest.core.strategy.port.inbound.version.backtest.*
+import com.refinvest.core.strategy.port.common.backtest.*
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import com.refinvest.core.backtest.application.execution.RecordBacktestRunExecutionService
