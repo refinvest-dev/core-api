@@ -14,8 +14,9 @@
 방식까지 이미 정리됐다는 뜻으로 확장하지 않는다.
 
 후속 순서 1의 port 경계는 Core #113으로 반영됐고, 순서 2의 기능별 Service·resource별 Web 구성은
-[Core #114](https://github.com/refinvest-dev/core-api/pull/114)에서 구현·검증했다. 다음은 Account/Book의
-JPA 저장 기준 구현이며, Session/DeletionRequest 일반 저장과 실행 capability 정리는 후속으로 남는다.
+[Core #114](https://github.com/refinvest-dev/core-api/pull/114)로 반영됐다. 순서 3의 Account/Book JPA 저장 기준
+구현은 [Core #115](https://github.com/refinvest-dev/core-api/pull/115)이며, 다음은 Session/DeletionRequest의
+일반 저장 적용 범위 확정이다. 실행 capability의 큰 분해는 순서 5에 남긴다.
 
 ## 1. 목표와 변경 기준
 
