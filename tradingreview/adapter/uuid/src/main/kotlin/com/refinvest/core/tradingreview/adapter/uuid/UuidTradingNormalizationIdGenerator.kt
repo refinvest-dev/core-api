@@ -11,4 +11,5 @@ class UuidTradingNormalizationIdGenerator : TradingNormalizationIdGenerator {
     override fun runId() = NormalizationRunId(UUID.randomUUID().toString())
     override fun dispatchId() = UUID.randomUUID().toString()
     override fun attemptToken() = UUID.randomUUID().toString()
+    override fun grantUpdateKey() = UUID.randomUUID().toString()
 }

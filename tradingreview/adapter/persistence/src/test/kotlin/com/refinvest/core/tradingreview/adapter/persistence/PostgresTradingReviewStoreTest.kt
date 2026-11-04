@@ -1,5 +1,10 @@
 package com.refinvest.core.tradingreview.adapter.persistence
 
+import com.refinvest.core.tradingreview.application.normalization.NormalizationRetrySchedule
+import com.refinvest.core.tradingreview.application.normalization.NormalizationWorkerLifecycle
+import com.refinvest.core.tradingreview.application.normalization.dispatch.DispatchTradingNormalizationService
+import com.refinvest.core.tradingreview.application.normalization.poll.PollTradingNormalizationService
+
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
 import com.refinvest.core.tradingreview.port.inbound.account.create.CreateTradingAccountCommand
@@ -341,6 +346,7 @@ class PostgresTradingReviewStoreTest {
         override fun runId() = NormalizationRunId(UUID.randomUUID().toString())
         override fun dispatchId() = UUID.randomUUID().toString()
         override fun attemptToken() = UUID.randomUUID().toString()
+        override fun grantUpdateKey() = UUID.randomUUID().toString()
     }
     private val normalizationVersions = """{"versionSetHash":"${"f".repeat(64)}","normalizer":{"sourceDialectVersionsByArtifactRole":{"TRADE_HISTORY":"TRADE_V1","POSITION_HISTORY":"POSITION_V1"},"adapterVersion":"ADAPTER_V1","normalizerVersion":"NORMALIZER_V1","canonicalSchemaVersion":"CANONICAL_V1","implementationDigest":"normalizer-digest","versionSetHash":"${"d".repeat(64)}"},"reconstruction":{"instrumentTermsVersionByInstrument":{},"reconstructionPolicyVersion":"RECONSTRUCTION_V1","reconciliationVersion":"RECONCILIATION_V1","reviewUnitSchemaVersion":"REVIEW_UNIT_V1","evidenceSchemaVersion":"EVIDENCE_V1","implementationDigest":"reconstruction-digest","versionSetHash":"${"e".repeat(64)}"}}"""
 
@@ -2873,6 +2879,7 @@ class PostgresTradingReviewStoreTest {
         val compute = object : TradingNormalizationComputeClient {
             override fun submit(run: NormalizationRun, dispatch: NormalizationDispatch,
                                 grants: List<ArtifactReadGrant>): NormalizationSubmission {
+                assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
                 submittedKeys.add(dispatch.computeKey)
                 submittedLocators.add(grants.map { it.accessUri })
                 assertEquals(active.inputFingerprint, run.inputFingerprint)
@@ -2887,10 +2894,12 @@ class PostgresTradingReviewStoreTest {
                                       grants: List<ArtifactReadGrant>, updateKey: String): NormalizationGrantUpdate =
                 error("No grant update in this test")
         }
-        val dispatcher = com.refinvest.core.tradingreview.application.TradingNormalizationDispatcher(
-            runs, imports, review, imports, issuer, compute, object : TradingRetryJitter {
-                override fun factor() = 0.5
-            }, transactions, workerClock, mapper, JdbcTradingNormalizationTransitionGate(jdbc))
+        val retrySchedule = NormalizationRetrySchedule(mapper, object : TradingRetryJitter {
+            override fun factor() = 0.5
+        })
+        val workerLifecycle = NormalizationWorkerLifecycle(runs, imports, review, imports)
+        val dispatcher = DispatchTradingNormalizationService(runs, imports, imports, issuer, compute,
+            retrySchedule, workerLifecycle, transactions, workerClock, JdbcTradingNormalizationTransitionGate(jdbc))
         assertTrue(dispatcher.dispatchOne())
         assertEquals(TradingImportStatus.VALIDATING, imports.find(session.id, MemberId(1))?.status)
         workerTime.set(now.plusSeconds(1))
@@ -2938,10 +2947,8 @@ class PostgresTradingReviewStoreTest {
                                       grants: List<ArtifactReadGrant>, updateKey: String): NormalizationGrantUpdate =
                 error("No grant update in this test")
         }
-        val exhausting = com.refinvest.core.tradingreview.application.TradingNormalizationDispatcher(
-            runs, imports, review, imports, issuer, alwaysRetry, object : TradingRetryJitter {
-                override fun factor() = 0.5
-            }, transactions, workerClock, mapper, JdbcTradingNormalizationTransitionGate(jdbc))
+        val exhausting = DispatchTradingNormalizationService(runs, imports, imports, issuer, alwaysRetry,
+            retrySchedule, workerLifecycle, transactions, workerClock, JdbcTradingNormalizationTransitionGate(jdbc))
         for (seconds in listOf(1L, 2L, 4L)) {
             workerTime.set(now.plusSeconds(seconds))
             assertTrue(exhausting.dispatchOne())
@@ -3611,13 +3618,14 @@ class PostgresTradingReviewStoreTest {
                                           grants: List<ArtifactReadGrant>, updateKey: String): NormalizationGrantUpdate =
                     error("no grant update")
             }
-            val dispatcher = com.refinvest.core.tradingreview.application.TradingNormalizationDispatcher(
-                runs, imports, review, imports, object : ArtifactAccessGrantIssuer {
-                    override fun issueReadGrant(artifact: NormalizationArtifactInput, logicalJobId: String,
-                                                sessionId: TradingImportSessionId, attemptToken: String,
-                                                deletionGeneration: Long): ArtifactReadGrant = error("poll only")
-                }, compute, object : TradingRetryJitter { override fun factor() = 0.5 },
-                transactions, Clock.fixed(now, ZoneOffset.UTC), mapper, JdbcTradingNormalizationTransitionGate(jdbc))
+            val dispatcher = PollTradingNormalizationService(runs, imports, object : ArtifactAccessGrantIssuer {
+                override fun issueReadGrant(artifact: NormalizationArtifactInput, logicalJobId: String,
+                                            sessionId: TradingImportSessionId, attemptToken: String,
+                                            deletionGeneration: Long): ArtifactReadGrant = error("poll only")
+            }, compute, NormalizationRetrySchedule(mapper, object : TradingRetryJitter {
+                override fun factor() = 0.5
+            }), NormalizationWorkerLifecycle(runs, imports, review, imports), transactions,
+                Clock.fixed(now, ZoneOffset.UTC), mapper, normalizationIds)
             assertTrue(dispatcher.pollOne(), code)
             val terminal = assertNotNull(imports.find(session.id, MemberId(1)))
             val expected = if (index < 6) TradingImportStatus.REJECTED else TradingImportStatus.PROCESSING_FAILED
