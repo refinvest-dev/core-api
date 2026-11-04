@@ -165,6 +165,45 @@ class TradingApplicationStructureTest {
         }
     }
 
+    @Test
+    fun `deletion purge remediation and external work have independent responsibilities`() {
+        val root = workspaceRoot()
+        val prefix = "com.refinvest.core.tradingreview"
+        val application = kotlinClasses(root.resolve("tradingreview/application/src/main/kotlin"))
+        val purge = application.single { it.simpleName == "PurgeTradingDeletionService" }
+        val remediation = application.single { it.simpleName == "RemediateTradingDeletionService" }
+        for ((type, contract, feature) in listOf(
+                Triple(purge, "PurgeTradingDeletionUseCase", "purge"),
+                Triple(remediation, "RemediateTradingDeletionUseCase", "remediate"))) {
+            assertEquals(listOf("$prefix.port.inbound.deletion.$feature.$contract"), type.interfaces.map { it.name })
+            assertEquals("$prefix.application.deletion.$feature", type.packageName)
+            assertTrue(type.constructors.single().parameterTypes.all {
+                it.name.startsWith("$prefix.port.outbound.") || it == Clock::class.java ||
+                    it == TransactionTemplate::class.java ||
+                    it.name == "$prefix.application.deletion.purge.DeletionExternalPurger"
+            }, type.name)
+        }
+        assertEquals(org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED,
+            purge.getDeclaredMethod("purgePending").getAnnotation(Transactional::class.java)?.propagation)
+        val repairTransaction = remediation.declaredMethods.single { it.name == "execute" }
+            .getAnnotation(Transactional::class.java)
+        assertTrue(repairTransaction != null && !repairTransaction.readOnly)
+        assertEquals(org.springframework.transaction.annotation.Propagation.REQUIRED, repairTransaction.propagation)
+        val external = application.single { it.simpleName == "DeletionExternalPurger" }
+        assertTrue(external.constructors.single().parameterTypes.all {
+            it.name.startsWith("$prefix.port.outbound.storage.") || it.name.startsWith("$prefix.port.outbound.compute.")
+        }, "External purge must not own persistence, clocks or root transitions")
+        assertTrue(application.none { it.simpleName == "TradingDeletionService" })
+        val persistence = kotlinClasses(root.resolve("tradingreview/adapter/persistence/src/main/kotlin"))
+        for ((name, contract) in listOf("JdbcTradingDeletionWorkStore" to "TradingDeletionWorkStore",
+                "JdbcTradingDeletionRemediationAdapter" to "TradingDeletionRemediation")) {
+            val type = persistence.single { it.simpleName == name }
+            assertEquals(listOf("$prefix.port.outbound.persistence.deletion.$contract"), type.interfaces.map { it.name })
+        }
+        assertTrue(persistence.single { it.simpleName == "JdbcTradingDeletionWorkStore" }.declaredMethods
+            .none { it.name.startsWith("remediate") })
+    }
+
     private fun kotlinClasses(root: Path): List<Class<*>> = Files.walk(root).use { files ->
         files.filter { it.toString().endsWith(".kt") }.flatMap { file ->
             val source = Files.readString(file)
