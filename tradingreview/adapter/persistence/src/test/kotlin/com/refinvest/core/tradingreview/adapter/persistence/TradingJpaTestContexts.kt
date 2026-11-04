@@ -28,10 +28,14 @@ internal object TradingJpaTestContexts {
         val connection = (handle as? ConnectionProxy)?.targetConnection ?: handle
         return contexts.getOrPut(connection) {
             AnnotationConfigApplicationContext().apply {
-                beanFactory.registerSingleton("dataSource", SingleConnectionDataSource(connection, true))
+                val dataSource = SingleConnectionDataSource(connection, true)
+                beanFactory.registerSingleton("dataSource", dataSource)
+                beanFactory.registerSingleton("jdbcTemplate", org.springframework.jdbc.core.JdbcTemplate(dataSource))
                 register(TradingJpaFixtureConfiguration::class.java,
                     JpaTradingAccountStoreAdapter::class.java, JpaTradingAccountReaderAdapter::class.java,
-                    JpaTradingBookStoreAdapter::class.java, JpaTradingBookReaderAdapter::class.java)
+                    JpaTradingBookStoreAdapter::class.java, JpaTradingBookReaderAdapter::class.java,
+                    TradingImportSessionSnapshots::class.java, JpaTradingImportSessionStoreAdapter::class.java,
+                    JpaTradingImportSessionReaderAdapter::class.java, JpaTradingSourceArtifactReaderAdapter::class.java)
                 refresh()
             }
         }
