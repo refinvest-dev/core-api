@@ -5,6 +5,8 @@ import com.refinvest.core.tradingreview.application.normalization.NormalizationW
 import com.refinvest.core.tradingreview.application.normalization.dispatch.DispatchTradingNormalizationService
 import com.refinvest.core.tradingreview.application.normalization.poll.PollTradingNormalizationService
 
+import com.refinvest.core.tradingreview.adapter.security.HmacArtifactGrantTokens
+import com.refinvest.core.tradingreview.adapter.security.SignedArtifactAccessGrantIssuer
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
 import com.refinvest.core.tradingreview.port.inbound.account.create.CreateTradingAccountCommand
@@ -78,7 +80,7 @@ import com.refinvest.core.tradingreview.port.outbound.storage.workspace.LegacyTr
 import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
 import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactWorkspaces
 
-import com.refinvest.core.tradingreview.application.RedeemTradingArtifactGrantService
+import com.refinvest.core.tradingreview.application.artifactgrant.redeem.RedeemTradingArtifactGrantService
 
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.application.GetTradingDeletionRequestService
@@ -132,6 +134,7 @@ import kotlin.test.assertTrue
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.SingleConnectionDataSource
+import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 
 @EnabledIfEnvironmentVariable(named = "TRADING_REVIEW_TEST_JDBC_URL", matches = ".+")
@@ -3437,6 +3440,102 @@ class PostgresTradingReviewStoreTest {
     @Test
     fun bookDeletionRevokesExistingArtifactGrantsBeforePurge() = verifyParentGrantRevocation(deleteAccount = false)
 
+    @Test
+    fun grantIssuanceRechecksExpiryAndParentDeletionAfterStorageAvailability() = withDatabase { connection ->
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        members(jdbc)
+        val observed = java.util.concurrent.atomic.AtomicReference(now)
+        val clock = object : Clock() {
+            override fun instant() = observed.get()
+            override fun getZone() = ZoneOffset.UTC
+            override fun withZone(zone: java.time.ZoneId) = this
+        }
+        for ((index, race) in listOf("expiry", "parent-deletion").withIndex()) {
+            observed.set(now)
+            val fixture = grantSource(jdbc, 4101 + index * 10L, MemberId(1))
+            val storage = object : RawArtifactStorage by emptyStorage() {
+                override fun exists(key: String): Boolean {
+                    assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+                    if (race == "expiry") observed.set(jdbc.queryForObject(
+                        "SELECT raw_expires_at FROM trading_source_artifacts WHERE id=?", java.sql.Timestamp::class.java,
+                        fixture.artifact.artifactId.value)!!.toInstant())
+                    else jdbc.update("UPDATE trading_accounts SET status='DELETION_PENDING',deletion_generation=deletion_generation+1 WHERE id=?",
+                        fixture.account.id.value)
+                    return true
+                }
+            }
+            val grants = SignedArtifactAccessGrantIssuer(JdbcArtifactGrantIssueStore(jdbc),
+                HmacArtifactGrantTokens("https://core.test", "synthetic-internal-key"), storage, clock)
+            val failure = assertFailsWith<TradingFailure>(race) {
+                grants.issueReadGrant(fixture.artifact, fixture.dispatchId, fixture.sessionId, fixture.attemptToken, 0)
+            }
+            assertEquals("SOURCE_ARTIFACT_EXPIRED", failure.code, race)
+            assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_artifact_read_grants", Long::class.java), race)
+        }
+    }
+
+    @Test
+    fun grantConsumptionCommitsBeforeStorageEvenWhenTheCallerRollsBack() = withDatabase { connection ->
+        val setup = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        members(setup)
+        val fixture = grantSource(setup, 4201, MemberId(1))
+        val schema = setup.queryForObject("SELECT current_schema()", String::class.java)!!
+        val dataSource = transitionSource(schema)
+        val jdbc = JdbcTemplate(dataSource)
+        val manager = DataSourceTransactionManager(dataSource)
+        val transactions = TransactionTemplate(manager)
+        val clock = Clock.fixed(now, ZoneOffset.UTC)
+        val tokens = HmacArtifactGrantTokens("https://core.test", "synthetic-internal-key")
+        val openFailure = IllegalStateException("synthetic storage open failure")
+        var opened = 0
+        val storage = object : RawArtifactStorage by emptyStorage() {
+            override fun exists(key: String): Boolean {
+                assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+                return true
+            }
+            override fun open(key: String, wrappedDek: ByteArray, keyVersion: String,
+                              artifactId: TradingSourceArtifactId): java.io.InputStream {
+                assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+                opened++
+                // This independent connection must see committed consumption before any external read starts.
+                assertEquals(1L, jdbc.queryForObject(
+                    "SELECT count(*) FROM trading_artifact_read_grants WHERE consumed_at IS NOT NULL", Long::class.java))
+                throw openFailure
+            }
+        }
+        val advice = org.springframework.transaction.interceptor.TransactionInterceptor().apply {
+            transactionManager = manager
+            transactionAttributeSource = org.springframework.transaction.annotation.AnnotationTransactionAttributeSource()
+            afterPropertiesSet()
+        }
+        val issuer = org.springframework.aop.framework.ProxyFactory(SignedArtifactAccessGrantIssuer(
+            JdbcArtifactGrantIssueStore(jdbc), tokens, storage, clock)).apply { addAdvice(advice) }
+            .getProxy() as ArtifactAccessGrantIssuer
+        val redeemer = org.springframework.aop.framework.ProxyFactory(RedeemTradingArtifactGrantService(
+            tokens, JdbcArtifactGrantRedemptionStore(jdbc), storage, clock)).apply { addAdvice(advice) }
+            .getProxy() as com.refinvest.core.tradingreview.port.inbound.artifactgrant.redeem.RedeemTradingArtifactGrantUseCase
+        var token = ""
+        val failure = assertFailsWith<IllegalStateException> {
+            transactions.execute {
+                assertTrue(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+                token = issuer.issueReadGrant(fixture.artifact, fixture.dispatchId, fixture.sessionId,
+                    fixture.attemptToken, 0).accessUri.substringAfterLast('/')
+                try { redeemer.execute(RedeemTradingArtifactGrantCommand(token)) }
+                finally {
+                    assertTrue(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+                }
+            }
+        }
+        assertSame(openFailure, failure)
+        assertEquals(1, opened)
+        assertEquals(1L, setup.queryForObject(
+            "SELECT count(*) FROM trading_artifact_read_grants WHERE consumed_at IS NOT NULL", Long::class.java))
+        assertEquals("RESOURCE_NOT_FOUND", assertFailsWith<TradingFailure> {
+            redeemer.execute(RedeemTradingArtifactGrantCommand(token))
+        }.code)
+        assertEquals(1, opened)
+    }
+
     private fun verifyParentGrantRevocation(deleteAccount: Boolean) = withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
@@ -3453,9 +3552,11 @@ class PostgresTradingReviewStoreTest {
                 return "synthetic raw".byteInputStream()
             }
         }
-        val grants = JdbcArtifactAccessGrants(jdbc, storage, Clock.fixed(now, ZoneOffset.UTC),
-            "https://core.test", "synthetic-internal-key")
-        val redemption = RedeemTradingArtifactGrantService(grants)
+        val tokens = HmacArtifactGrantTokens("https://core.test", "synthetic-internal-key")
+        val grants = SignedArtifactAccessGrantIssuer(JdbcArtifactGrantIssueStore(jdbc), tokens, storage,
+            Clock.fixed(now, ZoneOffset.UTC))
+        val redemption = RedeemTradingArtifactGrantService(tokens, JdbcArtifactGrantRedemptionStore(jdbc), storage,
+            Clock.fixed(now, ZoneOffset.UTC))
         val target = grantSource(jdbc, 3001, MemberId(1))
         val sibling = grantSource(jdbc, 3011, MemberId(1), target.account)
         val unrelated = grantSource(jdbc, 3021, MemberId(1))

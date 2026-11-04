@@ -130,6 +130,41 @@ class TradingApplicationStructureTest {
         }, "Pinned retry calculation must not choose a time or perform I/O")
     }
 
+    @Test
+    fun `artifact grants separate persistence signing and storage with suspended caller transactions`() {
+        val root = workspaceRoot()
+        val prefix = "com.refinvest.core.tradingreview"
+        val application = kotlinClasses(root.resolve("tradingreview/application/src/main/kotlin"))
+        val security = kotlinClasses(root.resolve("tradingreview/adapter/security/src/main/kotlin"))
+        val persistenceRoot = root.resolve("tradingreview/adapter/persistence/src/main/kotlin")
+        val persistence = kotlinClasses(persistenceRoot)
+        for ((name, contract) in listOf("JdbcArtifactGrantIssueStore" to "ArtifactGrantIssueStore",
+                "JdbcArtifactGrantRedemptionStore" to "ArtifactGrantRedemptionStore")) {
+            val type = persistence.single { it.simpleName == name }
+            assertEquals(listOf("$prefix.port.outbound.persistence.artifactgrant.$contract"), type.interfaces.map { it.name })
+            val source = Files.readString(persistenceRoot.resolve(type.name.replace('.', '/') + ".kt"))
+            assertTrue(!Regex("RawArtifactStorage|java\\.security|javax\\.crypto|InputStream|Clock|@Value")
+                .containsMatchIn(source), "Persistence must only implement its database capability: $name")
+        }
+        assertTrue(persistence.none { it.simpleName == "JdbcArtifactAccessGrants" })
+        val tokens = security.single { it.simpleName == "HmacArtifactGrantTokens" }
+        assertTrue(tokens.constructors.single().parameterTypes.all { it == String::class.java })
+        val redemption = application.single { it.simpleName == "RedeemTradingArtifactGrantService" }
+        assertEquals("$prefix.application.artifactgrant.redeem", redemption.packageName)
+        assertEquals(listOf("$prefix.port.inbound.artifactgrant.redeem.RedeemTradingArtifactGrantUseCase"),
+            redemption.interfaces.map { it.name })
+        val issuer = security.single { it.simpleName == "SignedArtifactAccessGrantIssuer" }
+        for ((type, operation) in listOf(redemption to "execute", issuer to "issueReadGrant")) {
+            assertTrue(type.constructors.single().parameterTypes.all {
+                it.name.startsWith("$prefix.port.outbound.") || it == Clock::class.java
+            }, type.name)
+            val transaction = type.declaredMethods.single { it.name.startsWith(operation) }
+                .getAnnotation(Transactional::class.java)
+            assertEquals(org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED,
+                transaction?.propagation, "External storage must suspend the caller transaction: ${type.name}")
+        }
+    }
+
     private fun kotlinClasses(root: Path): List<Class<*>> = Files.walk(root).use { files ->
         files.filter { it.toString().endsWith(".kt") }.flatMap { file ->
             val source = Files.readString(file)
