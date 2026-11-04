@@ -1,5 +1,15 @@
 package com.refinvest
 
+import com.refinvest.core.tradingreview.adapter.persistence.DeletionCheckpointJpaEntity
+import com.refinvest.core.tradingreview.adapter.persistence.DeletionRequestJpaEntity
+import com.refinvest.core.tradingreview.adapter.persistence.DeletionRequestJpaStore
+import com.refinvest.core.tradingreview.adapter.persistence.DeletionRequestSnapshots
+import com.refinvest.core.tradingreview.adapter.persistence.JpaDeletionRequestStoreAdapter
+import com.refinvest.core.tradingreview.domain.DeletionRequest
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionAffectedResources
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionRequestId
+import com.refinvest.core.tradingreview.domain.valueobject.DeletionScope
+
 import com.refinvest.core.tradingreview.adapter.persistence.JpaTradingImportSessionStoreAdapter
 import com.refinvest.core.tradingreview.adapter.persistence.TradingImportSessionJpaEntity
 import com.refinvest.core.tradingreview.adapter.persistence.TradingImportSessionJpaStore
@@ -71,6 +81,9 @@ class CoreSchemaMigrationTest {
                 sessionRows, artifactRows, repositories.getRepository(TradingAccountJpaStore::class.java),
                 repositories.getRepository(TradingBookJpaStore::class.java),
                 TradingImportSessionSnapshots(sessionRows, artifactRows, f.jdbc), em)
+            val requestSnapshots = DeletionRequestSnapshots(
+                repositories.getRepository(DeletionRequestJpaStore::class.java))
+            val requests = JpaDeletionRequestStoreAdapter(requestSnapshots, em)
             val keys = JdbcTradingIdempotencyStoreAdapter(f.jdbc)
             val owner = MemberId(1)
             val clock = Instant.parse("2026-11-01T00:00:00Z")
@@ -99,6 +112,15 @@ class CoreSchemaMigrationTest {
                         TradingArtifactRole.TRADE_HISTORY,
                         "text/csv", 2, "a".repeat(64), "AUTO", "objects/pooled", byteArrayOf(1), "test", clock)))
                     assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
+                    val current = sessions.find(session.id, owner, true)!!
+                    assertTrue(sessions.update(current.requestDeletion(clock.plusSeconds(1))))
+                    val request = DeletionRequest.request(
+                        DeletionRequestId(8005), owner,
+                        DeletionScope.importSession(session.id), 1,
+                        DeletionAffectedResources(0, 0, 1, 1), clock.plusSeconds(1))
+                    requests.insert(request)
+                    assertEquals(request.id, requestSnapshots.find(request.id, owner)!!.id)
+                    assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_deletion_requests", Long::class.java))
                     keys.claim(owner, "createTradingAccount", "pooled-key", "a".repeat(64))
                     keys.complete(owner, "createTradingAccount", "pooled-key", account.id.value)
                     assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_accounts", Long::class.java))
@@ -106,7 +128,7 @@ class CoreSchemaMigrationTest {
                     throw rollback
                 }
             })
-            listOf("trading_accounts", "trading_books", "trading_import_sessions", "trading_source_artifacts", "trading_idempotency").forEach { table ->
+            listOf("trading_accounts", "trading_books", "trading_import_sessions", "trading_source_artifacts", "trading_deletion_requests", "trading_deletion_checkpoints", "trading_idempotency").forEach { table ->
                 assertEquals(0L, f.jdbc.queryForObject("SELECT count(*) FROM $table", Long::class.java))
             }
         }
@@ -129,11 +151,13 @@ class CoreSchemaMigrationTest {
     fun `empty database migrates every mapped feature and supports Hibernate validate`() = fixture { f ->
         f.flyway().migrate()
         f.orm("validate") { factory ->
-            assertTrue(factory.metamodel.entities.size >= 18)
+            assertTrue(factory.metamodel.entities.size >= 20)
             assertNotNull(factory.metamodel.entity(TradingAccountJpaEntity::class.java))
             assertNotNull(factory.metamodel.entity(TradingBookJpaEntity::class.java))
             assertNotNull(factory.metamodel.entity(TradingImportSessionJpaEntity::class.java))
             assertNotNull(factory.metamodel.entity(TradingSourceArtifactJpaEntity::class.java))
+            assertNotNull(factory.metamodel.entity(DeletionRequestJpaEntity::class.java))
+            assertNotNull(factory.metamodel.entity(DeletionCheckpointJpaEntity::class.java))
         }
         f.seed()
         f.assertReadableAndAppendable()

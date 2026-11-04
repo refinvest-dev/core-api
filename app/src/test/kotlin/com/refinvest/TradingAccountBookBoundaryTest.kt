@@ -190,9 +190,11 @@ class TradingAccountBookBoundaryTest {
         assertTrue(mapper.contains("DeletionRequest.restore("))
         assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|\\.request\\(").containsMatchIn(mapper))
         assertFalse(Files.exists(persistence.resolve("JdbcTradingDeletionStoreAdapter.kt")))
-        val adapter = Files.readString(persistence.resolve("JdbcDeletionRequestPersistenceAdapter.kt"))
+        val adapter = Files.readString(persistence.resolve("JpaDeletionRequestStoreAdapter.kt"))
         val queries = Files.readString(persistence.resolve("DeletionRequestQueries.kt"))
         assertTrue(adapter.contains("insert(request: DeletionRequest)") && queries.contains("DeletionRequestPersistenceMapper.toDomain("))
+        val snapshots = Files.readString(persistence.resolve("DeletionRequestSnapshots.kt"))
+        assertTrue(snapshots.contains("DeletionRequestPersistenceMapper.toDomain("))
         assertFalse(adapter.contains("TradingIdempotencyStore") || adapter.contains("TradingAccountStore"))
         listOf("account/delete/DeleteTradingAccountService.kt", "book/delete/DeleteTradingBookService.kt",
             "importsession/delete/DeleteTradingImportSessionService.kt", "importsession/deleteartifact/DeleteTradingSourceArtifactService.kt").forEach { name ->

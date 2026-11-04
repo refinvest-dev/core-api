@@ -1,0 +1,58 @@
+package com.refinvest.core.tradingreview.adapter.persistence
+
+import java.time.Instant
+
+/** Scalar constructor projection keeps the root version and all checkpoints in one database statement. */
+class DeletionRequestSnapshotRow(
+    id: Long,
+    ownerId: Long,
+    targetType: String,
+    targetId: Long,
+    requestedScope: String,
+    state: String,
+    deletionGeneration: Long,
+    accountCount: Long,
+    bookCount: Long,
+    importSessionCount: Long,
+    artifactCount: Long,
+    revokedAt: Instant,
+    requestedAt: Instant,
+    updatedAt: Instant,
+    backupPurgeDueAt: Instant,
+    completedAt: Instant?,
+    failureCode: String?,
+    attemptCount: Int,
+    version: Long,
+    ledgerRevisionCount: Long,
+    analysisRunCount: Long,
+    reprocessingRunCount: Long,
+    countSnapshotStatus: String,
+    val component: String?,
+    val verifiedAt: Instant?,
+) {
+    internal val record = DeletionRequestRecord(
+        id = id,
+        ownerId = ownerId,
+        targetType = targetType,
+        targetId = targetId,
+        requestedScope = requestedScope,
+        state = state,
+        deletionGeneration = deletionGeneration,
+        accountCount = accountCount,
+        bookCount = bookCount,
+        importSessionCount = importSessionCount,
+        artifactCount = artifactCount,
+        revokedAt = revokedAt,
+        requestedAt = requestedAt,
+        updatedAt = updatedAt,
+        backupPurgeDueAt = backupPurgeDueAt,
+        completedAt = completedAt,
+        failureCode = failureCode,
+        attemptCount = attemptCount,
+        version = version,
+        ledgerRevisionCount = ledgerRevisionCount,
+        analysisRunCount = analysisRunCount,
+        reprocessingRunCount = reprocessingRunCount,
+        countSnapshotStatus = countSnapshotStatus,
+    )
+}

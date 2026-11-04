@@ -135,6 +135,45 @@ class PostgresTradingReviewStoreTest {
     fun closeJpaContexts() = TradingJpaTestContexts.close()
 
     @Test
+    fun jpaDeletionSnapshotKeepsRootVersionAndCheckpointsInOneFreshStatement() = withDatabase { connection ->
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        members(jdbc)
+        val stores = TradingReviewTestStores(jdbc)
+        val request = DeletionRequest.request(DeletionRequestId(85001), MemberId(1), DeletionScope.book(TradingBookId(85002)),
+            1, DeletionAffectedResources(0, 1), now)
+        stores.deletionAdapter.insert(request)
+        val context = TradingJpaTestContexts.context(requireNotNull(jdbc.dataSource))
+        val tx = TransactionTemplate(tradingTestTransactions(requireNotNull(jdbc.dataSource)))
+        tx.executeWithoutResult {
+            val cached = context.getBean(DeletionRequestJpaStore::class.java).findById(request.id.value).orElseThrow()
+            val progressed = request.start(now.plusSeconds(1))
+                .verifyAbsent(DeletionPurgeComponent.COMPUTE_RUNTIME, now.plusSeconds(1))
+            assertTrue(JdbcDeletionRequestExecution(jdbc).commit(request, progressed))
+            val statistics = context.getBean(jakarta.persistence.EntityManagerFactory::class.java)
+                .unwrap(org.hibernate.SessionFactory::class.java).statistics
+            statistics.isStatisticsEnabled = true
+            try {
+                statistics.clear()
+                val fresh = stores.deletionReader.find(request.id, request.owner)!!
+                assertEquals(1L, statistics.queryExecutionCount)
+                assertEquals(progressed.version, fresh.version)
+                assertEquals(progressed.state, fresh.state)
+                assertEquals(progressed.verifiedAbsent, fresh.verifiedAbsent)
+                assertEquals(0L, cached.version)
+            } finally { statistics.isStatisticsEnabled = false }
+            assertNull(stores.deletionReader.find(request.id, MemberId(2)))
+            val byTarget = stores.deletionAdapter.findByTarget(request.owner, request.scope)!!
+            assertEquals(progressed.version, byTarget.version)
+            assertEquals(progressed.verifiedAbsent, byTarget.verifiedAbsent)
+        }
+        val before = jdbc.queryForList("SELECT * FROM trading_deletion_requests")
+        assertFailsWith<jakarta.persistence.PersistenceException> { stores.deletionAdapter.insert(request) }
+        assertEquals(before, jdbc.queryForList("SELECT * FROM trading_deletion_requests"))
+        assertFalse(tx.execute { JdbcDeletionRequestExecution(jdbc).commit(request, request.start(now.plusSeconds(2))) })
+        assertEquals(before, jdbc.queryForList("SELECT * FROM trading_deletion_requests"))
+    }
+
+    @Test
     fun jpaSessionAndArtifactSnapshotsFenceJdbcCacheChangesAndAdvanceOnlyChangedRows() = withDatabase { connection ->
         val (jdbc, tx, session) = retentionFixture(connection)
         val store = TradingImportTestStores(jdbc)
@@ -426,7 +465,7 @@ class PostgresTradingReviewStoreTest {
         val migration = javaClass.getResourceAsStream("/db/migration/V17__trading_deletion_count_snapshot.sql")!!.bufferedReader().use { it.readText() }
         connection.createStatement().use { statement -> splitSqlStatements(migration).forEach(statement::execute) }
         assertEquals(before, jdbc.queryForMap("SELECT account_count,book_count,import_session_count,artifact_count,state,version,attempt_count FROM trading_deletion_requests"))
-        val store = JdbcDeletionRequestPersistenceAdapter(jdbc)
+        val store = TradingReviewTestStores(jdbc).deletionAdapter
         val legacy = assertNotNull(store.find(DeletionRequestId(72300), MemberId(1)))
         assertEquals(DeletionAffectedResources(0, 1, 3, 5, snapshotStatus = DeletionCountSnapshotStatus.LEGACY_PARTIAL), legacy.affectedResources)
         val tx = TransactionTemplate(tradingTestTransactions(SingleConnectionDataSource(connection, true)))
@@ -436,7 +475,7 @@ class PostgresTradingReviewStoreTest {
         assertEquals(repaired.affectedResources, store.find(repaired.id, legacy.owner)?.affectedResources)
         assertEquals(7L, store.find(legacy.id, legacy.owner)?.version)
         assertEquals(DeletionCountSnapshotStatus.LEGACY_PARTIAL,
-            JdbcDeletionRequestReader(jdbc).find(legacy.id, legacy.owner)?.affectedResources?.snapshotStatus)
+            TradingReviewTestStores(jdbc).deletionReader.find(legacy.id, legacy.owner)?.affectedResources?.snapshotStatus)
         val exact = DeletionRequest.request(DeletionRequestId(72310), MemberId(1), DeletionScope.book(TradingBookId(72311)),
             1, DeletionAffectedResources(0, 1, 2, 4, 3, 5, 6), now)
         store.insert(exact)
@@ -451,8 +490,8 @@ class PostgresTradingReviewStoreTest {
     fun deletionReaderPreservesVerifiedPartialProgressAndHidesOtherOwnersWithoutWriting() = withDatabase { connection ->
         val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
         members(jdbc)
-        val store = JdbcDeletionRequestPersistenceAdapter(jdbc)
-        val reader = JdbcDeletionRequestReader(jdbc)
+        val store = TradingReviewTestStores(jdbc).deletionAdapter
+        val reader = TradingReviewTestStores(jdbc).deletionReader
         val request = DeletionRequest.request(DeletionRequestId(7101), MemberId(1), DeletionScope.book(TradingBookId(7102)),
             1, DeletionAffectedResources(0, 1), now)
         store.insert(request)
@@ -542,7 +581,7 @@ class PostgresTradingReviewStoreTest {
         connection.createStatement().use { statement -> splitSqlStatements(migration).forEach(statement::execute) }
         assertEquals(before, jdbc.queryForList("SELECT * FROM trading_deletion_requests ORDER BY id").map { it - "version" })
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_deletion_checkpoints", Long::class.java))
-        val completed = JdbcDeletionRequestPersistenceAdapter(jdbc).find(DeletionRequestId(85002), MemberId(1))!!
+        val completed = TradingReviewTestStores(jdbc).deletionAdapter.find(DeletionRequestId(85002), MemberId(1))!!
         assertEquals(DeletionRequestState.COMPLETED, completed.state)
         assertEquals(0L, completed.version)
         assertTrue(completed.verifiedAbsent.isEmpty())
@@ -730,7 +769,7 @@ class PostgresTradingReviewStoreTest {
         val jdbc = JdbcTemplate(source)
         val tx = TransactionTemplate(tradingTestTransactions(source))
         members(jdbc)
-        val store = JdbcDeletionRequestPersistenceAdapter(jdbc)
+        val store = TradingReviewTestStores(jdbc).deletionAdapter
         val execution = JdbcDeletionRequestExecution(jdbc)
         val initial = DeletionRequest.request(DeletionRequestId(83001), MemberId(1),
             DeletionScope.book(TradingBookId(83002)), 1, DeletionAffectedResources(0,1), now)
@@ -771,7 +810,7 @@ class PostgresTradingReviewStoreTest {
     fun deletionClaimsSkipLockedAcrossIndependentConnectionsAndRollbackReleasesClaim() = withDatabase { connection ->
         val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
         members(jdbc)
-        val store = JdbcDeletionRequestPersistenceAdapter(jdbc)
+        val store = TradingReviewTestStores(jdbc).deletionAdapter
         val initial = DeletionRequest.request(DeletionRequestId(84001), MemberId(1),
             DeletionScope.book(TradingBookId(84002)), 1, DeletionAffectedResources(0,1), now)
         store.insert(initial)
@@ -792,7 +831,7 @@ class PostgresTradingReviewStoreTest {
     fun deletionAggregateStoreRestoresWorkerStatesAttemptsAndHistoricalScopeWithoutRewritingThem() = withDatabase { connection ->
         val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
         members(jdbc)
-        val adapter = JdbcDeletionRequestPersistenceAdapter(jdbc)
+        val adapter = TradingReviewTestStores(jdbc).deletionAdapter
         val request = DeletionRequest.request(DeletionRequestId(7001), MemberId(1),
             com.refinvest.core.tradingreview.domain.valueobject.DeletionScope.book(TradingBookId(7002)), 1,
             com.refinvest.core.tradingreview.domain.valueobject.DeletionAffectedResources(0, 1), now)
@@ -1362,7 +1401,7 @@ class PostgresTradingReviewStoreTest {
     }
 
     private fun expiryService(jdbc: JdbcTemplate, tx: TransactionTemplate, clock: Clock,
-        deletionStore: DeletionRequestStore = JdbcDeletionRequestPersistenceAdapter(jdbc)):
+        deletionStore: DeletionRequestStore = TradingReviewTestStores(jdbc).deletionAdapter):
         com.refinvest.core.tradingreview.application.TradingImportExpiryService {
         val nextId = java.util.concurrent.atomic.AtomicLong(600000)
         return com.refinvest.core.tradingreview.application.TradingImportExpiryService(
@@ -1379,7 +1418,7 @@ class PostgresTradingReviewStoreTest {
         val (jdbc, artifact) = seedExpiredRetentionArtifact(connection)
         val tx = TransactionTemplate(tradingTestTransactions(requireNotNull(jdbc.dataSource)))
         val before = importRows(jdbc)
-        val requests = JdbcDeletionRequestPersistenceAdapter(jdbc)
+        val requests = TradingReviewTestStores(jdbc).deletionAdapter
         val interrupted = object : DeletionRequestStore by requests {
             override fun insert(request: DeletionRequest) { requests.insert(request); error("synthetic expiry failure") }
         }
@@ -3061,7 +3100,7 @@ class PostgresTradingReviewStoreTest {
             transactions.execute { service.execute(CreateTradingBookCommand(account.id, "Blocked", TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "new-book")) }
         }.kind)
         deletionWorker(jdbc, transactions, emptyStorage(), clock).purgePending()
-        assertEquals("COMPLETED", GetTradingDeletionRequestService(member, JdbcDeletionRequestReader(jdbc)).execute(GetTradingDeletionRequestQuery(DeletionRequestId(deletion.id))).state)
+        assertEquals("COMPLETED", GetTradingDeletionRequestService(member, TradingReviewTestStores(jdbc).deletionReader).execute(GetTradingDeletionRequestQuery(DeletionRequestId(deletion.id))).state)
         assertEquals(TradingFailureKind.NO_LONGER_AVAILABLE, assertFailsWith<TradingFailure> { service.execute(GetTradingBookQuery(book.id)) }.kind)
         member.id = MemberId(2)
         assertEquals(TradingFailureKind.NOT_FOUND, assertFailsWith<TradingFailure> { service.execute(GetTradingBookQuery(book.id)) }.kind)

@@ -35,7 +35,8 @@ internal object TradingJpaTestContexts {
                     JpaTradingAccountStoreAdapter::class.java, JpaTradingAccountReaderAdapter::class.java,
                     JpaTradingBookStoreAdapter::class.java, JpaTradingBookReaderAdapter::class.java,
                     TradingImportSessionSnapshots::class.java, JpaTradingImportSessionStoreAdapter::class.java,
-                    JpaTradingImportSessionReaderAdapter::class.java, JpaTradingSourceArtifactReaderAdapter::class.java)
+                    JpaTradingImportSessionReaderAdapter::class.java, JpaTradingSourceArtifactReaderAdapter::class.java,
+                    DeletionRequestSnapshots::class.java, JpaDeletionRequestStoreAdapter::class.java, JpaDeletionRequestReaderAdapter::class.java)
                 refresh()
             }
         }
@@ -58,7 +59,8 @@ internal class TradingJpaFixtureConfiguration {
         setDataSource(dataSource)
         setPackagesToScan(TradingAccountJpaEntity::class.java.packageName)
         jpaVendorAdapter = HibernateJpaVendorAdapter()
-        setJpaPropertyMap(mapOf("hibernate.hbm2ddl.auto" to "validate", "hibernate.dialect" to "org.hibernate.dialect.PostgreSQLDialect"))
+        // Historical scenarios intentionally withhold migrations; CoreSchemaMigrationTest validates every current mapping.
+        setJpaPropertyMap(mapOf("hibernate.hbm2ddl.auto" to "none", "hibernate.dialect" to "org.hibernate.dialect.PostgreSQLDialect"))
     }
 
     @Bean

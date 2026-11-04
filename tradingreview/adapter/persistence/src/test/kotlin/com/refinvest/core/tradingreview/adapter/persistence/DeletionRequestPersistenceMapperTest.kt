@@ -7,6 +7,18 @@ import java.time.Instant
 import kotlin.test.*
 
 class DeletionRequestPersistenceMapperTest {
+    @Test
+    fun jpaRootRowsKeepCountsStateAndVersionWhileCheckpointsAreSuppliedByTheSnapshot() {
+        val request = DeletionRequest.request(DeletionRequestId(10), MemberId(1), DeletionScope.book(TradingBookId(2)),
+            1, DeletionAffectedResources(0, 1, 2, 3, 4, 5, 6), now)
+            .start(now.plusSeconds(1)).verifyAbsent(DeletionPurgeComponent.COMPUTE_RUNTIME, now.plusSeconds(1))
+            .recordFailure(now.plusSeconds(2), 1)
+        val record = DeletionRequestPersistenceMapper.toRecord(request)
+        val stored = DeletionRequestPersistenceMapper.toRecord(DeletionRequestPersistenceMapper.toEntity(request))
+        assertEquals(record.copy(verifiedAbsent = emptyMap()), stored)
+        assertEquals(record, DeletionRequestPersistenceMapper.toRecord(
+            DeletionRequestPersistenceMapper.toDomain(stored.copy(verifiedAbsent = record.verifiedAbsent))))
+    }
     private val now = Instant.parse("2026-01-01T00:00:00Z")
     private val initial = DeletionRequestPersistenceMapper.toRecord(DeletionRequest.request(DeletionRequestId(3),
         MemberId(1), DeletionScope.book(TradingBookId(2)), 1, DeletionAffectedResources(0, 1), now))
