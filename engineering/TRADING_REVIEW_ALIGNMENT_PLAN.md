@@ -123,7 +123,9 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
   아래에 기록한다. 순서 2는 [Core #114](https://github.com/refinvest-dev/core-api/pull/114)로 반영됐다.
   순서 3의 Account/Book JPA 구현은 [Core #115](https://github.com/refinvest-dev/core-api/pull/115)이며,
   순서 4의 Session/DeletionRequest 일반 저장은 [Core #116](https://github.com/refinvest-dev/core-api/pull/116)에서
-  구현했다. 실행·정책·기술 책임의 정리와 전체 인계는 순서 5~6으로 남는다.
+  구현했다. 순서 5의 첫 범위인 validation/retry admission 진입점 정리는
+  [Core #117](https://github.com/refinvest-dev/core-api/pull/117)에서 구현한다. 나머지 실행·기술 책임과
+  전체 인계는 아래 후속 범위로 남는다.
 
 ### PR 1: Port Direction and Entry Points
 
@@ -261,14 +263,32 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
   Context `0bcdf79`, Compute `113b0e2`, Web `9354dfe`, Integration `801241f`를 고정한다. 최종 HEAD와 통합
   artifact의 커밋·정책·종료 증적은 [Core #116](https://github.com/refinvest-dev/core-api/pull/116)에 기록한다.
 
-### Next: Normalization and Deletion Runtime Responsibilities
+### PR 5-1: Normalization Admission Entry Points
 
-1. Validate/Retry admission의 기능별 진입점과 실제 공유하는 검증·정책을 정리한다. 포괄 서비스를 이름만
-   바꾸거나 단순 위임 facade로 남기지 않으며 retry pin/hash와 기존 admission 원자성을 유지한다.
-2. 영속 dispatch/attempt ID 생성은 generator port를 기준으로 정리한다. Lease token 같은 기술 식별자는
+- `ValidateTradingImportSessionService`와 `RetryTradingImportSessionService`는 각각 하나의 inbound use case를
+  구현하고 같은 기능의 package에 둔다. 각 transaction 진입점이 idempotency claim·replay·상태 분기와
+  원자적 admission·완료 기록을 직접 조율한다. 기존 포괄 서비스와 이를 감싼 위임 facade는 남기지 않는다.
+- 공유 Guard는 key와 pause gate, owner/lifecycle을 검사하고 Account→Book→Session 순서로 잠근다.
+  공유 Factory는 입력 pin·역할 슬롯·raw 만료·retry identity를 검증하고 Root의 `admitNormalization`으로
+  Run과 dispatch를 구성한다. Factory는 저장·조회·idempotency나 현재 시각 결정을 수행하지 않는다.
+  기존 입력 준비 구문과 fingerprint 함수의 보존을 비교했다.
+- Validation의 실행 중 재조회와 같은 key replay는 입력 생성 전에 반환한다. Retry는 이전 instrument terms와
+  input identity·result version pin을 유지한다. 설정/ID 접근 없는 replay, 변경·중복 target version의
+  claim 전 거절, pause의 무변경과 잘못된 retry 상태를 새 회귀로 확인했다. 두 실제 서비스와 기존 PostgreSQL
+  admission·retry 회귀, 단일 use case 구현과 transaction 경계 검사를 연결했다.
+- 구현 커밋은 `65d797a`다. 로컬 application 41개·persistence 94개·app 구조/경계 22개, 총 157개와
+  모듈 경계·실행 JAR을 확인했으며 실패·오류·skip은 0개다. Context 문서 26개·OpenAPI와
+  Normalization/Analytics vector 동기화도 통과했다. 최종 Core 필수 CI와 고정 커밋의 API/Web·전체 Trading
+  fixture 결과는 [Core #117](https://github.com/refinvest-dev/core-api/pull/117)에 기록한다.
+- DB schema·Domain·port·HTTP/Compute 계약과 hash·결정론 영향은 없다. Admission의 원자적 SQL과
+  worker의 lease/CAS·publication/ACK 경계를 유지한다. 이 PR이 순서 5 전체 완료를 의미하지 않는다.
+
+### Next: Normalization Runtime Identifiers and External Capabilities
+
+1. 영속 dispatch/attempt ID 생성은 generator port를 기준으로 정리한다. Lease token 같은 기술 식별자는
    성격을 먼저 분류하며 모든 UUID를 같은 방식으로 대체하지 않는다. 외부 HTTP/file 작업과 DB transaction,
    잠금 후 lease/시각 재검증·발행/ACK 순서를 회귀 검증한다.
-3. Grant 발급/사용의 DB·서명·storage 책임과 큰 Deletion 실행 구현의 분리 지점을 검토한다. 단순 파일 분할이나
+2. Grant 발급/사용의 DB·서명·storage 책임과 큰 Deletion 실행 구현의 분리 지점을 검토한다. 단순 파일 분할이나
    하나의 원자적 연산을 여러 transaction으로 나누는 방식을 피하고 single-use·stale 무변경을 유지한다.
-4. 실행·정책·기술 capability별로 작은 PR을 구성한다. 마지막 순서 6에서 전체 구조와 main 조합을 점검하며
+3. 실행·정책·기술 capability별로 작은 PR을 구성한다. 마지막 순서 6에서 전체 구조와 main 조합을 점검하며
    미구현 제품 기능과 운영 적용 제약은 기존 Handoff와 구분한다.

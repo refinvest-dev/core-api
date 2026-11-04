@@ -16,8 +16,10 @@
 후속 순서 1의 port 경계는 Core #113으로 반영됐고, 순서 2의 기능별 Service·resource별 Web 구성은
 [Core #114](https://github.com/refinvest-dev/core-api/pull/114)로 반영됐다. 순서 3의 Account/Book JPA 저장 기준
 구현은 [Core #115](https://github.com/refinvest-dev/core-api/pull/115)로 반영됐다. Session/DeletionRequest의
-일반 저장은 [Core #116](https://github.com/refinvest-dev/core-api/pull/116)에서 구현했다. 다음은 순서 5의
-Normalization/Deletion 실행·정책·기술 책임 정리이며, 마지막 전체 구조 점검과 main 인계는 순서 6에 남긴다.
+일반 저장은 [Core #116](https://github.com/refinvest-dev/core-api/pull/116)에서 구현했다. 순서 5의 첫 범위인
+validation/retry admission 진입점과 공유 검증 정리는 [Core #117](https://github.com/refinvest-dev/core-api/pull/117)에서
+구현한다. 다음은 영속 dispatch/attempt ID와 worker 실행·grant/storage·삭제 기술 책임 정리이며,
+마지막 전체 구조 점검과 main 인계는 순서 6에 남긴다.
 
 ## 1. 목표와 변경 기준
 
