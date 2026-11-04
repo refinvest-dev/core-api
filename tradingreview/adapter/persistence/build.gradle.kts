@@ -8,4 +8,5 @@ dependencies {
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(project(":tradingreview:application"))
     testImplementation(project(":tradingreview:adapter:storage"))
+    testImplementation(project(":tradingreview:adapter:security"))
 }

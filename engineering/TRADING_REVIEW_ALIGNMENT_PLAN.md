@@ -74,8 +74,9 @@ tradingreview/port/
   `common`으로 이동하지 않는다. 실제 양방향 공통인 실패 의미 등의 위치만 근거와 함께 명시한다.
 - Controller·Scheduler는 inbound를 호출한다. Application은 inbound를 구현하고 outbound capability를
   사용한다. Persistence·Compute·Storage 구현은 자기 outbound 계약을 구현한다.
-- `ArtifactReadGrantRedeemer`는 현재 호출 위치만 보고 inbound로 이름을 바꾸지 않는다. 기존 DB/storage
-  capability와 application 진입점을 구분하며 single-use·상위 삭제·stream lifetime 보장을 유지한다.
+- Grant는 현재 호출 위치만 보고 outbound capability를 inbound로 이름만 바꾸지 않는다. 원자적 DB 소비는
+  `ArtifactGrantRedemptionStore`, 서명은 `ArtifactGrantTokens`, 외부 raw는 storage port가 소유한다.
+  Application 진입점이 검증·소비·stream 열기를 조율하며 single-use·상위 삭제·stream lifetime을 유지한다.
 
 ## Persistence Direction
 
@@ -125,8 +126,9 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
   순서 4의 Session/DeletionRequest 일반 저장은 [Core #116](https://github.com/refinvest-dev/core-api/pull/116)에서
   구현했다. 순서 5의 첫 범위인 validation/retry admission 진입점 정리는
   [Core #117](https://github.com/refinvest-dev/core-api/pull/117)로 반영됐다. Dispatch/Poll worker와 실행 ID,
-  잠금 후 만료 검증은 [Core #118](https://github.com/refinvest-dev/core-api/pull/118)에서 구현한다.
-  나머지 grant·삭제 기술 책임과 전체 인계는 아래 후속 범위로 남는다.
+  잠금 후 만료 검증은 [Core #118](https://github.com/refinvest-dev/core-api/pull/118)로 반영됐다.
+  Grant DB·서명·storage 책임은 [Core #119](https://github.com/refinvest-dev/core-api/pull/119)에서 구현한다.
+  나머지 삭제 기술 책임과 전체 인계는 아래 후속 범위로 남는다.
 
 ### PR 1: Port Direction and Entry Points
 
@@ -307,11 +309,33 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
   동기화도 확인했다. 최종 Core 필수 CI와 고정 커밋의 API/Web·전체 Trading fixture 결과는
   [Core #118](https://github.com/refinvest-dev/core-api/pull/118)에 기록한다. Domain·wire/hash·결정론 영향은 없다.
 
-### Next: Grant and Deletion External Capabilities
+### PR 5-3: Artifact Grant Capabilities
 
-1. Grant 발급/사용의 DB·서명·storage 책임을 정리한다. Single-use·owner·상위 삭제와 stream lifetime을
-   유지하고, 외부 file 작업을 DB transaction에 포함하지 않는다. 발급과 사용을 한 포괄 adapter에 다시 모으지 않는다.
-2. 큰 Deletion 실행 구현의 분리 지점을 별도 PR로 검토한다. 단순 파일 분할이나 하나의 원자적 연산을
+- 포괄 `JdbcArtifactAccessGrants`를 DB 발급/소비 Store와 security token provider·발급 adapter로 나눴다.
+  두 DB adapter는 각각 한 persistence capability만 구현하고 SQL만 소유한다. Binding·기록·소비·raw
+  descriptor는 outbound port가 소유하며, 기술적인 credential을 별도 business Aggregate로 만들지 않는다.
+- HMAC·opaque URI 형식은 `HmacArtifactGrantTokens`가 담당한다. `SignedArtifactAccessGrantIssuer`는 기존
+  발급 port를 구현하고 DB·token·raw storage port를 조합한다. 사용 서비스는 기능별 package에서 서명 검증→
+  원자적 소비→stream 열기를 직접 조율한다. 혼합된 redeemer/stream 반환 port는 좁은 capability로 대체했다.
+- 발급과 사용은 `NOT_SUPPORTED`로 caller transaction을 중단한다. 실제 별도 PostgreSQL 연결에서 소비가
+  storage 열기 전에 commit된 것을 확인했고, storage 열기 실패와 caller rollback 뒤에도 token은 소비된
+  상태를 유지한다. Stream을 미리 읽거나 닫지 않으며 응답에 소유권을 넘긴다.
+- 기존 storage 확인 중 raw가 만료돼도 발급되는 회귀를 수정 전 실패로 재현했다. 기록 시 새 시각의
+  `INSERT ... SELECT`로 current execution·owner/상위 lifecycle·generation·만료와 descriptor를 재검사한다.
+  만료·삭제 후 기록은 남지 않는다. Single-use 소비의 기존 `UPDATE ... RETURNING` 조건은 그대로 보존했다.
+- HMAC 고정 벡터·token/URI 형식·5분 TTL·설정 key·오류 의미를 유지한다. Credential 문자열은 가리고,
+  읽기 descriptor의 wrapped DEK는 복사해 전달한다. 서명·DB·I/O의 실제 구현 경계와 transaction 중단을
+  구조 검사로 확인한다. Domain·DB schema·wire와 hash·계산 결정론 영향은 없다.
+- 구현은 `78af9a2`다. 로컬 application 46개·security 6개·persistence 96개·app 구조/경계 24개,
+  총 172개를 사례별로 확인했다. 전체 실행의 Windows 연결 오류와 재실행의 소켓 listen 오류는 보존한 뒤
+  해당 retention 사례만 다시 실행했다. 최종 사례별 실패·오류·skip은 0개다. Context 문서 26개·OpenAPI와
+  고정 vector 동기화도 확인했다. 구현 커밋의 Core CI는 31개 모듈·567개 테스트와 PostgreSQL 10개 suite·
+  154개, 경계·실행 JAR gate를 통과했다. 최종 HEAD와 API/Web·전체 Trading 증적은
+  [Core #119](https://github.com/refinvest-dev/core-api/pull/119)에 기록한다.
+
+### Next: Deletion Runtime Responsibilities
+
+1. 큰 Deletion 실행 구현의 분리 지점을 별도 PR로 검토한다. 단순 파일 분할이나 하나의 원자적 연산을
    여러 transaction으로 나누는 방식을 피하고 checkpoint·lease·stale 무변경과 정확한 삭제 범위를 유지한다.
-3. 실행·정책·기술 capability별로 작은 PR을 구성한다. 마지막 순서 6에서 전체 구조와 main 조합을 점검하며
+2. 실행·정책·기술 capability별로 작은 PR을 구성한다. 마지막 순서 6에서 전체 구조와 main 조합을 점검하며
    미구현 제품 기능과 운영 적용 제약은 기존 Handoff와 구분한다.
