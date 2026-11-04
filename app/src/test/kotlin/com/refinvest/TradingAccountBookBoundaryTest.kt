@@ -101,8 +101,10 @@ class TradingAccountBookBoundaryTest {
             val mapper = Files.readString(persistence.resolve("${aggregate}PersistenceMapper.kt"))
             assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|\\.create\\(|\\.rename\\(|\\.requestDeletion\\(").containsMatchIn(mapper))
             assertTrue(mapper.contains("$aggregate.restore("))
-            val adapter = Files.readString(persistence.resolve("Jdbc${aggregate}PersistenceAdapter.kt"))
-            assertTrue(adapter.contains("${aggregate}PersistenceMapper.toDomain("))
+            val adapterName = if (aggregate == "TradingImportSession") "Jdbc${aggregate}PersistenceAdapter.kt" else "Jpa${aggregate}StoreAdapter.kt"
+            val adapter = Files.readString(persistence.resolve(adapterName))
+            assertTrue(adapter.contains("${aggregate}PersistenceMapper.toDomain(") ||
+                adapter.contains("${aggregate}PersistenceMapper::toDomain"))
             val foreign = if (aggregate == "TradingAccount") "TradingBookStore" else "TradingAccountStore"
             assertFalse(adapter.contains(foreign) || adapter.contains("TradingIdempotencyStore") || adapter.contains("TradingDeletionStore"))
         }

@@ -19,9 +19,9 @@ class TradingAccountBookPersistenceMapperTest {
             val generation = if (status in setOf(TradingLifecycleStatus.ACTIVE, TradingLifecycleStatus.ARCHIVED)) 0L else 1L
             val source = TradingAccount.restore(TradingAccountId(9007199254740993L), MemberId(7), TradingVenue.BINANCE,
                 "Account", status, generation, time, time.plusSeconds(1), 42)
-            val record = TradingAccountPersistenceMapper.toRecord(source)
+            val record = TradingAccountPersistenceMapper.toEntity(source)
             val result = TradingAccountPersistenceMapper.toDomain(record)
-            assertEquals(record, TradingAccountPersistenceMapper.toRecord(result))
+            assertSnapshotEquals(record, TradingAccountPersistenceMapper.toEntity(result))
             assertEquals(source.id, result.id)
             assertEquals(source.status, result.status)
             assertEquals(generation, result.deletionGeneration)
@@ -35,12 +35,16 @@ class TradingAccountBookPersistenceMapperTest {
         val account = TradingAccount.create(TradingAccountId(1), MemberId(7), TradingVenue.BINANCE, "A", time)
         val original = TradingBook.create(TradingBookId(9007199254740993L), account, "B",
             TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "Asia/Seoul", time)
-        val record = TradingBookPersistenceMapper.toRecord(original)
+
         for (status in TradingLifecycleStatus.entries) for (pointer in listOf(null, UUID.randomUUID())) {
-            val stored = record.copy(status = status.name, version = 17, latestLedgerRevisionId = pointer,
-                deletionGeneration = if (status in setOf(TradingLifecycleStatus.ACTIVE, TradingLifecycleStatus.ARCHIVED)) 0 else 1)
+            val stored = TradingBookPersistenceMapper.toEntity(original).apply {
+                this.status = status.name
+                version = 17
+                latestLedgerRevisionId = pointer
+                deletionGeneration = if (status in setOf(TradingLifecycleStatus.ACTIVE, TradingLifecycleStatus.ARCHIVED)) 0 else 1
+            }
             val result = TradingBookPersistenceMapper.toDomain(stored)
-            assertEquals(stored, TradingBookPersistenceMapper.toRecord(result))
+            assertSnapshotEquals(stored, TradingBookPersistenceMapper.toEntity(result))
             assertEquals(pointer, result.latestLedgerRevisionId?.value)
             assertEquals(original.accountId, result.accountId)
             assertEquals("Asia/Seoul", result.reviewTimezone)
@@ -55,14 +59,28 @@ class TradingAccountBookPersistenceMapperTest {
     @Test
     fun malformedStoredStateIsRejectedRatherThanDefaultedOrReplayed() {
         val account = TradingAccount.create(TradingAccountId(1), MemberId(7), TradingVenue.BINANCE, "A", time)
-        val stored = TradingAccountPersistenceMapper.toRecord(account)
-        assertFailsWith<IllegalArgumentException> { TradingAccountPersistenceMapper.toDomain(stored.copy(version = -1)) }
-        assertFailsWith<IllegalArgumentException> { TradingAccountPersistenceMapper.toDomain(stored.copy(status = "DELETION_PENDING")) }
-        assertFailsWith<IllegalArgumentException> { TradingAccountPersistenceMapper.toDomain(stored.copy(venue = "UNKNOWN")) }
-        val book = TradingBookPersistenceMapper.toRecord(TradingBook.create(TradingBookId(2), account, "B",
+        val stored = TradingAccountPersistenceMapper.toEntity(account)
+        assertFailsWith<IllegalArgumentException> { TradingAccountPersistenceMapper.toDomain(stored.changed { it.version = -1 }) }
+        assertFailsWith<IllegalArgumentException> { TradingAccountPersistenceMapper.toDomain(stored.changed { it.status = "DELETION_PENDING" }) }
+        assertFailsWith<IllegalArgumentException> { TradingAccountPersistenceMapper.toDomain(stored.changed { it.venue = "UNKNOWN" }) }
+        val book = TradingBookPersistenceMapper.toEntity(TradingBook.create(TradingBookId(2), account, "B",
             TradingProductFamily.LINEAR_PERPETUAL, TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", time))
-        assertFailsWith<IllegalArgumentException> { TradingBookPersistenceMapper.toDomain(book.copy(reviewTimezone = "+09:00")) }
-        assertFailsWith<IllegalArgumentException> { TradingBookPersistenceMapper.toDomain(book.copy(deletionGeneration = -1)) }
-        assertFailsWith<IllegalArgumentException> { TradingBookPersistenceMapper.toDomain(book.copy(updatedAt = time.minusSeconds(1))) }
+        assertFailsWith<IllegalArgumentException> { TradingBookPersistenceMapper.toDomain(book.changed { it.reviewTimezone = "+09:00" }) }
+        assertFailsWith<IllegalArgumentException> { TradingBookPersistenceMapper.toDomain(book.changed { it.deletionGeneration = -1 }) }
+        assertFailsWith<IllegalArgumentException> { TradingBookPersistenceMapper.toDomain(book.changed { it.updatedAt = time.minusSeconds(1) }) }
     }
+
+    private fun TradingAccountJpaEntity.changed(change: (TradingAccountJpaEntity) -> Unit) =
+        TradingAccountPersistenceMapper.toEntity(TradingAccountPersistenceMapper.toDomain(this)).also(change)
+
+    private fun TradingBookJpaEntity.changed(change: (TradingBookJpaEntity) -> Unit) =
+        TradingBookPersistenceMapper.toEntity(TradingBookPersistenceMapper.toDomain(this)).also(change)
+
+    private fun assertSnapshotEquals(expected: Any, actual: Any) {
+        expected.javaClass.declaredFields.filterNot { java.lang.reflect.Modifier.isStatic(it.modifiers) }.forEach {
+            it.isAccessible = true
+            assertEquals(it.get(expected), it.get(actual), it.name)
+        }
+    }
+
 }

@@ -120,8 +120,9 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
 
 - 계획·규칙은 [Core #112](https://github.com/refinvest-dev/core-api/pull/112)로 머지됐다.
 - 순서 1은 [Core #113](https://github.com/refinvest-dev/core-api/pull/113)에서 구현했다. 실제 후속 검증 결과를
-  아래에 기록한다. 순서 2는 [Core #114](https://github.com/refinvest-dev/core-api/pull/114)에서 구현·검증했으며,
-  일반 저장의 JPA 전환·큰 실행 구현 정리는 순서 3~6으로 남는다.
+  아래에 기록한다. 순서 2는 [Core #114](https://github.com/refinvest-dev/core-api/pull/114)로 반영됐다.
+  순서 3의 Account/Book JPA 구현은 [Core #115](https://github.com/refinvest-dev/core-api/pull/115)이며,
+  Session/DeletionRequest 일반 저장·큰 실행 구현 정리는 순서 4~6으로 남는다.
 
 ### PR 1: Port Direction and Entry Points
 
@@ -192,16 +193,52 @@ Session SQL의 상태 비교를 모두 Domain으로 옮기는 방식도 피한�
 - SQL·schema·Domain·port·Core↔Compute 계약과 계산 결정론 규칙은 바꾸지 않았다. Normalization admission/
   worker·Deletion 실행 구조는 순서 5의 범위이며, 이 PR로 모든 application 정리가 끝났다고 표시하지 않는다.
 
-### Next: Account and Book JPA Baseline
+### PR 3: Account and Book JPA Baseline
 
-1. Account/Book의 기존 schema에 맞는 JPA Entity·`{Aggregate}JpaStore`와 순수한
-   `{Aggregate}PersistenceMapper`를 구성한다. Root 사이 참조는 ID로 유지하며 하위 collection 전체 로딩이나
-   cascade를 새 Aggregate 경계로 삼지 않는다. 신규 insert와 기존 snapshot 저장의 의미를 구분한다.
-2. Aggregate Store와 독립 Reader를 구성하고 owner·불변 필드·expected version·deletion generation 및
-   Account 부모 잠금을 보존한다. 최신 Entity를 재조회했다는 이유로 오래된 Domain version을 덮어쓰지 않는다.
-   Subscription의 단순 저장 형태는 참고하되 Trading Review의 동시성 방어를 생략하지 않는다.
-3. 기존 JDBC cascade·publication capability와 JPA가 같은 transaction에 참여하는지 검증한다. JDBC가
-   갱신한 뒤의 persistence context와 rollback도 확인한다. 대용량 Ledger와 worker의 원자적 SQL은 유지한다.
-4. 실제 PostgreSQL에서 매핑 round-trip·schema validate·stale snapshot 거절·부모 삭제와 자식 생성 경합·
-   잠금 순서·idempotency rollback을 재실행한다. Account/Book 기준이 검증된 뒤 Session/DeletionRequest의
-   일반 저장에 적용할 범위를 순서 4에서 확정한다.
+- Account/Book 각각에 `@Version` JPA Entity·`{Aggregate}JpaStore`·순수한 PersistenceMapper와 독립적인
+  Store/Reader를 구성했다. Root 참조는 scalar ID이며 collection 연관관계나 cascade를 추가하지 않는다.
+  신규 ID는 `persist`로 저장해 기존 행을 merge로 덮어쓰지 않는다. Domain·port·schema 변경은 없다.
+- 수정은 owner 조건의 행 잠금 이후 최신 Entity와 Domain snapshot을 비교한다. Expected version·불변 필드·
+  lifecycle·deletion generation·시각·latest pointer를 검증하고, 오래된 Domain version을 현재 Entity의
+  version으로 바꾸지 않는다. Book 저장은 부모 Account의 잠금·활성 상태·소유권·venue도 확인한다.
+- JPA Entity 잠금 조회가 cached version을 먼저 검사해 adapter의 stale 판정 전에 예외를 던지는 경우를
+  실제 JDBC 갱신으로 재현했다. Scalar `FOR UPDATE` 이후 refresh·명시적 비교로 수정했다. 일반 조회·목록은
+  cache를 재사용하지 않는 constructor projection을 같은 Mapper로 복원하며 추가 refresh 읽기를 하지 않는다.
+- 일반 수정은 JPA dirty checking과 version을 사용하며 JDBC cascade·publication이 변경을 볼 수 있도록
+  즉시 flush한다. 값이 같은 저장도 version이 정확히 한 번 증가하며 overflow는 저장 전에 거절한다.
+  PostgreSQL의 microsecond 시각 정밀도도 유지한다. 원자적 행 잠금·tombstone 조회의 짧은 native query와
+  Ledger·삭제·worker SQL은 유지하며 모든 SQL을 ORM으로 전환했다고 표시하지 않는다.
+- 기존 PostgreSQL fixture의 Account/Book 호출을 실제 Spring Data/JPA adapter로 옮겼다. 독립 SQL-only
+  lease fixture는 별도의 기존 연결을 유지한다. Mapping round-trip, 중복 ID·stale/no-op/overflow 저장,
+  cache와 JDBC 혼용, 부모 삭제·자식 생성 경합·publication pointer·rollback을 검증한다. 실제 Hikari pool에서도
+  JPA/JDBC의 backend 연결 일치와 Root·idempotency의 동시 rollback을 확인했다.
+- 현재 fresh schema는 Account/Book을 포함해 validate한다. 과거 pre-Flyway schema 재현은 당시 Entity
+  범위로 고정하며, ORM 추가 때문에 역사적 schema가 달라지지 않도록 했다. Migration은 추가하지 않았다.
+- 최종 로컬 persistence 90개와 app schema·pool·경계 25개, 총 115개가 통과했다. 실패·오류·skip은 0개다.
+  모듈 경계·실행 JAR, Context 문서 26개·OpenAPI·Normalization/Analytics vector 동기화도 확인했다.
+  Cache 재현 실패, fixture 연결·source 검사 수정과 Windows 소켓 오류 실행을 최종 성공과 구분해 보존했다.
+- [Core 전체 CI](https://github.com/refinvest-dev/core-api/actions/runs/41754858148), [계약 CI](https://github.com/refinvest-dev/integration/actions/runs/41754894620),
+  [API/Web·전체 Trading CI](https://github.com/refinvest-dev/integration/actions/runs/41754897869)는 Core `8926787`과
+  Context `0bcdf79`, Compute `113b0e2`, Web `9354dfe`, Integration `801241f`를 고정한다. 최종 실행 결과와
+  fixture artifact의 커밋·정책·종료 증적은 [Core #115](https://github.com/refinvest-dev/core-api/pull/115)에 기록한다.
+- Core 전체 CI는 30개 모듈·541개 테스트와 모듈 경계·실행 JAR·결과 gate를 통과했다. 실제 PostgreSQL
+  10개 suite·150개를 포함하며 실패·오류·skip은 0개다. 계약 CI도 통과했다. 이후 문서만 추가한 최종 HEAD의
+  필수 CI 결과와 API/Web·전체 Trading fixture 증적은 같은 PR에서 구분해 확인한다.
+- Core 전체 CI는 30개 모듈·541개 테스트와 모듈 경계·실행 JAR·결과 gate를 통과했다. 실제 PostgreSQL
+  10개 suite·150개를 포함하며 실패·오류·skip은 0개다. 계약 CI도 통과했다. 이후 문서만 추가한 최종 HEAD의
+  필수 CI 결과와 API/Web·전체 Trading fixture 증적은 같은 PR에서 구분해 확인한다.
+- JPA/JDBC 참여는 [Spring transaction 지원](https://docs.spring.io/spring-framework/reference/data-access/orm/jpa.html),
+  값이 같은 저장의 즉시 version 증가는 [Hibernate 잠금 동작](https://docs.jboss.org/hibernate/stable/core/javadocs/org/hibernate/LockMode.html)을
+  참고하고 실제 PostgreSQL로 검증했다. 계산 hash·wire 계약·결정론 영향은 없다. 기존 운영 적용 제약은
+  별도 Handoff의 범위를 유지한다.
+
+### Next: Session and Deletion Request General Persistence
+
+1. Session Store의 일반 저장·복원과 admission/publication·retention/deletion CAS를 먼저 분류한다.
+   Artifact/NormalizationRun은 기존 Session 소속 경계를 지키며, ORM 연관관계나 orphan removal을 일괄 적용하지 않는다.
+2. 일반 저장의 JPA 적용 범위를 확정하고 Store/Reader·순수 Mapper를 구성한다. Root/child version·역할 슬롯·
+   retry pin·부모 lifecycle/generation과 bounded 복원을 보존하며 대용량 Ledger/result를 적재하지 않는다.
+3. DeletionRequest의 요청 Root 저장·조회와 실행 lease/item/checkpoint capability를 구분한다.
+   요청 시점 count/checklist·tombstone·복구 projection을 유지하고 stale 작업이 진행 상태를 바꾸지 못하게 한다.
+4. 실제 PostgreSQL의 경합·rollback과 혼용 transaction을 회귀 검증한다. Normalization·Deletion 실행/정책의
+   더 큰 분해는 순서 5에 남기며, 이번 단계의 일반 저장 범위와 섞지 않는다.

@@ -114,6 +114,7 @@ import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.test.assertSame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -125,12 +126,135 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.SingleConnectionDataSource
 import org.springframework.transaction.support.TransactionTemplate
 
 @EnabledIfEnvironmentVariable(named = "TRADING_REVIEW_TEST_JDBC_URL", matches = ".+")
 class PostgresTradingReviewStoreTest {
+    @org.junit.jupiter.api.AfterEach
+    fun closeJpaContexts() = TradingJpaTestContexts.close()
+
+    @Test
+    fun jpaSnapshotsRejectStaleSavesAndAdvanceEverySuccessfulSaveExactlyOnce() = withDatabase { connection ->
+        val (_, _, stores) = accountBookFixture(connection)
+        val createdAt = now.plusNanos(123456789)
+        val account = TradingAccount.create(TradingAccountId(31), MemberId(1), TradingVenue.BINANCE, "A", createdAt)
+        stores.insert(account)
+        val book = TradingBook.create(TradingBookId(32), account, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", createdAt)
+        stores.insert(book)
+        assertEquals(createdAt.atTradingStoredPrecision(), stores.find(account.id, MemberId(1))!!.createdAt)
+        val accountSnapshot = account
+        val bookSnapshot = book
+        assertTrue(stores.update(accountSnapshot.rename("A2", now.plusSeconds(1))))
+        assertFalse(stores.update(accountSnapshot.rename("stale", now.plusSeconds(2))))
+        val currentAccount = stores.find(account.id, MemberId(1))!!
+        assertEquals(1L, currentAccount.version)
+        assertTrue(stores.update(currentAccount))
+        assertEquals(2L, stores.find(account.id, MemberId(1))!!.version)
+        assertTrue(stores.update(bookSnapshot.rename("B2", now.plusSeconds(1))))
+        assertFalse(stores.update(bookSnapshot.rename("stale", now.plusSeconds(2))))
+        val currentBook = stores.find(book.id, MemberId(1))!!
+        assertEquals(1L, currentBook.version)
+        assertTrue(stores.update(currentBook))
+        assertEquals(2L, stores.find(book.id, MemberId(1))!!.version)
+        assertNull(stores.find(account.id, MemberId(2)))
+        assertNull(stores.bookReader.find(book.id, MemberId(2)))
+    }
+
+    @Test
+    fun jpaCachedRowsCannotHideAJdbcVersionChange() = withDatabase { connection ->
+        val (service, tx, stores) = accountBookFixture(connection)
+        val account = tx.execute { service.execute(CreateTradingAccountCommand(TradingVenue.BINANCE, "A", "cached-account")) }!!
+        val book = tx.execute { service.execute(CreateTradingBookCommand(account.id, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "cached-book")) }!!
+        val source = SingleConnectionDataSource(connection, true)
+        val jdbc = JdbcTemplate(source)
+        val context = TradingJpaTestContexts.context(source)
+        val staleAccount = stores.find(account.id, MemberId(1))!!
+        val staleBook = stores.find(book.id, MemberId(1))!!
+        tx.executeWithoutResult {
+            val cachedAccount = context.getBean(TradingAccountJpaStore::class.java).findOwned(account.id.value, 1)!!
+            val cachedBook = context.getBean(TradingBookJpaStore::class.java).findOwned(book.id.value, 1)!!
+            jdbc.update("UPDATE trading_accounts SET version=version+1,display_name='JDBC' WHERE id=?", account.id.value)
+            jdbc.update("UPDATE trading_books SET version=version+1,display_name='JDBC' WHERE id=?", book.id.value)
+            assertEquals(0L, cachedAccount.version)
+            assertEquals(0L, cachedBook.version)
+            assertEquals("JDBC", stores.accountReader.find(account.id, MemberId(1))!!.displayName)
+            assertEquals("JDBC", stores.bookReader.find(book.id, MemberId(1))!!.displayName)
+            assertEquals(0L, cachedAccount.version, "Reader snapshots must not reuse a managed cached entity")
+            assertEquals(0L, cachedBook.version)
+            assertFalse(stores.update(staleAccount.rename("stale", now)))
+            assertFalse(stores.update(staleBook.rename("stale", now)))
+            assertEquals("JDBC", stores.accountReader.find(account.id, MemberId(1))!!.displayName)
+            assertEquals("JDBC", stores.bookReader.find(book.id, MemberId(1))!!.displayName)
+        }
+        assertEquals(1L, stores.find(account.id, MemberId(1))!!.version)
+        assertEquals(1L, stores.find(book.id, MemberId(1))!!.version)
+    }
+
+    @Test
+    fun jpaNewIdentityInsertCannotMergeOverAnExistingAggregate() = withDatabase { connection ->
+        val (_, _, stores) = accountBookFixture(connection)
+        val account = TradingAccount.create(TradingAccountId(41), MemberId(1), TradingVenue.BINANCE, "A", now)
+        stores.insert(account)
+        val book = TradingBook.create(TradingBookId(42), account, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", now)
+        stores.insert(book)
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        val before = accountBookRows(jdbc)
+        assertFailsWith<jakarta.persistence.PersistenceException> { stores.insert(account.rename("replacement", now)) }
+        assertEquals(before, accountBookRows(jdbc))
+        assertFailsWith<jakarta.persistence.PersistenceException> { stores.insert(book.rename("replacement", now)) }
+        assertEquals(before, accountBookRows(jdbc))
+    }
+
+    @Test
+    fun jpaVersionExhaustionCannotWrapAndPersistAnInvalidSnapshot() = withDatabase { connection ->
+        val (_, _, stores) = accountBookFixture(connection)
+        val account = TradingAccount.create(TradingAccountId(51), MemberId(1), TradingVenue.BINANCE, "A", now)
+        stores.insert(account)
+        stores.insert(TradingBook.create(TradingBookId(52), account, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", now))
+        val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
+        jdbc.update("UPDATE trading_accounts SET version=? WHERE id=51", Long.MAX_VALUE)
+        jdbc.update("UPDATE trading_books SET version=? WHERE id=52", Long.MAX_VALUE)
+        val before = accountBookRows(jdbc)
+        assertFailsWith<ArithmeticException> { stores.update(stores.find(account.id, MemberId(1))!!.rename("overflow", now)) }
+        assertFailsWith<ArithmeticException> { stores.update(stores.find(TradingBookId(52), MemberId(1))!!.rename("overflow", now)) }
+        assertEquals(before, accountBookRows(jdbc))
+    }
+
+    @Test
+    fun jpaAndJdbcShareDeletionFlushFreshReadsAndIdempotencyRollback() = withDatabase { connection ->
+        val (service, tx, stores) = accountBookFixture(connection)
+        val account = tx.execute { service.execute(CreateTradingAccountCommand(TradingVenue.BINANCE, "A", "mixed-account")) }!!
+        val book = tx.execute { service.execute(CreateTradingBookCommand(account.id, "B", TradingProductFamily.LINEAR_PERPETUAL,
+            TradingPositionMode.ONE_WAY, TradingSettlementAsset.USDT, "UTC", "mixed-book")) }!!
+        val source = SingleConnectionDataSource(connection, true)
+        val jdbc = JdbcTemplate(source)
+        val before = accountBookRows(jdbc)
+        val stale = stores.find(book.id, MemberId(1))!!
+        val repository = TradingJpaTestContexts.context(source).getBean(TradingBookJpaStore::class.java)
+        val rollback = IllegalStateException("synthetic rollback after mixed persistence")
+        assertSame(rollback, assertFailsWith<IllegalStateException> {
+            tx.executeWithoutResult {
+                val cached = repository.findOwned(book.id.value, 1)!!
+                service.execute(DeleteTradingAccountCommand(account.id, "mixed-delete"))
+                assertEquals("DELETION_PENDING", jdbc.queryForObject("SELECT status FROM trading_accounts WHERE id=?", String::class.java, account.id.value))
+                assertEquals("ACTIVE", cached.status, "JDBC deliberately bypasses the existing managed Book")
+                assertEquals(TradingLifecycleStatus.DELETION_PENDING, stores.find(book.id, MemberId(1))!!.status)
+                assertEquals(1L, stores.bookReader.find(book.id, MemberId(1))!!.version)
+                assertFalse(stores.update(stale.rename("must not resurrect", now.plusSeconds(1))))
+                throw rollback
+            }
+        })
+        assertEquals(before, accountBookRows(jdbc))
+        val request = tx.execute { service.execute(DeleteTradingAccountCommand(account.id, "mixed-delete")) }!!
+        assertEquals("REQUESTED", request.state)
+        assertEquals(1L, stores.find(account.id, MemberId(1))!!.version)
+    }
+
     private val deliveryPolicy = NormalizationResultDeliveryPolicy(
         "RESULT_DELIVERY_V1", "SINGLE_RESOURCE", 52_428_800, listOf("identity"))
     private val now = Instant.parse("2026-01-01T00:00:00Z")
@@ -185,7 +309,7 @@ class PostgresTradingReviewStoreTest {
                 DeletionScope.importSession(source.sessionId), DeletionScope.rawArtifact(source.artifact.artifactId)))
             assertNull(tx.execute { inventory.capture(scope, MemberId(2)) })
         val empty = TradingAccount.create(TradingAccountId(72500), MemberId(1), TradingVenue.BINANCE, "empty", now)
-        JdbcTradingAccountPersistenceAdapter(jdbc).insert(empty)
+        TradingReviewTestStores(jdbc).accountAdapter.insert(empty)
         assertEquals(DeletionAffectedResources(1, 0), tx.execute { inventory.capture(DeletionScope.account(empty.id), MemberId(1)) })
     }
 
@@ -268,7 +392,7 @@ class PostgresTradingReviewStoreTest {
         val store = JdbcDeletionRequestPersistenceAdapter(jdbc)
         val legacy = assertNotNull(store.find(DeletionRequestId(72300), MemberId(1)))
         assertEquals(DeletionAffectedResources(0, 1, 3, 5, snapshotStatus = DeletionCountSnapshotStatus.LEGACY_PARTIAL), legacy.affectedResources)
-        val tx = TransactionTemplate(DataSourceTransactionManager(SingleConnectionDataSource(connection, true)))
+        val tx = TransactionTemplate(tradingTestTransactions(SingleConnectionDataSource(connection, true)))
         val repaired = tx.execute { JdbcTradingDeletionWorkStore(jdbc, Clock.fixed(now, ZoneOffset.UTC))
             .remediate(legacy.id, DeletionRequestId(72302), now.plusSeconds(20)) }!!
         assertEquals(legacy.affectedResources, repaired.affectedResources)
@@ -306,7 +430,7 @@ class PostgresTradingReviewStoreTest {
             .verifyAbsent(DeletionPurgeComponent.COMPUTE_RUNTIME, now.plusSeconds(5))
             .verifyAbsent(DeletionPurgeComponent.RAW_OBJECTS, now.plusSeconds(6))
             .recordFailure(now.plusSeconds(7), 1)
-        val tx = TransactionTemplate(DataSourceTransactionManager(SingleConnectionDataSource(connection, true)))
+        val tx = TransactionTemplate(tradingTestTransactions(SingleConnectionDataSource(connection, true)))
         assertTrue(tx.execute { JdbcDeletionRequestExecution(jdbc).commit(request, partial) }!!)
         val persisted = DeletionRequestPersistenceMapper.toRecord(assertNotNull(store.find(request.id, request.owner)))
         val member = object : TradingMemberProvider {
@@ -567,7 +691,7 @@ class PostgresTradingReviewStoreTest {
     fun deletionProgressCasRejectsStaleOwnerGenerationAndRollsBackProofTogether() = withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
-        val tx = TransactionTemplate(DataSourceTransactionManager(source))
+        val tx = TransactionTemplate(tradingTestTransactions(source))
         members(jdbc)
         val store = JdbcDeletionRequestPersistenceAdapter(jdbc)
         val execution = JdbcDeletionRequestExecution(jdbc)
@@ -618,8 +742,8 @@ class PostgresTradingReviewStoreTest {
         val secondSource = transitionSource(connection.schema)
         val first = JdbcDeletionRequestExecution(JdbcTemplate(firstSource))
         val second = JdbcDeletionRequestExecution(JdbcTemplate(secondSource))
-        val otherTx = TransactionTemplate(DataSourceTransactionManager(secondSource))
-        TransactionTemplate(DataSourceTransactionManager(firstSource)).execute { status ->
+        val otherTx = TransactionTemplate(tradingTestTransactions(secondSource))
+        TransactionTemplate(tradingTestTransactions(firstSource)).execute { status ->
             assertEquals(initial.id, first.lockNext()!!.id)
             assertNull(otherTx.execute { second.lockNext() })
             status.setRollbackOnly()
@@ -662,7 +786,7 @@ class PostgresTradingReviewStoreTest {
         assertEquals("IMPORT_SUBTREE", legacy.scope.requestedScope)
         assertEquals(0L, legacy.affectedResources.importSessions)
         assertEquals("IMPORT_SUBTREE", TradingDeletion.fromDomain(legacy).requestedScope)
-        val tx = TransactionTemplate(DataSourceTransactionManager(SingleConnectionDataSource(connection, true)))
+        val tx = TransactionTemplate(tradingTestTransactions(SingleConnectionDataSource(connection, true)))
         tx.execute { status ->
             adapter.insert(DeletionRequest.request(DeletionRequestId(7003), MemberId(1),
                 com.refinvest.core.tradingreview.domain.valueobject.DeletionScope.book(TradingBookId(7004)), 1,
@@ -753,7 +877,7 @@ class PostgresTradingReviewStoreTest {
                 val jdbc = JdbcTemplate(source)
                 val store = JdbcTradingImportSessionPersistenceAdapter(jdbc)
                 val admission = JdbcTradingNormalizationAdmissionAdapter(jdbc, store, Clock.fixed(now, ZoneOffset.UTC), JdbcTradingNormalizationTransitionGate(jdbc))
-                val tx = TransactionTemplate(DataSourceTransactionManager(source))
+                val tx = TransactionTemplate(tradingTestTransactions(source))
                 val backend = jdbc.queryForObject("SELECT pg_backend_pid()", Int::class.java)!!
                 val executor = Executors.newSingleThreadExecutor()
                 var future: java.util.concurrent.Future<Boolean>? = null
@@ -1072,7 +1196,7 @@ class PostgresTradingReviewStoreTest {
         val raw = object : RawArtifactStorage by emptyStorage() {
             override fun purgeCopies(scope: TradingArtifactScope): Boolean = error("synthetic storage failure")
         }
-        val tx = TransactionTemplate(DataSourceTransactionManager(requireNotNull(jdbc.dataSource)))
+        val tx = TransactionTemplate(tradingTestTransactions(requireNotNull(jdbc.dataSource)))
         var at = Instant.now()
         repeat(5) { attempt ->
             val service = com.refinvest.core.tradingreview.application.TradingRawRetentionService(
@@ -1205,7 +1329,7 @@ class PostgresTradingReviewStoreTest {
         com.refinvest.core.tradingreview.application.TradingImportExpiryService {
         val nextId = java.util.concurrent.atomic.AtomicLong(600000)
         return com.refinvest.core.tradingreview.application.TradingImportExpiryService(
-            JdbcTradingRawExpiryCandidates(jdbc), JdbcTradingAccountPersistenceAdapter(jdbc), JdbcTradingBookPersistenceAdapter(jdbc),
+            JdbcTradingRawExpiryCandidates(jdbc), TradingReviewTestStores(jdbc).accountAdapter, TradingReviewTestStores(jdbc).bookAdapter,
             JdbcTradingImportSessionPersistenceAdapter(jdbc), deletionStore, object : TradingIdGenerator {
                 override fun accountId() = error("not used")
                 override fun bookId() = error("not used")
@@ -1216,7 +1340,7 @@ class PostgresTradingReviewStoreTest {
     @Test
     fun rawExpiryAndItsDurableRequestRollBackTogetherAndReplayOnce() = withDatabase { connection ->
         val (jdbc, artifact) = seedExpiredRetentionArtifact(connection)
-        val tx = TransactionTemplate(DataSourceTransactionManager(requireNotNull(jdbc.dataSource)))
+        val tx = TransactionTemplate(tradingTestTransactions(requireNotNull(jdbc.dataSource)))
         val before = importRows(jdbc)
         val requests = JdbcDeletionRequestPersistenceAdapter(jdbc)
         val interrupted = object : DeletionRequestStore by requests {
@@ -1404,8 +1528,8 @@ class PostgresTradingReviewStoreTest {
             second.schema = first.schema
             val secondSource = SingleConnectionDataSource(second, true)
             val secondJdbc = JdbcTemplate(secondSource)
-            val writer = JdbcTradingBookPersistenceAdapter(secondJdbc)
-            val secondTx = TransactionTemplate(DataSourceTransactionManager(secondSource))
+            val writer = TradingReviewTestStores(secondJdbc).bookAdapter
+            val secondTx = TransactionTemplate(tradingTestTransactions(secondSource))
             val backend = secondJdbc.queryForObject("SELECT pg_backend_pid()", Int::class.java)!!
             val executor = Executors.newSingleThreadExecutor()
             var result: java.util.concurrent.Future<Boolean>? = null
@@ -1446,7 +1570,7 @@ class PostgresTradingReviewStoreTest {
             override fun currentMemberId() = MemberId(1)
         }, ids, stores, stores, stores, stores, Clock.fixed(now, ZoneOffset.UTC),
             stores.accountReader, stores.bookReader, stores.bookDeletionCascade, JdbcDeletionScopeInventory(jdbc))
-        return Triple(service, TransactionTemplate(DataSourceTransactionManager(source)), stores)
+        return Triple(service, TransactionTemplate(tradingTestTransactions(source)), stores)
     }
 
     private fun accountBookRows(jdbc: JdbcTemplate): Any = listOf(
@@ -1646,7 +1770,7 @@ class PostgresTradingReviewStoreTest {
         withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
-        val transactions = TransactionTemplate(DataSourceTransactionManager(source))
+        val transactions = TransactionTemplate(tradingTestTransactions(source))
         val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
         val canonicalizer = com.refinvest.core.tradingreview.application.NormalizationResultCanonicalizer
         members(jdbc)
@@ -1974,7 +2098,7 @@ class PostgresTradingReviewStoreTest {
     fun terminalDescriptorRetriesExhaustToProcessingFailedWithoutRevision() = withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
-        val transactions = TransactionTemplate(DataSourceTransactionManager(source))
+        val transactions = TransactionTemplate(tradingTestTransactions(source))
         val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
         members(jdbc)
         val review = TradingReviewTestStores(jdbc)
@@ -2041,7 +2165,7 @@ class PostgresTradingReviewStoreTest {
     private fun verifyDiscardAfterDeletion(workerDiscards: Boolean) = withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
-        val tx = TransactionTemplate(DataSourceTransactionManager(source))
+        val tx = TransactionTemplate(tradingTestTransactions(source))
         val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
         members(jdbc)
         val review = TradingReviewTestStores(jdbc)
@@ -2122,7 +2246,7 @@ class PostgresTradingReviewStoreTest {
     private fun verifyLedgerPublication(waitForExpiry: Boolean, secondSession: Boolean = false) = withDatabase { connection ->
         val jdbc = JdbcTemplate(SingleConnectionDataSource(connection, true))
         val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
-        val tx = TransactionTemplate(DataSourceTransactionManager(SingleConnectionDataSource(connection, true)))
+        val tx = TransactionTemplate(tradingTestTransactions(SingleConnectionDataSource(connection, true)))
         members(jdbc)
         val review = TradingReviewTestStores(jdbc)
         val account = TradingAccount.create(TradingAccountId(991), MemberId(1), TradingVenue.BINANCE, "A", now)
@@ -2286,7 +2410,7 @@ class PostgresTradingReviewStoreTest {
                         val otherJdbc = JdbcTemplate(source)
                         backend.set(otherJdbc.queryForObject("SELECT pg_backend_pid()", Int::class.java)!!)
                         ready.countDown()
-                        TransactionTemplate(DataSourceTransactionManager(source)).execute {
+                        TransactionTemplate(tradingTestTransactions(source)).execute {
                             JdbcLedgerRevisionPersistenceAdapter(otherJdbc, mapper, liveClock,
                                 JdbcTradingNormalizationTransitionGate(otherJdbc),
                                 JdbcTradingNormalizationResultStore(otherJdbc, mapper)).publish(request)
@@ -2326,7 +2450,7 @@ class PostgresTradingReviewStoreTest {
                         publisherConnection.schema = connection.schema
                         val publisherSource = SingleConnectionDataSource(publisherConnection, true)
                         val publisherStore = TradingLedgerTestStore(JdbcTemplate(publisherSource), mapper)
-                        val publisherTx = TransactionTemplate(DataSourceTransactionManager(publisherSource))
+                        val publisherTx = TransactionTemplate(tradingTestTransactions(publisherSource))
                         publicationGate.await(5, TimeUnit.SECONDS)
                         publisherTx.execute { publisherStore.publish(current, claimed, worker, descriptor,
                             "{}", coverageJson, "[]", "{}", "f".repeat(64), now) } == true
@@ -2548,7 +2672,7 @@ class PostgresTradingReviewStoreTest {
         val refreshAt = pollAt.plusSeconds(2)
         val refreshWorker = UUID.randomUUID().toString()
         assertNotNull(store.claimSubmitted(refreshAt, java.time.Duration.ofSeconds(45), refreshWorker))
-        val transactions = TransactionTemplate(DataSourceTransactionManager(requireNotNull(jdbc.dataSource)))
+        val transactions = TransactionTemplate(tradingTestTransactions(requireNotNull(jdbc.dataSource)))
         val nextToken = UUID.randomUUID().toString()
         assertFalse(transactions.execute { store.advanceAttempt(NormalizationGrantAttemptAdvance(NormalizationRunId(runId), NormalizationDispatchLease(dispatch.id, UUID.randomUUID().toString(), refreshAt), token, nextToken)) })
         assertFalse(transactions.execute { store.advanceAttempt(NormalizationGrantAttemptAdvance(NormalizationRunId(runId), NormalizationDispatchLease(dispatch.id, refreshWorker, refreshAt.plusSeconds(45)), token, nextToken)) })
@@ -2582,7 +2706,7 @@ class PostgresTradingReviewStoreTest {
     fun validationAdmissionCommitsSessionRunAndDispatchTogether() = withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
-        val transactions = TransactionTemplate(DataSourceTransactionManager(source))
+        val transactions = TransactionTemplate(tradingTestTransactions(source))
         val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
         members(jdbc)
         val review = TradingReviewTestStores(jdbc)
@@ -2860,7 +2984,7 @@ class PostgresTradingReviewStoreTest {
         val dataSource = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(dataSource)
         val store = TradingReviewTestStores(jdbc)
-        val transactions = TransactionTemplate(DataSourceTransactionManager(dataSource))
+        val transactions = TransactionTemplate(tradingTestTransactions(dataSource))
         members(jdbc)
         val member = object : TradingMemberProvider {
             var id = MemberId(1)
@@ -2923,7 +3047,7 @@ class PostgresTradingReviewStoreTest {
         jdbc.execute("CREATE TABLE blocking_child (id BIGINT PRIMARY KEY, book_id BIGINT NOT NULL REFERENCES trading_books(id))")
         jdbc.update("INSERT INTO blocking_child(id, book_id) VALUES (1, 302)")
         repeat(5) { attempt ->
-            deletionWorker(jdbc, TransactionTemplate(DataSourceTransactionManager(dataSource)),
+            deletionWorker(jdbc, TransactionTemplate(tradingTestTransactions(dataSource)),
                 emptyStorage(), Clock.fixed(now.plusSeconds(attempt * 100L), ZoneOffset.UTC)).purgePending()
         }
         val result = store.find(303L, MemberId(1))!!
@@ -2938,7 +3062,7 @@ class PostgresTradingReviewStoreTest {
         val jdbc = JdbcTemplate(dataSource)
         val accountStore = TradingReviewTestStores(jdbc)
         val importStore = TradingImportTestStores(jdbc)
-        val transactions = TransactionTemplate(DataSourceTransactionManager(dataSource))
+        val transactions = TransactionTemplate(tradingTestTransactions(dataSource))
         members(jdbc)
         val account = TradingAccount.create(TradingAccountId(601), MemberId(1), TradingVenue.BINANCE, "A", now)
         accountStore.insert(account)
@@ -3053,7 +3177,7 @@ class PostgresTradingReviewStoreTest {
                             ids, reviewStore, reviewStore, importStore, importStore, reviewStore, reviewStore,
                             storage, object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins {
                                 override fun currentJson() = "{}"
-                            }, TransactionTemplate(DataSourceTransactionManager(dataSource)),
+                            }, TransactionTemplate(tradingTestTransactions(dataSource)),
                             Clock.fixed(now, ZoneOffset.UTC), noPublished, importStore, JdbcDeletionScopeInventory(workerJdbc))
                         val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
                             .joinToString("") { "%02x".format(it) }
@@ -3113,7 +3237,7 @@ class PostgresTradingReviewStoreTest {
                 object : TradingMemberProvider { override fun currentMemberId() = MemberId(1) }, ids,
                 reviews, reviews, imports, imports, reviews, reviews, storage,
                 object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins { override fun currentJson() = "{}" },
-                TransactionTemplate(DataSourceTransactionManager(source)), Clock.fixed(now, ZoneOffset.UTC),
+                TransactionTemplate(tradingTestTransactions(source)), Clock.fixed(now, ZoneOffset.UTC),
                 noPublished, imports, JdbcDeletionScopeInventory(connectionJdbc))
         }
         val reading = java.util.concurrent.CountDownLatch(1)
@@ -3138,7 +3262,7 @@ class PostgresTradingReviewStoreTest {
                 }
             }
             assertTrue(reading.await(10, TimeUnit.SECONDS))
-            val deletion = TransactionTemplate(DataSourceTransactionManager(dataSource)).execute {
+            val deletion = TransactionTemplate(tradingTestTransactions(dataSource)).execute {
                 service(setup).execute(DeleteTradingImportSessionCommand(session.id, "delete-race"))
             }
             assertNotNull(deletion)
@@ -3149,7 +3273,7 @@ class PostgresTradingReviewStoreTest {
             assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM trading_source_artifacts", Long::class.java))
             java.nio.file.Files.list(root.resolve("staging")).use { assertEquals(0L, it.count()) }
             java.nio.file.Files.walk(root.resolve("objects")).use { assertEquals(0L, it.filter(java.nio.file.Files::isRegularFile).count()) }
-            deletionWorker(jdbc, TransactionTemplate(DataSourceTransactionManager(dataSource)), storage,
+            deletionWorker(jdbc, TransactionTemplate(tradingTestTransactions(dataSource)), storage,
                 Clock.fixed(now, ZoneOffset.UTC)).purgePending()
             assertEquals("COMPLETED", reviewStore.find(deletion.id, MemberId(1))?.state)
         } finally { resume.countDown(); executor.shutdownNow() }
@@ -3196,10 +3320,10 @@ class PostgresTradingReviewStoreTest {
                             ids, reviews, reviews, imports, imports, reviews, reviews, storage,
                             object : com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins {
                                 override fun currentJson() = "{}"
-                            }, TransactionTemplate(DataSourceTransactionManager(dataSource)),
+                            }, TransactionTemplate(tradingTestTransactions(dataSource)),
                             Clock.fixed(now, ZoneOffset.UTC), noPublished, imports, JdbcDeletionScopeInventory(workerJdbc))
                         started.countDown()
-                        runCatching { TransactionTemplate(DataSourceTransactionManager(dataSource)).execute {
+                        runCatching { TransactionTemplate(tradingTestTransactions(dataSource)).execute {
                             service.execute(CreateTradingImportSessionCommand(bookId, "UTC", "UTC", TradingPositionMode.ONE_WAY, null, null, "create-$target"))
                         } }
                     }
@@ -3228,7 +3352,7 @@ class PostgresTradingReviewStoreTest {
     private fun verifyParentGrantRevocation(deleteAccount: Boolean) = withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
-        val tx = TransactionTemplate(DataSourceTransactionManager(source))
+        val tx = TransactionTemplate(tradingTestTransactions(source))
         members(jdbc)
         val review = TradingReviewTestStores(jdbc)
         val imports = TradingImportTestStores(jdbc)
@@ -3349,7 +3473,7 @@ class PostgresTradingReviewStoreTest {
     fun sourceFailuresRejectWithoutRevisionOrLatestPointerUpdate() = withDatabase { connection ->
         val source = SingleConnectionDataSource(connection, true)
         val jdbc = JdbcTemplate(source)
-        val transactions = TransactionTemplate(DataSourceTransactionManager(source))
+        val transactions = TransactionTemplate(tradingTestTransactions(source))
         val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
         members(jdbc)
         val review = TradingReviewTestStores(jdbc)
@@ -3436,7 +3560,7 @@ class PostgresTradingReviewStoreTest {
         val source = transitionSource(connection.schema)
         val jdbc = JdbcTemplate(source)
         val gate = JdbcTradingNormalizationTransitionGate(jdbc)
-        val tx = TransactionTemplate(DataSourceTransactionManager(source))
+        val tx = TransactionTemplate(tradingTestTransactions(source))
         val entered = java.util.concurrent.CountDownLatch(1)
         val release = java.util.concurrent.CountDownLatch(1)
         val pool = Executors.newFixedThreadPool(2)

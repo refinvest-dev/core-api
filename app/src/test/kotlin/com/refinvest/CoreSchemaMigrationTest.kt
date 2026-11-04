@@ -1,5 +1,27 @@
 package com.refinvest
 
+import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.tradingreview.adapter.persistence.JdbcTradingIdempotencyStoreAdapter
+import com.refinvest.core.tradingreview.adapter.persistence.JpaTradingAccountStoreAdapter
+import com.refinvest.core.tradingreview.adapter.persistence.JpaTradingBookStoreAdapter
+import com.refinvest.core.tradingreview.adapter.persistence.TradingAccountJpaEntity
+import com.refinvest.core.tradingreview.adapter.persistence.TradingAccountJpaStore
+import com.refinvest.core.tradingreview.adapter.persistence.TradingBookJpaEntity
+import com.refinvest.core.tradingreview.adapter.persistence.TradingBookJpaStore
+import com.refinvest.core.tradingreview.domain.TradingAccount
+import com.refinvest.core.tradingreview.domain.TradingBook
+import com.refinvest.core.tradingreview.domain.valueobject.TradingAccountId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
+import com.refinvest.core.tradingreview.domain.valueobject.TradingProductFamily
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSettlementAsset
+import com.refinvest.core.tradingreview.domain.valueobject.TradingVenue
+import java.time.Instant
+import org.springframework.data.jpa.repository.support.JpaRepositoryFactory
+import org.springframework.orm.jpa.JpaTransactionManager
+import org.springframework.orm.jpa.SharedEntityManagerCreator
+import org.springframework.transaction.support.TransactionTemplate
+
 import com.refinvest.core.backtest.adapter.out.persistence.BacktestResultJpaEntity
 import com.zaxxer.hikari.HikariDataSource
 import jakarta.persistence.EntityManagerFactory
@@ -20,6 +42,50 @@ import kotlin.test.*
 @EnabledIfEnvironmentVariable(named = "CORE_SCHEMA_TEST_JDBC_URL", matches = ".+")
 class CoreSchemaMigrationTest {
     @Test
+    fun `Trading JPA and JDBC share a pooled connection and roll back roots and idempotency together`() = fixture { f ->
+        f.flyway().migrate()
+        f.seed()
+        f.orm("validate") { factory ->
+            val em = SharedEntityManagerCreator.createSharedEntityManager(factory)
+            val repositories = JpaRepositoryFactory(em)
+            val accounts = JpaTradingAccountStoreAdapter(
+                repositories.getRepository(TradingAccountJpaStore::class.java), em)
+            val books = JpaTradingBookStoreAdapter(
+                repositories.getRepository(TradingBookJpaStore::class.java),
+                repositories.getRepository(TradingAccountJpaStore::class.java), em)
+            val keys = JdbcTradingIdempotencyStoreAdapter(f.jdbc)
+            val owner = MemberId(1)
+            val clock = Instant.parse("2026-11-01T00:00:00Z")
+            val account = TradingAccount.create(
+                TradingAccountId(8001), owner,
+                TradingVenue.BINANCE, "pooled", clock)
+            val book = TradingBook.create(
+                TradingBookId(8002), account, "pooled",
+                TradingProductFamily.LINEAR_PERPETUAL,
+                TradingPositionMode.ONE_WAY,
+                TradingSettlementAsset.USDT, "UTC", clock)
+            val tx = TransactionTemplate(JpaTransactionManager(factory))
+            val rollback = IllegalStateException("synthetic pooled transaction rollback")
+            assertSame(rollback, assertFailsWith<IllegalStateException> {
+                tx.executeWithoutResult {
+                    assertEquals((em.createNativeQuery("SELECT pg_backend_pid()").singleResult as Number).toLong(),
+                        f.jdbc.queryForObject("SELECT pg_backend_pid()", Long::class.java))
+                    accounts.insert(account)
+                    books.insert(book)
+                    keys.claim(owner, "createTradingAccount", "pooled-key", "a".repeat(64))
+                    keys.complete(owner, "createTradingAccount", "pooled-key", account.id.value)
+                    assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_accounts", Long::class.java))
+                    assertEquals(1L, f.jdbc.queryForObject("SELECT count(*) FROM trading_books", Long::class.java))
+                    throw rollback
+                }
+            })
+            listOf("trading_accounts", "trading_books", "trading_idempotency").forEach { table ->
+                assertEquals(0L, f.jdbc.queryForObject("SELECT count(*) FROM $table", Long::class.java))
+            }
+        }
+    }
+
+    @Test
     fun `Boot auto configuration migrates before Hibernate validation`() = fixture { f ->
         ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(FlywayAutoConfiguration::class.java))
@@ -35,7 +101,11 @@ class CoreSchemaMigrationTest {
     @Test
     fun `empty database migrates every mapped feature and supports Hibernate validate`() = fixture { f ->
         f.flyway().migrate()
-        f.orm("validate") { factory -> assertTrue(factory.metamodel.entities.size >= 14) }
+        f.orm("validate") { factory ->
+            assertTrue(factory.metamodel.entities.size >= 16)
+            assertNotNull(factory.metamodel.entity(TradingAccountJpaEntity::class.java))
+            assertNotNull(factory.metamodel.entity(TradingBookJpaEntity::class.java))
+        }
         f.seed()
         f.assertReadableAndAppendable()
         assertFailsWith<DataIntegrityViolationException> {
@@ -107,7 +177,11 @@ class CoreSchemaMigrationTest {
             try {
                 bean.dataSource = source
                 bean.jpaVendorAdapter = HibernateJpaVendorAdapter()
-                bean.setPackagesToScan("com.refinvest.core")
+                if (action == "create") {
+                    // Reproduce the historical pre-Flyway JPA model; Trading tables were introduced by Flyway.
+                    bean.setPackagesToScan("com.refinvest.core.auth", "com.refinvest.core.member", "com.refinvest.core.user",
+                        "com.refinvest.core.subscription", "com.refinvest.core.strategy", "com.refinvest.core.backtest")
+                } else bean.setPackagesToScan("com.refinvest.core")
                 bean.setJpaPropertyMap(mapOf("hibernate.hbm2ddl.auto" to action, "hibernate.jdbc.time_zone" to "UTC"))
                 bean.afterPropertiesSet()
                 test(requireNotNull(bean.`object`))
