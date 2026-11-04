@@ -73,7 +73,7 @@ class ComputeHttpTimeoutTest {
                             0 -> client.listAssets()
                             1 -> client.getAvailability("QQQ")
                             else -> client.getSeries(com.refinvest.core.asset.port.outbound.compute.AssetSeriesQuery(
-                                listOf("QQQ"), com.refinvest.core.asset.port.outbound.compute.SeriesMetric.PRICE,
+                                listOf("QQQ"), com.refinvest.core.asset.port.common.series.SeriesMetric.PRICE,
                                 LocalDate.parse("2025-01-01"), LocalDate.parse("2025-01-03"), null))
                         }
                     }.exceptionOrNull()

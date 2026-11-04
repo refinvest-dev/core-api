@@ -1,5 +1,65 @@
 # Core Architecture Audit
 
+## Structure Alignment Review — 2026-11-04
+
+[Core #113](https://github.com/refinvest-dev/core-api/pull/113)~[#120](https://github.com/refinvest-dev/core-api/pull/120)
+병합 뒤 main `a4f5717`을 기준으로 후속 순서 6을 점검했다. 아래는 현재 구조의 재점검이며,
+이후의 최초 6c-1~3 기록은 당시 검증 이력으로 유지한다.
+
+| Feature | Domain | Port | Application | Adapter | 확인한 경계 |
+|---|---:|---:|---:|---:|---|
+| Member | 2 | 10 | 2 | 7 | immutable Member Root·Mapper, 생성/조회 port와 Subscription inbound 연동 |
+| Subscription | 3 | 18 | 5 | 6 | Root 저장·회원 command 잠금, Reader·정책·usage 결과 분리 |
+| Auth | 6 | 18 | 4 | 33 | 두 Root의 Store/Mapper, refresh family fence·회전, raw credential inbound·Web 쿠키 처리 |
+| Strategy | 16 | 40 | 8 | 35 | Root 경유 Version 추가, command 잠금·immutable append, 정렬된 조회와 cross-feature projection |
+| Backtest | 21 | 41 | 10 | 49 | Run/소속 Result 복원, quota·lease capability, Compute 외부 호출과 commit 뒤 결과 반영 |
+| Asset | 11 | 12 | 3 | 13 | Compute 소유 참조 조회, inbound/outbound 분리, provider 중립 조회 옵션·실패 의미 |
+| Trading Review | 44 | 153 | 41 | 104 | 다섯 Root·Session 소속 Artifact/Run, JPA 일반 저장, JDBC 발행·lease·삭제와 외부 I/O 분리 |
+
+수치는 production Kotlin 파일 수다. Shared 7개·app 7개를 포함해 총 729개, Gradle 모듈 46개다.
+Root 11개·PersistenceMapper 13개, inbound use case 61개, Controller 12개·Scheduler 7개 파일을
+목록화했다. 타 feature를 참조하는 import 40개는 모두 port 계약이며, foreign domain/application
+classpath 차단은 Gradle 검사로 별도 확인한다. 파일 목록화와 정적 검사만으로 모든 업무 동작을 보장하지 않는다.
+
+### Findings and Changes
+
+| ID | 재점검 근거 | 보완 |
+|---|---|---|
+| R21 | Asset `GetSeriesQuery`가 outbound `SeriesMetric`을, Strategy Reader projection이 inbound `StrategyVersionForBacktest`를 참조 | 실제 양쪽에서 사용하는 중립 값 모델만 feature `port/common/series`, `port/common/backtest`로 옮김. Command/Query/Result와 Store/Reader의 방향·소유권은 유지 |
+| R22 | Asset `AssetSeriesExceptionHandler`가 outbound `SeriesDataErrorException`을 직접 참조 | provider와 호출자가 공유하는 failure 의미를 Asset `port/common/failure`에 두고 HTTP status 매핑은 Web에 유지 |
+
+공유 소유권의 범위는 세 가지로 제한한다. `SeriesMetric`은 두 query가 사용하는 시계열 조회 옵션이며,
+`SeriesDataErrorCode/Exception`은 data provider의 실패와 호출자 오류 처리가 공유하는 안정된 의미다.
+`StrategyVersionForBacktest`와 그 구성 값은 Reader와 Backtest용 cross-feature 조회 결과가 함께 사용하는
+불변 정의다. 별도 저장 상태나 inbound 실행 요청이 아니며, 공유 모델은 어느 방향의 port도 참조하지 않는다.
+기존 Trading Review의 `common/failure`와 같은 기준을 적용하고 업무 모델을 일괄 common으로 옮기지 않는다.
+
+새 `CoreModuleBoundaryTest`는 feature port source root를 자동 탐색해 모든 inbound/outbound 상호 참조와
+common의 방향 의존을 차단한다. Web adapter 전체도 outbound 계약을 참조할 수 없다. 수정 전 두 검사에서
+실제 Strategy Reader와 Asset advice가 실패한 XML을 보존했다. 기존 검사만으로는 잡지 못한 구조 문제이며,
+실제 사용자 장애를 재현했다는 의미는 아니다. 모델 필드·enum·실패 의미·HTTP 동작을 변경하지 않는다.
+
+### Preserved Boundaries and Remaining Scope
+
+- 일반 Account/Book/Session/DeletionRequest 저장은 JPA Store/Reader·명시적 Mapper를 사용한다.
+  Session은 역할 슬롯과 현재 Run만 복원하며 Ledger 전체를 적재하지 않는다. Scalar projection·잠금 후
+  snapshot 재조회와 version/generation 검증을 유지한다. Mapper는 조회·ID/시각 생성·업무 전이를 하지 않는다.
+- Ledger의 bounded staging/publication, quota·refresh·admission·retention·grant 소비·worker lease와
+  삭제 checkpoint는 원자적 capability다. JDBC와 `JdbcLedgerRevisionPersistenceAdapter`의 같은 Revision
+  Store/publication 구현은 이 경계에 따른다. 여러 Aggregate를 모은 adapter로 해석하거나, 파일 크기만으로
+  분리해 publication transaction을 바꾸지 않는다. JPA/JDBC의 같은 transaction 참여 회귀를 유지한다.
+- Trading Review의 public CRUD와 유지보수 29개 inbound, 기능별 service, resource별 Controller,
+  Scheduler의 inbound 진입과 purge/remediation·grant DB/서명/storage 경계를 다시 대조했다.
+  외부 HTTP/object/file 작업은 DB transaction 밖에서, 진행 반영·publication/ACK는 기존 순서로 처리한다.
+- Domain·schema·OpenAPI·hash/결정론 변경은 없다. AnalysisRun/Reprocessing의 신규 orchestration·public API,
+  Finding/Review 제품 완료와 실제 운영 적용은 이 점검의 완료 범위에 포함하지 않는다. ADR-071은 초안이며
+  기존 Analytics 실행 정책을 바꾸는 근거로 사용하지 않는다.
+
+구조 보완은 `3b5c95a`이며 [Core #121](https://github.com/refinvest-dev/core-api/pull/121)에서 검토한다.
+병합된 main과 이번 보완 branch의 검증을 [Handoff](REFACTORING_HANDOFF.md)에 구분해 기록한다.
+보완 구현의 Core CI는 새 경계 검사 2개를 포함한 575개와 PostgreSQL 154개를 통과했다.
+로컬 최초 전체 실패·제한 재실행 결과와 main 통합 증적은 서로 구분한다.
+
 ## Scope
 
 최초 6c-1 점검은 Core `7ff4dbf` 이후 상태를 대상으로 했다. ADR-018, ADR-019~020과 로컬 AGENTS 규칙을 기준으로
@@ -11,10 +71,10 @@
 
 Subscription 등과의 후속 비교에서 port 방향·서비스 책임·일반 persistence 구성의 일관성 항목을
 추가 식별했다. 구체적인 T01~T12와 PR 순서는 [Trading Review Structure Alignment](TRADING_REVIEW_ALIGNMENT_PLAN.md)를
-따른다. 아래 R01~R20의 기존 완료 기록과 후속 구조 개선의 미구현 상태는 구분한다.
+따른다. 아래 R01~R20의 기존 완료 기록과 당시 남겨 둔 후속 구조 개선 범위는 구분한다.
 후속 순서 1은 [Core #113](https://github.com/refinvest-dev/core-api/pull/113)에서 port 방향·조회 결과 소유권과
-grant/spool의 inbound 진입점을 구현했다. 전체 inbound 29개 및 Web/Scheduler의 경계를 검사하며,
-T06 이후 서비스 구성·JPA 저장 기준·큰 실행 구현의 개선은 후속 계획으로 남는다.
+grant/spool의 inbound 진입점을 구현했다. 전체 inbound 29개 및 Web/Scheduler의 경계를 검사했다.
+당시 남겨 둔 기능별 서비스·JPA 일반 저장·실행 책임은 #114~#120으로 반영됐으며 현재 재점검은 위 기록을 따른다.
 
 ## Aggregate and Persistence
 

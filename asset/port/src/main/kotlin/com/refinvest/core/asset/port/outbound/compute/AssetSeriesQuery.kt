@@ -1,5 +1,6 @@
 package com.refinvest.core.asset.port.outbound.compute
 
+import com.refinvest.core.asset.port.common.series.SeriesMetric
 import java.time.LocalDate
 
 data class AssetSeriesQuery(
