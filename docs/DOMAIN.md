@@ -261,7 +261,7 @@ Compute는 `Strategy`, `User`, `Subscription`을 전혀 모른다. 요청받은 
 [`TRADING_REVIEW_ACCEPTANCE.md`](TRADING_REVIEW_ACCEPTANCE.md)다. Backtest의
 `AssetSymbol`, `Trade`, `DatasetSnapshot`과 아래 타입을 공유하지 않는다.
 
-### 4.1 Core Aggregate Root
+### 4.1 Go Aggregate Root
 
 ```text
 TradingAccount
@@ -274,7 +274,7 @@ TradingImportSession
 ├── TRADE_HISTORY + POSITION_HISTORY source artifacts
 └── RECEIVED → VALIDATING → ACCEPTED | REJECTED | PROCESSING_FAILED
 
-NormalizationRun (Core internal; Session과 별도 상태)
+NormalizationRun (Go internal; Session과 별도 상태)
 └── DISPATCH_PENDING → SUBMITTED → RUNNING → RESULT_READY → PUBLISHING → PUBLISHED
     또는 RETRY_WAIT → TERMINAL_FAILURE | OBSOLETE
 
@@ -393,7 +393,7 @@ DeletionRequest
   staging은 조회 불가하다. 현재 deletion generation, 실행 identity, inputSetHash 또는 VersionSet이 다르면
   결과를 `OBSOLETE`로 폐기한다. `PERSISTED` ACK는 commit 뒤에만 보내며 ACK 실패는 ACK만 재시도한다.
   V1 delivery는 Run에 pin한 bounded 단일 resource이며 Compute는 실제 serialized bytes 상한을
-  terminal success 전에 적용한다. Core는 실제 bytes count와 incremental hash를 protected spool에서
+  terminal success 전에 적용한다. Go는 실제 bytes count와 incremental hash를 protected spool에서
   확인한 뒤 streaming parse/bounded batch staging한다. 전체 response/JSON tree를 heap에 적재하지
   않고 deletion generation 변경 시 수신과 staging을 취소·정리한다(ADR-067).
 - `TR-I41 Processing Failure Isolation`: 자동 재시도 중 Session은 `VALIDATING`; RetryPolicy 예산 소진은
@@ -403,7 +403,7 @@ DeletionRequest
   raw와 삭제되지 않은 Session에서 새 Run/attempt 및 audit event로 시작한다.
 - `TR-I42 Analytics Input Provenance`: V2 LedgerRevision은 모든 ReviewUnit/Allocation의 직접 근거, 실제 배분 fee/PnL과 stable time capability를 검증된 `analyticsInputSupplement`에서 1:1 불변 보존한다. Analytics 입력은 이 저장값에서만 생성한다. 보충값 없는 과거 Revision은 `ANALYTICS_INPUT_UNAVAILABLE`이며 0 또는 record 기반 추정으로 성공시키지 않는다.
 
-`NormalizationRun`은 Core 내부 모델이다. `runId`, `importSessionId`, `inputFingerprint`(inputSetHash),
+`NormalizationRun`은 Go 내부 모델이다. `runId`, `importSessionId`, `inputFingerprint`(inputSetHash),
 target VersionSet, `retryPolicyVersion`, `deletionGeneration`, logical idempotency key, current execution
 attempt, run status, terminal failure, `createdAt`/`startedAt`/`completedAt`을 보존한다.
 `runId`는 Compute create/status/terminal descriptor/성공 payload에서 같은

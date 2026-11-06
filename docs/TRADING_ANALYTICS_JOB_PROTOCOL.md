@@ -1,5 +1,10 @@
 # Trading Analytics Job Protocol V1
 
+> **서비스 역할 적용 (ADR-072)**: Trading Review 업무 소유자로 쓰인 `Core`는 목표 설계에서
+> Go를 뜻한다. 브라우저 인증/CSRF·중계와 Member/Backtest의 Core, 기존 wire 필드·hash 입력·
+> enum·vector는 이 대응 대상이 아니다. 상세 우선순위와 이관 gate는
+> [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다. 기존 증적을 Go 검증 완료로 해석하지 않는다.
+
 ADR-069 selects this protocol. The [input identity](TRADING_ANALYTICS_INPUT_IDENTITY.md), [result integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md), and [delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md) documents are normative, together with `openapi/compute-api.yaml`. This is an internal Core→Compute contract; Web only calls Core.
 
 Core admits a Revision to this protocol only if its independently verified, immutable Normalization V2 `analyticsInputSupplement` is stored. A historical Revision without it returns public `422 ANALYTICS_INPUT_UNAVAILABLE` before Run/job or Analytics artifacts are created. This is a Core admission failure, not an Analytics Compute job failure. See [Normalization result integrity](TRADING_NORMALIZATION_RESULT_INTEGRITY.md) and ADR-070.

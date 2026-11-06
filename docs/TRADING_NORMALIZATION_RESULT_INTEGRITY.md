@@ -1,5 +1,10 @@
 # Trading Normalization Result Integrity V1
 
+> **서비스 역할 적용 (ADR-072)**: Trading Review 업무 소유자로 쓰인 `Core`는 목표 설계에서
+> Go를 뜻한다. 브라우저 인증/CSRF·중계와 Member/Backtest의 Core, 기존 wire 필드·hash 입력·
+> enum·vector는 이 대응 대상이 아니다. 상세 우선순위와 이관 gate는
+> [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다. 기존 증적을 Go 검증 완료로 해석하지 않는다.
+
 ADR-066의 공개 결과 계약이다. 입력 identity는 [TRADING_NORMALIZATION_IDENTITY.md](TRADING_NORMALIZATION_IDENTITY.md)를 따른다. Compute 내부 `ReconciliationManifest`/`NormalizationResult` 전체에 대한 기존 내부 hash는 공개 계약 hash의 oracle이 아니다. Core는 받은 공개 DTO만 투영·정규화하고 staging에서 독립 재계산한다.
 
 ## 계층과 전송

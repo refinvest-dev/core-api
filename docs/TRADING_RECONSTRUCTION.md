@@ -1,5 +1,10 @@
 # TRADING_RECONSTRUCTION.md — Binance Futures Trade Reconstruction Specification
 
+> **서비스 역할 적용 (ADR-072)**: Trading Review 업무 소유자로 쓰인 `Core`는 목표 설계에서
+> Go를 뜻한다. 브라우저 인증/CSRF·중계와 Member/Backtest의 Core, 기존 wire 필드·hash 입력·
+> enum·vector는 이 대응 대상이 아니다. 상세 우선순위와 이관 gate는
+> [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다. 기존 증적을 Go 검증 완료로 해석하지 않는다.
+
 이 문서는 `BINANCE_USDS_LINEAR_PERPETUAL_ONE_WAY_V1` reconstruction과 reconciliation의 기술 정본이다.
 `MUST`, `MUST NOT`, `SHOULD`는 각각 필수, 금지, 권고를 뜻한다. 구현, fixture, golden expected result는
 이 문서의 식, 정렬, 상태와 실패 결과를 그대로 사용한다. 제품 경계는 [`TRADING_REVIEW.md`](TRADING_REVIEW.md),

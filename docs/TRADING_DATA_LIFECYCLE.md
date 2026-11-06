@@ -1,5 +1,10 @@
 # TRADING_DATA_LIFECYCLE.md — Trading Review Data Lifecycle Contract
 
+> **서비스 역할 적용 (ADR-072)**: Trading Review 업무 소유자로 쓰인 `Core`는 목표 설계에서
+> Go를 뜻한다. 브라우저 인증/CSRF·중계와 Member/Backtest의 Core, 기존 wire 필드·hash 입력·
+> enum·vector는 이 대응 대상이 아니다. 상세 우선순위와 이관 gate는
+> [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다. 기존 증적을 Go 검증 완료로 해석하지 않는다.
+
 Analytics V1 input grant와 terminal spool 보관, ACK 후 정리 및 deletion generation 우선순위는 [Analytics Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md)과 [Result Delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md)를 따른다. 임시 Compute artifact를 Core의 장기 제품 결과로 취급하지 않는다.
 
 이 문서는 Trading Review 데이터의 분류, 수집 목적, 저장, 접근, 보관, 삭제, backup과 복원 경계를

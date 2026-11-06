@@ -1229,3 +1229,40 @@ reclaim에도 유지하는 deadline, 제한된 결과 수신과 별도 publicati
 결과 보존과, 새 VersionSet을 포함하는 hash의 배포 간 변경을 구분한다.
 
 이번 문서 변경의 Determinism 영향 없음. Point-in-Time 영향 없음.
+
+
+---
+
+## ADR-072 — Trading Review Go service separation
+
+**상태**: 채택(2026-11-06). 구현·데이터 인계·배포 완료를 뜻하지 않는다.
+
+**배경**: 기존 Core의 Trading Review 구현을 독립 Go API/Worker로 분리한다.
+업무 소유권과 외부 진입점이 동일 서비스에 있어야 한다는 이전 전제를 변경한다.
+
+**결정**:
+1. Go는 TradingRecord·Analysis와 교차 삭제/재처리 Workflow를 소유한다. 계산은 Python Compute에 위임한다.
+2. 기존 PostgreSQL을 재사용한다. Trading Review 테이블·Artifact·key/grant·dispatch·outbox만 Go로
+   인계한다. Member/Strategy/Backtest와 Compute 소유 데이터는 이전하지 않는다.
+3. 초기 Web→Core→Go, 향후 Web→Gateway→Go. Core/Gateway→Go는 HTTP/JSON이다.
+   Core는 브라우저 인증·CSRF·중계를 맡고 Go가 Trading Review 권한·정합성을 최종 판단한다.
+4. 서비스 인증과 짧은 수명의 서명된 사용자 위임을 구분한다. raw 사용자 헤더를 신뢰하지 않는다.
+5. durable 접수 이후 Worker 수명은 HTTP 연결과 독립적이다. 멱등 재전송·명시 취소·추적 전파를 적용한다.
+6. 두 Go 업무 모듈은 동일 실제 DB Tx로 원자성을 보장한다. WithinTx와 Tx 전파 방식은 미확정이다.
+7. Core 중단을 전제로 이관하며 기존 Core Trading Review와 Go의 동시 쓰기 운영은 요구하지 않는다.
+   초기 Core 경유를 활성화할 때 기존 Trading Review 업무/Worker를 비활성화한다.
+
+**대체 범위**: ADR-063 등의 Trading Review 업무/저장 소유자가 Core이고 기존 Core 배포 단위에서
+실행된다는 전제, Compute 호출자가 Core뿐이라는 전제만 이 결정으로 대체한다.
+이전 ADR은 결정 이력으로 보존한다. ADR-012의 단일 PostgreSQL 원칙과 Trading Review 제품 불변식,
+계산·version/hash·상태·ACK 계약은 유지한다. ADR-071은 여전히 미승인 초안이다.
+
+**영향과 대안**: gRPC는 신규 proto/toolchain 병행 비용과 현재 비동기 HTTP 계약을 고려해 채택하지 않는다.
+서비스 분리는 DB 물리 분리나 기존 테이블 삭제·초기화를 의미하지 않는다. 장기 실행을 동기 RPC로 바꾸지 않는다.
+Go 내부 패키지/Tx 방식은 Go 저장소가 결정하되 공유 원자성 등 서비스 보장을 약화시키지 않는다.
+
+**정본과 후속 gate**: [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)의 소유권·계약 우선순위·
+이관 gate를 따른다. Core→Go OpenAPI/위임 wire, migration baseline, 기존 checkpoint 인계,
+snapshot 전파와 실제 integration 검증 완료 후에만 신규 경로를 배포 완료로 기록한다.
+
+Determinism 영향 없음. Point-in-Time 영향 없음. API·fixture·계산 의미의 변경은 별도 결정이다.
