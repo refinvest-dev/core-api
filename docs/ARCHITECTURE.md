@@ -1,44 +1,38 @@
 # ARCHITECTURE.md — 시스템 아키텍처
 
+> 이 문서는 ADR-072의 목표 서비스 구성을 정의한다. 현재 구현의 이전 완료 여부는
+> [서비스 경계의 gate](TRADING_REVIEW_SERVICE_BOUNDARY.md#이관과-완료-gate)와 실제 증적으로 확인한다.
+
 ---
 
 ## 1. 전체 구조
 
 ```text
-┌─────────────────┐
-│  refinvest-web   │  Next.js
-└────────┬─────────┘
-         │ REST (항상 Core만 호출)
-         ↓
-┌─────────────────┐
-│  refinvest-core  │  Kotlin + Spring Boot
-│  (도메인 상태 소유)     │
-└────────┬─────────┘
-         │ REST + 비동기 폴링
-         ↓
-┌──────────────────────┐
-│  refinvest-compute   │  Python + FastAPI
-│  (Backtest + Behavior      │
-│   Analytics + Ingestion)   │
-└──────────┬───────────┘
-           ↓
-   ┌───────┴────────┐
-   ↓                ↓
-[Postgres]     [Object Storage]
-(공유 DB 및     (Dataset Snapshot,
-Compute durable  manifest JSON +
-job queue)       encrypted raw/result artifacts)
+Web → Core (사용자 인증/CSRF)
+        ├→ Strategy/Backtest → Compute
+        └→ HTTP/JSON → Trading Review Go API
+                         ├→ TradingRecord / Analysis / Workflow
+                         ├→ PostgreSQL (기존 DB, Trading Review 소유 테이블)
+                         └→ durable dispatch → Go Worker → HTTP → Compute
+                                                           └→ Object Storage
+미래 Trading Review 진입: Web → Gateway → Go (Core 중계 교체)
 ```
 
-Object Storage는 물리 인프라를 공유할 수 있지만 logical namespace와 쓰기 권한은 분리한다. Compute는
-Dataset Snapshot을, Core는 Trading Review raw/manifest/result artifact를 소유하며 서로의 object를 직접
-열거하거나 장기 복사하지 않는다.
+Core는 Member/Strategy/Backtest를 소유한다. Go는 Trading Review 상태·권한·발행·삭제와
+장기 결과를 소유한다. Compute는 계산과 제한 수명의 runtime 및 시장 참조 데이터를 소유한다.
+Object Storage는 공유 인프라라도 namespace/권한/key/lifecycle을 소유 서비스별로 분리한다.
+Trading Review raw/manifest/result Artifact는 Go, DatasetSnapshot과 Compute runtime은 Compute 소유다.
+서로의 object를 임의 열거·장기 복사하지 않는다.
 
-`refinvest-system`은 코드가 없는 문서/계약 전용 레포로, 이 문서들과 두 API 계약을 보관한다: `openapi/compute-api.yaml`(Core↔Compute), `openapi/core-api.yaml`(Web↔Core).
-
----
+context는 도메인/ADR/API 정본, integration은 조합/E2E 저장소다.
+`openapi/core-api.yaml`은 초기 Web→Core, `openapi/compute-api.yaml`은 Core/Go→Compute의
+현재 wire 계약이다. 새 Core→Go 계약은 후속 확정 대상이며 기존 공개 endpoint와 동일하다고 추정하지 않는다.
 
 ## 2. Core (Kotlin + Spring Boot) 모듈 구조
+
+아래 Kotlin 구조는 기존 Core 구현의 참조 구조다. `tradingreview`는 이관 대상이며 초기
+Core 중계 연결 시 업무/Worker를 비활성화한다. Go의 신규 업무 구현은 이 구조에 추가하지 않는다.
+Go 패키지 상세는 Go 저장소 ARCHITECTURE.md가 소유한다.
 
 Hexagonal(Ports & Adapters) + 모듈형 모놀리스로 구성한다.
 
@@ -121,9 +115,9 @@ Strategy DSL → Validation → Dataset Snapshot Resolution → Calendar Resolut
 |---|---|---|
 | `users`, `strategies`, `strategy_versions`, `subscriptions` | Core | Core만 |
 | `backtest_runs`, `backtest_results`, `trades` | Core | Core만 (Compute는 응답을 반환할 뿐 직접 쓰지 않음) |
-| `trading_accounts`, `trading_books`, `trading_import_sessions`, `trading_source_artifacts`, `source_evidence_snapshots`, `trading_records`, `ledger_revisions`, revision-record membership, reconciliation manifests | Core | Core만 |
-| `trading_analysis_runs`, `trading_analysis_results`, `trading_reprocessing_runs`, `trading_deletion_requests`, artifact retention state, durable dispatch | Core | Core만 (Compute runtime/terminal payload는 제한 기간만 보관) |
-| Trading Review compute jobs, attempts, terminal payloads, artifact leases | Compute | Compute만; Core는 internal API로만 조회/ack |
+| `trading_accounts`, `trading_books`, `trading_import_sessions`, `trading_source_artifacts`, `source_evidence_snapshots`, `trading_records`, `ledger_revisions`, revision-record membership, reconciliation manifests | Go | Go만 |
+| `trading_analysis_runs`, `trading_analysis_results`, `trading_reprocessing_runs`, `trading_deletion_requests`, artifact retention state, durable dispatch | Go | Go만 (Compute runtime/terminal payload는 제한 기간만 보관) |
+| Trading Review compute jobs, attempts, terminal payloads, artifact leases | Compute | Compute만; Go는 internal API로만 조회/ack |
 | `assets`, `market_calendars`, `corporate_actions` | Compute (Ingestion) | Core는 Compute API를 통해서만 조회, 직접 쿼리 금지 |
 | `dataset_snapshots` | Compute (Ingestion) | Compute 내부, Core는 스냅샷 ID만 참조값으로 저장 |
 
@@ -178,7 +172,7 @@ Core                                  Compute
   │  BacktestResult 영속화                │
 ```
 
-- Compute는 인터넷에 직접 노출하지 않는다. Core만 호출 가능한 내부망 서비스로 배포한다.
+- Compute는 인터넷에 직접 노출하지 않는다. Core와 Trading Review Go만 각 업무 계약에 따라 호출하는 내부망 서비스로 배포한다.
 - Job Queue: Compute 소유 PostgreSQL 테이블의 durable job queue를 사용한다. Worker는 transaction으로
   eligible job을 claim하고 lease/heartbeat로 장애 복구와 bounded retry를 관리한다. 이 큐는 Compute
   내부 구현 상세이며 Core는 직접 읽거나 쓸 수 없다. Core는 자신의 durable dispatch record와 Compute
@@ -188,7 +182,7 @@ Core                                  Compute
 
 ## 7. 배포 단위
 
-4개 레포 = 4개 컨테이너(Core, Compute, Web, 그리고 Ingestion을 별도 스케줄 워커로 분리할지는 Compute 레포 내에서 결정). Postgres와 Object Storage는 공용 인프라로 별도 관리한다. 현재 Compute의 durable job queue를 위한 별도 Redis는 사용하지 않는다.
+실행 단위는 Core, Web, Trading Review Go API/Worker, Compute API/Worker다. context는 문서 저장소이고 integration은 harness이므로 저장소 수를 컨테이너 수와 동일시하지 않는다. Ingestion 배포는 Compute가 결정한다. Postgres와 Object Storage는 공용 인프라로 별도 관리한다. 현재 Compute의 durable job queue를 위한 별도 Redis는 사용하지 않는다.
 
 Backtest Engine의 컨테이너 이미지는 **버전 태깅**한다(예: `refinvest-compute:1.3.2`). `BacktestRun.engineVersion`에 이 태그를 기록해, 보관된 과거 Engine 이미지가 있으면 특정 백테스트 재현에 사용할 수 있게 한다(ADR-010 Determinism Contract). 태그가 과거 binary의 영구 보관이나 실제 가용성을 보장하지는 않는다.
 
@@ -196,39 +190,24 @@ Backtest Engine의 컨테이너 이미지는 **버전 태깅**한다(예: `refin
 
 ## 8. Trading Review 실행 경계
 
-Trading Review는 기존 배포 단위를 재사용하지만 Backtest 도메인과 타입/테이블/API를 공유하지 않는다.
+Trading Review는 독립 Go API/Worker로 배포한다. API와 Worker는 같은 업무 규칙과 DB를 사용한다.
 
 ```text
-Web → Core session + Trade/Position artifacts upload
-Core → Compute normalization/reconciliation job → canonical records + manifest
-Core atomic accept → LedgerRevision pins records/manifest/version
-Core → Compute analysis job (pinned revision payload/artifact)
-Compute → pinned manifest → ReviewUnit → metrics/findings
-Core → long-term result persistence → Web review/evidence
-
-Core TradingReprocessingRun(source/target VersionSet + deletion generation)
-  → Compute compatibility validation + requested stage execution
-  → Core hash/lineage/generation validation
-  → completed-only Revision/Result publication
+Web → Core 인증/CSRF/streaming 중계 → Go session/artifact 접수
+Go durable dispatch → Compute normalization/reconciliation → 검증된 비공개 staging
+Go atomic publication → immutable LedgerRevision + Book pointer
+Go → Compute analytics (pinned Revision) → 검증/발행 → Core 경유 Web 조회
+Workflow: R2 staging → A2 staging → 동일 DB Tx로 R2/A2 + pointers + lineage 공개
 ```
 
-- Web은 원본 CSV를 Compute에 직접 전송하지 않는다.
-- Web은 최대 50 MiB의 CSV를 multipart로 Core에 전송하고 Core가 encrypted private object write를 검증한 뒤
-  artifact를 등록한다. 두 role이 준비돼도 명시적 validation command 전에는 시작하지 않는다.
-- Core가 ownership, artifact retention, source evidence snapshot, deletion tombstone/generation, canonical ledger와
-  장기 result를 소유한다. lifecycle 상세는 [`TRADING_DATA_LIFECYCLE.md`](TRADING_DATA_LIFECYCLE.md)를 따른다.
-- Compute adapter는 두 Binance V1 dialect를 해석하고 reconciliation하지만 사용자 계정 도메인을 소유하지 않는다.
-- raw artifact는 private object storage에서 artifact별 envelope encryption하며 Compute에는 최대 5분의
-  job-bound read만 허용한다. terminal output은 opaque payload handle로 Core가 stream-copy하고 ack하며,
-  runtime/payload는 최대 24시간이다. deletion generation보다 오래된 결과는 Core가 저장하지 않는다.
-- Core는 `TradingReprocessingRun`, version registry snapshot, idempotency, lineage와 latest pointer를 소유한다.
-  Compute는 요청에 고정된 compatible version을 실행하고 immutable implementation digest를 반환한다. 과거
-  implementation을 영구 보관한다고 가정하지 않으며 versioning 상세는
-  [`TRADING_VERSIONING.md`](TRADING_VERSIONING.md)를 따른다.
-- 새 Revision/Analysis를 함께 만드는 재처리는 Compute 장기 transaction이 아니라 Core의 최종 publication
-  경계에서 result hash, lineage와 deletion generation을 함께 검증한다. partial output은 Review에 노출하지 않는다.
-- current backtest durable dispatch를 공통화할지는 실제 결합도를 확인한 후 결정한다. `BacktestRun`을
-  이름만 바꾸거나 Trading Analysis에 재사용하지 않는다.
-- 공개/내부 REST 경로와 schema는 두 OpenAPI, 의미는
-  [`TRADING_REVIEW_API.md`](TRADING_REVIEW_API.md), 논리 저장 경계는
-  [`TRADING_REVIEW_PERSISTENCE.md`](TRADING_REVIEW_PERSISTENCE.md)가 정본이다.
+- CSV는 기존 multipart·artifact당 50 MiB 계약을 유지한다. Core는 인증/중계하고 Go가 streaming
+  checksum·암호화 object write 검증·Artifact 등록을 소유한다. 중계 buffering/limit은 계약 구현에서 검증한다.
+- 두 role이 준비되어도 명시 validation 전에는 실행하지 않는다. Compute에 브라우저가 직접 업로드하지 않는다.
+- Go TradingRecord는 소유권·Guard/Generation/Tombstone·Ledger·Book latest pointers를 소유한다.
+- Go Analysis는 분석 실행·결과·ACK를 소유하고 Record의 공개 Revision/Guard 계약을 사용한다.
+- Workflow는 삭제/재처리를 조율하며 별도 Aggregate/상태 엔진을 만들지 않는다.
+- 외부 I/O는 DB Tx 밖, 두 모듈의 최종 공개는 동일 실제 Tx다. WithinTx 방식은 미확정이다.
+- 기존 grant/retention/version/hash/ACK 의미를 유지한다. Go가 결과를 독립 검증하고 오래된 generation의
+  결과를 공개하지 않는다. Raw-only는 기존 Ledger/Analysis를 보존한다.
+- 상세 제품 의미는 Trading Review 정본, Go 폴더/계층은 Go 저장소 문서를 따른다.
+- Core 중단 기간 직접 Go 검증과 Core 중계 검증을 구분한다. 이관은 서비스 경계 gate로 확인한다.

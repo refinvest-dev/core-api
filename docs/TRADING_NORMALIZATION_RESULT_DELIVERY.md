@@ -1,5 +1,10 @@
 # Trading Normalization Result Delivery V1
 
+> **서비스 역할 적용 (ADR-072)**: Trading Review 업무 소유자로 쓰인 `Core`는 목표 설계에서
+> Go를 뜻한다. 브라우저 인증/CSRF·중계와 Member/Backtest의 Core, 기존 wire 필드·hash 입력·
+> enum·vector는 이 대응 대상이 아니다. 상세 우선순위와 이관 gate는
+> [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다. 기존 증적을 Go 검증 완료로 해석하지 않는다.
+
 ADR-070의 Normalization 결과 V2도 이 `RESULT_DELIVERY_V1` 단일 resource, 동일 media type, size/bytes hash/ACK/TTL 경계를 사용한다. 아래 V1 schema/hash 행은 기존 V1 조합을 설명한다. V2 조합은 `TRADING_NORMALIZATION_RESULT_V2`/`TRADING_NORMALIZATION_RESULT_HASH_V2`이며 descriptor와 body가 정확히 일치하고 `ANALYTICS_INPUT_SUPPLEMENT`를 포함한 10개 section digest를 제공해야 한다. 전송 policy version은 결과 schema version이 아니다.
 
 ADR-067의 정본이다. 이 문서는 normalization terminal **전송**을 규정한다. 공개 item·count·section·manifest·overall hash의 의미는 [result integrity V1](TRADING_NORMALIZATION_RESULT_INTEGRITY.md), 입력 identity는 [input identity V1](TRADING_NORMALIZATION_IDENTITY.md)을 따른다. 아래 runtime 관찰은 이 계약을 소급해서 바꾸지 않는다.

@@ -1,5 +1,8 @@
 # AI_AGENT.md — 에이전트 작업 워크플로우
 
+> Trading Review는 ADR-072와 [서비스 경계](docs/TRADING_REVIEW_SERVICE_BOUNDARY.md)를 먼저 읽는다.
+> 새 Go 구현 규칙은 Go 저장소 AGENTS.md/ARCHITECTURE.md를 따른다.
+
 `AGENTS.md`를 먼저 읽었다는 전제로 작성한다. 이 문서는 "무엇을" 만들지가 아니라 "어떻게" 작업을 진행할지를 다룬다.
 
 ---
@@ -8,7 +11,7 @@
 
 새 작업(이슈/티켓)을 받으면 다음을 순서대로 확인한다.
 
-1. **어느 레포의 작업인가?** — `core`(도메인 로직, API), `compute`(백테스트 계산, 데이터 적재), `web`(UI), `system`(문서/계약)인지 먼저 구분한다. 하나의 기능이 여러 레포에 걸치는 경우(예: 새 Condition Type 추가)가 흔하므로, 영향받는 레포를 전부 나열한 뒤 시작한다.
+1. **어느 레포의 작업인가?** — `core`(인증/Strategy/Backtest), `trading-review`(Go 업무/API/Worker), `compute`(계산/데이터 적재), `web`(UI), `context`(정본), `integration`(조합/E2E)인지 먼저 구분한다. 하나의 기능이 여러 레포에 걸치는 경우(예: 새 Condition Type 추가)가 흔하므로, 영향받는 레포를 전부 나열한 뒤 시작한다.
 2. **`docs/DECISIONS.md`에 관련 ADR이 있는가?** — 있다면 그 결정을 따른다. 결정과 다르게 구현해야 할 이유가 있다면, 코드를 먼저 바꾸지 말고 ADR을 수정하는 PR을 먼저 제안한다.
 3. **`docs/DOMAIN.md`의 관련 Aggregate 불변식을 확인한다.** — 특히 Strategy/BacktestRun의 상태 전이 규칙을 위반하지 않는지 확인한다.
 4. **Trading Review 작업인가?** — `docs/TRADING_REVIEW.md`의 product scope, capability, provenance와 version 경계를 확인한다. Binance One-way reconstruction 구현/fixture라면 `docs/TRADING_RECONSTRUCTION.md`의 상태 전이, 보존식, tolerance와 expected result도 적용한다. 초기 Behavior Metric analytics 구현/fixture라면 `docs/TRADING_ANALYTICS.md`의 population, relation, comparison, status와 boundary expected result를 적용한다.
@@ -21,12 +24,12 @@
    Trading Review public/internal API, persistence, orchestration 구현이면 `docs/TRADING_REVIEW_API.md`,
    `docs/TRADING_REVIEW_PERSISTENCE.md`와 ADR-063의 upload, polling, ownership, durable dispatch, large payload와
    transaction 경계를 적용한다. 정확한 wire schema는 두 OpenAPI를 추측 없이 사용한다.
-5. **Core↔Compute 경계를 넘는 변경인가?** — API 계약(`system` 레포의 OpenAPI 스펙)이 바뀌어야 한다면, 계약을 먼저 수정하고 두 레포에 각각 반영한다. 한쪽 레포만 보고 임의로 응답 필드를 추측해 구현하지 않는다.
+5. **Core↔Go 또는 Core/Go↔Compute 경계를 넘는 변경인가?** — API 계약(`system` 레포의 OpenAPI 스펙)이 바뀌어야 한다면, 계약을 먼저 수정하고 두 레포에 각각 반영한다. 한쪽 레포만 보고 임의로 응답 필드를 추측해 구현하지 않는다.
 
 ## 2. Core (Kotlin + Spring Boot) 작업 규칙
 
-- 패키지 구조는 `docs/ARCHITECTURE.md` §2의 모듈 경계를 따른다. `strategy`, `backtest`(오케스트레이션), `tradingreview`, `asset`, `user`, `subscription` 모듈 간 직접 참조 대신 각 모듈이 노출하는 Application Service를 통해서만 상호작용한다.
-- Compute를 호출하는 코드는 **오직 `backtest`, `asset`, `tradingreview` 모듈**에만 존재한다. 각 모듈은 자신의 `adapter/out/compute/`에 클라이언트를 격리한다. `tradingreview`는 거래 정규화와 행동 분석만 위임하며, 다른 모듈(`strategy`, `user` 등)은 Compute를 직접 호출하지 않는다. Compute URL과 응답 스키마를 이 세 어댑터 밖으로 노출하지 않는다.
+- 패키지 구조는 `docs/ARCHITECTURE.md` §2의 모듈 경계를 따른다. `strategy`, `backtest`(오케스트레이션), `asset`, `user`, `subscription` 모듈 간 직접 참조 대신 각 모듈이 노출하는 Application Service를 통해서만 상호작용한다.
+- Core의 Compute 호출은 backtest/asset의 adapter에 둔다. Trading Review 계산 위임은 Go가 담당한다. 기존 Core tradingreview는 이관 시 비활성화하며 새 업무를 추가하지 않는다. Core의 중계가 Go 업무 권한 검증을 대체하지 않는다.
 - Core의 백테스트 실행 엔드포인트(Web이 호출하는 public API, `openapi/core-api.yaml`의 `POST /strategy-versions/{versionId}/backtests`)는 **비동기**다. 요청 즉시 `BacktestRun(status=PENDING)`을 반환하고, 실제 계산은 `backtest` 모듈이 Compute의 내부 API(`docs/ARCHITECTURE.md` §6, `POST /backtests`)에 위임한 뒤 상태를 폴링해 갱신한다. 절대 이 엔드포인트를 동기로 만들지 않는다 (Compute 응답을 기다리며 커넥션을 오래 잡고 있지 않는다).
 - DSL 관련 필드(Condition, Signal Asset 등)는 `docs/GLOSSARY.md`의 네이밍을 그대로 코드 식별자로 사용한다. 임의로 축약하거나 다른 용어로 바꾸지 않는다.
 - 테스트: Aggregate 불변식(예: "Primary Signal Asset은 정확히 1개") 위반 시나리오를 반드시 실패 테스트로 커버한다.
@@ -37,16 +40,20 @@
 - 시계열 계산(Return, Change, Relative, Lag)은 `docs/DECISIONS.md` **ADR-003(4대 Temporal Rule)**을 그대로 구현한다 — 이 규칙은 이 서비스의 핵심 계약이므로 임의로 최적화하며 규칙을 변형하지 않는다. 특히 Cross-Calendar Metric Anchor Rule(**ADR-004**)을 건드리는 변경은 반드시 해당 ADR을 함께 갱신한다.
 - Dataset은 항상 **Immutable Snapshot**을 참조해서 계산한다. Ingestion이 만든 최신 스냅샷을 실행 중인 백테스트가 참조하다가 중간에 갱신되는 일이 없도록 스냅샷 ID를 파라미터로 명시적으로 받는다.
 - 벡터화 연산(pandas/polars)을 사용하되, Point-in-Time Correctness를 해치는 방식(예: 전체 시계열을 미리 로드해두고 미래 인덱스에 실수로 접근하는 패턴)을 피하기 위해 계산 함수는 항상 "이 시점까지 확정된 데이터"만 인자로 받도록 설계한다.
-- Compute는 외부에 인증 없이 노출하지 않는다. Core만 호출하는 내부망 서비스로 취급한다.
+- Compute는 외부에 인증 없이 노출하지 않는다. Core(기존 업무)와 Go(Trading Review)가 호출하는 내부망 서비스로 취급한다. Compute table은 두 호출자가 직접 수정하지 않는다.
 
 ## 4. Web (Next.js) 작업 규칙
 
-- Core API만 호출한다(`openapi/core-api.yaml`). Compute의 존재를 프론트가 알 필요가 없다.
+- 초기 Core API를 호출한다(`openapi/core-api.yaml`). 향후 Gateway 전환은 별도 계약으로 연결한다. Compute의 존재를 프론트가 알 필요가 없다.
 - 백테스트 결과 대기는 **폴링**(2~3초 간격)으로 구현한다. WebSocket 등 실시간 채널은 지금 도입하지 않는다.
 - Strategy Builder는 Progressive Disclosure(Level 1 → 2 → 3) 구조를 그대로 UI 상태로 반영한다. Level 3(Relative/Lag/Cross-Market)를 처음부터 노출하지 않는다.
 - 차트는 `docs/ARCHITECTURE.md` §5에 명시된 라이브러리 선택을 따른다.
 
 ## 5. PR 작성 시 확인할 것
+
+- `.github/pull_request_template.md`와 AGENTS.md의 PR 본문 형식을 따른다.
+  Summary/Changes/Validation/Impact/Related Links를 영어 H2로 쓰고 본문은 한국어로 작성한다.
+  Migration Plan/Rollback/Evidence 등 필요한 추가 항목도 영어 H2로 쓴다.
 
 - 변경이 `docs/DECISIONS.md`의 기존 ADR과 충돌하지 않는지 명시한다.
 - Core↔Compute API 계약을 바꿨다면 `system` 레포의 OpenAPI 스펙도 같은 PR 세트에 포함한다(레포가 다르더라도 PR 설명에 서로 링크).
@@ -80,10 +87,17 @@
 - ADR-062와 `docs/TRADING_VERSIONING.md`의 exact compatibility, 새 Revision/Run, idempotency, lineage,
   completed-only publication과 deterministic hash를 적용한다. 새 version 배포·결과 조회를 기존 결과의 자동
   재처리 trigger로 사용하거나 unavailable version을 가까운 version으로 대체하지 않는다.
-- ADR-070의 V2 Normalization `analyticsInputSupplement`는 Compute가 직접 생성하고 Core가 독립 검증 후 새 Revision에 불변 저장한다. Analytics 입력을 만들 때 누락 근거·배분 금액을 canonical record에서 추정하거나 0으로 채우지 않는다.
+- ADR-070의 V2 Normalization `analyticsInputSupplement`는 Compute가 직접 생성하고 Go가 독립 검증 후 새 Revision에 불변 저장한다. Analytics 입력을 만들 때 누락 근거·배분 금액을 canonical record에서 추정하거나 0으로 채우지 않는다.
 - `docs/TRADING_REVIEW_ACCEPTANCE.md`의 Scenario ID는 Integration/PR evidence에서 그대로 사용하고,
   `FIXTURE_PLANNED`를 실제 fixture 없이 검증 완료로 표시하지 않는다. AcceptanceOutcome을 Aggregate status나
   HTTP status로 구현하지 않는다.
-- ADR-063의 public Core multipart upload, 명시적 validation, Core durable dispatch→Compute polling,
+- ADR-063의 public Core multipart upload, 명시적 validation, Core 중계→Go durable dispatch→Compute polling,
   opaque terminal payload/ack와 generation/hash 검증을 callback/direct Web→Compute 흐름으로 바꾸지 않는다.
   persistence 구현은 `TRADING_REVIEW_PERSISTENCE.md`의 논리 constraint를 실제 schema/transaction으로 강제한다.
+
+## 8. Trading Review Go 작업 라우팅
+
+- 제품 계약은 context, Go 계층/패키지/조립은 Go 저장소, 실행 조합은 integration이 소유한다.
+- 기존 Trading Review 문서의 Core actor는 서비스 경계의 역할 대응 규칙으로 읽는다. wire/hash 입력은 바꾸지 않는다.
+- 기존 Kotlin 구현은 이관 비교 근거이며 Go 코드를 Core 소스나 Gradle 모듈 안에 추가하지 않는다.
+- snapshot/fixture 전파와 Go 포함 증적은 별도 gate다. 문서 변경 후 기존 동기화가 통과했다고 가정하지 않는다.

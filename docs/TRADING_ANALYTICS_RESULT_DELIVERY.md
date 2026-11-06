@@ -1,5 +1,10 @@
 # Trading Analytics Result Delivery V1
 
+> **서비스 역할 적용 (ADR-072)**: Trading Review 업무 소유자로 쓰인 `Core`는 목표 설계에서
+> Go를 뜻한다. 브라우저 인증/CSRF·중계와 Member/Backtest의 Core, 기존 wire 필드·hash 입력·
+> enum·vector는 이 대응 대상이 아니다. 상세 우선순위와 이관 gate는
+> [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다. 기존 증적을 Go 검증 완료로 해석하지 않는다.
+
 `ANALYTICS_RESULT_DELIVERY_V1` delivers one bounded resource. See [job protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md), [result integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md), ADR-069 and `openapi/compute-api.yaml`.
 
 Create pins `resultDeliveryPolicy={policyVersion:ANALYTICS_RESULT_DELIVERY_V1,transportMode:SINGLE_RESOURCE,maxPayloadBytes:<positive safe integer>}`. Core advertises the maximum it can receive; Compute enforces `min(advertised maxPayloadBytes, its positive configured max)`. Compute serializes the **whole** completed payload first into a bounded spool, and fails `RESULT_PAYLOAD_TOO_LARGE` if the next byte would exceed the effective cap. It never truncates, paginates or emits a partial success. Changing the cap requires a new create fingerprint/Run, not an in-place retry.

@@ -1,5 +1,10 @@
 # Trading Normalization runtime deletion
 
+> **서비스 역할 적용 (ADR-072)**: Trading Review 업무 소유자로 쓰인 `Core`는 목표 설계에서
+> Go를 뜻한다. 브라우저 인증/CSRF·중계와 Member/Backtest의 Core, 기존 wire 필드·hash 입력·
+> enum·vector는 이 대응 대상이 아니다. 상세 우선순위와 이관 gate는
+> [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다. 기존 증적을 Go 검증 완료로 해석하지 않는다.
+
 ADR-061/063의 실제 삭제 완료를 위한 내부 실행 계약이다. 계산 입력·hash·result version은 변경하지 않는다.
 
 ## Identity and fencing

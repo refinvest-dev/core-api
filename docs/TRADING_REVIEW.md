@@ -1,5 +1,10 @@
 # TRADING_REVIEW.md — 실제 거래 행동 분석 도메인
 
+> **서비스 역할 적용 (ADR-072)**: Trading Review 업무 소유자로 쓰인 `Core`는 목표 설계에서
+> Go를 뜻한다. 브라우저 인증/CSRF·중계와 Member/Backtest의 Core, 기존 wire 필드·hash 입력·
+> enum·vector는 이 대응 대상이 아니다. 상세 우선순위와 이관 gate는
+> [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다. 기존 증적을 Go 검증 완료로 해석하지 않는다.
+
 Analytics Compute job의 입력·상태·결과·전달 계약은 ADR-069 및 [Analytics Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md), [Input Identity](TRADING_ANALYTICS_INPUT_IDENTITY.md), [Result Integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md), [Result Delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md)를 따른다. LedgerRevision과 AnalysisResult 소유권은 Core에 남는다.
 
 이 문서는 RefInvest의 `Trading Review` 제품 정체성, MVP 경계, 확장 가능한 도메인 모델과

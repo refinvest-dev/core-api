@@ -1,5 +1,10 @@
 # Trading Analytics Result Integrity V1
 
+> **서비스 역할 적용 (ADR-072)**: Trading Review 업무 소유자로 쓰인 `Core`는 목표 설계에서
+> Go를 뜻한다. 브라우저 인증/CSRF·중계와 Member/Backtest의 Core, 기존 wire 필드·hash 입력·
+> enum·vector는 이 대응 대상이 아니다. 상세 우선순위와 이관 gate는
+> [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다. 기존 증적을 Go 검증 완료로 해석하지 않는다.
+
 This document defines `TRADING_ANALYTICS_RESULT_SCHEMA_V1` and `TRADING_ANALYTICS_RESULT_HASH_V1`. Computation formulas remain in [TRADING_ANALYTICS](TRADING_ANALYTICS.md), input rules in [input identity](TRADING_ANALYTICS_INPUT_IDENTITY.md), and transport in [delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md). The Compute Engine `MetricResult` is the lossless source for the wire projection; Core validates structure, identities, references and hashes without recalculating the financial formula.
 
 ## Public sections and types

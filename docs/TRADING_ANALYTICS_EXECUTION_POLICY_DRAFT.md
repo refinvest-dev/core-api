@@ -1,5 +1,10 @@
 # Analytics 실행 제한과 프로세스 격리 — ADR-071 검토 초안
 
+> **서비스 역할 적용 (ADR-072)**: Trading Review 업무 소유자로 쓰인 `Core`는 목표 설계에서
+> Go를 뜻한다. 브라우저 인증/CSRF·중계와 Member/Backtest의 Core, 기존 wire 필드·hash 입력·
+> enum·vector는 이 대응 대상이 아니다. 상세 우선순위와 이관 gate는
+> [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다. 기존 증적을 Go 검증 완료로 해석하지 않는다.
+
 상태: **DRAFT / 미승인 / production 연결 금지**. 작성일: 2026-10-30.
 이 문서는 ADR-069를 대체하거나 현재 API·실행 동작을 변경하지 않는다. 아래 결정안과 새 오류
 이름은 제안이며, 승인·정본 계약 반영·구현·운영 수치 검증을 각각 별도 gate로 통과해야 한다.

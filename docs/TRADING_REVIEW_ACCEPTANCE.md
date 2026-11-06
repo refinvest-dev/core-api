@@ -1,5 +1,10 @@
 # TRADING_REVIEW_ACCEPTANCE.md — Trading Review Acceptance Contract
 
+> **서비스 역할 적용 (ADR-072)**: Trading Review 업무 소유자로 쓰인 `Core`는 목표 설계에서
+> Go를 뜻한다. 브라우저 인증/CSRF·중계와 Member/Backtest의 Core, 기존 wire 필드·hash 입력·
+> enum·vector는 이 대응 대상이 아니다. 상세 우선순위와 이관 gate는
+> [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다. 기존 증적을 Go 검증 완료로 해석하지 않는다.
+
 Analytics runtime Scenario `TR-ACC-ANALYSIS-016`~`045`는 ADR-069와 [Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md), [Input Identity](TRADING_ANALYTICS_INPUT_IDENTITY.md), [Result Integrity](TRADING_ANALYTICS_RESULT_INTEGRITY.md), [Result Delivery](TRADING_ANALYTICS_RESULT_DELIVERY.md)를 따른다. `046`~`047`은 ADR-070의 Analytics 입력 provenance/admission 경계다. 기존 Scenario ID는 유지한다.
 
 이 문서는 Trading Review TR-0G의 사용자 관점 완료 조건과 Aggregate 상태 전이를 정의한다. Integration

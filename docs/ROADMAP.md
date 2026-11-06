@@ -1,5 +1,9 @@
 # ROADMAP.md — Phase별 범위
 
+> Trading Review 서비스 분리는 ADR-072와 [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)를 따른다.
+> TR-0H의 기존 Web→Core/Core→Compute 계약 산출물은 유지한다. 새 Core→Go 계약·DB 인계·Go 포함
+> integration 검증은 추가 gate이며 기존 Track/fixture 완료를 Go 이관 완료로 간주하지 않는다.
+
 TR-1 Compute Analytics Job Runtime 구현 전제 계약은 ADR-069와 [Analytics Job Protocol](TRADING_ANALYTICS_JOB_PROTOCOL.md)이다. 이 계약 작업은 runtime 코드, 새 Metric, 실제 Finding ranking, Web UI, DB migration, Integration E2E를 포함하지 않는다.
 
 에이전트는 지금 어느 Phase에 있는지 먼저 확인하고, **다음 Phase의 기능을 미리 구현하지 않는다.** 각 Phase는 이전 Phase의 종료 조건을 만족해야 다음으로 넘어간다.
@@ -127,7 +131,7 @@ controller와 Integration E2E는 각 구현 저장소의 후속 작업이다.
 **TR-0H 종료 조건**:
 
 - 110개 Acceptance Scenario가 public/internal operation 또는 명시적 운영 control-plane assertion에 연결된다.
-- Core/Compute가 같은 logical record를 동시에 소유하지 않고 terminal payload handoff/ack/purge가 정의된다.
+- Go/Compute가 같은 logical record를 동시에 소유하지 않고 terminal payload handoff/ack/purge가 정의된다.
 - accepted immutable data와 mutable latest pointer, Revision membership, deterministic uniqueness가 구분된다.
 - import/analysis/reprocessing/deletion의 local transaction과 distributed retry 경계가 구현 가능한 수준으로 닫힌다.
 - OpenAPI parsing/ref/operation/security/error/Decimal/time/pagination 검증을 통과한다.
@@ -157,7 +161,7 @@ controller와 Integration E2E는 각 구현 저장소의 후속 작업이다.
 | Outcome | Trade realized profit - same-currency fee, Position closing PNL 대조, funding 제외 명시 |
 | Analytics | TR-0의 3개 Metric, sample/comparison/exclusion 공개, descriptive Finding |
 | UX | Upload → Verify → Finding → ReviewUnit/Execution drill-down |
-| Runtime | Core 소유 상태/장기 결과, Compute 비동기 normalization/analysis, deterministic version metadata |
+| Runtime | Go 소유 상태/장기 결과, Compute 비동기 normalization/analysis, deterministic version metadata |
 
 **명시적 제외**: Binance API sync, Hedge, COIN-M, Spot, Options, 열린 포지션, 펀딩 포함 손익,
 margin ROE, 실시간 알림, AI, BehaviorFocus, Strategy mapping, Execution Gap.
