@@ -1,5 +1,5 @@
 package com.refinvest.core.auth.port.inbound.logout
 
-import java.util.UUID
-
-data class LogoutCommand(val familyId: UUID)
+class LogoutCommand(val rawRefreshToken: String?) {
+    override fun toString(): String = "LogoutCommand(redacted)"
+}

@@ -1,7 +1,13 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.outbound.member.TradingMemberProvider
+import com.refinvest.core.tradingreview.port.outbound.persistence.analytics.AnalyticsRevisionSource
+import com.refinvest.core.tradingreview.port.outbound.persistence.analytics.TradingAnalyticsRevisionReader
+import com.refinvest.core.tradingreview.port.outbound.storage.analytics.AnalyticsInputArtifact
+import com.refinvest.core.tradingreview.port.outbound.storage.analytics.TradingAnalyticsArtifactStore
+
 import com.refinvest.core.shared.kernel.member.MemberId
-import com.refinvest.core.tradingreview.port.*
 import tools.jackson.databind.json.JsonMapper
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -106,6 +112,6 @@ class TradingAnalyticsInputBuilderTest {
             return AnalyticsInputArtifact(id, mediaType, payload.size.toLong(), hash)
         }
         override fun open(coreReferenceId: String): InputStream = ByteArrayInputStream(bytes.getValue(coreReferenceId))
-        override fun deleteRevision(revisionId: String) { bytes.keys.removeIf { it.startsWith("$revisionId:") } }
+        override fun purgeRevision(revisionId: String): Boolean { bytes.keys.removeIf { it.startsWith("$revisionId:") }; return true }
     }
 }

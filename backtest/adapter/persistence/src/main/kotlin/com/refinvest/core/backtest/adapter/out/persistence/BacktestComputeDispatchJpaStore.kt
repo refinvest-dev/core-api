@@ -10,6 +10,10 @@ import java.time.Instant
 
 interface BacktestComputeDispatchJpaStore : CrudRepository<BacktestComputeDispatchJpaEntity, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select dispatch from BacktestComputeDispatchJpaEntity dispatch where dispatch.backtestRunId = :runId")
+    fun findByIdForUpdate(@Param("runId") runId: Long): BacktestComputeDispatchJpaEntity?
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query(
         """
         select dispatch from BacktestComputeDispatchJpaEntity dispatch

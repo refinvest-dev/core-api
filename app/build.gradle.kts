@@ -28,6 +28,7 @@ dependencies {
     implementation(project(":tradingreview:adapter:persistence"))
     implementation(project(":tradingreview:adapter:web"))
     implementation(project(":tradingreview:adapter:snowflake"))
+    implementation(project(":tradingreview:adapter:uuid"))
     implementation(project(":tradingreview:adapter:security"))
     implementation(project(":tradingreview:adapter:storage"))
     implementation(project(":tradingreview:adapter:compute"))
@@ -37,10 +38,11 @@ dependencies {
     implementation(libs.spring.boot.starter.web)
     implementation(libs.kotlin.reflect)
     runtimeOnly(libs.postgresql)
-    implementation(libs.flyway.core)
+    implementation(libs.spring.boot.starter.flyway)
     runtimeOnly(libs.flyway.database.postgresql)
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     testImplementation(libs.spring.boot.starter.test)
+    testImplementation(libs.jackson.module.kotlin)
     testImplementation(libs.spring.boot.starter.oauth2.client)
     testImplementation(libs.spring.boot.starter.oauth2.resource.server)
     testImplementation(libs.spring.boot.starter.webmvc.test)
@@ -49,5 +51,9 @@ dependencies {
     testImplementation(project(":auth:domain"))
     testImplementation(project(":auth:port"))
     testImplementation(project(":member:port"))
+    testImplementation(project(":subscription:port"))
+    testImplementation(libs.spring.boot.starter.data.jpa)
     testRuntimeOnly(libs.h2)
 }
+
+tasks.named("test") { dependsOn(rootProject.tasks.named("verifyMemberSubscriptionBoundaries")) }

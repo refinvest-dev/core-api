@@ -13,6 +13,12 @@ interface BacktestComputeDispatchStore {
 
     fun claimNextSubmitted(now: Instant, leaseDuration: Duration): ClaimedSubmittedBacktestComputeDispatch?
 
+    /**
+     * Locks the dispatch until the caller's transaction completes and validates its current
+     * token, Compute job and unexpired lease. Must precede every polling response mutation.
+     */
+    fun lockSubmittedClaim(claim: ClaimedSubmittedBacktestComputeDispatch): Boolean
+
     fun markAccepted(backtestRunId: BacktestRunId, claimToken: UUID, computeRunId: String)
 
     fun scheduleRetry(backtestRunId: BacktestRunId, claimToken: UUID, nextAttemptAt: Instant)

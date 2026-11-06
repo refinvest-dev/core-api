@@ -9,6 +9,8 @@ import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.mockito.Mockito
+import jakarta.persistence.EntityManager
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -21,12 +23,13 @@ class JpaBacktestRunStoreAdapterMetricsTest {
     @Test
     fun `counts first persisted terminal transition only once`() {
         val fixture = fixture()
-        fixture.adapter.save(fixture.run)
+        fixture.save()
         assertEquals(1.0, fixture.registry.get("refinvest.backtest.terminal")
             .tag("status", "FAILED").counter().count())
 
         fixture.previous.status = BacktestRunStatusJpa.FAILED
-        fixture.adapter.save(fixture.run)
+        fixture.previous.failureReason = fixture.run.failureReason
+        fixture.save()
         assertEquals(1.0, fixture.registry.get("refinvest.backtest.terminal")
             .tag("status", "FAILED").counter().count())
         assertEquals(setOf("status"), fixture.registry.get("refinvest.backtest.terminal")
@@ -39,7 +42,7 @@ class JpaBacktestRunStoreAdapterMetricsTest {
         Mockito.`when`(fixture.store.save(Mockito.any(BacktestRunJpaEntity::class.java)))
             .thenThrow(IllegalStateException("database unavailable"))
 
-        assertFailsWith<IllegalStateException> { fixture.adapter.save(fixture.run) }
+        assertFailsWith<IllegalStateException> { fixture.save() }
 
         assertEquals(1.0, fixture.registry.get("refinvest.core.backtest.terminal.persistence.failures")
             .counter().count())
@@ -63,13 +66,24 @@ class JpaBacktestRunStoreAdapterMetricsTest {
             createdAt = Instant.parse("2026-09-22T00:00:00Z"),
         )
         val store = Mockito.mock(BacktestRunJpaStore::class.java)
+        Mockito.`when`(store.lockById(42L)).thenReturn(42L)
         Mockito.`when`(store.findById(42L)).thenReturn(Optional.of(previous))
+        Mockito.`when`(store.save(Mockito.any(BacktestRunJpaEntity::class.java)))
+            .thenAnswer { it.getArgument<BacktestRunJpaEntity>(0) }
+        val results = Mockito.mock(BacktestResultJpaStore::class.java)
+        Mockito.`when`(results.findById(42L)).thenReturn(Optional.empty())
         val registry = SimpleMeterRegistry()
         val adapter = JpaBacktestRunStoreAdapter(
-            store, Mockito.mock(BacktestResultJpaStore::class.java),
-            Mockito.mock(BacktestResultPayloadMapper::class.java), registry,
+            store, results,
+            Mockito.mock(BacktestResultPayloadMapper::class.java), registry, Mockito.mock(EntityManager::class.java),
         )
         return Fixture(adapter, store, run, previous, registry)
+    }
+
+    private fun Fixture.save() {
+        val previouslyActive = TransactionSynchronizationManager.isActualTransactionActive()
+        TransactionSynchronizationManager.setActualTransactionActive(true)
+        try { adapter.save(run) } finally { TransactionSynchronizationManager.setActualTransactionActive(previouslyActive) }
     }
 
     private data class Fixture(

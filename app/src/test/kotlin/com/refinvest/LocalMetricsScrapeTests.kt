@@ -35,6 +35,7 @@ import kotlin.test.assertTrue
 class LocalMetricsScrapeTests(
     @Autowired private val mockMvc: MockMvc,
     @Autowired private val meterRegistry: MeterRegistry,
+    @Autowired private val objectMapper: tools.jackson.databind.ObjectMapper,
     @LocalServerPort private val port: Int,
 ) {
     @Test
@@ -66,6 +67,21 @@ class LocalMetricsScrapeTests(
             .header("Authorization", basicHeader("test-only-scrape-password-for-tests"))
             .GET().build()
         assertEquals(401, HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString()).statusCode())
+    }
+
+    @Test
+    fun `development observability keeps health details private`() {
+        for (password in listOf<String?>(null, "test-only-scrape-password-for-tests")) {
+            val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/actuator/health"))
+            if (password != null) request.header("Authorization", basicHeader(password))
+            val response = HttpClient.newHttpClient().send(request.GET().build(), HttpResponse.BodyHandlers.ofString())
+            assertEquals(200, response.statusCode())
+            val health = objectMapper.readValue(response.body(), Map::class.java)
+            assertEquals("UP", health["status"])
+            assertTrue(health.keys.all { it == "status" || it == "groups" }, response.body())
+            if ("groups" in health) assertTrue((health["groups"] as List<*>).all { it in setOf("liveness", "readiness") })
+        }
+        mockMvc.perform(get("/actuator/health/db")).andExpect(status().isUnauthorized)
     }
 
     private fun scrape(password: String? = null): HttpResponse<String> {

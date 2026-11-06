@@ -18,7 +18,7 @@ class UpgradeSubscriptionServiceTest {
         val result = service.execute(UpgradeSubscriptionCommand(memberId))
 
         assertEquals(memberId, result.memberId)
-        assertEquals(SubscriptionTier.PRO, result.tier)
+        assertEquals("PRO", result.tier.name)
         assertEquals(SubscriptionTier.PRO, store.subscription?.tier)
     }
 
@@ -30,7 +30,7 @@ class UpgradeSubscriptionServiceTest {
 
         val result = service.execute(UpgradeSubscriptionCommand(memberId))
 
-        assertEquals(SubscriptionTier.PRO, result.tier)
+        assertEquals("PRO", result.tier.name)
         assertEquals(SubscriptionTier.PRO, store.subscription?.tier)
     }
 

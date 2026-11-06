@@ -10,6 +10,7 @@ import com.refinvest.core.strategy.domain.policy.PositionPolicy
 
 import com.refinvest.core.common.domain.DomainEntity
 import java.time.Instant
+import java.util.Collections
 
 class StrategyVersion private constructor(
     id: StrategyVersionId,
@@ -21,7 +22,7 @@ class StrategyVersion private constructor(
     val lag: SignalSessions,
     val exit: TimeBasedExit,
 ) : DomainEntity<StrategyVersionId>(id) {
-    val conditions: List<Condition> = conditions.toList()
+    val conditions: List<Condition> = Collections.unmodifiableList(ArrayList(conditions))
     val positionPolicy: PositionPolicy = PositionPolicy
 
     init {
@@ -45,6 +46,26 @@ class StrategyVersion private constructor(
         )
 
         fun create(
+            id: StrategyVersionId,
+            strategyId: StrategyId,
+            createdAt: Instant,
+            primarySignalAsset: AssetSymbol,
+            conditions: List<Condition>,
+            executionAsset: AssetSymbol,
+            lag: SignalSessions,
+            exit: TimeBasedExit,
+        ): StrategyVersion = StrategyVersion(
+            id = id,
+            strategyId = strategyId,
+            createdAt = createdAt,
+            primarySignalAsset = primarySignalAsset,
+            conditions = conditions,
+            executionAsset = executionAsset,
+            lag = lag,
+            exit = exit,
+        )
+
+        fun restore(
             id: StrategyVersionId,
             strategyId: StrategyId,
             createdAt: Instant,

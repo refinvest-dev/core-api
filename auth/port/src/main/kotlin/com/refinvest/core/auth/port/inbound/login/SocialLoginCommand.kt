@@ -1,6 +1,6 @@
 package com.refinvest.core.auth.port.inbound.login
 
-import com.refinvest.core.auth.domain.SocialProvider
+import com.refinvest.core.auth.domain.valueobject.SocialProvider
 
 data class SocialLoginCommand(
     val provider: SocialProvider,

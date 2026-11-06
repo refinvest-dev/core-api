@@ -1,13 +1,12 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import org.springframework.beans.factory.annotation.Value
-import org.springframework.scheduling.annotation.Scheduled
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.LegacyTradingTemporaryCopies
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingResultSpoolCleanup
+
 import org.springframework.stereotype.Component
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.time.Clock
-import java.time.Duration
 
 /** Only ciphertext is written here. The per-download key is held in process memory. */
 internal object NormalizationResultSpool {
@@ -20,6 +19,8 @@ internal object NormalizationResultSpool {
     }
 
     fun cleanupOlderThan(cutoff: java.time.Instant): Int = cleanupOlderThan(root, cutoff)
+
+    fun absent(): Boolean = !Files.exists(root) || Files.newDirectoryStream(root).use { !it.iterator().hasNext() }
 
     internal fun cleanupOlderThan(directory: Path, cutoff: java.time.Instant): Int {
         if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) return 0
@@ -37,15 +38,7 @@ internal object NormalizationResultSpool {
 }
 
 @Component
-class NormalizationResultSpoolSweeper(
-    private val clock: Clock,
-    @Value("\${refinvest.trading-review.normalization.delivery.spool-orphan-retention:PT24H}")
-    private val retention: Duration,
-) {
-    init {
-        require(!retention.isNegative && !retention.isZero && retention <= Duration.ofHours(24))
-    }
-
-    @Scheduled(fixedDelayString = "\${refinvest.trading-review.normalization.delivery.spool-sweep-delay-ms:3600000}")
-    fun sweep(): Int = NormalizationResultSpool.cleanupOlderThan(clock.instant().minus(retention))
+class LegacyNormalizationResultSpoolAdapter : LegacyTradingTemporaryCopies, TradingResultSpoolCleanup {
+    override fun cleanupOlderThan(cutoff: java.time.Instant) = NormalizationResultSpool.cleanupOlderThan(cutoff)
+    override fun absent() = NormalizationResultSpool.absent()
 }

@@ -88,6 +88,7 @@ class JpaBacktestComputeDispatchStoreAdapterMetricsTest {
         Mockito.`when`(store.findClaimable(now.plusSeconds(6), status, PageRequest.of(0, 1))).thenReturn(listOf(entity))
         Mockito.`when`(store.findClaimable(now.plusSeconds(17), status, PageRequest.of(0, 1))).thenReturn(listOf(entity))
         Mockito.`when`(store.findById(BacktestRunId(42L).value)).thenReturn(Optional.of(entity))
+        Mockito.`when`(store.findByIdForUpdate(42L)).thenReturn(entity)
         val registry = SimpleMeterRegistry()
         return Fixture(JpaBacktestComputeDispatchStoreAdapter(store, registry), registry)
     }

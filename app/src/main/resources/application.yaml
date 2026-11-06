@@ -9,7 +9,7 @@ spring:
     password: ${DATABASE_PASSWORD}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: true
   flyway:
     baseline-on-migrate: true
@@ -31,11 +31,12 @@ management:
         include: health
   endpoint:
     health:
-      show-details: always
+      show-details: never
+      show-components: never
 
 refinvest:
   id:
-    node-id: ${SNOWFLAKE_NODE_ID:0}
+    node-id: ${SNOWFLAKE_NODE_ID}
   security:
     issuer: ${REFINVEST_JWT_ISSUER}
     audience: ${REFINVEST_JWT_AUDIENCE}
@@ -47,6 +48,8 @@ refinvest:
     enabled: ${REFINVEST_COMPUTE_ENABLED:false}
     base-url: ${COMPUTE_API_BASE_URL:http://localhost:8000}
     api-key: ${COMPUTE_API_KEY:}
+    connect-timeout: ${COMPUTE_CONNECT_TIMEOUT:PT2S}
+    read-timeout: ${COMPUTE_READ_TIMEOUT:PT20S}
     dispatch-delay: ${COMPUTE_DISPATCH_DELAY:5000}
     poll-delay: ${COMPUTE_POLL_DELAY:5000}
   trading-review:

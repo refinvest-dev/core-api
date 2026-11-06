@@ -1,16 +1,14 @@
 package com.refinvest.core.auth.port.outbound.persistence
 
 import com.refinvest.core.auth.domain.RefreshSession
-import java.time.Instant
+import com.refinvest.core.auth.domain.valueobject.RefreshSessionRotation
 import java.util.UUID
 
 interface RefreshSessionStore {
+    /** A snapshot; rotate must verify the expected state atomically before accepting it. */
     fun findByJti(jti: UUID): RefreshSession?
-
+    /** Append a new credential. Lifecycle changes use rotate/revokeFamily, never an overwrite. */
     fun save(session: RefreshSession)
-
-    /** Atomically marks [current] as rotated and stores [replacement]. */
-    fun rotate(current: RefreshSession, replacement: RefreshSession, revokedAt: Instant): Boolean
-
-    fun revokeFamily(familyId: UUID, revokedAt: Instant)
+    fun rotate(rotation: RefreshSessionRotation): Boolean
+    fun revokeFamily(revocation: RefreshFamilyRevocation)
 }

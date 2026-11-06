@@ -1,10 +1,25 @@
 package com.refinvest.core.tradingreview.adapter.compute
 
-import com.refinvest.core.tradingreview.domain.NormalizationDispatch
-import com.refinvest.core.tradingreview.domain.NormalizationInputCanonicalizer
-import com.refinvest.core.tradingreview.domain.NormalizationRun
-import com.refinvest.core.tradingreview.domain.NormalizationResultDeliveryPolicy
-import com.refinvest.core.tradingreview.port.*
+import com.refinvest.core.tradingreview.port.outbound.artifactgrant.ArtifactReadGrant
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationGrantUpdate
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationJobStatus
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationStatusLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.NormalizationSubmission
+import com.refinvest.core.tradingreview.port.outbound.compute.normalization.TradingNormalizationComputeClient
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationAckOutcome
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationPayloadLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultDescriptor
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.result.TradingNormalizationResultClient
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationPayloadAcknowledgement
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactScope
+import com.refinvest.core.tradingreview.port.outbound.storage.workspace.TradingArtifactWorkspaces
+
+import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultDeliveryPolicy
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationResultVersionPin
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.MediaType
@@ -15,7 +30,7 @@ import tools.jackson.databind.ObjectMapper
 import java.net.http.HttpClient
 import java.time.Duration
 import java.time.Instant
-import java.nio.file.Files
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
 import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.util.HexFormat
@@ -30,23 +45,26 @@ class RestClientTradingNormalizationClient private constructor(
     private val apiKey: String,
     private val mapper: ObjectMapper,
     private val client: RestClient,
+    private val workspaces: TradingArtifactWorkspaces,
 ) : TradingNormalizationComputeClient, TradingNormalizationResultClient {
     @Autowired
     constructor(@Value("\${refinvest.compute.base-url:http://localhost:8000}") baseUrl: String,
                 @Value("\${REFINVEST_INTERNAL_API_KEY:}") apiKey: String,
-                mapper: ObjectMapper) : this(apiKey, mapper, RestClient.builder().baseUrl(baseUrl)
+                mapper: ObjectMapper, workspaces: TradingArtifactWorkspaces) : this(apiKey, mapper, RestClient.builder().baseUrl(baseUrl)
         .requestFactory(JdkClientHttpRequestFactory(HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1).build()).apply {
             setReadTimeout(Duration.ofSeconds(20))
-        }).build())
+        }).build(), workspaces)
 
     companion object {
-        internal fun withClient(apiKey: String, mapper: ObjectMapper, client: RestClient) =
-            RestClientTradingNormalizationClient(apiKey, mapper, client)
+        internal fun withClient(apiKey: String, mapper: ObjectMapper, client: RestClient, workspaces: TradingArtifactWorkspaces) =
+            RestClientTradingNormalizationClient(apiKey, mapper, client, workspaces)
     }
 
     override fun submit(run: NormalizationRun, dispatch: NormalizationDispatch,
                         grants: List<ArtifactReadGrant>): NormalizationSubmission {
+        if (run.resultVersionPin != dispatch.resultVersionPin)
+            return NormalizationSubmission.Rejected("RESULT_VERSION_PIN_MISMATCH")
         if (apiKey.isBlank()) return NormalizationSubmission.Rejected("INTERNAL_AUTHENTICATION_FAILED")
         val body = try { body(run, dispatch, grants) }
             catch (_: Exception) { return NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID") }
@@ -60,24 +78,34 @@ class RestClientTradingNormalizationClient private constructor(
                         202 -> {
                             val accepted = response.bodyTo(String::class.java)?.let(mapper::readTree)
                             val jobId = accepted?.path("jobId")?.asText()
+                            val pinError = pinFailure(accepted?.path("resultSchemaVersion")?.asText() ?: "",
+                                accepted?.path("resultHashSpecificationVersion")?.asText() ?: "", run)
                             if (jobId.isNullOrBlank() || accepted.path("coreLogicalJobId").asText() != dispatch.id)
                                 NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID")
+                            else if (pinError != null) NormalizationSubmission.Rejected(pinError)
                             else NormalizationSubmission.Accepted(jobId)
                         }
-                        503, 429 -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE",
-                            response.headers.getFirst("Retry-After")?.toLongOrNull()?.let(Duration::ofSeconds))
+                        503, 429 -> {
+                            val failure = response.bodyTo(String::class.java)?.let(mapper::readTree)
+                            val retrySeconds = response.headers.getFirst("Retry-After")?.toLongOrNull()
+                            val definitelyRejected = response.statusCode.value() == 503 &&
+                                failure?.path("code")?.asText() == "TRADING_REVIEW_CAPACITY_EXCEEDED" &&
+                                retrySeconds != null && retrySeconds > 0
+                            NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE",
+                                retrySeconds?.let(Duration::ofSeconds), outcomeUnknown = !definitelyRejected)
+                        }
                         409 -> NormalizationSubmission.Rejected(
                             response.bodyTo(String::class.java)?.let { safeCode(it) }
                                 ?: "IDEMPOTENCY_PAYLOAD_CONFLICT")
                         401, 403 -> NormalizationSubmission.Rejected("INTERNAL_AUTHENTICATION_FAILED")
                         400, 422 -> NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID")
-                        in 500..599 -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+                        in 500..599 -> NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE", outcomeUnknown = true)
                         else -> NormalizationSubmission.Rejected("INTERNAL_REQUEST_CONTRACT_INVALID")
                     }
                 }
         } catch (_: Exception) {
-            // Never log the request or an exception: transport errors can contain a signed URI.
-            NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE")
+            // The server may have accepted the exact identity before the response was lost.
+            NormalizationSubmission.Retry("TEMPORARY_DEPENDENCY_FAILURE", outcomeUnknown = true)
         }
     }
 
@@ -97,10 +125,13 @@ class RestClientTradingNormalizationClient private constructor(
                                 identity.targetVersionSet.toWireValue())
                             if (body.path("jobId").asText() != jobId ||
                                 body.path("coreLogicalJobId").asText() != dispatch.id ||
-                                body.path("coreNormalizationRunId").asText() != run.id ||
+                                body.path("coreNormalizationRunId").asText() != run.id.value ||
                                 body.path("hashSpecificationVersion").asText() != identity.hashSpecificationVersion ||
                                 body.path("targetVersionSet") != versions)
                                 return@exchange NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
+                            val pinError = pinFailure(body.path("resultSchemaVersion").asText(),
+                                body.path("resultHashSpecificationVersion").asText(), run)
+                            if (pinError != null) return@exchange NormalizationStatusLookup.Rejected(pinError)
                             NormalizationStatusLookup.Found(NormalizationJobStatus(jobId,
                                 body.path("status").asText(), body.path("attemptToken").asText(),
                                 body.path("deletionGeneration").asLong(), body.path("grantRevision").asLong(),
@@ -109,7 +140,8 @@ class RestClientTradingNormalizationClient private constructor(
                                 body.path("grantAction").asText("NONE"),
                                 body.path("grantRefreshDeadlineAt").takeIf { !it.isNull && !it.isMissingNode }
                                     ?.asText()?.let(java.time.Instant::parse),
-                                body.path("failure").path("code").takeIf { !it.isMissingNode }?.asText()))
+                                body.path("failure").path("code").takeIf { !it.isMissingNode }?.asText(),
+                                run.resultVersionPin))
                         }
                         401, 403 -> NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
                         400, 422 -> NormalizationStatusLookup.Rejected("INTERNAL_ERROR")
@@ -194,6 +226,9 @@ class RestClientTradingNormalizationClient private constructor(
         if (apiKey.isBlank()) return NormalizationPayloadLookup.Rejected("INTERNAL_AUTHENTICATION_FAILED")
         if (descriptor.byteSize > policy.maxAcceptedPayloadBytes)
             return NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LIMIT_EXCEEDED")
+        val lease = try { workspaces.acquire(TradingArtifactScope.Run(NormalizationRunId(descriptor.runId))) }
+            catch (_: Exception) { return NormalizationPayloadLookup.Retry("RESULT_PAYLOAD_STREAM_ABORTED") }
+        var handedOff = false
         return try {
             client.get().uri("/trading-review/terminal-payloads/{payloadId}", descriptor.payloadId)
                 .header("X-Internal-Api-Key", apiKey)
@@ -212,20 +247,21 @@ class RestClientTradingNormalizationClient private constructor(
                                 return@exchange NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LIMIT_EXCEEDED")
                             if (headerLength >= 0 && headerLength != descriptor.byteSize)
                                 return@exchange NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LENGTH_MISMATCH")
-                            val path = NormalizationResultSpool.create()
+                            val file = lease.createTemporary()
+                            val random = SecureRandom()
+                            val spoolKey = ByteArray(32).also(random::nextBytes)
+                            val spoolIv = ByteArray(12).also(random::nextBytes)
                             try {
-                                val random = SecureRandom()
-                                val spoolKey = ByteArray(32).also(random::nextBytes)
-                                val spoolIv = ByteArray(12).also(random::nextBytes)
                                 val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                                 cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(spoolKey, "AES"),
                                     GCMParameterSpec(128, spoolIv))
                                 val digest = MessageDigest.getInstance("SHA-256")
                                 val size = DigestInputStream(response.body, digest).use { input ->
-                                    CipherOutputStream(Files.newOutputStream(path), cipher).use { output ->
+                                    CipherOutputStream(file.openOutput(), cipher).use { output ->
                                         val buffer = ByteArray(8192)
                                         var total = 0L
                                         while (true) {
+                                            lease.checkActive()
                                             val count = input.read(buffer)
                                             if (count < 0) break
                                             total += count
@@ -239,17 +275,19 @@ class RestClientTradingNormalizationClient private constructor(
                                         total
                                     }
                                 }
-                                NormalizationPayloadLookup.Found(NormalizationPayloadFile(path, size,
+                                handedOff = true
+                                NormalizationPayloadLookup.Found(EncryptedNormalizationPayload(file, lease, size,
                                     HexFormat.of().formatHex(digest.digest()), spoolKey, spoolIv))
                             } catch (_: PayloadTooLarge) {
-                                Files.deleteIfExists(path)
                                 NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LIMIT_EXCEEDED")
                             } catch (_: PayloadLengthMismatch) {
-                                Files.deleteIfExists(path)
                                 NormalizationPayloadLookup.Rejected("RESULT_PAYLOAD_LENGTH_MISMATCH")
                             } catch (_: Exception) {
-                                Files.deleteIfExists(path)
                                 NormalizationPayloadLookup.Retry("RESULT_PAYLOAD_STREAM_ABORTED")
+                            } finally {
+                                if (!handedOff) {
+                                    try { file.close() } finally { spoolKey.fill(0); spoolIv.fill(0) }
+                                }
                             }
                         }
                         401, 403 -> NormalizationPayloadLookup.Rejected("INTERNAL_AUTHENTICATION_FAILED")
@@ -258,6 +296,7 @@ class RestClientTradingNormalizationClient private constructor(
                     }
                 }
         } catch (_: Exception) { NormalizationPayloadLookup.Retry("TEMPORARY_DEPENDENCY_FAILURE") }
+        finally { if (!handedOff) lease.close() }
     }
 
     private class PayloadTooLarge : RuntimeException()
@@ -300,6 +339,13 @@ class RestClientTradingNormalizationClient private constructor(
         }
     } catch (_: Exception) { null }
 
+    private fun pinFailure(schema: String, hash: String, run: NormalizationRun): String? = when {
+        !NormalizationResultVersionPin.isSupported(schema, hash) -> "RESULT_SCHEMA_UNSUPPORTED"
+        schema != run.resultVersionPin.schemaVersion ||
+            hash != run.resultVersionPin.hashSpecificationVersion -> "RESULT_VERSION_PIN_MISMATCH"
+        else -> null
+    }
+
     private fun body(run: NormalizationRun, dispatch: NormalizationDispatch,
                      grants: List<ArtifactReadGrant>): Map<String, Any> {
         val input = run.input
@@ -323,13 +369,15 @@ class RestClientTradingNormalizationClient private constructor(
         })
         return mapOf(
             "coreLogicalJobId" to dispatch.id,
-            "coreNormalizationRunId" to run.id,
+            "coreNormalizationRunId" to run.id.value,
             "coreImportSessionId" to input.importSessionId.value.toString(),
             "inputIdentity" to identity.toWireValue(),
             "artifactAccessGrants" to grantValues,
             "pinnedInstrumentTerms" to terms,
             "expectedInputSetHash" to run.inputFingerprint,
             "resultDeliveryPolicy" to deliveryPolicy.toWireValue(),
+            "resultSchemaVersion" to run.resultVersionPin.schemaVersion,
+            "resultHashSpecificationVersion" to run.resultVersionPin.hashSpecificationVersion,
             "retryPolicyVersion" to input.retryPolicyVersion,
             "deletionGeneration" to input.deletionGeneration,
             "attemptToken" to run.attemptToken)

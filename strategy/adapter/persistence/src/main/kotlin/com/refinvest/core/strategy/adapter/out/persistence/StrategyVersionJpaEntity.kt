@@ -30,7 +30,7 @@ class StrategyVersionJpaEntity(
     var lag: Int,
     @Column(name = "holding_signal_sessions", nullable = false)
     var holdingSignalSessions: Int,
-    @OneToMany(mappedBy = "strategyVersion", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "strategyVersion", cascade = [CascadeType.PERSIST], fetch = FetchType.EAGER)
     @OrderBy("conditionOrder")
     var conditions: MutableList<ConditionJpaEntity> = mutableListOf(),
 )

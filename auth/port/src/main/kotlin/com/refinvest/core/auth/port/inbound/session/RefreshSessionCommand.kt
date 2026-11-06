@@ -1,11 +1,5 @@
 package com.refinvest.core.auth.port.inbound.session
 
-import com.refinvest.core.shared.kernel.member.MemberId
-import java.util.UUID
-
-data class RefreshSessionCommand(
-    val jti: UUID,
-    val memberId: MemberId,
-    val familyId: UUID,
-    val tokenFingerprint: String,
-)
+class RefreshSessionCommand(val rawRefreshToken: String?) {
+    override fun toString(): String = "RefreshSessionCommand(redacted)"
+}

@@ -1,23 +1,50 @@
 package com.refinvest.core.tradingreview.application
 
+import com.refinvest.core.tradingreview.port.inbound.normalization.cleanup.CleanupTradingNormalizationStagingUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.receive.ReceiveTradingNormalizationResultUseCase
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationPayloadLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultDescriptor
+import com.refinvest.core.tradingreview.port.outbound.compute.result.NormalizationResultLookup
+import com.refinvest.core.tradingreview.port.outbound.compute.result.TradingNormalizationResultClient
+import com.refinvest.core.tradingreview.port.outbound.identity.LedgerRevisionIdGenerator
+import com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingRetryJitter
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingBookStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingImportSessionStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.LedgerPublication
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.TradingLedgerPublication
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationDispatchLease
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationResultStoreFailure
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationStagedItem
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationResultStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationRuntime
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationTransitionGate
+
+import com.refinvest.core.tradingreview.domain.valueobject.NormalizationRunId
+import com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionResult
+import com.refinvest.core.tradingreview.domain.valueobject.LedgerSectionDigest
+import com.refinvest.core.tradingreview.domain.valueobject.LedgerRevisionMetadata
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationDispatch
+import com.refinvest.core.tradingreview.domain.importsession.NormalizationRun
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
-import com.refinvest.core.tradingreview.port.*
-import org.springframework.stereotype.Service
-import org.springframework.beans.factory.annotation.Value
-import org.springframework.transaction.support.TransactionTemplate
-import tools.jackson.databind.ObjectMapper
-import tools.jackson.databind.json.JsonMapper
-import tools.jackson.core.StreamReadFeature
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportFailure
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingLifecycleStatus
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import kotlin.math.min
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionTemplate
+import tools.jackson.core.StreamReadFeature
+import tools.jackson.databind.ObjectMapper
+import tools.jackson.databind.json.JsonMapper
 
 @Service
 class TradingNormalizationResultProcessor(
-    private val runs: TradingNormalizationStore,
+    private val runs: TradingNormalizationRuntime,
     private val sessions: TradingImportSessionStore,
     private val books: TradingBookStore,
     private val results: TradingNormalizationResultStore,
@@ -26,6 +53,9 @@ class TradingNormalizationResultProcessor(
     private val clock: Clock,
     private val mapper: ObjectMapper,
     private val jitter: TradingRetryJitter,
+    private val transition: TradingNormalizationTransitionGate,
+    private val publications: TradingLedgerPublication,
+    private val revisionIds: LedgerRevisionIdGenerator,
     @Value("\${refinvest.trading-review.normalization.delivery.parser-max-depth:64}")
     parserMaxDepth: Int = 64,
     @Value("\${refinvest.trading-review.normalization.delivery.parser-max-string-length:1048576}")
@@ -36,7 +66,7 @@ class TradingNormalizationResultProcessor(
     parserMaxTokenCount: Long = 5_000_000,
     @Value("\${refinvest.trading-review.normalization.delivery.stage-batch-size:100}")
     private val stageBatchSize: Int = 100,
-) {
+) : ReceiveTradingNormalizationResultUseCase, CleanupTradingNormalizationStagingUseCase {
     init { require(stageBatchSize > 0) }
     private val strictResultMapper = JsonMapper.builder()
         .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build()
@@ -45,12 +75,12 @@ class TradingNormalizationResultProcessor(
             parserMaxNameLength, parserMaxTokenCount))
     private val stagedVerifier = NormalizationStagedResultVerifier(results, strictResultMapper,
         stageBatchSize)
-    fun processOne(): Boolean {
+    override fun processOne(): Boolean {
         val worker = UUID.randomUUID().toString()
         val dispatch = transactions.execute {
             results.claimReady(clock.instant(), Duration.ofMinutes(15), worker)
         } ?: return false
-        val run = runs.findRun(dispatch.runId) ?: return true
+        val run = runs.findRun(NormalizationRunId(dispatch.runId)) ?: return true
         val session = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId))
         if (session == null || !isCurrent(run, session)) {
             obsolete(run, dispatch, worker)
@@ -60,13 +90,13 @@ class TradingNormalizationResultProcessor(
             terminal(run, dispatch, worker, "RESULT_SCHEMA_UNSUPPORTED")
             return true
         }
-        val savedBase = results.loadStageBase(run.id)
+        val savedBase = results.loadStageBase(run.id.value)
         val currentStageFormat = savedBase?.let {
             strictResultMapper.readTree(it).path(NormalizationResultStreamingReader.STAGE_FORMAT_FIELD)
                 .asText() == NormalizationResultStreamingReader.STREAM_STAGE_FORMAT
         } == true
         val locallyStaged = results.loadStageDescriptor(run, dispatch)
-            ?.takeIf { currentStageFormat && stageComplete(run.id, it) }
+            ?.takeIf { currentStageFormat && stageComplete(run.id.value, it) }
         val descriptor = locallyStaged ?: when (val lookup = compute.descriptor(jobId)) {
             is NormalizationResultLookup.Found -> lookup.descriptor
             is NormalizationResultLookup.Retry -> {
@@ -90,13 +120,13 @@ class TradingNormalizationResultProcessor(
         if (savedBase != null && !currentStageFormat) {
             val cleared = transactions.execute {
                 if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) false
-                else { results.discardStage(run.id); true }
+                else { results.discardStage(run.id.value); true }
             } == true
             if (!cleared) return true
         }
         var verified: VerifiedStagedResult? = null
         var failure: String? = null
-        if (currentStageFormat && savedBase != null && stageComplete(run.id, descriptor)) {
+        if (currentStageFormat && savedBase != null && stageComplete(run.id.value, descriptor)) {
             try {
                 @Suppress("UNCHECKED_CAST")
                 val base = strictResultMapper.readValue(savedBase, Map::class.java) as Map<String, Any?>
@@ -135,7 +165,7 @@ class TradingNormalizationResultProcessor(
                                 transactions.execute {
                                     if (!results.hasReadyLease(dispatch.id, worker, clock.instant()))
                                         throw LeaseLost()
-                                    results.stageItems(run.id, batch)
+                                    results.stageItems(run.id.value, batch)
                                 }
                                 batch.clear()
                             }
@@ -150,11 +180,15 @@ class TradingNormalizationResultProcessor(
                                     if (batch.size >= stageBatchSize) flush()
                                 }
                             }
+                            if (base["resultSchemaVersion"] != run.resultVersionPin.schemaVersion ||
+                                base["resultHashSpecificationVersion"] !=
+                                    run.resultVersionPin.hashSpecificationVersion)
+                                throw ResultIntegrityFailure("RESULT_VERSION_PIN_MISMATCH")
                             flush()
                             transactions.execute {
                                 if (!results.hasReadyLease(dispatch.id, worker, clock.instant()))
                                     throw LeaseLost()
-                                results.saveStageBase(run.id, mapper.writeValueAsString(base))
+                                results.saveStageBase(run.id.value, mapper.writeValueAsString(base))
                             }
                             val result = stagedVerifier.verify(base, run, dispatch.id)
                             comparePayloadDescriptor(result, descriptor)
@@ -189,28 +223,44 @@ class TradingNormalizationResultProcessor(
         }
         if (verified == null) return true
         try {
-            val persistedBaseJson = results.loadStageBase(run.id)
+            val persistedBaseJson = results.loadStageBase(run.id.value)
                 ?: throw ResultIntegrityFailure("RESULT_COUNT_MISMATCH")
             @Suppress("UNCHECKED_CAST")
             val persistedBase = strictResultMapper.readValue(persistedBaseJson, Map::class.java)
                 as Map<String, Any?>
             val independentlyVerified = stagedVerifier.verify(persistedBase, run, dispatch.id)
             comparePayloadDescriptor(independentlyVerified, descriptor)
-            val published = transactions.execute {
-                val locked = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId), true)
-                if (locked == null || !isCurrent(run, locked)) return@execute false
-                if (!results.hasReadyLease(dispatch.id, worker, clock.instant())) return@execute false
-                results.markValidated(run.id, clock.instant())
-                results.publish(run, dispatch, worker, descriptor,
-                    mapper.writeValueAsString(independentlyVerified.manifestBase),
+            val revision = LedgerRevision.prepare(revisionIds.revisionId(), MemberId(run.input.ownerId),
+                run.id, run.input.tradingBookId, run.input.importSessionId, requireNotNull(run.inputIdentity),
+                LedgerRevisionResult(run.resultVersionPin, independentlyVerified.resultHash,
+                    independentlyVerified.ledgerContentHash, independentlyVerified.manifestHash,
+                    independentlyVerified.counts, independentlyVerified.sectionDigests.map { item ->
+                        LedgerSectionDigest(item["sectionType"] as String, (item["itemCount"] as Number).toLong(),
+                            item["hashSpecificationVersion"] as String, item["sectionHash"] as String)
+                    }), LedgerRevisionMetadata(mapper.writeValueAsString(independentlyVerified.manifestBase),
                     mapper.writeValueAsString(independentlyVerified.coverages),
                     mapper.writeValueAsString(independentlyVerified.capabilities),
-                    mapper.writeValueAsString(independentlyVerified.qualityBase),
-                    independentlyVerified.ledgerContentHash, clock.instant())
+                    mapper.writeValueAsString(independentlyVerified.qualityBase)))
+            var transitionHeld = false
+            val published = transactions.execute {
+                if (!transition.publicationAllowed()) {
+                    transitionHeld = true
+                    results.retryReady(dispatch.id, worker, "NORMALIZATION_TRANSITION_PAUSED",
+                        clock.instant().plusSeconds(5), clock.instant())
+                    return@execute false
+                }
+                publications.publish(LedgerPublication(revision, run, dispatch, descriptor,
+                    NormalizationDispatchLease(dispatch.id, worker, clock.instant())))
             } == true
-            if (!published && transactions.execute {
-                    results.hasReadyLease(dispatch.id, worker, clock.instant()) } == true)
-                obsolete(run, dispatch, worker, descriptor)
+            if (!transitionHeld && !published && transactions.execute {
+                    results.hasReadyLease(dispatch.id, worker, clock.instant()) } == true) {
+                val current = sessions.find(run.input.importSessionId, MemberId(run.input.ownerId))
+                if (current != null && isCurrent(run, current) && current.artifacts.any { !clock.instant().isBefore(it.rawExpiresAt) }) {
+                    // Wait for the durable expiry generation/request. Do not invent a stale ACK at the old generation.
+                    transactions.execute { results.retryReady(dispatch.id, worker, "SOURCE_ARTIFACT_EXPIRED",
+                        clock.instant().plusSeconds(5), clock.instant()) }
+                } else obsolete(run, dispatch, worker, descriptor)
+            }
         } catch (_: LeaseLost) { return true }
         catch (error: ResultIntegrityFailure) { terminal(run, dispatch, worker, error.code) }
         catch (error: NormalizationResultStoreFailure) { terminal(run, dispatch, worker, error.safeCode) }
@@ -218,42 +268,7 @@ class TradingNormalizationResultProcessor(
         return true
     }
 
-    fun acknowledgeOne(): Boolean {
-        val worker = UUID.randomUUID().toString()
-        val ack = transactions.execute { results.claimAck(clock.instant(), Duration.ofSeconds(45), worker) }
-            ?: return false
-        val outcome = compute.acknowledge(ack)
-        transactions.execute {
-            val now = clock.instant()
-            when (outcome) {
-                NormalizationAckOutcome.Accepted -> results.completeAck(ack.idempotencyKey, worker, now)
-                is NormalizationAckOutcome.Rejected -> results.failAck(ack.idempotencyKey, worker,
-                    outcome.code, now)
-                NormalizationAckOutcome.Retry -> {
-                val pinned = mapper.readTree(ack.retryPolicyJson)
-                val attempts = pinned.path("maxAttempts").asInt()
-                val deadline = minOf(ack.payloadExpiresAt,
-                    ack.occurredAt.plus(Duration.parse(pinned.path("maxElapsedTime").asText())))
-                if (ack.attemptCount >= attempts || !now.isBefore(deadline)) {
-                    results.failAck(ack.idempotencyKey, worker, "RESULT_NOT_AVAILABLE", now)
-                    return@execute
-                }
-                val initial = Duration.parse(pinned.path("initialDelay").asText())
-                val maximum = Duration.parse(pinned.path("maxDelay").asText())
-                val scaled = min(initial.toMillis().toDouble() *
-                    (1L shl min(ack.attemptCount - 1, 20)), maximum.toMillis().toDouble())
-                val factor = if (pinned.path("jitter").asText() == "FULL_JITTER") jitter.factor() else 1.0
-                val next = now.plusMillis((scaled * factor).toLong().coerceAtLeast(0))
-                if (!next.isBefore(deadline))
-                    results.failAck(ack.idempotencyKey, worker, "RESULT_NOT_AVAILABLE", now)
-                else results.retryAck(ack.idempotencyKey, worker, next, now)
-                }
-            }
-        }
-        return true
-    }
-
-    fun cleanupObsoleteStaging(): Int = transactions.execute {
+    override fun cleanupObsoleteStaging(): Int = transactions.execute {
         results.cleanupObsoleteStages(100) + results.cleanupAcknowledgementsForDeletedSessions(100)
     } ?: 0
 
@@ -269,8 +284,12 @@ class TradingNormalizationResultProcessor(
         if (!supportedPair ||
             descriptor.inputHashSpecificationVersion != identity.hashSpecificationVersion)
             throw ResultIntegrityFailure("RESULT_SCHEMA_UNSUPPORTED")
+        if (dispatch.resultVersionPin != run.resultVersionPin ||
+            descriptor.resultSchemaVersion != run.resultVersionPin.schemaVersion ||
+            descriptor.resultHashSpecificationVersion != run.resultVersionPin.hashSpecificationVersion)
+            throw ResultIntegrityFailure("RESULT_VERSION_PIN_MISMATCH")
         if (descriptor.jobId != run.computeJobId || descriptor.logicalJobId != dispatch.id ||
-            descriptor.runId != run.id || descriptor.attemptToken != run.attemptToken ||
+            descriptor.runId != run.id.value || descriptor.attemptToken != run.attemptToken ||
             descriptor.deletionGeneration != run.input.deletionGeneration ||
             descriptor.inputSetHash != run.inputFingerprint ||
             !same(identity.targetVersionSet.toWireValue(), descriptor.targetVersionSet))
@@ -391,11 +410,11 @@ class TradingNormalizationResultProcessor(
     private fun failLocked(run: NormalizationRun, dispatch: NormalizationDispatch,
                            session: TradingImportSession, worker: String, code: String, now: Instant) {
         if (!runs.markTerminal(dispatch.id, worker, code, now)) return
-        results.discardStage(run.id)
+        results.discardStage(run.id.value)
         val failure = TradingImportFailure(code, false, "WAIT_FOR_RECOVERY", now)
-        val failed = session.failValidation(run.id, run.input.deletionGeneration, failure, now) ?: return
+        val failed = session.failValidation(run.id.value, run.input.deletionGeneration, failure, now) ?: return
         check(sessions.update(failed))
-        runs.audit(run.id, "PROCESSING_FAILED", code, now)
+        runs.audit(run.id.value, "PROCESSING_FAILED", code, now)
     }
 
     private fun isCurrent(run: NormalizationRun, session: TradingImportSession): Boolean =
@@ -438,7 +457,7 @@ class TradingNormalizationResultProcessor(
             val now = clock.instant()
             if (verifiedDescriptor == null ||
                 !results.discardStale(run, dispatch, worker, verifiedDescriptor, now)) {
-                if (runs.markObsolete(dispatch.id, worker, now)) results.discardStage(run.id)
+                if (runs.markObsolete(dispatch.id, worker, now)) results.discardStage(run.id.value)
             }
         }
     }

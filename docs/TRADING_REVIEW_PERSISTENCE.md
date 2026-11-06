@@ -330,6 +330,9 @@ state, idempotency, generation/hash 검증과 retry로 연결한다.
 
 ### 7.4 Deletion
 
+Normalization Run tombstone·실행 자원·부재 확인 receipt의 추가 경계는
+[`TRADING_RUNTIME_DELETION.md`](TRADING_RUNTIME_DELETION.md)를 따른다.
+
 1. **Deletion commit transaction**: owner/scope equivalence를 검증하고 generation 증가, tombstone,
    `DeletionRequest(REQUESTED)`, fixed purge checklist를 함께 commit한다. 이 순간 normal access와 신규 job/retry를
    막는다.
@@ -341,6 +344,12 @@ state, idempotency, generation/hash 검증과 retry로 연결한다.
 4. 모든 live component absent verification 뒤에만 `COMPLETED`; partial/error는 access block을 유지한
    `FAILED`다. backup expiry는 별도 `backupPurgeDueAt`로 추적한다.
 5. 늦은 terminal result는 current generation/tombstone 검사에서 거절하고 payload cleanup을 acknowledge한다.
+
+요청 시 Account→Book→Session의 기존 command 잠금과 동일 transaction에서 scope inventory를 집계하고,
+일곱 affected resource count와 snapshot provenance를 DeletionRequest에 고정한다. 전체 row를 application 메모리에
+적재하지 않고 DB 집계를 사용한다. 자원 수는 요청 시점 scope membership이며 실제 제거된 row 수나 완료 증거가 아니다.
+재시도·조회·purge 후 replay·remediation은 원 요청의 count와 provenance를 유지한다. migration은 기존 count를
+변경하지 않고 LEGACY_PARTIAL로 보존한다. 사후 live row 수로 과거 snapshot을 만들거나 count를 늘리지 않는다.
 
 ### 7.5 Compute normalization grant/attempt
 

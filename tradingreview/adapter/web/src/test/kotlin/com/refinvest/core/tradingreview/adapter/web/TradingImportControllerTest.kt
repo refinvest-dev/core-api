@@ -1,15 +1,47 @@
 package com.refinvest.core.tradingreview.adapter.web
 
+import com.refinvest.core.tradingreview.adapter.web.artifact.TradingSourceArtifactController
+import com.refinvest.core.tradingreview.adapter.web.error.TradingReviewExceptionHandler
+import com.refinvest.core.tradingreview.adapter.web.importsession.TradingBookImportController
+import com.refinvest.core.tradingreview.adapter.web.importsession.TradingImportFailureResponse
+import com.refinvest.core.tradingreview.adapter.web.importsession.TradingImportSessionController
+import com.refinvest.core.tradingreview.adapter.web.importsession.TradingImportSessionResponse
+
+import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.inbound.importsession.PublishedLedgerResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingImportSessionView
+import com.refinvest.core.tradingreview.port.inbound.importsession.TradingSourceArtifactResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.create.CreateTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.delete.DeleteTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.deleteartifact.DeleteTradingSourceArtifactCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.deleteartifact.DeleteTradingSourceArtifactUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.get.GetTradingImportSessionQuery
+import com.refinvest.core.tradingreview.port.inbound.importsession.get.GetTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.list.ListTradingImportsQuery
+import com.refinvest.core.tradingreview.port.inbound.importsession.list.ListTradingImportsUseCase
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadArtifactResult
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadTradingImportArtifactCommand
+import com.refinvest.core.tradingreview.port.inbound.importsession.upload.UploadTradingImportArtifactUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.retry.RetryTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.normalization.retry.RetryTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.normalization.validate.ValidateTradingImportSessionCommand
+import com.refinvest.core.tradingreview.port.inbound.normalization.validate.ValidateTradingImportSessionUseCase
+import com.refinvest.core.tradingreview.port.inbound.pagination.TradingPage
+
 import com.refinvest.core.shared.kernel.member.MemberId
 import com.refinvest.core.tradingreview.domain.*
-import com.refinvest.core.tradingreview.port.*
-import org.springframework.test.web.servlet.setup.MockMvcBuilders
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
-import tools.jackson.databind.json.JsonMapper
+import com.refinvest.core.tradingreview.domain.importsession.TradingSourceArtifact
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRetentionStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingArtifactRole
+import com.refinvest.core.tradingreview.domain.valueobject.TradingBookId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportFailure
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportSessionId
+import com.refinvest.core.tradingreview.domain.valueobject.TradingImportStatus
+import com.refinvest.core.tradingreview.domain.valueobject.TradingPositionMode
+import com.refinvest.core.tradingreview.domain.valueobject.TradingSourceArtifactId
 import java.io.InputStream
 import java.security.MessageDigest
 import java.time.Clock
@@ -17,57 +49,83 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.test.web.servlet.setup.MockMvcBuilders
+import tools.jackson.databind.json.JsonMapper
 
 class TradingImportControllerTest {
     private val now = Instant.parse("2026-01-01T00:00:00Z")
     private val mapper = JsonMapper.builder().build()
-    private val session = TradingImportSession(TradingImportSessionId(10), TradingBookId(20), MemberId(30),
+    private val session = TradingImportSession.restore(TradingImportSessionId(10), TradingBookId(20), MemberId(30),
         "UTC", "Asia/Seoul", TradingPositionMode.ONE_WAY, "TRADING_DATA_POLICY_V1", "TRADING_RETENTION_V1",
         "SOURCE_EVIDENCE_MASK_V1", "BOOK_LIFECYCLE", "TRADING_DELETION_V1",
         "{\"versionSetHash\":\"exact\"}", TradingImportStatus.RECEIVED, 0, false, now, now, 0)
     private var currentSession = session
-    private var published: PublishedLedgerSummary? = null
+    private var published: PublishedLedgerResult? = null
     private val artifacts = mutableListOf<TradingSourceArtifact>()
     private val deletion = TradingDeletion(90, MemberId(30), "TRADING_IMPORT_SESSION", 10,
         "IMPORT_SESSION_SUBTREE", "REQUESTED", 1, 0, 0, now, now, now, now.plusSeconds(86400),
         importSessionCount = 1, artifactCount = 2)
-    private val imports = object : TradingImportUseCase {
-        override fun create(bookId: TradingBookId, sourceTimezone: String, reviewTimezone: String,
-                            mode: TradingPositionMode, dataPolicyVersion: String?, clientRequestReference: String?,
-                            key: String) = session
-        override fun get(id: TradingImportSessionId) = TradingImportSessionView(currentSession, artifacts.toList(), published)
-        override fun list(bookId: TradingBookId, page: Int, size: Int) = TradingPage(listOf(get(session.id)), page, size, 1)
-        override fun upload(id: TradingImportSessionId, role: TradingArtifactRole, filename: String,
-                            contentType: String, declaredSize: Long, declaredSha256: String,
-                            dialectCandidate: String, source: InputStream, key: String) =
-            uploadDeferred(id, source, key) {
-                TradingUploadMetadata(role, filename, contentType, declaredSize, declaredSha256, dialectCandidate)
-            }
-        override fun uploadDeferred(id: TradingImportSessionId, source: InputStream, key: String,
-                                    metadata: () -> TradingUploadMetadata): UploadArtifactResult {
+    private val imports = object : CreateTradingImportSessionUseCase, GetTradingImportSessionUseCase, ListTradingImportsUseCase,
+        UploadTradingImportArtifactUseCase, DeleteTradingImportSessionUseCase, DeleteTradingSourceArtifactUseCase {
+        override fun execute(command: CreateTradingImportSessionCommand) = TradingImportSessionResult.fromDomain(session)
+        override fun execute(query: GetTradingImportSessionQuery) = TradingImportSessionView.fromDomain(currentSession, artifacts.toList(), published, now)
+        override fun execute(query: ListTradingImportsQuery) = TradingPage(listOf(execute(GetTradingImportSessionQuery(session.id))), query.page, query.size, 1)
+        override fun execute(command: UploadTradingImportArtifactCommand): UploadArtifactResult {
+            val id = command.id
+            val source = command.source
+            val metadata = command.metadata
+
             val bytes = source.readAllBytes()
             val value = metadata()
             assertEquals(10L, id.value)
             assertEquals(bytes.size.toLong(), value.byteSize)
             assertEquals(sha(bytes), value.sha256)
-            val artifact = TradingSourceArtifact(TradingSourceArtifactId(40 + artifacts.size.toLong()), id,
+            val artifact = TradingSourceArtifact.restore(TradingSourceArtifactId(40 + artifacts.size.toLong()), id,
                 value.role, value.filename, value.contentType, value.byteSize, value.sha256, value.dialectCandidate,
                 "objects/00000000-0000-0000-0000-000000000040", byteArrayOf(1), "test-v1",
                 TradingArtifactRetentionStatus.ACTIVE, now, now.plusSeconds(86400), null, null, 0)
             artifacts.add(artifact)
-            return UploadArtifactResult(artifact, true)
-        }
-        override fun delete(id: TradingImportSessionId, key: String) = deletion
-        override fun deleteArtifact(id: TradingSourceArtifactId, key: String) = deletion
+            return UploadArtifactResult(TradingSourceArtifactResult.fromDomain(artifact, now), true)
+                }
+        override fun execute(command: DeleteTradingImportSessionCommand) = deletion
+        override fun execute(command: DeleteTradingSourceArtifactCommand) = deletion
+    }
+    private val normalization = object : ValidateTradingImportSessionUseCase, RetryTradingImportSessionUseCase {
+        override fun execute(command: ValidateTradingImportSessionCommand) = TradingImportSessionResult.fromDomain(session)
+        override fun execute(command: RetryTradingImportSessionCommand) = TradingImportSessionResult.fromDomain(session)
     }
     private val mvc = MockMvcBuilders.standaloneSetup(
-        TradingBookImportController(imports, mapper, Clock.fixed(now, ZoneOffset.UTC)),
-        TradingImportSessionController(imports, object : TradingNormalizationUseCase {
-            override fun validate(id: TradingImportSessionId, targetVersionSetJson: String?, key: String) = session
-            override fun retry(id: TradingImportSessionId, key: String) = session
-        }, mapper, Clock.fixed(now, ZoneOffset.UTC)),
+        TradingBookImportController(imports, imports, imports, mapper),
+        TradingImportSessionController(imports, normalization, normalization, imports, imports, mapper),
         TradingSourceArtifactController(imports),
     ).setControllerAdvice(TradingReviewExceptionHandler()).build()
+
+    private fun restoreSession(status: TradingImportStatus, failure: TradingImportFailure? = null) =
+        TradingImportSession.restore(session.id, session.bookId, session.owner, session.sourceTimezone,
+            session.reviewTimezone, session.declaredPositionMode, session.dataPolicyVersion, session.retentionPolicy,
+            session.maskingPolicyVersion, session.evidenceRetention, session.deletionPolicyVersion,
+            session.versionSetJson, status, 0, false, now, now, 0, failure = failure)
+
+    @Test
+    fun publicFailureUsesAWebDtoAndOnlyContractFields() {
+        assertEquals(TradingImportFailureResponse::class.java,
+            TradingImportSessionResponse::class.java.getDeclaredField("failure").type)
+        currentSession = restoreSession(TradingImportStatus.PROCESSING_FAILED,
+            TradingImportFailure("TEMPORARY_DEPENDENCY_FAILURE", true, "RETRY", now))
+        val response = mapper.readTree(mvc.perform(get("/trading-import-sessions/10"))
+            .andExpect(status().isOk).andReturn().response.contentAsString)
+        val failure = response.path("failure")
+        assertEquals(setOf("code", "retryable", "userAction", "occurredAt"), failure.propertyNames().toSet())
+        assertEquals("TEMPORARY_DEPENDENCY_FAILURE", failure.path("code").asText())
+        assertEquals(true, failure.path("retryable").asBoolean())
+        assertEquals("RETRY", failure.path("userAction").asText())
+        assertEquals(now.toString(), failure.path("occurredAt").asText())
+    }
 
     @Test
     fun createListGetAndDeleteFollowPublicShape() {
@@ -87,7 +145,7 @@ class TradingImportControllerTest {
 
     @Test
     fun terminalImportResponsesPreserveQualityNullAndAcceptedReport() {
-        currentSession = session.copy(status = TradingImportStatus.REJECTED,
+        currentSession = restoreSession(status = TradingImportStatus.REJECTED,
             failure = TradingImportFailure("REQUIRED_COLUMN_MISSING", false, "NONE", now))
         val rejected = mapper.readTree(mvc.perform(get("/trading-import-sessions/10"))
             .andExpect(status().isOk).andReturn().response.contentAsString)
@@ -98,7 +156,7 @@ class TradingImportControllerTest {
         assertEquals(true, rejected.hasNonNull("completedAt"))
         assertEquals(false, rejected.hasNonNull("createdLedgerRevisionId"))
 
-        currentSession = session.copy(status = TradingImportStatus.PROCESSING_FAILED,
+        currentSession = restoreSession(status = TradingImportStatus.PROCESSING_FAILED,
             failure = TradingImportFailure("RESULT_HASH_MISMATCH", false, "WAIT_FOR_RECOVERY", now))
         val failed = mapper.readTree(mvc.perform(get("/trading-import-sessions/10"))
             .andExpect(status().isOk).andReturn().response.contentAsString)
@@ -107,8 +165,8 @@ class TradingImportControllerTest {
         assertEquals(false, failed.hasNonNull("qualitySummary"))
         assertEquals(false, failed.hasNonNull("createdLedgerRevisionId"))
 
-        currentSession = session.copy(status = TradingImportStatus.ACCEPTED)
-        published = PublishedLedgerSummary("revision-1",
+        currentSession = restoreSession(status = TradingImportStatus.ACCEPTED)
+        published = PublishedLedgerResult("revision-1",
             """{"qualityStatus":"ACCEPTABLE","rowCountsByArtifactRole":{"TRADE_HISTORY":1},"ignoredNonTradingRowCounts":{},"validationIssues":[],"reconciliationStatusCounts":{},"excludedReasonCounts":{}}""",
             """["CLOSED_OUTCOME"]""", now)
         val accepted = mapper.readTree(mvc.perform(get("/trading-import-sessions/10"))

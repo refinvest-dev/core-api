@@ -1,12 +1,6 @@
 package com.refinvest.core.backtest.adapter.out.persistence
 
 import com.refinvest.core.backtest.domain.valueobject.BacktestRunId
-import com.refinvest.core.backtest.domain.valueobject.BacktestRunStatus
-import com.refinvest.core.backtest.domain.valueobject.DatasetSnapshotId
-import com.refinvest.core.backtest.domain.valueobject.EngineVersion
-import com.refinvest.core.backtest.domain.valueobject.FeeModel
-import com.refinvest.core.backtest.domain.valueobject.Percent
-import com.refinvest.core.backtest.domain.valueobject.Period
 import com.refinvest.core.backtest.domain.valueobject.StrategyVersionId
 import com.refinvest.core.backtest.domain.valueobject.StrategyId
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunReadModel
@@ -22,16 +16,16 @@ class JpaBacktestRunReaderAdapter(
     private val backtestRunJpaReader: BacktestRunJpaReader,
 ) : BacktestRunReader {
     override fun findById(id: BacktestRunId): BacktestRunReadModel? =
-        backtestRunJpaReader.findById(id.value)?.toReadModel()
+        backtestRunJpaReader.findById(id.value)?.let(BacktestRunReadModelMapper::toReadModel)
 
     override fun findLatestCompletedByStrategyVersionId(strategyVersionId: StrategyVersionId): BacktestRunReadModel? =
-        backtestRunJpaReader.findFirstByStrategyVersionIdAndStatusOrderByCreatedAtDesc(strategyVersionId.value, BacktestRunStatusJpa.COMPLETED)?.toReadModel()
+        backtestRunJpaReader.findFirstByStrategyVersionIdAndStatusOrderByCreatedAtDesc(strategyVersionId.value, BacktestRunStatusJpa.COMPLETED)?.let(BacktestRunReadModelMapper::toReadModel)
 
     override fun findLatestTerminalByStrategyVersionId(strategyVersionId: StrategyVersionId): BacktestRunReadModel? =
         backtestRunJpaReader.findFirstByStrategyVersionIdAndStatusInOrderByCreatedAtDesc(
             strategyVersionId.value,
             TERMINAL_STATUSES,
-        )?.toReadModel()
+        )?.let(BacktestRunReadModelMapper::toReadModel)
 
     override fun findByStrategyId(
         strategyId: StrategyId,
@@ -39,7 +33,7 @@ class JpaBacktestRunReaderAdapter(
         size: Int,
     ): BacktestRunPageReadModel = backtestRunJpaReader
         .findAllByStrategyIdOrderByCreatedAtDesc(strategyId.value, PageRequest.of(page, size))
-        .let { runs -> BacktestRunPageReadModel(runs.content.map { it.toReadModel() }, runs.totalElements) }
+        .let { runs -> BacktestRunPageReadModel(runs.content.map(BacktestRunReadModelMapper::toReadModel), runs.totalElements) }
 
     override fun countByMemberIdAndCreatedAtBetween(
         memberId: MemberId,
@@ -50,24 +44,6 @@ class JpaBacktestRunReaderAdapter(
         startInclusive = startInclusive,
         endExclusive = endExclusive,
     )
-
-    private fun BacktestRunJpaEntity.toReadModel(): BacktestRunReadModel =
-        BacktestRunReadModel(
-            id = BacktestRunId(id),
-            strategyId = StrategyId(strategyId),
-            strategyVersionId = StrategyVersionId(strategyVersionId),
-            requestedPeriod = Period(requestedPeriodStart, requestedPeriodEnd),
-            feeModel = FeeModel(Percent(commission), Percent(slippage)),
-            status = BacktestRunStatus.valueOf(status.name),
-            actualPeriod = actualPeriodStart?.let { start ->
-                Period(start, requireNotNull(actualPeriodEnd))
-            },
-            datasetSnapshotId = datasetSnapshotId?.let(::DatasetSnapshotId),
-            engineVersion = engineVersion?.let(::EngineVersion),
-            failureReason = failureReason,
-            errorCode = errorCode,
-            createdAt = createdAt,
-        )
 
     private companion object {
         val TERMINAL_STATUSES = listOf(BacktestRunStatusJpa.COMPLETED, BacktestRunStatusJpa.FAILED)

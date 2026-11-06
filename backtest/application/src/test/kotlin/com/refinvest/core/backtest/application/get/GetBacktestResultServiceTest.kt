@@ -129,6 +129,18 @@ class GetBacktestResultServiceTest {
         assertNull(service.execute(GetBacktestResultQuery(BacktestRunId(10L))))
     }
 
+    @Test
+    fun rejectsAResultFromAnotherDatasetSnapshot() {
+        val id = BacktestRunId(10)
+        val original = resultFor(id)
+        val mismatched = BacktestResult(original.backtestRunId, original.metrics, original.equityCurve, original.trades,
+            original.benchmark, original.signalExecutionMarketRelation, original.signalExecutionDelay, original.sampleSizeWarning,
+            original.dataIntegrityStatus.copy(datasetSnapshotId = DatasetSnapshotId("another-snapshot")))
+        val service = GetBacktestResultService(runReader { completedRun(it) }, BacktestResultReader { mismatched },
+            ownerLookup(MemberId(1)), BacktestMemberIdProvider { MemberId(1) })
+        assertFailsWith<IllegalArgumentException> { service.execute(GetBacktestResultQuery(id)) }
+    }
+
     private fun ownerLookup(ownerMemberId: MemberId): LookupStrategyVersionForBacktestUseCase =
         LookupStrategyVersionForBacktestUseCase {
             LookupStrategyVersionForBacktestResult(30L, ownerMemberId, setOf("QQQ"))

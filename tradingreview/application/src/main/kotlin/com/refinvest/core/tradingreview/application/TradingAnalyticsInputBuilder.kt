@@ -1,16 +1,23 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.*
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
-import tools.jackson.databind.ObjectMapper
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.outbound.member.TradingMemberProvider
+import com.refinvest.core.tradingreview.port.outbound.persistence.analytics.AnalyticsRevisionSource
+import com.refinvest.core.tradingreview.port.outbound.persistence.analytics.TradingAnalyticsRevisionReader
+import com.refinvest.core.tradingreview.port.outbound.storage.analytics.AnalyticsInputArtifact
+import com.refinvest.core.tradingreview.port.outbound.storage.analytics.TradingAnalyticsArtifactStore
+
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.HexFormat
 import java.util.UUID
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import tools.jackson.databind.ObjectMapper
 
-private fun unavailable(): Nothing = throw TradingFailure("ANALYTICS_INPUT_UNAVAILABLE", 422)
+private fun unavailable(): Nothing = throw TradingFailure("ANALYTICS_INPUT_UNAVAILABLE", TradingFailureKind.INPUT_REJECTED)
 
 data class PreparedAnalyticsInput(
     val ledgerRevisionId: String,
@@ -33,9 +40,9 @@ open class TradingAnalyticsInputBuilder(
     open fun prepare(revisionId: String): PreparedAnalyticsInput {
         try { UUID.fromString(revisionId) } catch (_: Exception) { unavailable() }
         val header = reader.find(revisionId, members.currentMemberId().value)
-            ?: throw TradingFailure("ANALYTICS_INPUT_UNAVAILABLE", 422)
+            ?: throw TradingFailure("ANALYTICS_INPUT_UNAVAILABLE", TradingFailureKind.INPUT_REJECTED)
         if (header.resultSchemaVersion != NormalizationResultVerifier.RESULT_SCHEMA_V2)
-            throw TradingFailure("ANALYTICS_INPUT_UNAVAILABLE", 422)
+            throw TradingFailure("ANALYTICS_INPUT_UNAVAILABLE", TradingFailureKind.INPUT_REJECTED)
         if (!validHash(header.ledgerContentHash) || !validHash(header.manifestHash))
             unavailable()
         val manifest = obj(header.manifestJson)

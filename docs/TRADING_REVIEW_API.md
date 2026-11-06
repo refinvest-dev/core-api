@@ -352,6 +352,9 @@ generation 검증을 통과한 final Core transaction에서 함께 publish한다
 
 ## 9. Deletion
 
+Normalization runtime의 생성 차단·실제 부재 확인은
+[`TRADING_RUNTIME_DELETION.md`](TRADING_RUNTIME_DELETION.md)를 따른다. 취소 접수나 job 404는 삭제 완료가 아니다.
+
 각 delete path가 target type/ID를 결정하므로 request body로 임의 target을 받지 않는다. `Idempotency-Key`가
 logical deletion request identity다. response/status는 다음을 반환한다.
 
@@ -364,6 +367,14 @@ logical deletion request identity다. response/status는 다음을 반환한다.
 storage path, object key와 provider error payload는 반환하지 않는다. delete transaction은 tombstone과
 generation 증가를 먼저 commit해 access/admission/retry를 즉시 차단한다. DB/object/runtime은 분산 transaction으로
 묶지 않고 checklist와 retry로 purge한다. `COMPLETED`는 live scope가 실제로 없을 때만 가능하다.
+
+`affectedResources`는 삭제 요청 transaction에서 고정한 logical resource 수다. Raw-only는 대상 artifact만,
+Session/Book/Account는 해당 scope의 Session/artifact/Revision 및 종속 Analysis/Reprocessing Run을 센다.
+NormalizationRun은 Session 소속이며 analysisRuns에 포함하지 않는다. replay·GET·purge·remediation은 원 요청의
+수를 재집계하거나 줄이지 않는다. 중첩 scope의 요청 수는 같은 자원을 포함할 수 있으므로 합산하지 않는다.
+선택형 `affectedResources.snapshotStatus`는 `REQUEST_TIME_SNAPSHOT | LEGACY_PARTIAL`이다. 누락도 LEGACY_PARTIAL로
+해석한다. 기존 부분 집계는 저장된 수를 보존하며 알 수 없는 수를 현재 live row로 복원하지 않는다. LEGACY_PARTIAL의
+0은 정확한 부재가 아니다. 이 수와 snapshot 상태는 component 부재 checkpoint나 완료 증거를 대체하지 않는다.
 
 ## 10. Internal Compute API와 job protocol
 

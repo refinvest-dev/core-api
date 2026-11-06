@@ -48,6 +48,7 @@ include(
     ":tradingreview:adapter:persistence",
     ":tradingreview:adapter:web",
     ":tradingreview:adapter:snowflake",
+    ":tradingreview:adapter:uuid",
     ":tradingreview:adapter:security",
     ":tradingreview:adapter:storage",
     ":tradingreview:adapter:compute",

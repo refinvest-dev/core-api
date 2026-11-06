@@ -1,7 +1,8 @@
 package com.refinvest.core.tradingreview.application
 
-import com.refinvest.core.tradingreview.port.NormalizationStagedItem
-import com.refinvest.core.tradingreview.port.TradingNormalizationResultStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationStagedItem
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.TradingNormalizationResultStore
+
 import tools.jackson.core.StreamReadFeature
 import tools.jackson.databind.json.JsonMapper
 import java.io.ByteArrayInputStream

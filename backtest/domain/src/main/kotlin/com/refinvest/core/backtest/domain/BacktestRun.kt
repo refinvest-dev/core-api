@@ -73,6 +73,7 @@ class BacktestRun private constructor(
     fun fail(failureReason: String, errorCode: String? = null) {
         require(status == BacktestRunStatus.RUNNING) { "BacktestRun can fail only from RUNNING" }
         require(failureReason.isNotBlank()) { "failureReason must not be blank" }
+        require(errorCode?.isNotBlank() != false) { "errorCode must not be blank" }
         status = BacktestRunStatus.FAILED
         this.failureReason = failureReason
         this.errorCode = errorCode
@@ -83,6 +84,7 @@ class BacktestRun private constructor(
     fun failWithoutExecution(failureReason: String, errorCode: String? = null) {
         require(status == BacktestRunStatus.PENDING) { "BacktestRun can fail without execution only from PENDING" }
         require(failureReason.isNotBlank()) { "failureReason must not be blank" }
+        require(errorCode?.isNotBlank() != false) { "errorCode must not be blank" }
         status = BacktestRunStatus.FAILED
         this.failureReason = failureReason
         this.errorCode = errorCode
@@ -112,6 +114,10 @@ class BacktestRun private constructor(
                     "COMPLETED BacktestRun requires Compute execution metadata"
                 }
                 require(result != null) { "COMPLETED BacktestRun requires a BacktestResult" }
+                require(result!!.backtestRunId == id) { "BacktestResult belongs to another BacktestRun" }
+                require(result!!.dataIntegrityStatus.datasetSnapshotId == datasetSnapshotId) {
+                    "BacktestResult datasetSnapshotId must match BacktestRun"
+                }
                 require(failureReason == null) { "COMPLETED BacktestRun must not have a failureReason" }
                 require(errorCode == null) { "COMPLETED BacktestRun must not have an errorCode" }
             }

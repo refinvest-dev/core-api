@@ -1,18 +1,15 @@
 package com.refinvest.core.tradingreview.domain
 
+import com.refinvest.core.tradingreview.domain.service.NormalizationInputCanonicalizer
+import com.refinvest.core.common.domain.AggregateRoot
 import com.refinvest.core.shared.kernel.member.MemberId
+import com.refinvest.core.tradingreview.domain.importsession.*
+import com.refinvest.core.tradingreview.domain.valueobject.*
 import java.time.Instant
 import java.time.ZoneId
 
-@JvmInline value class TradingImportSessionId(val value: Long)
-@JvmInline value class TradingSourceArtifactId(val value: Long)
-
-enum class TradingImportStatus { RECEIVED, VALIDATING, ACCEPTED, REJECTED, PROCESSING_FAILED }
-enum class TradingArtifactRole { TRADE_HISTORY, POSITION_HISTORY }
-enum class TradingArtifactRetentionStatus { ACTIVE, RETENTION_SCHEDULED, DELETION_PENDING, DELETED, DELETION_FAILED }
-
-data class TradingImportSession(
-    val id: TradingImportSessionId,
+class TradingImportSession private constructor(
+    id: TradingImportSessionId,
     val bookId: TradingBookId,
     val owner: MemberId,
     val sourceTimezone: String,
@@ -31,37 +28,152 @@ data class TradingImportSession(
     val updatedAt: Instant,
     val version: Long,
     val validationStartedAt: Instant? = null,
-    val activeNormalizationRunId: String? = null,
+    val activeNormalizationRunId: NormalizationRunId? = null,
     val failure: TradingImportFailure? = null,
-) {
+    artifacts: List<TradingSourceArtifact> = emptyList(),
+    val createdLedgerRevisionId: LedgerRevisionId? = null,
+    val normalizationRun: NormalizationRun? = null,
+    val acceptedAt: Instant? = null,
+    val rejectedAt: Instant? = null,
+    val rawExpiredAt: Instant? = null,
+) : AggregateRoot<TradingImportSessionId>(id) {
+    val artifacts: List<TradingSourceArtifact> = java.util.Collections.unmodifiableList(artifacts.toList())
+
+    init {
+        require(sourceTimezone in ZoneId.getAvailableZoneIds() && reviewTimezone in ZoneId.getAvailableZoneIds()) { "Invalid IANA timezone" }
+        require(version >= 0 && deletionGeneration >= 0) { "Invalid session version or generation" }
+        require(!updatedAt.isBefore(createdAt)) { "Session update precedes creation" }
+        require(!deletionPending || deletionGeneration > 0) { "Deletion requires a new generation" }
+        require(listOf(dataPolicyVersion, retentionPolicy, maskingPolicyVersion, evidenceRetention,
+            deletionPolicyVersion, versionSetJson).all { it.isNotBlank() }) { "Missing policy or version pin" }
+        require(declaredPositionMode == TradingPositionMode.ONE_WAY && evidenceRetention == "BOOK_LIFECYCLE")
+        require(this.artifacts.size <= TradingArtifactRole.entries.size && this.artifacts.all { it.sessionId == id }) { "Foreign artifact" }
+        require(this.artifacts.map { it.id }.distinct().size == this.artifacts.size &&
+            this.artifacts.map { it.role }.distinct().size == this.artifacts.size) { "Duplicate artifact slot" }
+        require(status !in setOf(TradingImportStatus.RECEIVED, TradingImportStatus.ACCEPTED) || failure == null)
+        require(status !in setOf(TradingImportStatus.REJECTED, TradingImportStatus.PROCESSING_FAILED) || failure != null)
+        require(status != TradingImportStatus.RECEIVED || (activeNormalizationRunId == null && validationStartedAt == null))
+        require(status != TradingImportStatus.VALIDATING || (activeNormalizationRunId != null && validationStartedAt != null && failure == null)) { "Incomplete validation state" }
+        require(normalizationRun == null || (normalizationRun.id == activeNormalizationRunId &&
+            normalizationRun.input.importSessionId == id && normalizationRun.input.tradingBookId == bookId &&
+            normalizationRun.input.ownerId == owner.value)) { "Foreign normalization run" }
+        require(validationStartedAt == null || !validationStartedAt.isBefore(createdAt))
+        require(createdLedgerRevisionId == null || status == TradingImportStatus.ACCEPTED) { "Only accepted imports have a Revision" }
+        require(acceptedAt == null || status == TradingImportStatus.ACCEPTED)
+        require(rejectedAt == null || status == TradingImportStatus.REJECTED)
+        require(rawExpiredAt == null || (status == TradingImportStatus.PROCESSING_FAILED &&
+            failure?.code == "SOURCE_ARTIFACT_EXPIRED" && !failure.retryable))
+        require(listOfNotNull(acceptedAt, rejectedAt, rawExpiredAt).all { !it.isBefore(createdAt) && !it.isAfter(updatedAt) })
+    }
+
+    fun recordUpload(artifactId: TradingSourceArtifactId, role: TradingArtifactRole, contentType: String,
+                     byteSize: Long, sha256: String, dialectCandidate: String, objectKey: String,
+                     wrappedDek: ByteArray, keyVersion: String, now: Instant): TradingImportSession {
+        require(canUpload()) { "Session cannot receive artifacts" }
+        require(artifacts.none { it.role == role || it.id == artifactId }) { "Artifact slot already filled" }
+        val artifact = TradingSourceArtifact.restore(artifactId, id, role, null, contentType, byteSize,
+            sha256, dialectCandidate, objectKey, wrappedDek, keyVersion, TradingArtifactRetentionStatus.ACTIVE,
+            now, now.plusSeconds(86400), null, null, 0)
+        return copy(artifacts = artifacts + artifact, updatedAt = now)
+    }
+
+    fun requestArtifactDeletion(artifactId: TradingSourceArtifactId, now: Instant): TradingImportSession {
+        require(artifacts.any { it.id == artifactId }) { "Artifact does not belong to session" }
+        return requestRawDeletion(now).copy(artifacts = artifacts.map {
+            if (it.id == artifactId) it.requestDeletion() else it
+        })
+    }
+
     fun canUpload() = status == TradingImportStatus.RECEIVED && !deletionPending
 
     fun missingArtifactRoles(artifacts: List<TradingSourceArtifact>): Set<TradingArtifactRole> =
-        TradingArtifactRole.entries.toSet() - artifacts.filter { it.retentionStatus == TradingArtifactRetentionStatus.ACTIVE }
+        TradingArtifactRole.entries.toSet() - artifacts.filter { it.sessionId == id && it.retentionStatus == TradingArtifactRetentionStatus.ACTIVE }
             .map { it.role }.toSet()
 
-    fun canValidate(artifacts: List<TradingSourceArtifact>) = canUpload() && missingArtifactRoles(artifacts).isEmpty()
+    fun canValidate(artifacts: List<TradingSourceArtifact>) = canUpload() &&
+        artifacts.all { it.sessionId == id } && artifacts.map { it.role }.distinct().size == artifacts.size &&
+        missingArtifactRoles(artifacts).isEmpty()
 
-    fun beginValidation(runId: String, now: Instant): TradingImportSession {
-        require(status == TradingImportStatus.RECEIVED || status == TradingImportStatus.PROCESSING_FAILED)
-        require(!deletionPending)
+    fun admitNormalization(
+        runId: NormalizationRunId, input: NormalizationInput, logicalKey: String, attemptToken: String,
+        identity: NormalizationInputIdentity, pinnedVersions: Map<*, *>,
+        deliveryPolicy: NormalizationResultDeliveryPolicy, resultPin: NormalizationResultVersionPin, now: Instant,
+    ): TradingImportSession {
+        val pinnedInput = input.copy(artifacts = input.artifacts.toList())
+        require(!deletionPending && status in setOf(TradingImportStatus.RECEIVED, TradingImportStatus.PROCESSING_FAILED))
+        require(pinnedInput.importSessionId == id && pinnedInput.tradingBookId == bookId && pinnedInput.ownerId == owner.value)
+        require(pinnedInput.deletionGeneration == deletionGeneration && pinnedInput.positionMode == declaredPositionMode.name &&
+            pinnedInput.sourceTimezone == sourceTimezone && pinnedInput.reviewTimezone == reviewTimezone &&
+            pinnedInput.dataPolicyVersion == dataPolicyVersion && pinnedInput.versionSetJson == versionSetJson) { "Changed session input pin" }
+        require(artifacts.size == 2 && artifacts.all { it.rawReparseAvailable(now) }) { "Active source artifacts required" }
+        val expectedArtifacts = artifacts.map { NormalizationArtifactInput(it.id, it.role, it.sha256,
+            it.byteSize, it.contentType, it.dialectCandidate) }.sortedBy { it.role.name }
+        require(pinnedInput.artifacts.sortedBy { it.role.name } == expectedArtifacts) { "Changed artifact identity" }
+        val expected = NormalizationInputIdentity.fromPinnedInput(pinnedInput, pinnedVersions)
+        require(NormalizationInputCanonicalizer.canonicalize(expected).contentEquals(
+            NormalizationInputCanonicalizer.canonicalize(identity))) { "Changed normalization identity" }
+        require(logicalKey == NormalizationInputCanonicalizer.logicalKey(owner.value,
+            NormalizationInputCanonicalizer.hash(identity), deletionGeneration, resultPin)) { "Changed logical key" }
+        val previous = normalizationRun
+        if (status == TradingImportStatus.PROCESSING_FAILED) {
+            require(failure?.retryable == true && previous != null && previous.id == activeNormalizationRunId &&
+                previous.status == NormalizationRunStatus.TERMINAL_FAILURE) { "No retryable terminal run" }
+            require(previous.inputIdentity != null && previous.inputFingerprint == NormalizationInputCanonicalizer.hash(identity) &&
+                NormalizationInputCanonicalizer.canonicalize(previous.inputIdentity).contentEquals(
+                    NormalizationInputCanonicalizer.canonicalize(identity)) &&
+                previous.input.artifacts.sortedBy { it.role.name } == expectedArtifacts &&
+                previous.input.instrumentTermsJson == pinnedInput.instrumentTermsJson &&
+                previous.input.deletionGeneration == deletionGeneration && previous.resultVersionPin == resultPin && previous.logicalKey == logicalKey) { "Changed retry pin" }
+            require(previous.id != runId)
+        } else require(previous == null && activeNormalizationRunId == null)
+        val run = NormalizationRun.create(runId, pinnedInput, NormalizationInputCanonicalizer.hash(identity), logicalKey,
+            attemptToken, identity, deliveryPolicy, resultPin, previous?.id, now)
         return copy(status = TradingImportStatus.VALIDATING, activeNormalizationRunId = runId,
-            validationStartedAt = now, failure = null, updatedAt = now)
+            validationStartedAt = now, failure = null, updatedAt = now, normalizationRun = run)
     }
 
     fun failValidation(runId: String, generation: Long, cause: TradingImportFailure, now: Instant): TradingImportSession? =
-        if (status == TradingImportStatus.VALIDATING && activeNormalizationRunId == runId &&
+        if (status == TradingImportStatus.VALIDATING && activeNormalizationRunId?.value == runId &&
             deletionGeneration == generation && !deletionPending)
             copy(status = TradingImportStatus.PROCESSING_FAILED, failure = cause, updatedAt = now) else null
 
     fun rejectValidation(runId: String, generation: Long, cause: TradingImportFailure, now: Instant): TradingImportSession? =
-        if (status == TradingImportStatus.VALIDATING && activeNormalizationRunId == runId &&
+        if (status == TradingImportStatus.VALIDATING && activeNormalizationRunId?.value == runId &&
             deletionGeneration == generation && !deletionPending)
-            copy(status = TradingImportStatus.REJECTED, failure = cause, updatedAt = now) else null
+            if (artifacts.all { it.rawReparseAvailable(now) }) {
+                require(retentionPolicy == "TRADING_RETENTION_V1")
+                copy(status = TradingImportStatus.REJECTED, failure = cause, updatedAt = now, rejectedAt = now,
+                    artifacts = artifacts.map { it.pinTerminalExpiry(now, 86400) })
+            } else null
+        else null
 
-    fun requestRawDeletion(now: Instant): TradingImportSession {
+    fun acceptNormalization(runId: NormalizationRunId, generation: Long, revisionId: LedgerRevisionId,
+                            now: Instant): TradingImportSession? {
+        if (status != TradingImportStatus.VALIDATING || activeNormalizationRunId != runId ||
+            deletionGeneration != generation || deletionPending || rawExpiredAt != null ||
+            artifacts.size != 2 || artifacts.any { !it.rawReparseAvailable(now) }) return null
+        require(retentionPolicy == "TRADING_RETENTION_V1")
+        return copy(status = TradingImportStatus.ACCEPTED, failure = null, updatedAt = now,
+            createdLedgerRevisionId = revisionId, acceptedAt = now,
+            artifacts = artifacts.map { it.pinTerminalExpiry(now, 7 * 86400) })
+    }
+
+    /** A policy-triggered raw-only deletion; retained Session metadata stays readable. */
+    fun expireRawSource(artifactId: TradingSourceArtifactId, now: Instant): TradingImportSession? {
+        if (status in setOf(TradingImportStatus.ACCEPTED, TradingImportStatus.REJECTED) ||
+            deletionPending || rawExpiredAt != null || failure?.code == "SOURCE_ARTIFACT_DELETED") return null
+        val source = artifacts.singleOrNull { it.id == artifactId } ?: return null
+        if (now.isBefore(source.rawExpiresAt)) return null
+        return copy(status = TradingImportStatus.PROCESSING_FAILED,
+            deletionGeneration = Math.addExact(deletionGeneration, 1), rawExpiredAt = now, updatedAt = now,
+            failure = TradingImportFailure("SOURCE_ARTIFACT_EXPIRED", false, "REUPLOAD_REQUIRED", now),
+            artifacts = artifacts.map { if (it.id == artifactId && it.retentionStatus in setOf(
+                TradingArtifactRetentionStatus.ACTIVE, TradingArtifactRetentionStatus.RETENTION_SCHEDULED)) it.requestDeletion() else it })
+    }
+
+    private fun requestRawDeletion(now: Instant): TradingImportSession {
         require(!deletionPending) { "Session deletion already requested" }
-        return copy(deletionGeneration = deletionGeneration + 1,
+        return copy(deletionGeneration = Math.addExact(deletionGeneration, 1),
             status = if (status == TradingImportStatus.VALIDATING) TradingImportStatus.PROCESSING_FAILED else status,
             failure = if (status == TradingImportStatus.VALIDATING)
                 TradingImportFailure("SOURCE_ARTIFACT_DELETED", false, "REUPLOAD_REQUIRED", now) else failure,
@@ -70,10 +182,66 @@ data class TradingImportSession(
 
     fun requestDeletion(now: Instant): TradingImportSession {
         require(!deletionPending) { "Deletion already requested" }
-        return copy(deletionGeneration = deletionGeneration + 1, deletionPending = true, updatedAt = now)
+        return copy(deletionGeneration = Math.addExact(deletionGeneration, 1), deletionPending = true, updatedAt = now,
+            artifacts = artifacts.map { if (it.retentionStatus in setOf(TradingArtifactRetentionStatus.ACTIVE,
+                TradingArtifactRetentionStatus.RETENTION_SCHEDULED)) it.requestDeletion() else it })
     }
 
+    private fun copy(
+        status: TradingImportStatus = this.status,
+        deletionGeneration: Long = this.deletionGeneration,
+        deletionPending: Boolean = this.deletionPending,
+        updatedAt: Instant = this.updatedAt,
+        validationStartedAt: Instant? = this.validationStartedAt,
+        activeNormalizationRunId: NormalizationRunId? = this.activeNormalizationRunId,
+        failure: TradingImportFailure? = this.failure,
+        artifacts: List<TradingSourceArtifact> = this.artifacts,
+        normalizationRun: NormalizationRun? = this.normalizationRun,
+        createdLedgerRevisionId: LedgerRevisionId? = this.createdLedgerRevisionId,
+        acceptedAt: Instant? = this.acceptedAt,
+        rejectedAt: Instant? = this.rejectedAt,
+        rawExpiredAt: Instant? = this.rawExpiredAt,
+    ) = TradingImportSession(id, bookId, owner, sourceTimezone, reviewTimezone, declaredPositionMode,
+        dataPolicyVersion, retentionPolicy, maskingPolicyVersion, evidenceRetention, deletionPolicyVersion,
+        versionSetJson, status, deletionGeneration, deletionPending, createdAt, updatedAt, version,
+        validationStartedAt, activeNormalizationRunId, failure, artifacts, createdLedgerRevisionId, normalizationRun,
+        acceptedAt, rejectedAt, rawExpiredAt)
+
     companion object {
+        fun restore(
+            id: TradingImportSessionId,
+            bookId: TradingBookId,
+            owner: MemberId,
+            sourceTimezone: String,
+            reviewTimezone: String,
+            declaredPositionMode: TradingPositionMode,
+            dataPolicyVersion: String,
+            retentionPolicy: String,
+            maskingPolicyVersion: String,
+            evidenceRetention: String,
+            deletionPolicyVersion: String,
+            versionSetJson: String,
+            status: TradingImportStatus,
+            deletionGeneration: Long,
+            deletionPending: Boolean,
+            createdAt: Instant,
+            updatedAt: Instant,
+            version: Long,
+            validationStartedAt: Instant? = null,
+            activeNormalizationRunId: NormalizationRunId? = null,
+            failure: TradingImportFailure? = null,
+            artifacts: List<TradingSourceArtifact> = emptyList(),
+            createdLedgerRevisionId: LedgerRevisionId? = null,
+            normalizationRun: NormalizationRun? = null,
+            acceptedAt: Instant? = null,
+            rejectedAt: Instant? = null,
+            rawExpiredAt: Instant? = null,
+        ) = TradingImportSession(id, bookId, owner, sourceTimezone, reviewTimezone, declaredPositionMode,
+            dataPolicyVersion, retentionPolicy, maskingPolicyVersion, evidenceRetention, deletionPolicyVersion,
+            versionSetJson, status, deletionGeneration, deletionPending, createdAt, updatedAt, version,
+            validationStartedAt, activeNormalizationRunId, failure, artifacts, createdLedgerRevisionId, normalizationRun,
+            acceptedAt, rejectedAt, rawExpiredAt)
+
         fun create(id: TradingImportSessionId, book: TradingBook, sourceTimezone: String,
                    reviewTimezone: String, mode: TradingPositionMode, policy: TradingDataPolicy,
                    versionSetJson: String, now: Instant): TradingImportSession {
@@ -88,40 +256,4 @@ data class TradingImportSession(
                 TradingImportStatus.RECEIVED, 0, false, now, now, 0)
         }
     }
-}
-
-data class TradingImportFailure(val code: String, val retryable: Boolean, val userAction: String,
-                                val occurredAt: Instant)
-
-data class TradingDataPolicy(
-    val dataPolicyVersion: String = "TRADING_DATA_POLICY_V1",
-    val retentionPolicy: String = "TRADING_RETENTION_V1",
-    val maskingPolicyVersion: String = "SOURCE_EVIDENCE_MASK_V1",
-    val deletionPolicyVersion: String = "TRADING_DELETION_V1",
-)
-
-data class TradingSourceArtifact(
-    val id: TradingSourceArtifactId,
-    val sessionId: TradingImportSessionId,
-    val role: TradingArtifactRole,
-    val filename: String?,
-    val contentType: String,
-    val byteSize: Long,
-    val sha256: String,
-    val dialectCandidate: String,
-    val objectKey: String?,
-    val wrappedDek: ByteArray?,
-    val keyVersion: String?,
-    val retentionStatus: TradingArtifactRetentionStatus,
-    val uploadedAt: Instant,
-    val rawExpiresAt: Instant,
-    val deletedAt: Instant?,
-    val deletionFailure: String?,
-    val version: Long,
-) {
-    fun rawReparseAvailable(now: Instant) = retentionStatus == TradingArtifactRetentionStatus.ACTIVE &&
-        now.isBefore(rawExpiresAt) && objectKey != null && wrappedDek != null
-
-    override fun equals(other: Any?): Boolean = other is TradingSourceArtifact && id == other.id && version == other.version
-    override fun hashCode(): Int = 31 * id.hashCode() + version.hashCode()
 }

@@ -25,8 +25,6 @@ import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaReservation
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaStore
 import com.refinvest.core.shared.kernel.member.MemberId
-import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestResult
-import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -116,17 +114,9 @@ class RecordBacktestRunExecutionServiceTest {
     private fun service(store: BacktestRunStore): RecordBacktestRunExecutionService = RecordBacktestRunExecutionService(
         backtestRunStore = store,
         backtestQuotaStore = object : BacktestQuotaStore {
-            override fun reserve(
-                memberId: MemberId,
-                quotaMonth: java.time.YearMonth,
-                monthlyExecutionLimit: Int,
-                maxConcurrentRuns: Int,
-            ) = BacktestQuotaReservation.RESERVED
+            override fun reserve(request: com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaRequest) = BacktestQuotaReservation.RESERVED
 
-            override fun releaseConcurrentCapacity(memberId: MemberId, quotaMonth: java.time.YearMonth) = Unit
-        },
-        lookupStrategyVersionForBacktestUseCase = LookupStrategyVersionForBacktestUseCase {
-            LookupStrategyVersionForBacktestResult(7L, MemberId(1L), setOf("QQQ"))
+            override fun releaseConcurrentCapacity(backtestRunId: BacktestRunId) = Unit
         },
     )
 

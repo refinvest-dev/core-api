@@ -1,6 +1,6 @@
 package com.refinvest.core.auth.adapter.web
 
-import com.refinvest.core.auth.adapter.security.cookie.AuthCookieWriter
+import com.refinvest.core.auth.adapter.web.cookie.AuthCookieWriter
 import com.refinvest.core.auth.adapter.web.auth.me.GetCurrentMemberResponse
 import com.refinvest.core.auth.adapter.web.auth.subscription.UpgradeSubscriptionResponse
 import com.refinvest.core.auth.adapter.web.auth.usage.GetUsageResponse
@@ -10,7 +10,6 @@ import com.refinvest.core.auth.port.inbound.logout.LogoutCommand
 import com.refinvest.core.auth.port.inbound.logout.LogoutUseCase
 import com.refinvest.core.auth.port.inbound.session.RefreshSessionCommand
 import com.refinvest.core.auth.port.inbound.session.RefreshSessionUseCase
-import com.refinvest.core.auth.port.outbound.token.RefreshTokenParser
 import com.refinvest.core.subscription.port.inbound.usage.GetUsageQuery
 import com.refinvest.core.subscription.port.inbound.usage.GetUsageUseCase
 import com.refinvest.core.subscription.port.inbound.upgrade.UpgradeSubscriptionCommand
@@ -27,7 +26,6 @@ import org.springframework.web.server.ResponseStatusException
 
 @RestController
 class AuthController(
-    private val refreshTokenParser: RefreshTokenParser,
     private val getCurrentMemberUseCase: GetCurrentMemberUseCase,
     private val getUsageUseCase: GetUsageUseCase,
     private val upgradeSubscriptionUseCase: UpgradeSubscriptionUseCase,
@@ -60,16 +58,8 @@ class AuthController(
         @CookieValue(AuthCookieWriter.REFRESH_COOKIE_NAME, required = false) rawRefreshToken: String?,
         response: HttpServletResponse,
     ) {
-        val claims = rawRefreshToken?.let(refreshTokenParser::parse)
+        val result = refreshSessionUseCase.execute(RefreshSessionCommand(rawRefreshToken))
             ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Refresh token is invalid")
-        val result = refreshSessionUseCase.execute(
-            RefreshSessionCommand(
-                jti = claims.jti,
-                memberId = claims.memberId,
-                familyId = claims.familyId,
-                tokenFingerprint = claims.tokenFingerprint,
-            ),
-        ) ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Refresh token is invalid")
         authCookieWriter.write(response, result)
     }
 
@@ -80,9 +70,7 @@ class AuthController(
         request: HttpServletRequest,
         response: HttpServletResponse,
     ) {
-        rawRefreshToken?.let(refreshTokenParser::parse)?.let { claims ->
-            logoutUseCase.execute(LogoutCommand(claims.familyId))
-        }
+        logoutUseCase.execute(LogoutCommand(rawRefreshToken))
         request.getSession(false)?.invalidate()
         authCookieWriter.clear(response)
     }

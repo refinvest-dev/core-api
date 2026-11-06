@@ -11,14 +11,16 @@ import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunReadMode
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestQuery
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 @Service
-class GetBacktestResultService(
+open class GetBacktestResultService(
     private val backtestRunReader: BacktestRunReader,
     private val backtestResultReader: BacktestResultReader,
     private val lookupStrategyVersionForBacktestUseCase: LookupStrategyVersionForBacktestUseCase,
     private val backtestMemberIdProvider: BacktestMemberIdProvider,
 ) : GetBacktestResultUseCase {
+    @Transactional(readOnly = true)
     override fun execute(query: GetBacktestResultQuery): GetBacktestResultResult? {
         val backtestRun = backtestRunReader.findById(query.backtestRunId) ?: return null
         val strategyVersion = lookupStrategyVersionForBacktestUseCase.execute(
@@ -52,6 +54,9 @@ class GetBacktestResultService(
             }
             require(result.backtestRunId == backtestRun.id) {
                 "BacktestResult belongs to another BacktestRun"
+            }
+            require(result.dataIntegrityStatus.datasetSnapshotId == backtestRun.datasetSnapshotId) {
+                "BacktestResult datasetSnapshotId must match BacktestRun"
             }
             result
         }

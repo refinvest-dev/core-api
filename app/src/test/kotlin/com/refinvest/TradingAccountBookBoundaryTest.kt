@@ -1,0 +1,220 @@
+package com.refinvest
+
+import com.refinvest.core.tradingreview.port.inbound.deletion.TradingDeletion
+import com.refinvest.core.tradingreview.port.outbound.idempotency.TradingIdempotencyStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.account.TradingAccountStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.book.TradingBookStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionRequestReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.deletion.DeletionRequestStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingArtifactRetention
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingImportSessionStore
+import com.refinvest.core.tradingreview.port.outbound.persistence.importsession.TradingSourceArtifactReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.LedgerPublication
+import com.refinvest.core.tradingreview.port.outbound.persistence.ledger.TradingLedgerPublicationReader
+import com.refinvest.core.tradingreview.port.outbound.persistence.normalization.NormalizationAdmission
+import com.refinvest.core.tradingreview.port.outbound.storage.raw.RawArtifactStorage
+
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class TradingAccountBookBoundaryTest {
+    @Test
+    fun publicFailureSemanticsAndDeletionQueriesStayInsideTheirBoundaries() {
+        val root = workspaceRoot()
+        listOf("domain", "port", "application").forEach { layer ->
+            Files.walk(root.resolve("tradingreview/$layer/src/main/kotlin")).use { files ->
+                files.filter { it.toString().endsWith(".kt") }.forEach { file ->
+                    val source = Files.readString(file)
+                    assertFalse(Regex("HttpStatus|httpStatus|org\\.springframework\\.http").containsMatchIn(source),
+                        "Transport status outside web: $file")
+                }
+            }
+        }
+        val query = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/GetTradingDeletionRequestService.kt"))
+        assertTrue(query.contains("DeletionRequestReader"))
+        assertFalse(query.contains("DeletionRequestStore") || query.contains(".insert(") || query.contains(".update("))
+        val response = Files.readString(root.resolve("tradingreview/adapter/web/src/main/kotlin/com/refinvest/core/tradingreview/adapter/web/deletion/TradingDeletionResponse.kt"))
+        assertFalse(response.contains("when (value.state)") || response.contains("if (value.artifactCount"))
+    }
+
+    @Test
+    fun tradingReviewSourcesRespectFeatureLayers() {
+        val root = workspaceRoot()
+        listOf("domain", "port", "application", "adapter/persistence", "adapter/web", "adapter/compute",
+            "adapter/storage", "adapter/security", "adapter/snowflake", "adapter/uuid").forEach { layer ->
+            val files = Files.walk(root.resolve("tradingreview/$layer/src/main/kotlin")).use {
+                it.filter { path -> path.toString().endsWith(".kt") }.toList()
+            }
+            assertTrue(files.isNotEmpty(), "Missing Trading Review sources for $layer")
+            files.forEach { file ->
+                val source = Files.readString(file)
+                val references = Regex("com\\.refinvest\\.core\\.[A-Za-z0-9_.]+").findAll(source).map { it.value }.toList()
+                val allowed = buildList {
+                    addAll(listOf("com.refinvest.core.tradingreview.domain.", "com.refinvest.core.common.domain.", "com.refinvest.core.shared.kernel."))
+                    if (layer != "domain") add("com.refinvest.core.tradingreview.port.")
+                    if (layer == "application") add("com.refinvest.core.tradingreview.application.")
+                    if (layer.startsWith("adapter/")) add("com.refinvest.core.tradingreview.adapter.${layer.substringAfter('/') }.")
+                    if (layer == "adapter/security") add("com.refinvest.core.member.port.")
+                    if (layer == "adapter/snowflake") add("com.refinvest.core.shared.infrastructure.")
+                }
+                assertTrue(references.all { ref -> allowed.any { ref.startsWith(it) || ref == it.removeSuffix(".") } },
+                    "Forbidden reference in $file: $references")
+                if (layer in setOf("domain", "port")) assertFalse(source.contains("org.springframework"), "Framework in $file")
+                if (!layer.startsWith("adapter/")) assertFalse(Regex("jakarta\\.(persistence|servlet)|org\\.springframework\\.(data|jdbc|orm|web|boot)").containsMatchIn(source), "Technology in $file")
+            }
+        }
+    }
+
+    @Test
+    fun rawCleanupSchedulersOnlyDependOnInboundPortsAndObservability() {
+        val root = workspaceRoot().resolve("tradingreview/adapter")
+        listOf(
+            "persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence/TradingRawRetentionWorker.kt",
+            "persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence/TradingImportExpiryScheduler.kt",
+            "storage/src/main/kotlin/com/refinvest/core/tradingreview/adapter/storage/TradingRawOrphanWorker.kt",
+        ).forEach { name ->
+            val source = Files.readString(root.resolve(name))
+            assertFalse(Regex("JdbcTemplate|RawArtifactStorage|TradingSourceArtifactReader|TradingArtifactRetention|TransactionTemplate|java\\.time|core\\.env\\.Environment")
+                .containsMatchIn(source), "Orchestration in scheduler: $name")
+            assertTrue(source.contains("UseCase"), "Missing inbound port: $name")
+        }
+    }
+
+    @Test
+    fun allTradingReviewPortsKeepTechnologyImplementationsOutside() {
+        Files.walk(workspaceRoot().resolve("tradingreview/port/src/main/kotlin")).use { files ->
+            files.filter { it.toString().endsWith(".kt") }.forEach { file ->
+                assertFalse(Regex("org\\.springframework|java\\.(sql|net)|java\\.io\\.(?!(?:InputStream|OutputStream)\\b)|java\\.nio\\.file|javax\\.crypto")
+                    .containsMatchIn(Files.readString(file)), "Technology implementation in port: $file")
+            }
+        }
+    }
+
+    @Test
+    fun aggregateMappersAndPortsArePureAndPersistenceCapabilitiesStaySeparate() {
+        val root = workspaceRoot()
+        val persistence = root.resolve("tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence")
+        listOf("TradingAccount", "TradingBook", "TradingImportSession").forEach { aggregate ->
+            val mapper = Files.readString(persistence.resolve("${aggregate}PersistenceMapper.kt"))
+            assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|\\.create\\(|\\.rename\\(|\\.requestDeletion\\(").containsMatchIn(mapper))
+            assertTrue(mapper.contains("$aggregate.restore("))
+            val adapterName = "Jpa${aggregate}StoreAdapter.kt"
+            val adapter = Files.readString(persistence.resolve(adapterName))
+            if (aggregate == "TradingImportSession") {
+                assertTrue(adapter.contains("TradingImportSessionSnapshots"))
+                val snapshots = Files.readString(persistence.resolve("TradingImportSessionSnapshots.kt"))
+                assertTrue(snapshots.contains("${aggregate}PersistenceMapper.toDomain("))
+            } else assertTrue(adapter.contains("${aggregate}PersistenceMapper.toDomain(") ||
+                adapter.contains("${aggregate}PersistenceMapper::toDomain"))
+            val foreign = if (aggregate == "TradingAccount") "TradingBookStore" else "TradingAccountStore"
+            assertFalse(adapter.contains(foreign) || adapter.contains("TradingIdempotencyStore") || adapter.contains("TradingDeletionStore"))
+        }
+        assertFalse(Files.exists(persistence.resolve("JdbcTradingReviewStore.kt")))
+        assertFalse(Files.exists(persistence.resolve("JdbcTradingImportStore.kt")))
+        listOf("inbound", "outbound").forEach { direction ->
+            Files.walk(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/$direction")).use { files ->
+                files.filter { it.toString().endsWith(".kt") }.forEach { file ->
+                    assertFalse(Regex("org\\.springframework|java\\.(sql|net)|java\\.io\\.(?!(?:InputStream|OutputStream)\\b)|java\\.nio\\.file|javax\\.crypto").containsMatchIn(Files.readString(file)))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun importChildrenStayInsideRootAndCommandPortsAcceptAggregates() {
+        val root = workspaceRoot()
+        val domain = root.resolve("tradingreview/domain/src/main/kotlin/com/refinvest/core/tradingreview/domain")
+        val source = Files.readString(domain.resolve("TradingImportSession.kt"))
+        assertTrue(source.contains("class TradingImportSession private constructor("))
+        assertTrue(source.contains("AggregateRoot<TradingImportSessionId>"))
+        assertFalse(Regex("(?m)^    fun copy\\(").containsMatchIn(source))
+        val child = Files.readString(domain.resolve("importsession/TradingSourceArtifact.kt"))
+        assertTrue(child.contains("DomainEntity<TradingSourceArtifactId>"))
+        assertFalse(child.contains("AggregateRoot") || child.contains("data class TradingSourceArtifact"))
+        val store = Files.readString(root.resolve("tradingreview/port/src/main/kotlin/com/refinvest/core/tradingreview/port/outbound/persistence/importsession/TradingImportSessionStore.kt"))
+        assertTrue(store.contains("update(session: TradingImportSession)"))
+        val service = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/importsession/upload/UploadTradingImportArtifactService.kt"))
+        assertTrue(service.contains("session.recordUpload("))
+        assertFalse(service.contains("artifacts.insert(") || service.contains("markDeletionPending("))
+    }
+
+    @Test
+    fun normalizationCreationAndRestorationRespectTheOwningRootAndPureMapper() {
+        val root = workspaceRoot()
+        val domain = root.resolve("tradingreview/domain/src/main/kotlin/com/refinvest/core/tradingreview/domain")
+        val run = Files.readString(domain.resolve("importsession/NormalizationRun.kt"))
+        assertTrue(run.contains("class NormalizationRun private constructor("))
+        assertTrue(run.contains("DomainEntity<NormalizationRunId>"))
+        assertFalse(run.contains("AggregateRoot") || run.contains("fun copy("))
+        val persistence = root.resolve("tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence")
+        val mapper = Files.readString(persistence.resolve("NormalizationRunPersistenceMapper.kt"))
+        assertTrue(mapper.contains("NormalizationRun.restore("))
+        assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|admitNormalization").containsMatchIn(mapper))
+        assertFalse(Files.exists(persistence.resolve("JdbcTradingNormalizationStore.kt")))
+        val application = root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/normalization")
+        val factory = Files.readString(application.resolve("NormalizationAdmissionFactory.kt"))
+        assertTrue(factory.contains("session.admitNormalization("))
+        assertTrue(factory.contains("NormalizationAdmission(session, admitted, dispatch)"))
+        assertFalse(factory.contains("runs.insert(") || factory.contains("UUID.randomUUID") || factory.contains("admissions.admit("))
+        for (feature in listOf("validate", "retry")) {
+            val name = if (feature == "validate") "Validate" else "Retry"
+            val service = Files.readString(application.resolve("$feature/${name}TradingImportSessionService.kt"))
+            assertTrue(service.contains("admissions.admit(admission)"))
+            assertFalse(service.contains("runs.insert(") || service.contains("UUID.randomUUID"))
+        }
+    }
+
+    @Test
+    fun ledgerPublicationUsesAnImmutableAggregateAndBoundedPureMapping() {
+        val root = workspaceRoot()
+        val domain = Files.readString(root.resolve("tradingreview/domain/src/main/kotlin/com/refinvest/core/tradingreview/domain/LedgerRevision.kt"))
+        assertTrue(domain.contains("class LedgerRevision private constructor(") && domain.contains("AggregateRoot<LedgerRevisionId>"))
+        assertFalse(domain.contains("fun copy(") || domain.contains("JdbcTemplate"))
+        val persistence = root.resolve("tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence")
+        val mapper = Files.readString(persistence.resolve("LedgerRevisionPersistenceMapper.kt"))
+        assertTrue(mapper.contains("LedgerRevision.restore("))
+        assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|\\.publish\\(").containsMatchIn(mapper))
+        val staging = Files.readString(persistence.resolve("JdbcTradingNormalizationResultStore.kt"))
+        assertFalse(staging.contains("override fun publish(") || staging.contains("TradingLedgerPublicationReader"))
+        val rows = Files.readString(persistence.resolve("LedgerRevisionRows.kt"))
+        assertTrue(rows.contains("- 'reviewUnits'") && rows.contains("- 'validationIssues'"))
+        val application = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/TradingNormalizationResultProcessor.kt"))
+        assertTrue(application.contains("LedgerRevision.prepare(") && application.contains("publications.publish(LedgerPublication("))
+        assertFalse(application.contains("results.publish("))
+    }
+
+    @Test
+    fun deletionRequestsUseATypedAggregateAndPureMapperInsteadOfPersistingInboundResults() {
+        val root = workspaceRoot()
+        val domain = Files.readString(root.resolve("tradingreview/domain/src/main/kotlin/com/refinvest/core/tradingreview/domain/DeletionRequest.kt"))
+        assertTrue(domain.contains("class DeletionRequest private constructor(") && domain.contains("AggregateRoot<DeletionRequestId>"))
+        assertFalse(domain.contains("fun copy(") || domain.contains("org.springframework"))
+        val persistence = root.resolve("tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence")
+        val mapper = Files.readString(persistence.resolve("DeletionRequestPersistenceMapper.kt"))
+        assertTrue(mapper.contains("DeletionRequest.restore("))
+        assertFalse(Regex("org\\.springframework|java\\.(sql|net|io)|JdbcTemplate|Clock|randomUUID|Instant\\.now|\\.request\\(").containsMatchIn(mapper))
+        assertFalse(Files.exists(persistence.resolve("JdbcTradingDeletionStoreAdapter.kt")))
+        val adapter = Files.readString(persistence.resolve("JpaDeletionRequestStoreAdapter.kt"))
+        val queries = Files.readString(persistence.resolve("DeletionRequestQueries.kt"))
+        assertTrue(adapter.contains("insert(request: DeletionRequest)") && queries.contains("DeletionRequestPersistenceMapper.toDomain("))
+        val snapshots = Files.readString(persistence.resolve("DeletionRequestSnapshots.kt"))
+        assertTrue(snapshots.contains("DeletionRequestPersistenceMapper.toDomain("))
+        assertFalse(adapter.contains("TradingIdempotencyStore") || adapter.contains("TradingAccountStore"))
+        listOf("account/delete/DeleteTradingAccountService.kt", "book/delete/DeleteTradingBookService.kt",
+            "importsession/delete/DeleteTradingImportSessionService.kt", "importsession/deleteartifact/DeleteTradingSourceArtifactService.kt").forEach { name ->
+            val source = Files.readString(root.resolve("tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application/$name"))
+            assertTrue(source.contains("DeletionRequest.request(") && source.contains("TradingDeletion.fromDomain("))
+            assertFalse(source.contains("val deletion = TradingDeletion(") || source.contains("DeletionRequest.restore("))
+        }
+        val worker = Files.readString(persistence.resolve("TradingDeletionWorker.kt"))
+        assertFalse(worker.contains("UPDATE trading_deletion_requests"))
+        val execution = Files.readString(persistence.resolve("JdbcDeletionRequestExecution.kt"))
+        assertFalse(execution.contains("TradingIdempotencyStore") || execution.contains("TradingAccountStore"))
+    }
+
+    private fun workspaceRoot(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+        .first { Files.exists(it.resolve("settings.gradle.kts")) }
+}

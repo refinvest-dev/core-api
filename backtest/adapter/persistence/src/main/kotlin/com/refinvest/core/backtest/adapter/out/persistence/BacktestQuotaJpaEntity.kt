@@ -15,6 +15,7 @@ class BacktestQuotaJpaEntity(
     var id: BacktestQuotaJpaId,
     @Column(name = "used_count", nullable = false)
     var usedCount: Int,
+    // Legacy schema compatibility only; active capacity is represented by Run reservations.
     @Column(name = "active_count", nullable = false)
     var activeCount: Int,
 )

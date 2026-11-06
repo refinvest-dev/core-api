@@ -1,10 +1,12 @@
 package com.refinvest.core.config
 
-import tools.jackson.databind.ObjectMapper
-import com.refinvest.core.tradingreview.port.TradingFailure
-import com.refinvest.core.tradingreview.port.TradingVersionPins
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
+import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.outbound.normalization.policy.TradingVersionPins
+
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
+import tools.jackson.databind.ObjectMapper
 
 @Component
 class ConfiguredTradingVersionPins(
@@ -12,7 +14,7 @@ class ConfiguredTradingVersionPins(
     private val mapper: ObjectMapper,
 ) : TradingVersionPins {
     override fun currentJson(): String {
-        if (configured.isBlank()) throw TradingFailure("VERSION_UNAVAILABLE", 422)
+        if (configured.isBlank()) throw TradingFailure("VERSION_UNAVAILABLE", TradingFailureKind.INPUT_REJECTED)
         try {
             val node = mapper.readTree(configured)
             val hash = node.path("versionSetHash").asText()
@@ -32,7 +34,7 @@ class ConfiguredTradingVersionPins(
                 configured.contains("latest", ignoreCase = true)) throw IllegalArgumentException()
             return mapper.writeValueAsString(node)
         } catch (_: Exception) {
-            throw TradingFailure("VERSION_UNAVAILABLE", 422)
+            throw TradingFailure("VERSION_UNAVAILABLE", TradingFailureKind.INPUT_REJECTED)
         }
     }
 

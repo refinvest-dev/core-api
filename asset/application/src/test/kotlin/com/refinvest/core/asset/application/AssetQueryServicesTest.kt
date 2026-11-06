@@ -14,7 +14,7 @@ import com.refinvest.core.asset.port.inbound.availability.GetAssetAvailabilityQu
 import com.refinvest.core.asset.port.inbound.series.GetSeriesQuery
 import com.refinvest.core.asset.port.outbound.compute.AssetDataClient
 import com.refinvest.core.asset.port.outbound.compute.AssetSeriesQuery
-import com.refinvest.core.asset.port.outbound.compute.SeriesMetric
+import com.refinvest.core.asset.port.common.series.SeriesMetric
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate

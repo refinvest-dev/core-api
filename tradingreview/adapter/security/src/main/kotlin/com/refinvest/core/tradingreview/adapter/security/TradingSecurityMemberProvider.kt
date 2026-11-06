@@ -1,7 +1,8 @@
 package com.refinvest.core.tradingreview.adapter.security
 
+import com.refinvest.core.tradingreview.port.outbound.member.TradingMemberProvider
+
 import com.refinvest.core.shared.kernel.member.MemberId
-import com.refinvest.core.tradingreview.port.TradingMemberProvider
 import com.refinvest.core.member.port.inbound.get.GetMemberQuery
 import com.refinvest.core.member.port.inbound.get.GetMemberUseCase
 import org.springframework.security.access.AccessDeniedException

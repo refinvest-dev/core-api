@@ -19,8 +19,8 @@ import com.refinvest.core.backtest.port.inbound.execution.StartBacktestRunComman
 import com.refinvest.core.strategy.port.outbound.id.StrategyIdGenerator
 import com.refinvest.core.backtest.port.outbound.id.BacktestRunIdGenerator
 import com.refinvest.core.auth.domain.RefreshSession
-import com.refinvest.core.auth.adapter.security.oauth.ReturnToAuthorizationRequestResolver
-import com.refinvest.core.auth.adapter.security.oauth.SocialLoginSuccessHandler
+import com.refinvest.core.auth.adapter.web.oauth.ReturnToAuthorizationRequestResolver
+import com.refinvest.core.auth.adapter.web.oauth.SocialLoginSuccessHandler
 import com.refinvest.core.auth.port.outbound.token.AuthenticationTokenIssuer
 import com.refinvest.core.auth.port.outbound.token.IssuedAuthenticationTokens
 import com.refinvest.core.auth.port.outbound.persistence.RefreshSessionStore
@@ -68,6 +68,8 @@ import org.springframework.mock.web.MockHttpSession
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import io.micrometer.core.instrument.MeterRegistry
+import org.springframework.boot.health.contributor.Health
+import org.springframework.boot.health.contributor.HealthIndicator
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.time.Instant
@@ -86,13 +88,15 @@ import kotlin.test.assertTrue
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
-@Import(AssetDataClientTestConfiguration::class)
+@Import(AssetDataClientTestConfiguration::class, PublicHealthTestConfiguration::class)
 @TestPropertySource(
     properties = [
         "spring.datasource.url=jdbc:h2:mem:refinvest;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.jpa.hibernate.ddl-auto=create-drop",
+        "refinvest.security.cookie-secure=true",
+        "refinvest.security.cookie-same-site=Lax",
         "refinvest.trading-review.retention-enabled=false",
     ],
 )
@@ -111,6 +115,7 @@ class RefinvestApplicationTests(
     @Autowired private val assetDataClient: AssetDataClientTestDouble,
     @Autowired private val mockMvc: MockMvc,
     @Autowired private val meterRegistry: MeterRegistry,
+    @Autowired private val publicHealthProbe: PublicHealthProbe,
     @LocalServerPort private val port: Int,
 ) {
     private val httpClient = HttpClient.newHttpClient()
@@ -155,6 +160,8 @@ class RefinvestApplicationTests(
 
     @BeforeEach
     fun clearBacktestQuotaReservations() {
+        jdbcTemplate.update("delete from backtest_capacity_reservations")
+        jdbcTemplate.update("delete from backtest_capacities")
         jdbcTemplate.update("delete from backtest_quotas")
         assetDataClient.reset()
     }
@@ -196,15 +203,35 @@ class RefinvestApplicationTests(
     }
 
     @Test
-    fun `health includes datasource status`() {
-        val response = HttpClient.newHttpClient().send(
-            HttpRequest.newBuilder(URI("http://localhost:$port/actuator/health")).GET().build(),
-            HttpResponse.BodyHandlers.ofString(),
-        )
+    fun `public health returns only aggregate status with and without an access cookie`() {
+        for (cookie in listOf<String?>(null, "REFINVEST_ACCESS_TOKEN=" + accessToken())) {
+            val request = HttpRequest.newBuilder(URI("http://localhost:$port/actuator/health"))
+            if (cookie != null) request.header("Cookie", cookie)
+            val response = HttpClient.newHttpClient().send(request.GET().build(), HttpResponse.BodyHandlers.ofString())
+            assertEquals(200, response.statusCode())
+            assertPublicHealth(response.body(), "UP")
+        }
+    }
 
-        assertTrue(response.statusCode() == 200)
-        assertTrue(response.body().contains("\"status\":\"UP\""))
-        assertTrue(response.body().contains("\"db\""), response.body())
+    @Test
+    fun `unhealthy contributor changes public status without exposing details`() {
+        publicHealthProbe.down = true
+        try {
+            val response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI("http://localhost:$port/actuator/health")).GET().build(),
+                HttpResponse.BodyHandlers.ofString())
+            assertEquals(503, response.statusCode())
+            assertPublicHealth(response.body(), "DOWN")
+        } finally { publicHealthProbe.down = false }
+    }
+
+    private fun assertPublicHealth(payload: String, expectedStatus: String) {
+        val response = objectMapper.readValue(payload, Map::class.java)
+        assertEquals(expectedStatus, response["status"])
+        assertTrue(response.keys.all { it == "status" || it == "groups" }, payload)
+        if ("groups" in response) {
+            assertTrue((response["groups"] as List<*>).all { it in setOf("liveness", "readiness") }, payload)
+        }
     }
 
     @Test
@@ -418,6 +445,55 @@ class RefinvestApplicationTests(
     }
 
     @Test
+    fun `unverifiable refresh credentials never change an active family`() {
+        val issued = issueRefreshSession(memberId = 4070L)
+        fun invalidClaims(issuer: String = "https://test.refinvest.local", audience: String = "refinvest-core-api-test",
+                          expiresAt: Instant = Instant.now().plusSeconds(3600)): String = jwtEncoder.encode(
+            JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), JwtClaimsSet.builder()
+                .issuer(issuer).audience(listOf(audience)).subject("4070")
+                .issuedAt(Instant.now().minusSeconds(600)).expiresAt(expiresAt)
+                .id(issued.refreshJti.toString()).claim("familyId", issued.refreshFamilyId.toString())
+                .claim("typ", "refresh").claim("role", "MEMBER").build()),
+        ).tokenValue
+        for (raw in listOf(null, "", "malformed", issued.accessToken, issued.refreshToken + "x",
+                invalidClaims(issuer = "https://wrong-issuer.example"), invalidClaims(audience = "wrong-audience"),
+                invalidClaims(expiresAt = Instant.now().minusSeconds(180)))) {
+            val request = post("/auth/refresh").cookie(Cookie("XSRF-TOKEN", "test-csrf"))
+                .header("X-XSRF-TOKEN", "test-csrf")
+            if (raw != null) request.cookie(Cookie("REFINVEST_REFRESH_TOKEN", raw))
+            mockMvc.perform(request).andExpect(status().isUnauthorized)
+            assertNull(refreshSession(issued.refreshJti).revokedAt)
+        }
+    }
+
+    @Test
+    fun `refresh and logout require CSRF before changing a family`() {
+        val issued = issueRefreshSession(memberId = 4071L)
+        for (endpoint in listOf("/auth/refresh", "/auth/logout")) {
+            mockMvc.perform(post(endpoint).cookie(Cookie("REFINVEST_REFRESH_TOKEN", issued.refreshToken)))
+                .andExpect(status().isForbidden)
+            assertNull(refreshSession(issued.refreshJti).revokedAt)
+        }
+    }
+
+    @Test
+    fun `logout clears cookies and servlet state even without a valid credential`() {
+        val issued = issueRefreshSession(memberId = 4072L)
+        for (raw in listOf(null, "malformed", issued.accessToken)) {
+            val session = MockHttpSession()
+            val request = post("/auth/logout").session(session).cookie(Cookie("XSRF-TOKEN", "test-csrf"))
+                .header("X-XSRF-TOKEN", "test-csrf")
+            if (raw != null) request.cookie(Cookie("REFINVEST_REFRESH_TOKEN", raw))
+            val response = mockMvc.perform(request).andExpect(status().isNoContent).andReturn().response
+            assertTrue(session.isInvalid)
+            for (name in listOf("REFINVEST_ACCESS_TOKEN", "REFINVEST_REFRESH_TOKEN", "JSESSIONID")) {
+                assertTrue(response.getHeaders("Set-Cookie").any { it.startsWith("$name=") && it.contains("Max-Age=0") })
+            }
+            assertNull(refreshSession(issued.refreshJti).revokedAt)
+        }
+    }
+
+    @Test
     fun `refresh endpoint rotates cookies and detects refresh token replay`() {
         val issued = issueRefreshSession(memberId = 401L)
 
@@ -427,6 +503,7 @@ class RefinvestApplicationTests(
         val cookies = first.headers().allValues("set-cookie")
         assertTrue(cookies.any { it.startsWith("REFINVEST_ACCESS_TOKEN=") && it.contains("HttpOnly") }, cookies.toString())
         assertTrue(cookies.any { it.startsWith("REFINVEST_REFRESH_TOKEN=") && it.contains("Path=/auth") }, cookies.toString())
+        assertTrue(cookies.all { it.contains("SameSite=Lax") && it.contains("; Secure") }, "Authentication cookie attributes must match the configured policy")
         assertFalse(refreshSession(issued.refreshJti).revokedAt == null)
         assertEquals(1L, jdbcTemplate.queryForObject(
             "select count(*) from refresh_sessions where family_id = ? and revoked_at is null",
@@ -600,6 +677,42 @@ class RefinvestApplicationTests(
         assertTrue(response.body().contains("\"id\":\"$id\""), response.body())
         assertTrue(response.body().contains("\"name\":\"volatility hypothesis\""), response.body())
         assertTrue(response.body().contains("\"versions\":[]"), response.body())
+    }
+
+    @Test
+    fun `strategy detail and list agree on chronological latest version including time ties`() {
+        fun read(path: String) = authenticatedHttpClient().send(
+            authenticatedRequest(URI("http://localhost:$port$path")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        ).let { response ->
+            assertEquals(200, response.statusCode(), response.body())
+            objectMapper.readTree(response.body())
+        }
+
+        seedStrategy(8501L, 1L, "version ordering", "2099-01-01 00:00:00")
+        try {
+            for ((id, timestamp) in listOf(50010L to "2099-01-03 00:00:00", 50300L to "2099-01-02 00:00:00",
+                50009L to "2099-01-03 00:00:00", 50020L to "2099-01-01 00:00:00")) {
+                jdbcTemplate.update("""INSERT INTO strategy_versions
+                    (id,strategy_id,created_at,primary_signal_asset,execution_asset,lag,holding_signal_sessions)
+                    VALUES (?,8501,?,'QQQ','QQQ',0,1)""", id, timestamp)
+                jdbcTemplate.update("""INSERT INTO strategy_version_conditions
+                    (strategy_version_id,condition_order,operator,operand_a_asset,operand_a_metric,operand_a_window,
+                     operand_b_kind,operand_b_literal) VALUES (?,0,'LT','QQQ','RETURN',5,'LITERAL',-0.07)""", id)
+            }
+            val detail = read("/strategies/8501")
+            val listed = read("/strategies?page=0&size=100").get("items").iterator().asSequence()
+                .single { it.get("id").asText() == "8501" }
+            assertEquals("50010", detail.get("latestVersionId").asText())
+            val versionIds = detail.get("versions").iterator().asSequence().map { it.get("id").asText() }.toList()
+            assertEquals(listOf("50020", "50300", "50009", "50010"), versionIds)
+            assertEquals(detail.get("latestVersionId"), listed.get("latestVersionId"))
+            assertEquals(4L, jdbcTemplate.queryForObject("SELECT count(*) FROM strategy_versions WHERE strategy_id=8501", Long::class.java))
+        } finally {
+            jdbcTemplate.update("DELETE FROM strategy_version_conditions WHERE strategy_version_id IN (SELECT id FROM strategy_versions WHERE strategy_id=8501)")
+            jdbcTemplate.update("DELETE FROM strategy_versions WHERE strategy_id=8501")
+            jdbcTemplate.update("DELETE FROM strategies WHERE id=8501")
+        }
     }
 
     @Test
@@ -1246,7 +1359,7 @@ class RefinvestApplicationTests(
         )
         val tokens = authenticationTokenIssuer.issue(MemberId(memberId), "MEMBER", null)
         refreshSessionStore.save(
-            RefreshSession(
+            RefreshSession.create(
                 jti = tokens.refreshJti,
                 memberId = MemberId(memberId),
                 familyId = tokens.refreshFamilyId,
@@ -1267,7 +1380,7 @@ class RefinvestApplicationTests(
         HttpResponse.BodyHandlers.ofString(),
     )
 
-    private fun refreshSession(jti: java.util.UUID): RefreshSession = RefreshSession(
+    private fun refreshSession(jti: java.util.UUID): RefreshSession = RefreshSession.restore(
         jti = jti,
         memberId = MemberId(jdbcTemplate.queryForObject(
             "select member_id from refresh_sessions where jti = ?",
@@ -1299,6 +1412,7 @@ class RefinvestApplicationTests(
             Instant::class.java,
             jti,
         ),
+        replacedByJti = jdbcTemplate.queryForObject("select replaced_by_jti from refresh_sessions where jti = ?", java.util.UUID::class.java, jti),
     )
 
     private fun seedStrategy(id: Long, memberId: Long, name: String, createdAt: String) {
@@ -1424,4 +1538,16 @@ class AssetDataClientTestDouble : AssetDataClient {
     fun reset() {
         seriesRequestCount = 0
     }
+}
+
+@TestConfiguration(proxyBeanMethods = false)
+class PublicHealthTestConfiguration {
+    @Bean
+    fun publicHealthProbe() = PublicHealthProbe()
+}
+
+class PublicHealthProbe : HealthIndicator {
+    @Volatile var down = false
+    override fun health(): Health = (if (down) Health.down() else Health.up())
+        .withDetail("private-diagnostic", "must-not-be-public").build()
 }

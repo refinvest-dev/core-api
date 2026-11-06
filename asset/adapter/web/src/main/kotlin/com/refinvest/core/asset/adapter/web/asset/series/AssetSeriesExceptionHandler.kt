@@ -1,7 +1,7 @@
 package com.refinvest.core.asset.adapter.web.asset.series
 
 import com.refinvest.core.asset.adapter.web.asset.AssetController
-import com.refinvest.core.asset.port.outbound.compute.SeriesDataErrorException
+import com.refinvest.core.asset.port.common.failure.SeriesDataErrorException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler

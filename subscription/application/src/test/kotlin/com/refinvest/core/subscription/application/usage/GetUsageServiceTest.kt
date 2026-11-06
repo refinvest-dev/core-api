@@ -27,7 +27,7 @@ class GetUsageServiceTest {
 
         val result = service.execute(GetUsageQuery(memberId))
 
-        assertEquals(SubscriptionTier.PRO, result.tier)
+        assertEquals("PRO", result.tier.name)
         assertEquals(7, result.backtestsUsedThisMonth)
         assertEquals(Instant.parse("2026-08-01T00:00:00Z"), backtestUsage.query?.startInclusive)
         assertEquals(Instant.parse("2026-09-01T00:00:00Z"), backtestUsage.query?.endExclusive)
@@ -46,7 +46,7 @@ class GetUsageServiceTest {
 
         val result = service.execute(GetUsageQuery(MemberId(1)))
 
-        assertEquals(SubscriptionTier.FREE, result.tier)
+        assertEquals("FREE", result.tier.name)
         assertEquals(30, result.backtestMonthlyLimit)
     }
 

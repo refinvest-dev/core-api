@@ -17,17 +17,15 @@ import com.refinvest.core.backtest.port.outbound.observability.ComputeBacktestFa
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestQuotaStore
 import com.refinvest.core.backtest.port.outbound.persistence.BacktestRunStore
 import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchStore
+import com.refinvest.core.backtest.port.outbound.persistence.dispatch.BacktestComputeDispatchLease
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestQuery
 import com.refinvest.core.strategy.port.inbound.version.backtest.LookupStrategyVersionForBacktestUseCase
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyConditionOperandForBacktest
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyMetricReferenceForBacktest
-import com.refinvest.core.strategy.port.inbound.version.backtest.StrategyVersionForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyConditionOperandForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyMetricReferenceForBacktest
+import com.refinvest.core.strategy.port.common.backtest.StrategyVersionForBacktest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
-import java.time.Duration
-import java.time.YearMonth
-import java.time.ZoneOffset
 
 @Service
 open class DispatchPendingBacktestsService(
@@ -43,10 +41,12 @@ open class DispatchPendingBacktestsService(
     override fun execute(): Boolean {
         val now = clock.instant()
         val dispatch = transactionTemplate.execute {
-            backtestComputeDispatchStore.claimNext(now, DISPATCH_LEASE_DURATION)
+            backtestComputeDispatchStore.claimNext(now, BacktestComputeDispatchLease.duration)
         } ?: return false
 
-        val backtestRun = backtestRunStore.findById(dispatch.backtestRunId) ?: return false
+        val backtestRun = transactionTemplate.execute {
+            backtestRunStore.findById(dispatch.backtestRunId)
+        } ?: return false
         val strategyVersion = lookupStrategyVersionForBacktestUseCase.execute(
             LookupStrategyVersionForBacktestQuery(backtestRun.strategyVersionId.value),
         ) ?: return false
@@ -79,16 +79,14 @@ open class DispatchPendingBacktestsService(
             }
             is ComputeBacktestSubmission.Rejected -> transactionTemplate.execute {
                 if (backtestComputeDispatchStore.markRejected(backtestRun.id, dispatch.claimToken)) {
-                    backtestRun.failWithoutExecution(submission.reason, submission.errorCode)
-                    backtestRunStore.save(backtestRun)
-                    backtestQuotaStore.releaseConcurrentCapacity(
-                        strategyVersion.ownerMemberId,
-                        YearMonth.from(backtestRun.createdAt.atZone(ZoneOffset.UTC)),
-                    )
+                    val current = requireNotNull(backtestRunStore.findById(backtestRun.id)) { "Backtest run not found" }
+                    current.failWithoutExecution(submission.reason, submission.errorCode)
+                    backtestRunStore.save(current)
+                    backtestQuotaStore.releaseConcurrentCapacity(current.id)
                     ComputeBacktestFailureObservation(
-                        backtestRunId = backtestRun.id,
-                        strategyId = backtestRun.strategyId,
-                        strategyVersionId = backtestRun.strategyVersionId,
+                        backtestRunId = current.id,
+                        strategyId = current.strategyId,
+                        strategyVersionId = current.strategyVersionId,
                         errorCode = submission.errorCode,
                     )
                 } else {
@@ -116,14 +114,11 @@ open class DispatchPendingBacktestsService(
     )
 
     private fun StrategyConditionOperandForBacktest.toComputePayload(): ComputeConditionOperandPayload = when (this) {
-        is com.refinvest.core.strategy.port.inbound.version.backtest.StrategyLiteralOperandForBacktest -> LiteralOperandPayload(value)
-        is com.refinvest.core.strategy.port.inbound.version.backtest.StrategyMetricOperandForBacktest -> MetricOperandPayload(value.toComputePayload())
+        is com.refinvest.core.strategy.port.common.backtest.StrategyLiteralOperandForBacktest -> LiteralOperandPayload(value)
+        is com.refinvest.core.strategy.port.common.backtest.StrategyMetricOperandForBacktest -> MetricOperandPayload(value.toComputePayload())
     }
 
     private fun StrategyMetricReferenceForBacktest.toComputePayload(): MetricReferencePayload =
         MetricReferencePayload(asset, metric, window)
 
-    private companion object {
-        val DISPATCH_LEASE_DURATION: Duration = Duration.ofMinutes(1)
-    }
 }
