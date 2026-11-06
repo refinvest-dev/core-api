@@ -1266,3 +1266,22 @@ Go 내부 패키지/Tx 방식은 Go 저장소가 결정하되 공유 원자성 �
 snapshot 전파와 실제 integration 검증 완료 후에만 신규 경로를 배포 완료로 기록한다.
 
 Determinism 영향 없음. Point-in-Time 영향 없음. API·fixture·계산 의미의 변경은 별도 결정이다.
+
+---
+
+## ADR-073 — Compound Reprocessing Result Lifetime and ACK Window (DRAFT)
+
+**상태**: 검토 초안. 미채택·미구현. ADR-063/069/072와 OpenAPI·기존 wire/retention은 변경하지 않는다.
+
+**문제**: 비공개 R2/A2의 원자 공개를 기다리는 동안 Compute terminal/ACK receipt TTL이 끝날 수 있다.
+staging 수신 완료를 PERSISTED로 해석할 수 없으며 ACK 실패가 공개 결과 재발행을 유발해서도 안 된다.
+
+**추천 초안**: 기존 보존·ACK wire를 유지하는 제한된 발행 판단 창(A)을 먼저 검토한다.
+최종 공개 이후 ACK delivery 실패는 업무 결과와 분리해 처리한다. 비공개 custody receipt protocol(B)은
+장기 복구 요구가 입증될 경우 별도 version/lifecycle 변경으로 검토한다.
+
+**상세/채택 조건**: [결과 수명·ACK 초안](TRADING_REPROCESSING_RESULT_LIFECYCLE_DRAFT.md)의
+대안·실패/취소·crash·보관·검증 gate를 따른다. 수치·오류·상태·child binding은 아직 확정하지 않았다.
+ADR-071의 hard deadline을 승인하거나 신규 production 동작을 활성화하지 않는다.
+
+Determinism 영향 없음. Point-in-Time 영향 없음. 초안 채택 전 기존 정본을 계속 적용한다.
