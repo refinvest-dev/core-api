@@ -114,3 +114,10 @@ integration 테스트는 분리된 integration DB에서 수행한다.
 | 발급된 URL/진행 중 조회의 철회와 실제 purge 증명 | context lifecycle 계약 |
 
 이 항목의 확정 전 production 구현이나 E2E 완료를 추정하지 않는다.
+
+## Owner Query 계약 검토 초안
+
+ADR-074와 [조회·인증 초안](TRADING_REVIEW_OWNER_QUERY_CONTRACT_DRAFT.md),
+[두 GET OpenAPI 초안](../openapi/drafts/trading-review-owner-query.yaml)을 추가했다. 미채택이므로
+기존 계약을 바꾸거나 G05/G06을 닫지 않는다. Member authority·TLS/key 운영·archive/public 오류·
+실제 DB history/baseline이 확정되기 전 production route를 활성화하지 않는다.

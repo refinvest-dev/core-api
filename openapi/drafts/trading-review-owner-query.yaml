@@ -1,0 +1,163 @@
+openapi: 3.0.3
+info:
+  title: Trading Review Owner Query (DRAFT)
+  version: 0.1.0-draft
+  description: >-
+    ADR-074 검토 초안. 미채택·미구현이며 현재 Core/Compute wire를 대체하지 않는다.
+    Member authority protocol·archive 의미·TLS/key 운영 gate 충족 전 route를 활성화하지 않는다.
+x-contract-status: draft
+x-runtime-enabled: false
+x-member-state-gate: required-before-resource-lookup
+externalDocs:
+  description: 인증·위임·archive·오류·적용 gate 초안
+  url: https://github.com/refinvest-dev/context/blob/main/docs/TRADING_REVIEW_OWNER_QUERY_CONTRACT_DRAFT.md
+security:
+  - ServiceCredential: []
+    UserDelegation: []
+paths:
+  /internal/trading-review/v1/accounts/{accountId}:
+    get:
+      operationId: getOwnerTradingAccount
+      summary: 검증된 owner의 Account metadata 단건 조회 초안
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/ExistingNumericId' }
+        - { $ref: '#/components/parameters/Traceparent' }
+        - { $ref: '#/components/parameters/Tracestate' }
+      responses:
+        '200':
+          description: 삭제 Guard가 유효한 owner의 ACTIVE/ARCHIVED Account metadata (제안)
+          headers:
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema: { $ref: '../core-api.yaml#/components/schemas/TradingAccount' }
+              example: { id: '9223372036854775806', venue: BINANCE, displayName: owner account, status: ACTIVE, createdAt: '2026-11-07T00:00:00Z' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Deleted' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/Deadline' }
+  /internal/trading-review/v1/books/{bookId}:
+    get:
+      operationId: getOwnerTradingBook
+      summary: owner와 상위 Account Guard를 함께 확인한 Book metadata 단건 조회 초안
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/ExistingNumericId' }
+        - { $ref: '#/components/parameters/Traceparent' }
+        - { $ref: '#/components/parameters/Tracestate' }
+      responses:
+        '200':
+          description: 삭제되지 않은 ACTIVE/ARCHIVED Book과 parent의 metadata 조회 (제안)
+          headers:
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema: { $ref: '../core-api.yaml#/components/schemas/TradingBook' }
+              example: { id: '9223372036854775807', tradingAccountId: '9223372036854775806', venue: BINANCE, productFamily: LINEAR_PERPETUAL, positionMode: ONE_WAY, settlementAsset: USDT, reviewTimezone: UTC, status: ACTIVE, createdAt: '2026-11-07T00:00:00Z' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Deleted' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/Deadline' }
+components:
+  securitySchemes:
+    ServiceCredential:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-credential
+      description: TLS 위의 Go 대상 caller별 credential. 브라우저 JWT/Compute key와 분리한다.
+    UserDelegation:
+      type: apiKey
+      in: header
+      name: X-RefInvest-User-Delegation
+      description: 별도 issuer의 서명된 compact RS256 JWT. header로 전달하며 service credential과 함께 요구한다.
+  schemas:
+    ExistingNumericId:
+      type: string
+      pattern: '^[1-9][0-9]{0,18}$'
+      maxLength: 19
+      description: 현재 DB profile의 canonical positive decimal int64. upper bound 9223372036854775807은 server가 추가 검사한다.
+  parameters:
+    Traceparent:
+      name: traceparent
+      in: header
+      required: false
+      schema: { type: string }
+      description: W3C 형식 검증. malformed 값은 새 trace로 처리하며 인증에 사용하지 않는다.
+    Tracestate:
+      name: tracestate
+      in: header
+      required: false
+      schema: { type: string, maxLength: 512 }
+      description: 유효 traceparent와 함께만 전파하며 baggage는 전달하지 않는다.
+  headers:
+    NoStore:
+      required: true
+      schema: { type: string, enum: [no-store] }
+  responses:
+    InvalidRequest:
+      description: 400 INVALID_REQUEST. 인증 후 path/GET 입력 검증 실패.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '../core-api.yaml#/components/schemas/ErrorResponse' }
+          example: { code: INVALID_REQUEST, message: Invalid request, traceId: draft-correlation, retryable: false }
+    Unauthenticated:
+      description: 401 SERVICE_AUTHENTICATION_FAILED 또는 USER_DELEGATION_INVALID. public 401로 무조건 중계하지 않는다.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '../core-api.yaml#/components/schemas/ErrorResponse' }
+          example: { code: SERVICE_AUTHENTICATION_FAILED, message: Internal authentication failed, traceId: draft-correlation, retryable: false }
+    Forbidden:
+      description: 403 CALLER_NOT_ALLOWED 또는 MEMBER_ACCESS_DENIED. cause별 public mapping을 구분한다.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '../core-api.yaml#/components/schemas/ErrorResponse' }
+          example: { code: MEMBER_ACCESS_DENIED, message: Access denied, traceId: draft-correlation, retryable: false }
+    NotFound:
+      description: 404 RESOURCE_NOT_FOUND. foreign/absent resource 모두 동일 shape, metadata 없음.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '../core-api.yaml#/components/schemas/ErrorResponse' }
+          example: { code: RESOURCE_NOT_FOUND, message: Resource not found, traceId: draft-correlation, retryable: false }
+    Deleted:
+      description: 410 RESOURCE_DELETED. owned 삭제 Guard/tombstone만 해당하며 archive는 삭제가 아니다.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '../core-api.yaml#/components/schemas/ErrorResponse' }
+          example: { code: RESOURCE_DELETED, message: Resource deleted, traceId: draft-correlation, retryable: false }
+    Unavailable:
+      description: 503 AUTHORITY_UNAVAILABLE 또는 OWNER_QUERY_UNAVAILABLE. 권한 확인을 우회하지 않는다.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '../core-api.yaml#/components/schemas/ErrorResponse' }
+          example: { code: AUTHORITY_UNAVAILABLE, message: Service unavailable, traceId: draft-correlation, retryable: true }
+    Deadline:
+      description: 504 REQUEST_DEADLINE_EXCEEDED. 장기 Run deadline이나 job 취소 상태를 뜻하지 않는다.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '../core-api.yaml#/components/schemas/ErrorResponse' }
+          example: { code: REQUEST_DEADLINE_EXCEEDED, message: Request deadline exceeded, traceId: draft-correlation, retryable: true }
