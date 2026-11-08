@@ -22,3 +22,17 @@ context/fixtures/trading-analytics/의 Analytics identity/result vector와 schem
 ```powershell
 ./scripts/verify-context-doc-sync.ps1
 ```
+
+## Trading Review 검토 초안
+
+ADR-073/074와 관련 문서 snapshot은 미채택 초안이다. 아래 파일을 복제한 것은 runtime API/인증을
+활성화하거나 실제 Member authority·Go 중계를 구현했다는 뜻이 아니다.
+
+- [Owner query OpenAPI 초안](../openapi/drafts/trading-review-owner-query.yaml)
+- [Member authority OpenAPI 초안](../openapi/drafts/trading-review-member-authority.yaml)
+- [Synthetic authority fixture](../tradingreview/application/src/test/resources/trading-review-member-authority-draft/authority-cases.json)
+
+OpenAPI 초안은 정식 `core-api.yaml`/`compute-api.yaml`과 분리한다. synthetic fixture는 JSON 전체
+바이트를 hash 기준으로 삼는 golden vector가 아니며 checkout CRLF/LF만 정규화해 비교한다.
+위임 문자열의 SHA-256·draft/runtime 비활성 상태는 integration의 필수 검사에서 Context verifier로
+검증한다. 기존 Normalization/Analytics golden vector의 바이트 비교는 유지한다.

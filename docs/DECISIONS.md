@@ -1266,3 +1266,51 @@ Go 내부 패키지/Tx 방식은 Go 저장소가 결정하되 공유 원자성 �
 snapshot 전파와 실제 integration 검증 완료 후에만 신규 경로를 배포 완료로 기록한다.
 
 Determinism 영향 없음. Point-in-Time 영향 없음. API·fixture·계산 의미의 변경은 별도 결정이다.
+
+---
+
+## ADR-073 — Compound Reprocessing Result Lifetime and ACK Window (DRAFT)
+
+**상태**: 검토 초안. 미채택·미구현. ADR-063/069/072와 OpenAPI·기존 wire/retention은 변경하지 않는다.
+
+**문제**: 비공개 R2/A2의 원자 공개를 기다리는 동안 Compute terminal/ACK receipt TTL이 끝날 수 있다.
+staging 수신 완료를 PERSISTED로 해석할 수 없으며 ACK 실패가 공개 결과 재발행을 유발해서도 안 된다.
+
+**추천 초안**: 기존 보존·ACK wire를 유지하는 제한된 발행 판단 창(A)을 먼저 검토한다.
+최종 공개 이후 ACK delivery 실패는 업무 결과와 분리해 처리한다. 비공개 custody receipt protocol(B)은
+장기 복구 요구가 입증될 경우 별도 version/lifecycle 변경으로 검토한다.
+
+**상세/채택 조건**: [결과 수명·ACK 초안](TRADING_REPROCESSING_RESULT_LIFECYCLE_DRAFT.md)의
+대안·실패/취소·crash·보관·검증 gate를 따른다. 수치·오류·상태·child binding은 아직 확정하지 않았다.
+ADR-071의 hard deadline을 승인하거나 신규 production 동작을 활성화하지 않는다.
+
+Determinism 영향 없음. Point-in-Time 영향 없음. 초안 채택 전 기존 정본을 계속 적용한다.
+
+---
+
+## ADR-074 — Trading Review Owner Query Authentication and Metadata Contract (DRAFT)
+
+**상태**: 검토 초안. 미채택·미구현. ADR-072와 현재 Core/Compute OpenAPI는 그대로 적용한다.
+
+**문제**: Go의 Account/Book in-process 조회를 Core/Gateway에 연결하기 전에 서비스 인증과 사용자
+위임, Member 상태·소유권·archive·오류 중계·timeout/trace를 일관된 계약으로 정해야 한다.
+
+**추천 초안**: TLS 위 caller별 opaque service credential과 별도 RS256 사용자 위임 JWT를 함께
+검증하고 권위 Member 상태 확인 뒤 Go owner/parent/삭제 Guard를 검사한다. 삭제되지 않은 archive
+metadata GET은 허용하는 안을 검토한다. 두 내부 GET path와 기존 공개 schema/오류 envelope를 유지하는
+중계안을 제시하되 현재 runtime을 바꾸지 않는다.
+
+**상세/채택 조건**: [조회·인증 계약 초안](TRADING_REVIEW_OWNER_QUERY_CONTRACT_DRAFT.md)과
+[OpenAPI 초안](../openapi/drafts/trading-review-owner-query.yaml)을 따른다. Member authority protocol,
+TLS/credential/key rotation·철회, archive/public mapping, 실제 인계 DB history/baseline 및 HTTP 검증은
+남아 있다. 60초 TTL/5초 skew 등 수치는 리뷰 제안이며 운영값이 아니다. Go의 현재 archive 거절을
+이 초안만으로 해제하지 않는다. ADR-071/073의 다른 초안도 승인하지 않는다.
+
+Determinism 영향 없음. Point-in-Time 영향 없음. 초안 채택·구현·전파·검증 완료 전 route를 활성화하지 않는다.
+
+**Member authority/키 운영 보완**: [권위 확인 protocol](TRADING_REVIEW_MEMBER_AUTHORITY_DRAFT.md),
+[키 운영 절차](TRADING_REVIEW_DELEGATION_KEY_OPERATIONS_DRAFT.md),
+[authority OpenAPI](../openapi/drafts/trading-review-member-authority.yaml)를 초안에 추가했다.
+Core의 실제 Member에는 접근 차단 상태가 없고 access token에는 familyId가 없다. 별도 Core 권위 상태와
+snapshot 판정·기존 logout과의 구분을 제안하되 실제 issuer/authority/DB·운영 구현을 완료한 것은 아니다.
+ADR-074는 계속 DRAFT이며 Go의 TLS transport 실험도 채택/production 활성화를 대신하지 않는다.
