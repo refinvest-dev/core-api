@@ -614,3 +614,11 @@ actor를 등록하며 Core를 사칭하거나 read token을 쓰기 profile로 �
 Worker workset, Session 0개/Root purge 뒤 관계·권한, parent/child/remediation·scope generation·늦은 job 식별자의
 관계를 구체화했다. Count 숫자만으로 정리 완료를 증명하지 않으며 10개 미실행 제품 수용 계획을 포함한다.
 미채택 리뷰이며 기존 public/Compute·9개 operation draft·lifecycle/ACK wire를 수정하지 않는다.
+
+
+## T04/T05 ID·값 호환성 후속 리뷰
+
+[별도 값/ID 초안](TRADING_REVIEW_ACCOUNT_BOOK_VALUE_REVIEW_DRAFT.md)에 Snowflake authority/legacy 보존·metadata
+정밀도·Unicode strict ingress·timezone catalog와 legacy projection/Restore 경계를 구체화했다.
+로컬 비교 증거와 8개 미실행 제품 계획을 구분하며 기존 public/Compute/OpenAPI·ID/hash·DB 값을 변경하지 않는다.
+발급/seed·driver/codec·운영 인계는 Go 기술 문서와 E01/E02 증거로 이어진다. 이번 리뷰는 정책 채택·업무 구현 전환이 아니다.
