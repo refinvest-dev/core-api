@@ -121,3 +121,9 @@ ADR-074와 [조회·인증 초안](TRADING_REVIEW_OWNER_QUERY_CONTRACT_DRAFT.md)
 [두 GET OpenAPI 초안](../openapi/drafts/trading-review-owner-query.yaml)을 추가했다. 미채택이므로
 기존 계약을 바꾸거나 G05/G06을 닫지 않는다. Member authority·TLS/key 운영·archive/public 오류·
 실제 DB history/baseline이 확정되기 전 production route를 활성화하지 않는다.
+
+## Account/Book API 필드·중계 검토 초안
+
+[Account/Book API 설계 DRAFT](TRADING_REVIEW_ACCOUNT_BOOK_API_DESIGN_DRAFT.md)에 기존 8개 public operation의
+입력/응답 필드·오류 선언과 Core 구현 차이, 신규 내부 경로·쓰기 인증/profile·중계/trace 후보를 정리했다.
+기존 OpenAPI/ADR-074 두 GET은 변경하지 않으며 새 scope/route·public 필드/오류를 활성화하지 않는다.
