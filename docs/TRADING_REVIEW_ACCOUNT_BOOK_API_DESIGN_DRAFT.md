@@ -606,3 +606,11 @@ actor를 등록하며 Core를 사칭하거나 read token을 쓰기 profile로 �
 [Web HTTP](https://github.com/refinvest-dev/web/blob/9354dfe321ee8543c10e0914249f06d6643ca6db/src/shared/api/http.ts),
 [Go experimental authority/ingress](https://github.com/refinvest-dev/trading-review-api/tree/33ced9312709e6f7342892072ad010c5943fbf62/experiments/memberauthority),
 [Member authority draft](TRADING_REVIEW_MEMBER_AUTHORITY_DRAFT.md), [key operations draft](TRADING_REVIEW_DELEGATION_KEY_OPERATIONS_DRAFT.md).
+
+
+## T01~T03 삭제 control·count 후속 리뷰
+
+[별도 삭제 control/overlap 초안](TRADING_REVIEW_DELETION_CONTROL_REVIEW_DRAFT.md)에 접수 시 count·논리 cleanup 범위와
+Worker workset, Session 0개/Root purge 뒤 관계·권한, parent/child/remediation·scope generation·늦은 job 식별자의
+관계를 구체화했다. Count 숫자만으로 정리 완료를 증명하지 않으며 10개 미실행 제품 수용 계획을 포함한다.
+미채택 리뷰이며 기존 public/Compute·9개 operation draft·lifecycle/ACK wire를 수정하지 않는다.
