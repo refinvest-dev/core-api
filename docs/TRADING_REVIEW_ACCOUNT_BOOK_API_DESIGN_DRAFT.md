@@ -330,3 +330,13 @@ terminal 이력은 보존하고, 상위 차단 유지·공통 purge의 멱등 �
 제품 정책 채택/구현 전환으로 해석하지 않는다. Go의 기술/운영 선택은 해당 저장소의 decision review에 연결한다.
 후속 계약 작업은 리뷰 결과를 ADR/정본·OpenAPI draft·positive/negative example에 반영하고 snapshot 영향/consumer
 검증을 준비하는 것이다. 구현은 확정 범위와 명시적인 단계 전환에 따라 별도 진행한다.
+
+## 9개 operation 계약 후보의 정적 구체화
+
+[ADR-075 DRAFT](DECISIONS.md#adr-075--trading-review-accountbook-contract-candidate-draft)와
+[Account/Book OpenAPI draft](../openapi/drafts/trading-review-account-book.yaml)에 기존 8개 업무와 삭제 status
+GET 후보를 구체화했다. 기존 public/Compute·ADR-074 두 GET은 변경하지 않는다. 새 파일의
+x-contract-status=draft/x-runtime-enabled=false/x-policy-status=proposed는 채택/활성화 gate다.
+Book 응답 확장은 해당 draft의 local allOf에서만 표현하며 public schema를 수정하지 않았다.
+vendor extension과 semantic plan은 실제 인증/멱등/DB/HTTP 구현이 아니다. schema 거부 사례와
+int64 upper bound·IANA/현재 owner·commit 복구 등 실행 계획을 분리해 기록한다.
