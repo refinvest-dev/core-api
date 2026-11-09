@@ -308,7 +308,7 @@ userAction/occurredAt은 현재 Core 부가 필드 관측이므로 신규 Go의 
 삭제 202 뒤 polling을 위해 기존 public `GET /trading-deletion-requests/{deletionRequestId}`를 연결할
 **내부 후보** `GET /internal/trading-review/v1/deletion-requests/{deletionRequestId}` /
 `getOwnerTradingDeletionRequest`를 후속 schema에 포함하는 안을 권장한다. 새 public 기능을 추가하는 것이 아니라
-이미 있는 public 동작의 Go 연결 보완안이다. 정확한 내부 OpenAPI는 아직 작성/채택하지 않았다.
+이미 있는 public 동작의 Go 연결 보완안이다. 후속 ADR-075의 9개 operation draft에 내부 OpenAPI를 작성했으며, 여전히 미채택이다.
 이 GET은 read scope+caller 허용으로 자기 request만 조회한다. Root의 ACTIVE/존재를 요구하지 않고
 request owner/target/control 보관 정책을 검증하며, 외부 다른 owner에는 같은 hidden 404다.
 Member 접근 차단/탈퇴 후 상태 조회 허용은 authority/수명주기 계약에서 별도 결정한다. "전 owner 조회"를
@@ -340,3 +340,96 @@ x-contract-status=draft/x-runtime-enabled=false/x-policy-status=proposed는 채�
 Book 응답 확장은 해당 draft의 local allOf에서만 표현하며 public schema를 수정하지 않았다.
 vendor extension과 semantic plan은 실제 인증/멱등/DB/HTTP 구현이 아니다. schema 거부 사례와
 int64 upper bound·IANA/현재 owner·commit 복구 등 실행 계획을 분리해 기록한다.
+
+## P01/P02의 현재 코드·소비자 대조와 수용 계획
+
+상태: **권장안의 호환성 리뷰·미채택·업무 실행 미검증**. 아래 source 사실은 Core
+`6a4f11ca1228a803c9b1eccf334eaa2220ee3551`, Go `537c43db83e107242a86d04aace8b45c967a33ef`,
+Web `9354dfe321ee8543c10e0914249f06d6643ca6db`를 읽은 결과다. 실제 DB의 archive 이력·legacy 값이나
+배포 consumer를 조사한 결과가 아니다. ADR-075 merge도 정책 채택을 뜻하지 않는다.
+
+### 현재 사실과 변경이 필요한 경계
+
+| 경계 | 현재 source 사실 | P01/P02 권장안 채택 시 필요한 일 |
+|---|---|---|
+| Account get/list | Get은 삭제 상태를 차단하고 archive는 허용. 목록 item/count는 ACTIVE·ARCHIVED 포함 | 이 의미를 보존하며 Book과 일관되게 수용 검증 |
+| Account 생성 replay·삭제 | 생성 replay와 신규 삭제는 ACTIVE·ARCHIVED 허용 | 이미 허용된 동작을 신규 변경으로 오인하지 않음 |
+| Book get/list | Get은 Book/parent non-ACTIVE를 RESOURCE_DELETED로 거부. List는 archive parent를 허용하지만 item/count SQL은 ACTIVE-only | 조회 정책과 item/count의 동일한 owner·상태 필터를 함께 변경. archive를 삭제로 표시하지 않음 |
+| Book 생성 | parent ACTIVE 확인이 idempotency claim보다 먼저이며 replay 결과도 ACTIVE만 허용 | 신규 생성 차단은 유지하고, 정당한 replay의 현재 archive metadata 허용 경로를 구분. read/create/delete 권한은 유지 |
+| Book 직접 삭제 | Service가 parent/Book ACTIVE를 요구하고 Domain requestDeletion도 Book ACTIVE만 허용 | Controller/Service만 수정하면 Domain에서 실패하므로 Domain 전이·Application·저장 조건을 함께 검토 |
+| Account 삭제 cascade | 하위 Book SQL은 이미 ACTIVE·ARCHIVED를 삭제 중으로 전이 | 직접 Book 삭제와 비대칭인 사실을 기록. 기존 진행/실패 child request를 새 요청으로 덮지 않음 |
+| Go 기존 ownerquery | Account archive는 조회 가능. Book/parent archive는 ErrArchived이고 Application이 ErrUnavailable로 변환 | 현재 Go가 HTTP 410을 반환한다고 표현하지 않음. HTTP route 미연결이며 내부 오류 정책도 채택 후 조정 |
+| Book 응답 | Core Result에는 displayName이 있지만 TradingBookResponse에서 누락. Result에는 두 latest pointer가 없음 | optional 이름과 pointer의 조회 근거·presence를 Result→DTO 각 경계에서 명시. Result/Domain을 그대로 JSON으로 노출하지 않음 |
+
+Core persistence projection의 `latestLedgerRevisionId` 존재만으로 HTTP mapper가 그 값을 받은 것은 아니다.
+현재 Result가 값을 전달하지 않고 Go ownerquery도 latest를 읽지 않으므로 이 경로의 부재는 **미조회**다.
+Analysis 구현이나 table이 이번 slice에 없다는 이유로 `latestAnalysisRunId: null`을 추정하지 않는다.
+
+### Web 소비자 조사 범위
+
+고정 Web revision의 추적 파일에서 `trading-accounts`, `trading-books`, `TradingAccount`, `TradingBook`,
+`trading-deletion-requests`를 검색하면 계약 snapshot에만 나타난다. `src/`의 전용 호출·타입·화면은
+이번 검색에서 찾지 못했다. `src/entities/account`는 Member 계정 기능이며 TradingAccount 소비자로 세지 않는다.
+공통 `src/shared/api/http.ts`는 응답 JSON을 전달하고 401이면 refresh를 시도한다. 따라서 내부 서비스 인증
+실패를 public 사용자 401로 그대로 보내면 불필요한 refresh가 발생할 수 있다는 source상 위험은 P03에서 이어 검토한다.
+
+이는 현재 checkout의 static inventory다. 배포된 구버전·별도 client·외부 consumer가 없거나 optional 필드 추가를
+모두 허용한다는 증거가 아니다. Web 전용 수용 테스트나 새 Go API E2E가 존재/통과한다고 보고하지 않는다.
+
+### P01 수용 계획
+
+아래 ID는 이 초안의 **실행하지 않은 로컬 검토 사례**다. 정본 TR-ACC Scenario ID나 구현된 fixture가 아니다.
+모든 사례는 caller/service·Member·owner 검증과 현재 삭제 Guard를 전제로 하며 foreign/absent에 대한
+존재 정보는 숨긴다. 신규 조회·쓰기의 삭제 우선권은 TR-I14/TR-I15, 삭제 진행 표시는 TR-I19와 대조한다.
+
+| ID | Given / When | 채택 시 Then과 관측할 부작용 |
+|---|---|---|
+| P01-C01 | owner의 archive Account를 Get/List | metadata 성공, 목록에 포함. 이름·identity·generation·version 변경 없음 |
+| P01-C02 | Book 또는 parent가 archive이며 GetBook | metadata 성공, Book/parent ACTIVE로 변경 없음. artifact·job 접근 허용으로 확대하지 않음 |
+| P01-C03 | 같은 Account에 ACTIVE/ARCHIVED/삭제 중 Book과 다른 owner Book이 섞여 ListBooks | 자기 ACTIVE·ARCHIVED만 items/total에 포함. 동일 snapshot·동일 predicate·기존 정렬/페이지 경계를 검증 |
+| P01-C04 | 삭제 중/삭제 tombstone parent로 ListBooks | owned 삭제 오류. 정상 빈 목록으로 숨기지 않음. tombstone 보관 종료 후 판정은 기존 보관 정책 |
+| P01-C05 | archive parent 아래 새 key로 CreateBook | 409 RESOURCE_STATE_CONFLICT 권장. Book/멱등 성공 mapping·dispatch·ID 사용 완료 기록을 새로 commit하지 않음 |
+| P01-C06 | 같은 owner/operation/key/fingerprint로 Account/Book 생성 replay, 결과 또는 parent가 archive | 최초 identity와 허용된 현재 metadata를 반환. 신규 resource·멱등 성공 mapping·Run/dispatch를 만들지 않음 |
+| P01-C07 | 같은 생성 key의 결과/parent가 삭제됨 | archive 허용보다 삭제가 우선. 정상 201 metadata로 부활시키지 않음. retained owned tombstone은 410, foreign/absent는 hidden 404 |
+| P01-C08 | archive Book 또는 archive parent 아래 Book을 정당하게 신규 삭제 | 202 접수. Domain 전이·현재 fence·generation·DeletionRequest/checklist·멱등 mapping의 원자성 검증. 완료가 아님 |
+| P01-C09 | Root purge 뒤 정당한 기존 DELETE replay 또는 status GET | 원래 request identity/현재 진행을 owner control 경로로 조회. Root ACTIVE/존재를 요구하지 않고 새 삭제·접근 부활 없음. DELETE에는 delete scope 유지 |
+| P01-C10 | 다른 owner/차단된 Member/권한 없는 caller가 archive 또는 replay 경로 호출 | 인증/인가·hidden 404 규칙 유지. archive/replay를 권한 우회로 사용하지 않음 |
+| P01-C11 | 같은 key에 다른 payload와 archive/삭제 상태가 동시에 존재 | 성공 replay는 금지. 숨김·현재 Guard·claim 순서에 따른 정확한 conflict 우선순위는 P03/T01에서 확정하며 이 표로 새 precedence를 채택하지 않음 |
+| P01-C12 | 삭제와 metadata 조회/생성 replay가 경합 | 삭제 commit 이후 시작된 정상 조회·새 publication은 차단. 이미 시작한 snapshot/응답의 경계와 장기 grant 철회는 별도 수명 정책으로 검증 |
+
+P01-C05의 실패 시 기존 durable ID allocator의 후보 발급으로 gap이 생기는 것과 업무 데이터 commit은 별개다.
+ID를 재사용하거나 생성 실패를 기존 mapping 삭제로 보상하지 않는다. UNKNOWN은 실패/미접수로 단정하지 않고
+같은 key/fence로 영속 상태를 확인한다. 위 사례는 SQL 경합이나 UNKNOWN 복구를 실행한 증거가 아니다.
+
+### P02 수용 계획과 mapper 입력의 세 의미
+
+| ID | 근거/입력 | 채택 시 출력·검증 |
+|---|---|---|
+| P02-C01 | 검증된 저장 Book 이름이 Result까지 전달됨 | optional displayName에 원문을 반환. 필수 전환은 별도 변경. 다른 필드로 이름을 합성하지 않음 |
+| P02-C02 | legacy 이름의 저장 근거가 없거나 손상됨 | 빈 문자열/default로 보정하지 않음. 허용된 생략과 저장 오류를 legacy 정책에서 구분; 이번 리뷰는 정상 값으로 승인하지 않음 |
+| P02-C03 | latest를 조회하지 않았거나 정확한 판단 근거가 없음 | 해당 optional 필드 생략. 미조회→null 변환 금지 |
+| P02-C04 | 같은 판정 snapshot에서 공개 pointer 부재가 확인됨 | 명시 null. 신규 생성의 초기 상태도 해당 Tx/조회로 보장된 근거가 있어야 함 |
+| P02-C05 | 공개된 유효 pointer가 확인됨 | 정확한 opaque ID 문자열. 같은 Book/owner·Revision/Analysis 연결과 completed-only 정합성 확인; staging 값은 반환하지 않음 |
+| P02-C06 | 오래된 응답·추가 필드를 거부하는 consumer·목록 item mapper | optional 필드 없는 기존 응답도 허용하는지, 새 필드에 strict decoder가 실패하는지 확인. Create/Get/List/replay mapper를 모두 대조 |
+
+Go의 단일 `*string`에 omitempty를 붙인 것만으로 P02-C03의 omitted와 C04의 null을 모두 표현했다고
+가정하지 않는다. 구체 DTO 표현과 직렬화 예제 검증은 Go 문서가 소유하며 Domain에 HTTP JSON tag·공통
+Option/Base type을 도입하는 근거가 아니다. 이 표는 public OpenAPI의 Book 필드를 수정하지 않는다.
+
+### 변경 순서와 남은 리뷰
+
+P01/P02는 권장안으로 유지한다. 이번에 확인한 source 차이와 위 사례를 기준으로 정책/consumer 영향을
+검토한 뒤 별도 채택한다. Core legacy를 계속 확장하는 구현 계획이 아니라, 필요한 기존 수정과 Go 이관 명세를
+구분하는 비교표다. 실제 적용 범위에는 Domain·Use Case·Store/Reader·목록 count·Result/HTTP mapper가 함께 들어간다.
+신규 Archive/Rename/PATCH·UI·grant/job 정책은 추가하지 않는다.
+
+다음은 P03의 operation별 내부→public 오류/안전한 메시지·trace와 P04의 issuer/Member/권한·취소/timeout
+경계를 검토한다. 이후 T01~T05·legacy 인계 증거로 연결한다. 전 항목을 새로 미정으로 되돌리거나 schema/CI
+성공을 제품 정책 채택·Go 업무 구현 전환으로 해석하지 않는다.
+
+근거: [Core application](https://github.com/refinvest-dev/core-api/tree/6a4f11ca1228a803c9b1eccf334eaa2220ee3551/tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application),
+[Core Book Domain](https://github.com/refinvest-dev/core-api/blob/6a4f11ca1228a803c9b1eccf334eaa2220ee3551/tradingreview/domain/src/main/kotlin/com/refinvest/core/tradingreview/domain/TradingBook.kt),
+[Core persistence](https://github.com/refinvest-dev/core-api/tree/6a4f11ca1228a803c9b1eccf334eaa2220ee3551/tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence),
+[Core HTTP Book](https://github.com/refinvest-dev/core-api/blob/6a4f11ca1228a803c9b1eccf334eaa2220ee3551/tradingreview/adapter/web/src/main/kotlin/com/refinvest/core/tradingreview/adapter/web/book/TradingBookResponse.kt),
+[Go ownerquery](https://github.com/refinvest-dev/trading-review-api/tree/537c43db83e107242a86d04aace8b45c967a33ef/internal/modules/tradingrecord),
+[Web HTTP client](https://github.com/refinvest-dev/web/blob/9354dfe321ee8543c10e0914249f06d6643ca6db/src/shared/api/http.ts).
