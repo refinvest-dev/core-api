@@ -1,0 +1,1239 @@
+openapi: 3.0.3
+info:
+  title: Trading Review Account/Book API (DRAFT)
+  version: 0.1.0-draft
+  description: ADR-075 미채택 계약 후보. 현재 public/Compute·ADR-074 두 GET을 대체하지 않으며 runtime 활성화 금지.
+x-contract-status: draft
+x-runtime-enabled: false
+x-policy-status: proposed
+x-member-state-gate: required-before-resource-lookup
+x-tls-required: true
+x-delegation-audience: refinvest:trading-review:account-book:v1
+x-user-delegation-profile:
+  status: proposed
+  algorithm: RS256
+  type: refinvest-user-delegation+jwt
+  subject: canonical-positive-decimal-int64
+  actor: act.sub must match authenticated service caller
+  scopeMatching: exact-route-scope
+  issuerAndKeys: explicit trusted registry
+  timeSizeRotation: separate review gate; ADR-074 numeric proposals are not adopted
+x-unknown-commit-recovery: same-owner-operation-key-and-authoritative-fence
+security:
+- ServiceCredential: []
+  UserDelegation: []
+externalDocs:
+  url: https://github.com/refinvest-dev/context/blob/main/docs/TRADING_REVIEW_ACCOUNT_BOOK_API_DESIGN_DRAFT.md
+  description: P01~P04 정책 후보와 auth/운영 채택 gate
+paths:
+  /internal/trading-review/v1/accounts:
+    post:
+      operationId: createOwnerTradingAccount
+      x-required-user-scope: trading-review:owner:create
+      x-idempotency-namespace: createTradingAccount
+      x-access-mode: owner-current-guard
+      x-replay-mode: current-metadata
+      parameters:
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: 미채택 성공/replay 후보. 202는 purge 완료가 아니며 replay는 현재 request 상태다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+              examples:
+                success:
+                  value:
+                    id: '9223372036854775806'
+                    venue: BINANCE
+                    displayName: 검토용 계정
+                    status: ACTIVE
+                    createdAt: '2026-11-09T00:00:00Z'
+                replayArchived:
+                  value:
+                    id: '9223372036854775806'
+                    venue: BINANCE
+                    displayName: 검토용 계정
+                    status: ARCHIVED
+                    createdAt: '2026-11-09T00:00:00Z'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '409':
+          $ref: '#/components/responses/Error409'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../core-api.yaml#/components/schemas/CreateTradingAccountRequest
+            example: &id001
+              venue: BINANCE
+              displayName: 검토용 계정
+    get:
+      operationId: listOwnerTradingAccounts
+      x-required-user-scope: trading-review:owner:read
+      x-idempotency-namespace: null
+      x-access-mode: owner-current-guard
+      x-replay-mode: none
+      parameters:
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: 미채택 성공/replay 후보. 202는 purge 완료가 아니며 replay는 현재 request 상태다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountPage'
+              examples:
+                success:
+                  value:
+                    items: []
+                    page: 0
+                    size: 20
+                    total: 0
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '410':
+          $ref: '#/components/responses/Error410'
+  /internal/trading-review/v1/accounts/{accountId}:
+    get:
+      operationId: getOwnerTradingAccount
+      x-required-user-scope: trading-review:owner:read
+      x-idempotency-namespace: null
+      x-access-mode: owner-current-guard
+      x-replay-mode: none
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      responses:
+        '200':
+          description: 미채택 성공/replay 후보. 202는 purge 완료가 아니며 replay는 현재 request 상태다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+              examples:
+                success:
+                  value:
+                    id: '9223372036854775806'
+                    venue: BINANCE
+                    displayName: 검토용 계정
+                    status: ACTIVE
+                    createdAt: '2026-11-09T00:00:00Z'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '410':
+          $ref: '#/components/responses/Error410'
+    delete:
+      operationId: deleteOwnerTradingAccount
+      x-required-user-scope: trading-review:owner:delete
+      x-idempotency-namespace: deleteTradingAccount
+      x-access-mode: owner-current-guard
+      x-replay-mode: existing-deletion-request
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: 미채택 성공/replay 후보. 202는 purge 완료가 아니며 replay는 현재 request 상태다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deletion'
+              examples:
+                success:
+                  value:
+                    id: '9223372036854775805'
+                    targetType: TRADING_ACCOUNT
+                    targetId: '9223372036854775806'
+                    requestedScope: ACCOUNT_SUBTREE
+                    state: REQUESTED
+                    affectedResources:
+                      accounts: 1
+                      books: 1
+                      importSessions: 0
+                      artifacts: 0
+                      ledgerRevisions: 0
+                      analysisRuns: 0
+                      reprocessingRuns: 0
+                      snapshotStatus: REQUEST_TIME_SNAPSHOT
+                    revokedAt: '2026-11-09T00:00:00Z'
+                    primaryPurgeStatus: NOT_STARTED
+                    objectPurgeStatus: NOT_STARTED
+                    computeRuntimePurgeStatus: NOT_STARTED
+                    backupPurgeStatus: IN_PROGRESS
+                    retryable: true
+                    requestedAt: '2026-11-09T00:00:00Z'
+                    updatedAt: '2026-11-09T00:00:00Z'
+                    startedAt: null
+                    completedAt: null
+                    failure: null
+                replayFailed:
+                  value:
+                    id: '9223372036854775805'
+                    targetType: TRADING_ACCOUNT
+                    targetId: '9223372036854775806'
+                    requestedScope: ACCOUNT_SUBTREE
+                    state: FAILED
+                    affectedResources:
+                      accounts: 1
+                      books: 1
+                      importSessions: 0
+                      artifacts: 0
+                      ledgerRevisions: 0
+                      analysisRuns: 0
+                      reprocessingRuns: 0
+                      snapshotStatus: REQUEST_TIME_SNAPSHOT
+                    revokedAt: '2026-11-09T00:00:00Z'
+                    primaryPurgeStatus: NOT_STARTED
+                    objectPurgeStatus: NOT_STARTED
+                    computeRuntimePurgeStatus: NOT_STARTED
+                    backupPurgeStatus: IN_PROGRESS
+                    retryable: false
+                    requestedAt: '2026-11-09T00:00:00Z'
+                    updatedAt: '2026-11-09T00:00:00Z'
+                    startedAt: null
+                    completedAt: null
+                    failure:
+                      code: DELETION_PARTIALLY_COMPLETED
+                      message: 일부 정리가 완료되지 않았습니다.
+                      retryable: false
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '409':
+          $ref: '#/components/responses/Error409'
+  /internal/trading-review/v1/accounts/{accountId}/books:
+    post:
+      operationId: createOwnerTradingBook
+      x-required-user-scope: trading-review:owner:create
+      x-idempotency-namespace: createTradingBook
+      x-access-mode: owner-current-guard
+      x-replay-mode: current-metadata
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: 미채택 성공/replay 후보. 202는 purge 완료가 아니며 replay는 현재 request 상태다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Book'
+              examples:
+                success:
+                  value:
+                    id: '9223372036854775807'
+                    tradingAccountId: '9223372036854775806'
+                    venue: BINANCE
+                    displayName: 검토용 장부
+                    productFamily: LINEAR_PERPETUAL
+                    positionMode: ONE_WAY
+                    settlementAsset: USDT
+                    reviewTimezone: Asia/Seoul
+                    status: ACTIVE
+                    createdAt: '2026-11-09T00:00:00Z'
+                    latestRevisionId: null
+                    latestAnalysisRunId: null
+                replayArchived:
+                  value:
+                    id: '9223372036854775807'
+                    tradingAccountId: '9223372036854775806'
+                    venue: BINANCE
+                    displayName: 검토용 장부
+                    productFamily: LINEAR_PERPETUAL
+                    positionMode: ONE_WAY
+                    settlementAsset: USDT
+                    reviewTimezone: Asia/Seoul
+                    status: ARCHIVED
+                    createdAt: '2026-11-09T00:00:00Z'
+                    latestRevisionId: null
+                    latestAnalysisRunId: null
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../core-api.yaml#/components/schemas/CreateTradingBookRequest
+            example: &id002
+              displayName: 검토용 장부
+              productFamily: LINEAR_PERPETUAL
+              positionMode: ONE_WAY
+              settlementAsset: USDT
+              reviewTimezone: Asia/Seoul
+    get:
+      operationId: listOwnerTradingBooks
+      x-required-user-scope: trading-review:owner:read
+      x-idempotency-namespace: null
+      x-access-mode: owner-current-guard
+      x-replay-mode: none
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: 미채택 성공/replay 후보. 202는 purge 완료가 아니며 replay는 현재 request 상태다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookPage'
+              examples:
+                success:
+                  value:
+                    items:
+                    - id: '9223372036854775807'
+                      tradingAccountId: '9223372036854775806'
+                      venue: BINANCE
+                      displayName: 검토용 장부
+                      productFamily: LINEAR_PERPETUAL
+                      positionMode: ONE_WAY
+                      settlementAsset: USDT
+                      reviewTimezone: Asia/Seoul
+                      status: ACTIVE
+                      createdAt: '2026-11-09T00:00:00Z'
+                      latestRevisionId: null
+                      latestAnalysisRunId: null
+                    page: 0
+                    size: 20
+                    total: 1
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '410':
+          $ref: '#/components/responses/Error410'
+  /internal/trading-review/v1/books/{bookId}:
+    get:
+      operationId: getOwnerTradingBook
+      x-required-user-scope: trading-review:owner:read
+      x-idempotency-namespace: null
+      x-access-mode: owner-current-guard
+      x-replay-mode: none
+      parameters:
+      - name: bookId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      responses:
+        '200':
+          description: 미채택 성공/replay 후보. 202는 purge 완료가 아니며 replay는 현재 request 상태다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Book'
+              examples:
+                success:
+                  value:
+                    id: '9223372036854775807'
+                    tradingAccountId: '9223372036854775806'
+                    venue: BINANCE
+                    displayName: 검토용 장부
+                    productFamily: LINEAR_PERPETUAL
+                    positionMode: ONE_WAY
+                    settlementAsset: USDT
+                    reviewTimezone: Asia/Seoul
+                    status: ACTIVE
+                    createdAt: '2026-11-09T00:00:00Z'
+                    latestRevisionId: null
+                    latestAnalysisRunId: null
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '410':
+          $ref: '#/components/responses/Error410'
+    delete:
+      operationId: deleteOwnerTradingBook
+      x-required-user-scope: trading-review:owner:delete
+      x-idempotency-namespace: deleteTradingBook
+      x-access-mode: owner-current-guard
+      x-replay-mode: existing-deletion-request
+      parameters:
+      - name: bookId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: 미채택 성공/replay 후보. 202는 purge 완료가 아니며 replay는 현재 request 상태다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deletion'
+              examples:
+                success:
+                  value:
+                    id: '9223372036854775805'
+                    targetType: TRADING_BOOK
+                    targetId: '9223372036854775807'
+                    requestedScope: BOOK_SUBTREE
+                    state: REQUESTED
+                    affectedResources:
+                      accounts: 0
+                      books: 1
+                      importSessions: 0
+                      artifacts: 0
+                      ledgerRevisions: 0
+                      analysisRuns: 0
+                      reprocessingRuns: 0
+                      snapshotStatus: REQUEST_TIME_SNAPSHOT
+                    revokedAt: '2026-11-09T00:00:00Z'
+                    primaryPurgeStatus: NOT_STARTED
+                    objectPurgeStatus: NOT_STARTED
+                    computeRuntimePurgeStatus: NOT_STARTED
+                    backupPurgeStatus: IN_PROGRESS
+                    retryable: true
+                    requestedAt: '2026-11-09T00:00:00Z'
+                    updatedAt: '2026-11-09T00:00:00Z'
+                    startedAt: null
+                    completedAt: null
+                    failure: null
+                replayFailed:
+                  value:
+                    id: '9223372036854775805'
+                    targetType: TRADING_BOOK
+                    targetId: '9223372036854775807'
+                    requestedScope: BOOK_SUBTREE
+                    state: FAILED
+                    affectedResources:
+                      accounts: 0
+                      books: 1
+                      importSessions: 0
+                      artifacts: 0
+                      ledgerRevisions: 0
+                      analysisRuns: 0
+                      reprocessingRuns: 0
+                      snapshotStatus: REQUEST_TIME_SNAPSHOT
+                    revokedAt: '2026-11-09T00:00:00Z'
+                    primaryPurgeStatus: NOT_STARTED
+                    objectPurgeStatus: NOT_STARTED
+                    computeRuntimePurgeStatus: NOT_STARTED
+                    backupPurgeStatus: IN_PROGRESS
+                    retryable: false
+                    requestedAt: '2026-11-09T00:00:00Z'
+                    updatedAt: '2026-11-09T00:00:00Z'
+                    startedAt: null
+                    completedAt: null
+                    failure:
+                      code: DELETION_PARTIALLY_COMPLETED
+                      message: 일부 정리가 완료되지 않았습니다.
+                      retryable: false
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '409':
+          $ref: '#/components/responses/Error409'
+  /internal/trading-review/v1/deletion-requests/{deletionRequestId}:
+    get:
+      operationId: getOwnerTradingDeletionRequest
+      x-required-user-scope: trading-review:owner:read
+      x-idempotency-namespace: null
+      x-access-mode: deletion-control-owner
+      x-replay-mode: none
+      parameters:
+      - name: deletionRequestId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      responses:
+        '200':
+          description: 미채택 성공/replay 후보. 202는 purge 완료가 아니며 replay는 현재 request 상태다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deletion'
+              examples:
+                success:
+                  value:
+                    id: '9223372036854775805'
+                    targetType: TRADING_BOOK
+                    targetId: '9223372036854775807'
+                    requestedScope: BOOK_SUBTREE
+                    state: REQUESTED
+                    affectedResources:
+                      accounts: 0
+                      books: 1
+                      importSessions: 0
+                      artifacts: 0
+                      ledgerRevisions: 0
+                      analysisRuns: 0
+                      reprocessingRuns: 0
+                      snapshotStatus: REQUEST_TIME_SNAPSHOT
+                    revokedAt: '2026-11-09T00:00:00Z'
+                    primaryPurgeStatus: NOT_STARTED
+                    objectPurgeStatus: NOT_STARTED
+                    computeRuntimePurgeStatus: NOT_STARTED
+                    backupPurgeStatus: IN_PROGRESS
+                    retryable: true
+                    requestedAt: '2026-11-09T00:00:00Z'
+                    updatedAt: '2026-11-09T00:00:00Z'
+                    startedAt: null
+                    completedAt: null
+                    failure: null
+                rootPurged:
+                  value:
+                    id: '9223372036854775805'
+                    targetType: TRADING_BOOK
+                    targetId: '9223372036854775807'
+                    requestedScope: BOOK_SUBTREE
+                    state: COMPLETED
+                    affectedResources:
+                      accounts: 0
+                      books: 1
+                      importSessions: 0
+                      artifacts: 0
+                      ledgerRevisions: 0
+                      analysisRuns: 0
+                      reprocessingRuns: 0
+                      snapshotStatus: REQUEST_TIME_SNAPSHOT
+                    revokedAt: '2026-11-09T00:00:00Z'
+                    primaryPurgeStatus: COMPLETED
+                    objectPurgeStatus: COMPLETED
+                    computeRuntimePurgeStatus: COMPLETED
+                    backupPurgeStatus: IN_PROGRESS
+                    retryable: false
+                    requestedAt: '2026-11-09T00:00:00Z'
+                    updatedAt: '2026-11-09T00:00:00Z'
+                    startedAt: null
+                    completedAt: '2026-11-09T00:01:00Z'
+                    failure: null
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+        '404':
+          $ref: '#/components/responses/Error404'
+components:
+  securitySchemes:
+    ServiceCredential:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-credential
+    UserDelegation:
+      type: apiKey
+      in: header
+      name: X-RefInvest-User-Delegation
+      description: 별도 RS256 위임 후보. service credential AND·issuer/audience/caller binding·현재 authority/owner 검증 필요.
+  schemas:
+    ExistingNumericId:
+      type: string
+      pattern: ^[1-9][0-9]{0,18}$
+      maxLength: 19
+      description: canonical positive decimal int64 후보. upper bound는 별도 semantic 검사이며 regex만으로 보장하지 않는다.
+    Account:
+      $ref: ../core-api.yaml#/components/schemas/TradingAccount
+    Book:
+      allOf:
+      - $ref: ../core-api.yaml#/components/schemas/TradingBook
+      - type: object
+        properties:
+          displayName:
+            type: string
+            minLength: 1
+            maxLength: 100
+            description: P02 optional additive 후보. 실제 public schema에는 아직 없다.
+    AccountPage:
+      $ref: ../core-api.yaml#/components/schemas/TradingAccountPage
+    BookPage:
+      allOf:
+      - $ref: ../core-api.yaml#/components/schemas/PageMetadata
+      - type: object
+        required:
+        - items
+        properties:
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/Book'
+    Deletion:
+      $ref: ../core-api.yaml#/components/schemas/DeletionRequest
+    Error:
+      $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+  parameters:
+    IdempotencyKey:
+      $ref: ../core-api.yaml#/components/parameters/PublicIdempotencyKey
+    Page:
+      $ref: ../core-api.yaml#/components/parameters/PageParam
+    Size:
+      $ref: ../core-api.yaml#/components/parameters/SizeParam
+    Traceparent:
+      name: traceparent
+      in: header
+      required: false
+      schema:
+        type: string
+    Tracestate:
+      name: tracestate
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 512
+  headers:
+    NoStore:
+      required: true
+      schema:
+        type: string
+        enum:
+        - no-store
+  responses:
+    Error400:
+      description: 400 계약 후보. 세부 code/중계는 P03 리뷰 대상이며 원문/credential 비노출. timeout/500만으로 미접수를 확정하지 않는다.
+      x-error-codes:
+      - REQUEST_INVALID
+      - IDEMPOTENCY_KEY_INVALID
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: REQUEST_INVALID
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error401:
+      description: 401 계약 후보. 세부 code/중계는 P03 리뷰 대상이며 원문/credential 비노출. timeout/500만으로 미접수를 확정하지 않는다.
+      x-error-codes:
+      - SERVICE_AUTHENTICATION_FAILED
+      - USER_DELEGATION_INVALID
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: SERVICE_AUTHENTICATION_FAILED
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error403:
+      description: 403 계약 후보. 세부 code/중계는 P03 리뷰 대상이며 원문/credential 비노출. timeout/500만으로 미접수를 확정하지 않는다.
+      x-error-codes:
+      - CALLER_NOT_ALLOWED
+      - MEMBER_ACCESS_DENIED
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: CALLER_NOT_ALLOWED
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error404:
+      description: 404 계약 후보. 세부 code/중계는 P03 리뷰 대상이며 원문/credential 비노출. timeout/500만으로 미접수를 확정하지 않는다.
+      x-error-codes:
+      - RESOURCE_NOT_FOUND
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RESOURCE_NOT_FOUND
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error409:
+      description: 409 계약 후보. 세부 code/중계는 P03 리뷰 대상이며 원문/credential 비노출. timeout/500만으로 미접수를 확정하지 않는다.
+      x-error-codes:
+      - IDEMPOTENCY_PAYLOAD_CONFLICT
+      - RESOURCE_STATE_CONFLICT
+      - CONCURRENT_MODIFICATION
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: IDEMPOTENCY_PAYLOAD_CONFLICT
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error410:
+      description: 410 계약 후보. 세부 code/중계는 P03 리뷰 대상이며 원문/credential 비노출. timeout/500만으로 미접수를 확정하지 않는다.
+      x-error-codes:
+      - RESOURCE_DELETED
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RESOURCE_DELETED
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error422:
+      description: 422 계약 후보. 세부 code/중계는 P03 리뷰 대상이며 원문/credential 비노출. timeout/500만으로 미접수를 확정하지 않는다.
+      x-error-codes:
+      - REVIEW_TIMEZONE_INVALID
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: REVIEW_TIMEZONE_INVALID
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error500:
+      description: 500 계약 후보. 세부 code/중계는 P03 리뷰 대상이며 원문/credential 비노출. timeout/500만으로 미접수를 확정하지 않는다.
+      x-error-codes:
+      - INTERNAL_ERROR
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error503:
+      description: 503 계약 후보. 세부 code/중계는 P03 리뷰 대상이며 원문/credential 비노출. timeout/500만으로 미접수를 확정하지 않는다.
+      x-error-codes:
+      - AUTHORITY_UNAVAILABLE
+      - TRADING_REVIEW_UNAVAILABLE
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: AUTHORITY_UNAVAILABLE
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: true
+    Error504:
+      description: 504 계약 후보. 세부 code/중계는 P03 리뷰 대상이며 원문/credential 비노출. timeout/500만으로 미접수를 확정하지 않는다.
+      x-error-codes:
+      - REQUEST_DEADLINE_EXCEEDED
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: REQUEST_DEADLINE_EXCEEDED
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: true
+x-schema-cases:
+- name: create-account
+  schema:
+    $ref: ../core-api.yaml#/components/schemas/CreateTradingAccountRequest
+  value: *id001
+  valid: true
+- name: missing-name
+  schema:
+    $ref: ../core-api.yaml#/components/schemas/CreateTradingAccountRequest
+  value:
+    venue: BINANCE
+  valid: false
+- name: null-name
+  schema:
+    $ref: ../core-api.yaml#/components/schemas/CreateTradingAccountRequest
+  value:
+    venue: BINANCE
+    displayName: null
+  valid: false
+- name: empty-name
+  schema:
+    $ref: ../core-api.yaml#/components/schemas/CreateTradingAccountRequest
+  value:
+    venue: BINANCE
+    displayName: ''
+  valid: false
+- name: owner-injection
+  schema:
+    $ref: ../core-api.yaml#/components/schemas/CreateTradingAccountRequest
+  value:
+    venue: BINANCE
+    displayName: 검토용 계정
+    ownerId: '12'
+  valid: false
+- name: unsupported-venue
+  schema:
+    $ref: ../core-api.yaml#/components/schemas/CreateTradingAccountRequest
+  value:
+    venue: OTHER
+    displayName: 검토용 계정
+  valid: false
+- name: name-100-codepoints
+  schema:
+    $ref: ../core-api.yaml#/components/schemas/CreateTradingAccountRequest
+  value:
+    venue: BINANCE
+    displayName: 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀
+  valid: true
+- name: name-101-codepoints
+  schema:
+    $ref: ../core-api.yaml#/components/schemas/CreateTradingAccountRequest
+  value:
+    venue: BINANCE
+    displayName: 가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가
+  valid: false
+- name: create-book
+  schema:
+    $ref: ../core-api.yaml#/components/schemas/CreateTradingBookRequest
+  value: *id002
+  valid: true
+- name: book-extra-parent
+  schema:
+    $ref: ../core-api.yaml#/components/schemas/CreateTradingBookRequest
+  value:
+    displayName: 검토용 장부
+    productFamily: LINEAR_PERPETUAL
+    positionMode: ONE_WAY
+    settlementAsset: USDT
+    reviewTimezone: Asia/Seoul
+    tradingAccountId: '9223372036854775806'
+  valid: false
+- name: book-unsupported-mode
+  schema:
+    $ref: ../core-api.yaml#/components/schemas/CreateTradingBookRequest
+  value:
+    displayName: 검토용 장부
+    productFamily: LINEAR_PERPETUAL
+    positionMode: HEDGE
+    settlementAsset: USDT
+    reviewTimezone: Asia/Seoul
+  valid: false
+- name: book-name-absent-compatible
+  schema:
+    $ref: '#/components/schemas/Book'
+  value:
+    id: '9223372036854775807'
+    tradingAccountId: '9223372036854775806'
+    venue: BINANCE
+    productFamily: LINEAR_PERPETUAL
+    positionMode: ONE_WAY
+    settlementAsset: USDT
+    reviewTimezone: Asia/Seoul
+    status: ACTIVE
+    createdAt: '2026-11-09T00:00:00Z'
+    latestRevisionId: null
+    latestAnalysisRunId: null
+  valid: true
+- name: book-name-null
+  schema:
+    $ref: '#/components/schemas/Book'
+  value:
+    id: '9223372036854775807'
+    tradingAccountId: '9223372036854775806'
+    venue: BINANCE
+    displayName: null
+    productFamily: LINEAR_PERPETUAL
+    positionMode: ONE_WAY
+    settlementAsset: USDT
+    reviewTimezone: Asia/Seoul
+    status: ACTIVE
+    createdAt: '2026-11-09T00:00:00Z'
+    latestRevisionId: null
+    latestAnalysisRunId: null
+  valid: false
+- name: book-pointers-omitted
+  schema:
+    $ref: '#/components/schemas/Book'
+  value:
+    id: '9223372036854775807'
+    tradingAccountId: '9223372036854775806'
+    venue: BINANCE
+    displayName: 검토용 장부
+    productFamily: LINEAR_PERPETUAL
+    positionMode: ONE_WAY
+    settlementAsset: USDT
+    reviewTimezone: Asia/Seoul
+    status: ACTIVE
+    createdAt: '2026-11-09T00:00:00Z'
+  valid: true
+- name: book-pointer-null
+  schema:
+    $ref: '#/components/schemas/Book'
+  value:
+    id: '9223372036854775807'
+    tradingAccountId: '9223372036854775806'
+    venue: BINANCE
+    displayName: 검토용 장부
+    productFamily: LINEAR_PERPETUAL
+    positionMode: ONE_WAY
+    settlementAsset: USDT
+    reviewTimezone: Asia/Seoul
+    status: ACTIVE
+    createdAt: '2026-11-09T00:00:00Z'
+    latestRevisionId: null
+    latestAnalysisRunId: null
+  valid: true
+- name: id-number-rejected
+  schema:
+    $ref: '#/components/schemas/Account'
+  value:
+    id: 9223372036854775807
+    venue: BINANCE
+    displayName: 검토용 계정
+    status: ACTIVE
+    createdAt: '2026-11-09T00:00:00Z'
+  valid: false
+- name: page-empty
+  schema:
+    $ref: '#/components/schemas/AccountPage'
+  value:
+    items: []
+    page: 0
+    size: 20
+    total: 0
+  valid: true
+- name: page-array-null
+  schema:
+    $ref: '#/components/schemas/AccountPage'
+  value:
+    items: null
+    page: 0
+    size: 20
+    total: 0
+  valid: false
+- name: deletion-false-and-nulls
+  schema:
+    $ref: '#/components/schemas/Deletion'
+  value:
+    id: '9223372036854775805'
+    targetType: TRADING_BOOK
+    targetId: '9223372036854775807'
+    requestedScope: BOOK_SUBTREE
+    state: REQUESTED
+    affectedResources: &id003
+      accounts: 0
+      books: 1
+      importSessions: 0
+      artifacts: 0
+      ledgerRevisions: 0
+      analysisRuns: 0
+      reprocessingRuns: 0
+      snapshotStatus: REQUEST_TIME_SNAPSHOT
+    revokedAt: '2026-11-09T00:00:00Z'
+    primaryPurgeStatus: NOT_STARTED
+    objectPurgeStatus: NOT_STARTED
+    computeRuntimePurgeStatus: NOT_STARTED
+    backupPurgeStatus: IN_PROGRESS
+    retryable: false
+    requestedAt: '2026-11-09T00:00:00Z'
+    updatedAt: '2026-11-09T00:00:00Z'
+    startedAt: null
+    completedAt: null
+    failure: null
+  valid: true
+- name: deletion-negative-count
+  schema:
+    $ref: '#/components/schemas/Deletion'
+  value:
+    id: '9223372036854775805'
+    targetType: TRADING_BOOK
+    targetId: '9223372036854775807'
+    requestedScope: BOOK_SUBTREE
+    state: REQUESTED
+    affectedResources:
+      accounts: 0
+      books: -1
+      importSessions: 0
+      artifacts: 0
+      ledgerRevisions: 0
+      analysisRuns: 0
+      reprocessingRuns: 0
+      snapshotStatus: REQUEST_TIME_SNAPSHOT
+    revokedAt: '2026-11-09T00:00:00Z'
+    primaryPurgeStatus: NOT_STARTED
+    objectPurgeStatus: NOT_STARTED
+    computeRuntimePurgeStatus: NOT_STARTED
+    backupPurgeStatus: IN_PROGRESS
+    retryable: true
+    requestedAt: '2026-11-09T00:00:00Z'
+    updatedAt: '2026-11-09T00:00:00Z'
+    startedAt: null
+    completedAt: null
+    failure: null
+  valid: false
+- name: deletion-missing-retryable
+  schema:
+    $ref: '#/components/schemas/Deletion'
+  value:
+    id: '9223372036854775805'
+    targetType: TRADING_BOOK
+    targetId: '9223372036854775807'
+    requestedScope: BOOK_SUBTREE
+    state: REQUESTED
+    affectedResources: *id003
+    revokedAt: '2026-11-09T00:00:00Z'
+    primaryPurgeStatus: NOT_STARTED
+    objectPurgeStatus: NOT_STARTED
+    computeRuntimePurgeStatus: NOT_STARTED
+    backupPurgeStatus: IN_PROGRESS
+    requestedAt: '2026-11-09T00:00:00Z'
+    updatedAt: '2026-11-09T00:00:00Z'
+    startedAt: null
+    completedAt: null
+    failure: null
+  valid: false
+- name: deletion-failure-null
+  schema:
+    $ref: '#/components/schemas/Deletion'
+  value:
+    id: '9223372036854775805'
+    targetType: TRADING_BOOK
+    targetId: '9223372036854775807'
+    requestedScope: BOOK_SUBTREE
+    state: REQUESTED
+    affectedResources: *id003
+    revokedAt: '2026-11-09T00:00:00Z'
+    primaryPurgeStatus: NOT_STARTED
+    objectPurgeStatus: NOT_STARTED
+    computeRuntimePurgeStatus: NOT_STARTED
+    backupPurgeStatus: IN_PROGRESS
+    retryable: true
+    requestedAt: '2026-11-09T00:00:00Z'
+    updatedAt: '2026-11-09T00:00:00Z'
+    startedAt: null
+    completedAt: null
+    failure: null
+  valid: true
+- name: id-max-int64
+  schema:
+    $ref: '#/components/schemas/ExistingNumericId'
+  value: '9223372036854775807'
+  valid: true
+- name: id-leading-zero
+  schema:
+    $ref: '#/components/schemas/ExistingNumericId'
+  value: '01'
+  valid: false
+- name: id-negative
+  schema:
+    $ref: '#/components/schemas/ExistingNumericId'
+  value: '-1'
+  valid: false
+x-semantic-plans:
+- name: int64-overflow
+  operationId: getOwnerTradingAccount
+  expectedStatus: '400'
+  reason: 9223372036854775808은 문자열 regex를 통과할 수 있어 별도 numeric bound 검증 필요
+- name: wrong-create-delete-scope
+  operationId: deleteOwnerTradingBook
+  expectedStatus: '403'
+  reason: read token/삭제 replay라도 DELETE에는 delete scope 필요
+- name: invalid-iana-name
+  operationId: createOwnerTradingBook
+  expectedStatus: '422'
+  reason: string schema로 catalog membership을 증명하지 않음
+- name: archive-new-book
+  operationId: createOwnerTradingBook
+  expectedStatus: '409'
+  reason: P01의 신규 생성 차단, replay와 분기 필요
+- name: deleted-book-replay
+  operationId: deleteOwnerTradingBook
+  expectedStatus: '202'
+  reason: 기존 request의 owner/target 검증; Root ACTIVE를 요구하지 않음
+- name: unknown-commit
+  operationId: createOwnerTradingAccount
+  expectedStatus: '500'
+  reason: 후보 오류 응답은 미접수를 증명하지 않음; 같은 key와 권위 fence로 복구

@@ -1314,3 +1314,29 @@ Determinism 영향 없음. Point-in-Time 영향 없음. 초안 채택·구현·�
 Core의 실제 Member에는 접근 차단 상태가 없고 access token에는 familyId가 없다. 별도 Core 권위 상태와
 snapshot 판정·기존 logout과의 구분을 제안하되 실제 issuer/authority/DB·운영 구현을 완료한 것은 아니다.
 ADR-074는 계속 DRAFT이며 Go의 TLS transport 실험도 채택/production 활성화를 대신하지 않는다.
+
+## ADR-075 — Trading Review Account/Book Contract Candidate (DRAFT)
+
+**상태**: 검토 초안·미채택·runtime 미구현. ADR-072와 현재 public/Compute OpenAPI·ADR-074의
+두 GET/Member authority 초안은 그대로 유지한다. 내부 모듈 호출을 RPC로 전환하지 않는다.
+
+**문제**: Account/Book 8개 public 업무의 Go 연결과 삭제 202 뒤 기존 status 조회에 대해 schema,
+read/create/delete 권한, 멱등 namespace·replay, archive/nullable/error 의미를 검토 가능한 계약으로 묶어야 한다.
+
+**추천 후보**: [9개 operation OpenAPI draft](../openapi/drafts/trading-review-account-book.yaml)와
+[P01~P04 정책 리뷰](TRADING_REVIEW_ACCOUNT_BOOK_API_DESIGN_DRAFT.md)를 함께 검토한다.
+서비스 credential AND 사용자 위임·별도 account-book audience·operation scope/registry·현재 authority/owner/Guard를
+요구하는 방향이다. 기존 read-only audience를 write에 허용하지 않는다. 삭제 status는 Root ACTIVE가 아닌
+검증된 request owner control 조회이며 DELETE replay도 delete 권한을 요구한다.
+Book displayName optional additive, known-none pointer null/미조회 생략, archive metadata/정당한 삭제 허용·
+신규 Book 생성 차단은 초안에서만 표현한다. 정본 schema/handler를 바꾸거나 새 Archive API를 도입하지 않는다.
+
+**검증 범위**: 정적 checker는 로컬 refs/operation·credential AND·scope/namespace·no-store/control gate와
+request/response example·schema 거부·위험한 계약 변이를 검사한다. vendor extension은 verifier 구현이 아니다.
+IANA membership·int64 upper bound·JWT/authority·현재 소유권/삭제·멱등/UNKNOWN·SQL 경합은 실행하지 않는다.
+
+**채택 전**: 제품 정책/오류 중계·scope/status query, 실제 issuer/철회/키 운영, 기존 DTO/legacy/consumer,
+DB baseline/Guard·삭제 control/ID 인계와 HTTP/SQL·상태 전이 증거를 확인한다. 두 GET profile의 통합/교체
+순서·snapshot 전파를 확정한 뒤 별도 채택한다. 이번 draft나 CI 성공만으로 G05/G06·구현 전환을 승인하지 않는다.
+
+Determinism 영향 없음. Point-in-Time 영향 없음. 계산·version/hash·ACK 계약과 실제 DB는 변경하지 않는다.
