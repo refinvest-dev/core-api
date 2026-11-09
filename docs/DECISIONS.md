@@ -1285,3 +1285,58 @@ staging 수신 완료를 PERSISTED로 해석할 수 없으며 ACK 실패가 공�
 ADR-071의 hard deadline을 승인하거나 신규 production 동작을 활성화하지 않는다.
 
 Determinism 영향 없음. Point-in-Time 영향 없음. 초안 채택 전 기존 정본을 계속 적용한다.
+
+---
+
+## ADR-074 — Trading Review Owner Query Authentication and Metadata Contract (DRAFT)
+
+**상태**: 검토 초안. 미채택·미구현. ADR-072와 현재 Core/Compute OpenAPI는 그대로 적용한다.
+
+**문제**: Go의 Account/Book in-process 조회를 Core/Gateway에 연결하기 전에 서비스 인증과 사용자
+위임, Member 상태·소유권·archive·오류 중계·timeout/trace를 일관된 계약으로 정해야 한다.
+
+**추천 초안**: TLS 위 caller별 opaque service credential과 별도 RS256 사용자 위임 JWT를 함께
+검증하고 권위 Member 상태 확인 뒤 Go owner/parent/삭제 Guard를 검사한다. 삭제되지 않은 archive
+metadata GET은 허용하는 안을 검토한다. 두 내부 GET path와 기존 공개 schema/오류 envelope를 유지하는
+중계안을 제시하되 현재 runtime을 바꾸지 않는다.
+
+**상세/채택 조건**: [조회·인증 계약 초안](TRADING_REVIEW_OWNER_QUERY_CONTRACT_DRAFT.md)과
+[OpenAPI 초안](../openapi/drafts/trading-review-owner-query.yaml)을 따른다. Member authority protocol,
+TLS/credential/key rotation·철회, archive/public mapping, 실제 인계 DB history/baseline 및 HTTP 검증은
+남아 있다. 60초 TTL/5초 skew 등 수치는 리뷰 제안이며 운영값이 아니다. Go의 현재 archive 거절을
+이 초안만으로 해제하지 않는다. ADR-071/073의 다른 초안도 승인하지 않는다.
+
+Determinism 영향 없음. Point-in-Time 영향 없음. 초안 채택·구현·전파·검증 완료 전 route를 활성화하지 않는다.
+
+**Member authority/키 운영 보완**: [권위 확인 protocol](TRADING_REVIEW_MEMBER_AUTHORITY_DRAFT.md),
+[키 운영 절차](TRADING_REVIEW_DELEGATION_KEY_OPERATIONS_DRAFT.md),
+[authority OpenAPI](../openapi/drafts/trading-review-member-authority.yaml)를 초안에 추가했다.
+Core의 실제 Member에는 접근 차단 상태가 없고 access token에는 familyId가 없다. 별도 Core 권위 상태와
+snapshot 판정·기존 logout과의 구분을 제안하되 실제 issuer/authority/DB·운영 구현을 완료한 것은 아니다.
+ADR-074는 계속 DRAFT이며 Go의 TLS transport 실험도 채택/production 활성화를 대신하지 않는다.
+
+## ADR-075 — Trading Review Account/Book Contract Candidate (DRAFT)
+
+**상태**: 검토 초안·미채택·runtime 미구현. ADR-072와 현재 public/Compute OpenAPI·ADR-074의
+두 GET/Member authority 초안은 그대로 유지한다. 내부 모듈 호출을 RPC로 전환하지 않는다.
+
+**문제**: Account/Book 8개 public 업무의 Go 연결과 삭제 202 뒤 기존 status 조회에 대해 schema,
+read/create/delete 권한, 멱등 namespace·replay, archive/nullable/error 의미를 검토 가능한 계약으로 묶어야 한다.
+
+**추천 후보**: [9개 operation OpenAPI draft](../openapi/drafts/trading-review-account-book.yaml)와
+[P01~P04 정책 리뷰](TRADING_REVIEW_ACCOUNT_BOOK_API_DESIGN_DRAFT.md)를 함께 검토한다.
+서비스 credential AND 사용자 위임·별도 account-book audience·operation scope/registry·현재 authority/owner/Guard를
+요구하는 방향이다. 기존 read-only audience를 write에 허용하지 않는다. 삭제 status는 Root ACTIVE가 아닌
+검증된 request owner control 조회이며 DELETE replay도 delete 권한을 요구한다.
+Book displayName optional additive, known-none pointer null/미조회 생략, archive metadata/정당한 삭제 허용·
+신규 Book 생성 차단은 초안에서만 표현한다. 정본 schema/handler를 바꾸거나 새 Archive API를 도입하지 않는다.
+
+**검증 범위**: 정적 checker는 로컬 refs/operation·credential AND·scope/namespace·no-store/control gate와
+request/response example·schema 거부·위험한 계약 변이를 검사한다. vendor extension은 verifier 구현이 아니다.
+IANA membership·int64 upper bound·JWT/authority·현재 소유권/삭제·멱등/UNKNOWN·SQL 경합은 실행하지 않는다.
+
+**채택 전**: 제품 정책/오류 중계·scope/status query, 실제 issuer/철회/키 운영, 기존 DTO/legacy/consumer,
+DB baseline/Guard·삭제 control/ID 인계와 HTTP/SQL·상태 전이 증거를 확인한다. 두 GET profile의 통합/교체
+순서·snapshot 전파를 확정한 뒤 별도 채택한다. 이번 draft나 CI 성공만으로 G05/G06·구현 전환을 승인하지 않는다.
+
+Determinism 영향 없음. Point-in-Time 영향 없음. 계산·version/hash·ACK 계약과 실제 DB는 변경하지 않는다.

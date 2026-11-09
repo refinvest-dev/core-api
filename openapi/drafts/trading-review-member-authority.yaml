@@ -1,0 +1,111 @@
+openapi: 3.0.3
+info:
+  title: Trading Review Member Authority (DRAFT)
+  version: 0.1.0-draft
+  description: >-
+    Core auth 소유의 미채택 내부 protocol. 실제 Core endpoint/권위 상태/issuer는 아직 없다.
+    Go→Core credential과 원 위임 actor를 구분하며 production 활성화를 뜻하지 않는다.
+x-contract-status: draft
+x-runtime-enabled: false
+security:
+  - AuthorityCallerCredential: []
+paths:
+  /internal/trading-review/v1/delegations/check:
+    post:
+      operationId: checkTradingReviewDelegation
+      summary: 이번 요청의 위임과 현재 권위 Member/caller/key/jti 상태 확인 (초안)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckRequest' }
+      responses:
+        '200':
+          description: active=false는 이유/신원을 공개하지 않으며 active=true는 원 위임 binding을 반환한다.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/ActiveReply' }
+                  - { $ref: '#/components/schemas/InactiveReply' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/ServiceUnauthenticated' }
+        '403': { $ref: '#/components/responses/ServiceForbidden' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+components:
+  securitySchemes:
+    AuthorityCallerCredential:
+      type: http
+      scheme: bearer
+      bearerFormat: core-authority-service-credential
+      description: Core 대상 trading-review-api credential. 원 Core→Go Authorization을 전달하지 않는다.
+  headers:
+    NoStore:
+      required: true
+      schema: { type: string, enum: [no-store] }
+  schemas:
+    CheckRequest:
+      type: object
+      additionalProperties: false
+      required: [delegation, expectedActor, checkId]
+      properties:
+        delegation: { type: string, minLength: 1, maxLength: 4096, description: 원 compact JWT bytes. 예제/fixture는 서명 검증을 수행하지 않는다. }
+        expectedActor: { type: string, pattern: '^[a-z][a-z0-9-]{0,63}$', description: Go ingress에서 인증한 원 caller. authority caller인 trading-review-api와 다르다. }
+        checkId: { type: string, pattern: '^[0-9a-f]{32}$', description: Go가 매 검사에 생성하는 128-bit random nonce. }
+    InactiveReply:
+      type: object
+      additionalProperties: false
+      required: [active, checkId, tokenSha256, checkedAt]
+      properties:
+        active: { type: boolean, enum: [false] }
+        checkId: { type: string, pattern: '^[0-9a-f]{32}$' }
+        tokenSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        checkedAt: { type: string, format: date-time, description: UTC. 관측용이며 권한 캐시 기한이 아니다. }
+    ActiveReply:
+      type: object
+      additionalProperties: false
+      required: [active, checkId, tokenSha256, checkedAt, sub, actor, iss, aud, scope, jti, exp, policyRevision]
+      properties:
+        active: { type: boolean, enum: [true] }
+        checkId: { type: string, pattern: '^[0-9a-f]{32}$' }
+        tokenSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        checkedAt: { type: string, format: date-time, description: UTC. }
+        sub: { type: string, pattern: '^[1-9][0-9]{0,18}$', description: canonical positive int64 string; upper bound를 추가 검사한다. }
+        actor: { type: string, pattern: '^[a-z][a-z0-9-]{0,63}$' }
+        iss: { type: string, minLength: 1 }
+        aud: { type: string, enum: ['refinvest:trading-review:owner-query:v1'] }
+        scope: { type: string, enum: ['trading-review:owner:read'] }
+        jti: { type: string, minLength: 1 }
+        exp: { type: integer, format: int64, minimum: 1, maximum: 9223372036854775807 }
+        policyRevision: { type: string, pattern: '^[1-9][0-9]{0,18}$', description: Core Member access policy positive revision. 상한을 추가 검사하며 token으로 재사용하지 않는다. }
+  responses:
+    InvalidRequest:
+      description: 400 INVALID_REQUEST. Go에서는 authority unavailable로 처리한다.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '../core-api.yaml#/components/schemas/ErrorResponse' }
+    ServiceUnauthenticated:
+      description: 401 AUTHORITY_SERVICE_AUTHENTICATION_FAILED. Go에서는 503으로 거절한다.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '../core-api.yaml#/components/schemas/ErrorResponse' }
+    ServiceForbidden:
+      description: 403 AUTHORITY_CALLER_NOT_ALLOWED. 사용자 권한 거절로 직접 중계하지 않는다.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '../core-api.yaml#/components/schemas/ErrorResponse' }
+    Unavailable:
+      description: 503 AUTHORITY_UNAVAILABLE. policy 미준비·DB/control store 장애. 옛 allow로 fallback하지 않는다.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '../core-api.yaml#/components/schemas/ErrorResponse' }

@@ -698,3 +698,10 @@ object cleanup latency를 Integration에서 측정한다. 측정 결과만으로
 15. 삭제와 재처리는 각각 별도 async Run/Request 상태를 반환한다.
 16. §12가 모든 110개 Acceptance Scenario를 operation에 연결한다.
 17. Go는 장기 product/ledger/result를, Compute는 최대 24시간 runtime/terminal payload만 저장한다.
+
+## Core→Go metadata 조회 계약 초안
+
+[ADR-074 관련 초안](TRADING_REVIEW_OWNER_QUERY_CONTRACT_DRAFT.md)과
+[draft OpenAPI](../openapi/drafts/trading-review-owner-query.yaml)은 Account/Book 두 GET의 검토안이다.
+미채택이며 이 문서와 현재 core-api.yaml/compute-api.yaml을 대체하지 않는다. 인증·Member 상태·
+archive/오류·DB 인계 gate와 실제 구현/전파 검증 이후에만 신규 경로를 활성화한다.

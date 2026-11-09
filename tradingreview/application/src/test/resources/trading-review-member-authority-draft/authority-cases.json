@@ -1,0 +1,96 @@
+{
+  "status": "draft",
+  "signatureValidationPerformed": false,
+  "expected": {
+    "delegation": "synthetic-delegation-not-a-jwt",
+    "sub": "9007199254740993",
+    "actor": "core-api",
+    "iss": "https://authority.invalid/delegation",
+    "aud": "refinvest:trading-review:owner-query:v1",
+    "scope": "trading-review:owner:read",
+    "jti": "synthetic-delegation-jti",
+    "exp": 1794096060
+  },
+  "active": {
+    "active": true,
+    "checkId": "0123456789abcdef0123456789abcdef",
+    "tokenSha256": "de1b2343941dd648b4e6f0a0837a1dec29f40eea3675be98b43c3c67913e3e2e",
+    "checkedAt": "2026-11-08T00:00:00Z",
+    "sub": "9007199254740993",
+    "actor": "core-api",
+    "iss": "https://authority.invalid/delegation",
+    "aud": "refinvest:trading-review:owner-query:v1",
+    "scope": "trading-review:owner:read",
+    "jti": "synthetic-delegation-jti",
+    "exp": 1794096060,
+    "policyRevision": "1"
+  },
+  "inactive": {
+    "active": false,
+    "checkId": "0123456789abcdef0123456789abcdef",
+    "tokenSha256": "de1b2343941dd648b4e6f0a0837a1dec29f40eea3675be98b43c3c67913e3e2e",
+    "checkedAt": "2026-11-08T00:00:00Z"
+  },
+  "invalidSchemaReplies": [
+    {
+      "name": "inactive identity leak",
+      "value": {
+        "active": false,
+        "checkId": "0123456789abcdef0123456789abcdef",
+        "tokenSha256": "de1b2343941dd648b4e6f0a0837a1dec29f40eea3675be98b43c3c67913e3e2e",
+        "checkedAt": "2026-11-08T00:00:00Z",
+        "sub": "9007199254740993"
+      }
+    },
+    {
+      "name": "missing request binding",
+      "value": {
+        "active": true,
+        "tokenSha256": "de1b2343941dd648b4e6f0a0837a1dec29f40eea3675be98b43c3c67913e3e2e",
+        "checkedAt": "2026-11-08T00:00:00Z",
+        "sub": "9007199254740993",
+        "actor": "core-api",
+        "iss": "https://authority.invalid/delegation",
+        "aud": "refinvest:trading-review:owner-query:v1",
+        "scope": "trading-review:owner:read",
+        "jti": "synthetic-delegation-jti",
+        "exp": 1794096060,
+        "policyRevision": "1"
+      }
+    },
+    {
+      "name": "numeric policy revision",
+      "value": {
+        "active": true,
+        "checkId": "0123456789abcdef0123456789abcdef",
+        "tokenSha256": "de1b2343941dd648b4e6f0a0837a1dec29f40eea3675be98b43c3c67913e3e2e",
+        "checkedAt": "2026-11-08T00:00:00Z",
+        "sub": "9007199254740993",
+        "actor": "core-api",
+        "iss": "https://authority.invalid/delegation",
+        "aud": "refinvest:trading-review:owner-query:v1",
+        "scope": "trading-review:owner:read",
+        "jti": "synthetic-delegation-jti",
+        "exp": 1794096060,
+        "policyRevision": 1
+      }
+    },
+    {
+      "name": "string expiration",
+      "value": {
+        "active": true,
+        "checkId": "0123456789abcdef0123456789abcdef",
+        "tokenSha256": "de1b2343941dd648b4e6f0a0837a1dec29f40eea3675be98b43c3c67913e3e2e",
+        "checkedAt": "2026-11-08T00:00:00Z",
+        "sub": "9007199254740993",
+        "actor": "core-api",
+        "iss": "https://authority.invalid/delegation",
+        "aud": "refinvest:trading-review:owner-query:v1",
+        "scope": "trading-review:owner:read",
+        "jti": "synthetic-delegation-jti",
+        "exp": "1794096060",
+        "policyRevision": "1"
+      }
+    }
+  ]
+}
