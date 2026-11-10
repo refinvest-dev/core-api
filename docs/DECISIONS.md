@@ -1340,3 +1340,31 @@ DB baseline/Guard·삭제 control/ID 인계와 HTTP/SQL·상태 전이 증거를
 순서·snapshot 전파를 확정한 뒤 별도 채택한다. 이번 draft나 CI 성공만으로 G05/G06·구현 전환을 승인하지 않는다.
 
 Determinism 영향 없음. Point-in-Time 영향 없음. 계산·version/hash·ACK 계약과 실제 DB는 변경하지 않는다.
+
+
+---
+
+## ADR-076 — Trading Review Import Contract Consistency Candidate (DRAFT)
+
+**상태**: 검토 초안·미채택·runtime 미구현. 기존 public/Compute OpenAPI·계산/상태/hash/ACK와
+ADR-072는 유지한다. ADR-071/073/074/075의 별도 초안도 승인하지 않는다.
+
+**문제**: Import 9개 Use Case를 Go로 옮기기 전에 filename 필수성, VersionSet 선택 시점,
+operation별 request identity/replay와 상태별 응답·coverage/quality/오류를 정본과 consumer에 맞춰 정리해야 한다.
+
+**우선 후보**: [계약 리뷰](TRADING_REVIEW_IMPORT_CONTRACT_DRAFT.md)의 IC-P01~P06을 검토한다.
+filename optional nullable, Session 생성 exact VersionSet pin과 Validate의 동일 set 확인,
+기존 NUL/colon fingerprint 보존·현재 접근 아래 known replay, 보조 role/canValidate의 additive 명시·verified coverage,
+접수 commit 뒤 현재 full DTO/오류와 Retry 전용 410 shape를 권장한다. 내부 Import auth/wire는 별도 설계다.
+
+**대조와 검증 경계**: [request/replay](TRADING_REVIEW_IMPORT_REPLAY_DRAFT.md),
+[response/error](TRADING_REVIEW_IMPORT_RESPONSE_DRAFT.md),
+[consumer/미실행 계획](TRADING_REVIEW_IMPORT_CONTRACT_ACCEPTANCE_DRAFT.md)에 source 차이·대안·채택/전파를 기록한다.
+현재 일부 Core 동작과 다른 후보를 포함하며 Markdown/source/기존 정적 검사 성공은 실제 HTTP/SQL·
+24개 수용 계획 실행이나 정책 채택의 증거가 아니다. 새 OpenAPI·fixture·runtime은 만들지 않는다.
+
+**채택 전**: 기존 decoder·legacy mapping/pin·consumer, 정확한 내부 operation/profile·오류 번역,
+Guard/lock/UNKNOWN·read/대형 응답·단일 쓰기/DB 인계와 수용 증거를 확인한다. 이후 별도 schema PR과
+snapshot 전파·구현 범위를 확정한다. Core는 중계/인증을 맡고 기존 TR writer/Worker를 중단하는 방향을 유지한다.
+
+Determinism 영향 없음. Point-in-Time 영향 없음. 기존 OpenAPI/vector·실제 DB·운영 설정 변경 없음.

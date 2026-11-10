@@ -705,3 +705,11 @@ object cleanup latency를 Integration에서 측정한다. 측정 결과만으로
 [draft OpenAPI](../openapi/drafts/trading-review-owner-query.yaml)은 Account/Book 두 GET의 검토안이다.
 미채택이며 이 문서와 현재 core-api.yaml/compute-api.yaml을 대체하지 않는다. 인증·Member 상태·
 archive/오류·DB 인계 gate와 실제 구현/전파 검증 이후에만 신규 경로를 활성화한다.
+
+
+## Import 계약 정합성 리뷰 초안
+
+[ADR-076 후보](TRADING_REVIEW_IMPORT_CONTRACT_DRAFT.md)는 filename·VersionSet 선택·request replay와
+[응답/오류](TRADING_REVIEW_IMPORT_RESPONSE_DRAFT.md)의 정합성 검토안이다. **미채택**이며 이 문서의
+기존 설명이나 현재 OpenAPI를 자동 대체하지 않는다. 충돌/누락과 실제 consumer·미실행 수용 계획을 함께
+기록했으며 후속 정책/schema·snapshot·구현 범위를 확정하기 전 신규 동작을 활성화하지 않는다.
