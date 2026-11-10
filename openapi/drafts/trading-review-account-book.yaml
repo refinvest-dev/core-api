@@ -74,6 +74,8 @@ paths:
           $ref: '#/components/responses/Error503'
         '504':
           $ref: '#/components/responses/Error504'
+        '404':
+          $ref: '#/components/responses/Error404'
         '410':
           $ref: '#/components/responses/Error410'
         '409':
@@ -127,10 +129,6 @@ paths:
           $ref: '#/components/responses/Error503'
         '504':
           $ref: '#/components/responses/Error504'
-        '404':
-          $ref: '#/components/responses/Error404'
-        '410':
-          $ref: '#/components/responses/Error410'
   /internal/trading-review/v1/accounts/{accountId}:
     get:
       operationId: getOwnerTradingAccount

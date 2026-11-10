@@ -308,7 +308,7 @@ userAction/occurredAt은 현재 Core 부가 필드 관측이므로 신규 Go의 
 삭제 202 뒤 polling을 위해 기존 public `GET /trading-deletion-requests/{deletionRequestId}`를 연결할
 **내부 후보** `GET /internal/trading-review/v1/deletion-requests/{deletionRequestId}` /
 `getOwnerTradingDeletionRequest`를 후속 schema에 포함하는 안을 권장한다. 새 public 기능을 추가하는 것이 아니라
-이미 있는 public 동작의 Go 연결 보완안이다. 정확한 내부 OpenAPI는 아직 작성/채택하지 않았다.
+이미 있는 public 동작의 Go 연결 보완안이다. 후속 ADR-075의 9개 operation draft에 내부 OpenAPI를 작성했으며, 여전히 미채택이다.
 이 GET은 read scope+caller 허용으로 자기 request만 조회한다. Root의 ACTIVE/존재를 요구하지 않고
 request owner/target/control 보관 정책을 검증하며, 외부 다른 owner에는 같은 hidden 404다.
 Member 접근 차단/탈퇴 후 상태 조회 허용은 authority/수명주기 계약에서 별도 결정한다. "전 owner 조회"를
@@ -340,3 +340,285 @@ x-contract-status=draft/x-runtime-enabled=false/x-policy-status=proposed는 채�
 Book 응답 확장은 해당 draft의 local allOf에서만 표현하며 public schema를 수정하지 않았다.
 vendor extension과 semantic plan은 실제 인증/멱등/DB/HTTP 구현이 아니다. schema 거부 사례와
 int64 upper bound·IANA/현재 owner·commit 복구 등 실행 계획을 분리해 기록한다.
+
+## P01/P02의 현재 코드·소비자 대조와 수용 계획
+
+상태: **권장안의 호환성 리뷰·미채택·업무 실행 미검증**. 아래 source 사실은 Core
+`6a4f11ca1228a803c9b1eccf334eaa2220ee3551`, Go `537c43db83e107242a86d04aace8b45c967a33ef`,
+Web `9354dfe321ee8543c10e0914249f06d6643ca6db`를 읽은 결과다. 실제 DB의 archive 이력·legacy 값이나
+배포 consumer를 조사한 결과가 아니다. ADR-075 merge도 정책 채택을 뜻하지 않는다.
+
+### 현재 사실과 변경이 필요한 경계
+
+| 경계 | 현재 source 사실 | P01/P02 권장안 채택 시 필요한 일 |
+|---|---|---|
+| Account get/list | Get은 삭제 상태를 차단하고 archive는 허용. 목록 item/count는 ACTIVE·ARCHIVED 포함 | 이 의미를 보존하며 Book과 일관되게 수용 검증 |
+| Account 생성 replay·삭제 | 생성 replay와 신규 삭제는 ACTIVE·ARCHIVED 허용 | 이미 허용된 동작을 신규 변경으로 오인하지 않음 |
+| Book get/list | Get은 Book/parent non-ACTIVE를 RESOURCE_DELETED로 거부. List는 archive parent를 허용하지만 item/count SQL은 ACTIVE-only | 조회 정책과 item/count의 동일한 owner·상태 필터를 함께 변경. archive를 삭제로 표시하지 않음 |
+| Book 생성 | parent ACTIVE 확인이 idempotency claim보다 먼저이며 replay 결과도 ACTIVE만 허용 | 신규 생성 차단은 유지하고, 정당한 replay의 현재 archive metadata 허용 경로를 구분. read/create/delete 권한은 유지 |
+| Book 직접 삭제 | Service가 parent/Book ACTIVE를 요구하고 Domain requestDeletion도 Book ACTIVE만 허용 | Controller/Service만 수정하면 Domain에서 실패하므로 Domain 전이·Application·저장 조건을 함께 검토 |
+| Account 삭제 cascade | 하위 Book SQL은 이미 ACTIVE·ARCHIVED를 삭제 중으로 전이 | 직접 Book 삭제와 비대칭인 사실을 기록. 기존 진행/실패 child request를 새 요청으로 덮지 않음 |
+| Go 기존 ownerquery | Account archive는 조회 가능. Book/parent archive는 ErrArchived이고 Application이 ErrUnavailable로 변환 | 현재 Go가 HTTP 410을 반환한다고 표현하지 않음. HTTP route 미연결이며 내부 오류 정책도 채택 후 조정 |
+| Book 응답 | Core Result에는 displayName이 있지만 TradingBookResponse에서 누락. Result에는 두 latest pointer가 없음 | optional 이름과 pointer의 조회 근거·presence를 Result→DTO 각 경계에서 명시. Result/Domain을 그대로 JSON으로 노출하지 않음 |
+
+Core persistence projection의 `latestLedgerRevisionId` 존재만으로 HTTP mapper가 그 값을 받은 것은 아니다.
+현재 Result가 값을 전달하지 않고 Go ownerquery도 latest를 읽지 않으므로 이 경로의 부재는 **미조회**다.
+Analysis 구현이나 table이 이번 slice에 없다는 이유로 `latestAnalysisRunId: null`을 추정하지 않는다.
+
+### Web 소비자 조사 범위
+
+고정 Web revision의 추적 파일에서 `trading-accounts`, `trading-books`, `TradingAccount`, `TradingBook`,
+`trading-deletion-requests`를 검색하면 계약 snapshot에만 나타난다. `src/`의 전용 호출·타입·화면은
+이번 검색에서 찾지 못했다. `src/entities/account`는 Member 계정 기능이며 TradingAccount 소비자로 세지 않는다.
+공통 `src/shared/api/http.ts`는 응답 JSON을 전달하고 401이면 refresh를 시도한다. 따라서 내부 서비스 인증
+실패를 public 사용자 401로 그대로 보내면 불필요한 refresh가 발생할 수 있다는 source상 위험은 P03에서 이어 검토한다.
+
+이는 현재 checkout의 static inventory다. 배포된 구버전·별도 client·외부 consumer가 없거나 optional 필드 추가를
+모두 허용한다는 증거가 아니다. Web 전용 수용 테스트나 새 Go API E2E가 존재/통과한다고 보고하지 않는다.
+
+### P01 수용 계획
+
+아래 ID는 이 초안의 **실행하지 않은 로컬 검토 사례**다. 정본 TR-ACC Scenario ID나 구현된 fixture가 아니다.
+모든 사례는 caller/service·Member·owner 검증과 현재 삭제 Guard를 전제로 하며 foreign/absent에 대한
+존재 정보는 숨긴다. 신규 조회·쓰기의 삭제 우선권은 TR-I14/TR-I15, 삭제 진행 표시는 TR-I19와 대조한다.
+
+| ID | Given / When | 채택 시 Then과 관측할 부작용 |
+|---|---|---|
+| P01-C01 | owner의 archive Account를 Get/List | metadata 성공, 목록에 포함. 이름·identity·generation·version 변경 없음 |
+| P01-C02 | Book 또는 parent가 archive이며 GetBook | metadata 성공, Book/parent ACTIVE로 변경 없음. artifact·job 접근 허용으로 확대하지 않음 |
+| P01-C03 | 같은 Account에 ACTIVE/ARCHIVED/삭제 중 Book과 다른 owner Book이 섞여 ListBooks | 자기 ACTIVE·ARCHIVED만 items/total에 포함. 동일 snapshot·동일 predicate·기존 정렬/페이지 경계를 검증 |
+| P01-C04 | 삭제 중/삭제 tombstone parent로 ListBooks | owned 삭제 오류. 정상 빈 목록으로 숨기지 않음. tombstone 보관 종료 후 판정은 기존 보관 정책 |
+| P01-C05 | archive parent 아래 새 key로 CreateBook | 409 RESOURCE_STATE_CONFLICT 권장. Book/멱등 성공 mapping·dispatch·ID 사용 완료 기록을 새로 commit하지 않음 |
+| P01-C06 | 같은 owner/operation/key/fingerprint로 Account/Book 생성 replay, 결과 또는 parent가 archive | 최초 identity와 허용된 현재 metadata를 반환. 신규 resource·멱등 성공 mapping·Run/dispatch를 만들지 않음 |
+| P01-C07 | 같은 생성 key의 결과/parent가 삭제됨 | archive 허용보다 삭제가 우선. 정상 201 metadata로 부활시키지 않음. retained owned tombstone은 410, foreign/absent는 hidden 404 |
+| P01-C08 | archive Book 또는 archive parent 아래 Book을 정당하게 신규 삭제 | 202 접수. Domain 전이·현재 fence·generation·DeletionRequest/checklist·멱등 mapping의 원자성 검증. 완료가 아님 |
+| P01-C09 | Root purge 뒤 정당한 기존 DELETE replay 또는 status GET | 원래 request identity/현재 진행을 owner control 경로로 조회. Root ACTIVE/존재를 요구하지 않고 새 삭제·접근 부활 없음. DELETE에는 delete scope 유지 |
+| P01-C10 | 다른 owner/차단된 Member/권한 없는 caller가 archive 또는 replay 경로 호출 | 인증/인가·hidden 404 규칙 유지. archive/replay를 권한 우회로 사용하지 않음 |
+| P01-C11 | 같은 key에 다른 payload와 archive/삭제 상태가 동시에 존재 | 성공 replay는 금지. 숨김·현재 Guard·claim 순서에 따른 정확한 conflict 우선순위는 P03/T01에서 확정하며 이 표로 새 precedence를 채택하지 않음 |
+| P01-C12 | 삭제와 metadata 조회/생성 replay가 경합 | 삭제 commit 이후 시작된 정상 조회·새 publication은 차단. 이미 시작한 snapshot/응답의 경계와 장기 grant 철회는 별도 수명 정책으로 검증 |
+
+P01-C05의 실패 시 기존 durable ID allocator의 후보 발급으로 gap이 생기는 것과 업무 데이터 commit은 별개다.
+ID를 재사용하거나 생성 실패를 기존 mapping 삭제로 보상하지 않는다. UNKNOWN은 실패/미접수로 단정하지 않고
+같은 key/fence로 영속 상태를 확인한다. 위 사례는 SQL 경합이나 UNKNOWN 복구를 실행한 증거가 아니다.
+
+### P02 수용 계획과 mapper 입력의 세 의미
+
+| ID | 근거/입력 | 채택 시 출력·검증 |
+|---|---|---|
+| P02-C01 | 검증된 저장 Book 이름이 Result까지 전달됨 | optional displayName에 원문을 반환. 필수 전환은 별도 변경. 다른 필드로 이름을 합성하지 않음 |
+| P02-C02 | legacy 이름의 저장 근거가 없거나 손상됨 | 빈 문자열/default로 보정하지 않음. 허용된 생략과 저장 오류를 legacy 정책에서 구분; 이번 리뷰는 정상 값으로 승인하지 않음 |
+| P02-C03 | latest를 조회하지 않았거나 정확한 판단 근거가 없음 | 해당 optional 필드 생략. 미조회→null 변환 금지 |
+| P02-C04 | 같은 판정 snapshot에서 공개 pointer 부재가 확인됨 | 명시 null. 신규 생성의 초기 상태도 해당 Tx/조회로 보장된 근거가 있어야 함 |
+| P02-C05 | 공개된 유효 pointer가 확인됨 | 정확한 opaque ID 문자열. 같은 Book/owner·Revision/Analysis 연결과 completed-only 정합성 확인; staging 값은 반환하지 않음 |
+| P02-C06 | 오래된 응답·추가 필드를 거부하는 consumer·목록 item mapper | optional 필드 없는 기존 응답도 허용하는지, 새 필드에 strict decoder가 실패하는지 확인. Create/Get/List/replay mapper를 모두 대조 |
+
+Go의 단일 `*string`에 omitempty를 붙인 것만으로 P02-C03의 omitted와 C04의 null을 모두 표현했다고
+가정하지 않는다. 구체 DTO 표현과 직렬화 예제 검증은 Go 문서가 소유하며 Domain에 HTTP JSON tag·공통
+Option/Base type을 도입하는 근거가 아니다. 이 표는 public OpenAPI의 Book 필드를 수정하지 않는다.
+
+### 변경 순서와 남은 리뷰
+
+P01/P02는 권장안으로 유지한다. 이번에 확인한 source 차이와 위 사례를 기준으로 정책/consumer 영향을
+검토한 뒤 별도 채택한다. Core legacy를 계속 확장하는 구현 계획이 아니라, 필요한 기존 수정과 Go 이관 명세를
+구분하는 비교표다. 실제 적용 범위에는 Domain·Use Case·Store/Reader·목록 count·Result/HTTP mapper가 함께 들어간다.
+신규 Archive/Rename/PATCH·UI·grant/job 정책은 추가하지 않는다.
+
+다음은 P03의 operation별 내부→public 오류/안전한 메시지·trace와 P04의 issuer/Member/권한·취소/timeout
+경계를 검토한다. 이후 T01~T05·legacy 인계 증거로 연결한다. 전 항목을 새로 미정으로 되돌리거나 schema/CI
+성공을 제품 정책 채택·Go 업무 구현 전환으로 해석하지 않는다.
+
+근거: [Core application](https://github.com/refinvest-dev/core-api/tree/6a4f11ca1228a803c9b1eccf334eaa2220ee3551/tradingreview/application/src/main/kotlin/com/refinvest/core/tradingreview/application),
+[Core Book Domain](https://github.com/refinvest-dev/core-api/blob/6a4f11ca1228a803c9b1eccf334eaa2220ee3551/tradingreview/domain/src/main/kotlin/com/refinvest/core/tradingreview/domain/TradingBook.kt),
+[Core persistence](https://github.com/refinvest-dev/core-api/tree/6a4f11ca1228a803c9b1eccf334eaa2220ee3551/tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence),
+[Core HTTP Book](https://github.com/refinvest-dev/core-api/blob/6a4f11ca1228a803c9b1eccf334eaa2220ee3551/tradingreview/adapter/web/src/main/kotlin/com/refinvest/core/tradingreview/adapter/web/book/TradingBookResponse.kt),
+[Go ownerquery](https://github.com/refinvest-dev/trading-review-api/tree/537c43db83e107242a86d04aace8b45c967a33ef/internal/modules/tradingrecord),
+[Web HTTP client](https://github.com/refinvest-dev/web/blob/9354dfe321ee8543c10e0914249f06d6643ca6db/src/shared/api/http.ts).
+
+## P03/P04 오류·인증·수명 경계 리뷰
+
+상태: **구체 권장안·미채택·새 업무 runtime 미구현**. Core `6a4f11ca1228a803c9b1eccf334eaa2220ee3551`,
+Go `33ced9312709e6f7342892072ad010c5943fbf62`, Web `9354dfe321ee8543c10e0914249f06d6643ca6db`의
+source와 ADR-072/074/075·authority 초안을 대조했다. 아래 공개 중계 status/code·문구와 쓰기 철회 조건은
+기존 public schema/배포 동작을 변경한 것이 아니며 승인·구현·운영 검증을 각각 구분한다.
+
+### 실제 코드에서 확인한 차이
+
+- Core TradingReviewExceptionHandler는 TradingFailure.kind를 status로 옮기며 message=code와 새 UUID를
+  반환한다. IllegalArgumentException도 일괄 400 REQUEST_INVALID다. 저장 복원의 require 실패가 같은 예외로
+  전파되면 사용자 입력 오류로 분류될 가능성이 있다는 source상 추론이며 실제 손상 DB로 재현하지 않았다.
+- SecurityErrorResponse도 별도 UUID와 retryable=false를 생성한다. 이 handler들만으로 요청 trace 연결·
+  새 중계 오류·500 envelope/no-store가 모두 검증됐다고 하지 않는다. filter와 실제 HTTP 응답을 함께 확인해야 한다.
+- Web apiFetch는 public 401에 refresh를 시도하고 응답 message/code를 읽지만 traceId/retryable/details를
+  ApiError에 보존하지 않는다. 내부 401을 사용자 401로 전달하거나 retryable만으로 재시도하는 설계는 피한다.
+- Go ownerquery는 일부 실패를 ErrUnavailable로 축약하고 HTTP route는 미연결이다. memberauthority 실험의
+  audience/scope와 ingress ReadAllowed는 기존 두 GET 전용이다. 새 account-book profile·쓰기 verifier가 아니다.
+
+### P03: operation별 오류 범위
+
+모든 내부 operation 후보에는 400/401/403/500/503/504가 선언돼 있다. 아래 표는 추가 상태의 의미이며
+현재 public OpenAPI에 새로운 오류를 자동 채택하지 않는다. namespace·권한·현재 Guard는 오류 응답에도 유지한다.
+
+| operation | 추가 오류 후보 | 적용 의미 |
+|---|---|---|
+| createOwnerTradingAccount | 404·409·410 | 생성 replay의 대상 부재/retained tombstone·payload 충돌. 신규 Account 생성에 parent를 가정하지 않음 |
+| listOwnerTradingAccounts | 없음 | 개별 삭제 Account는 items/total에서 제외. Member 거절은 403 후보이며 전체 목록을 개별 Account의 404/410으로 바꾸지 않음 |
+| getOwnerTradingAccount | 404·410 | foreign/absent 숨김, retained owned tombstone 구분 |
+| deleteOwnerTradingAccount | 404·409·410 | 신규 삭제와 기존 request replay/control을 구분 |
+| createOwnerTradingBook | 404·409·410·422 | parent/기존 결과·archive 신규 접수·멱등 충돌·IANA 의미 오류 |
+| getOwnerTradingBook / listOwnerTradingBooks | 404·410 | target 또는 명시 parent Guard. 목록의 삭제 child는 제외하며 parent 삭제와 혼동하지 않음 |
+| deleteOwnerTradingBook | 404·409·410 | 신규 접수·관계/Guard·멱등 충돌. 정당한 request replay는 Root 부재와 별도 |
+| getOwnerTradingDeletionRequest | 404 | request owner/control 조회. Root 삭제 자체를 410으로 응답하지 않음 |
+
+최초 9-operation draft의 ListAccounts 404/410은 제거하고 CreateAccount replay의 404를 보완했다.
+정적 checker도 operation별 404/410과 세 가지 잘못된 응답 범위 변이를 검사한다. 404 보완은 보존된
+replay 대상이 없고 retained tombstone도 없는 경우를 표현하며, 실제 mapping/tombstone retention의
+동시 수명은 T01/T02에서 검증해야 한다. 모든 resource 부재를 410으로 영구 표시하지 않는다.
+
+### P03: 내부 원인 → 공개 중계 권장안
+
+| 원인/검증 위치 | 내부 후보 | 공개 경계 권장안과 제한 |
+|---|---|---|
+| 브라우저 미인증·CSRF | Core에서 거절 | 기존 401 AUTHENTICATION_REQUIRED / 403 CSRF_VALIDATION_FAILED, Go 미호출 |
+| 새 입력·key/page/ID 위반 | 400 REQUEST_INVALID / IDEMPOTENCY_KEY_INVALID | 기존 의미 유지. 구 GET draft의 INVALID_REQUEST는 명시적으로 REQUEST_INVALID에 매핑 |
+| foreign/absent·owned 삭제 | 404 RESOURCE_NOT_FOUND / 410 RESOURCE_DELETED | 정상 resource 접근 규칙. 삭제 request replay/status에 Root ACTIVE를 강제하지 않음 |
+| payload/CAS/state | 409의 기존 code | 같은 key·서로 다른 요청, 확인된 CAS, archive 신규 접수를 구분. write 0건·모든 unique 위반을 CONCURRENT_MODIFICATION으로 단정하지 않음 |
+| 새 reviewTimezone 의미 위반 | 422 REVIEW_TIMEZONE_INVALID | 사용자 입력일 때만. 저장 값 복원/주입 값 이상은 같은 422로 처리하지 않음 |
+| Go service 인증·위임 실패 / caller operation 불허 | 401 SERVICE_AUTHENTICATION_FAILED·USER_DELEGATION_INVALID / 403 CALLER_NOT_ALLOWED | ADR-074의 502 UPSTREAM_SERVICE_ERROR 제안을 우선 검토. public 401/사용자 권한 403으로 blind relay하지 않음. 새 public 502/code는 별도 채택 필요 |
+| 현재 authority active=false | 403 MEMBER_ACCESS_DENIED | 사용자 접근 거절의 public 403 후보. 내부 caller 설정 오류와 분리하며 상세 차단 이유 비노출 |
+| authority 자체 service 401/403·불일치·장애 | Go에서 503 AUTHORITY_UNAVAILABLE | authority credential 오류를 사용자 미인증으로 바꾸지 않고 resource lookup/쓰기 미진행 |
+| DB/일시 업무 의존성 장애 | 503 TRADING_REVIEW_UNAVAILABLE 후보 | 새 후보 code의 public 사용은 채택 gate. 빈 목록/NotFound/허용으로 fallback하지 않음 |
+| request budget 만료 | 504 REQUEST_DEADLINE_EXCEEDED 후보 | 전송 가능할 때의 timeout 후보이며 commit 실패 확정이 아님. public 504/code는 별도 채택 필요 |
+| Restore 손상·예상 밖 실패·원인 미확정 | 500 INTERNAL_ERROR 후보 | caller의 입력 400으로 축약하거나 raw error를 노출하지 않음. UNKNOWN은 별도 내부 결과 분류/같은-key 복구이며 새 public code를 추가하지 않음 |
+
+**P03-R1 권장 판정 순서**는 service·위임/operation·현재 Member, 유효 요청 입력, 검증된 owner/현재 삭제 Guard,
+정당한 committed replay와 신규 admission의 구분, 신규 state/최종 멱등 claim 순서다. matched replay 탐색은
+읽기 전용일 수 있지만 새 claim/write의 scope-first fence와 최종 재검증을 우회하지 않는다. 삭제 control replay는
+Root 대신 request owner/control 규칙을 따른다. archive parent의 새 Book 접수는 RESOURCE_STATE_CONFLICT,
+정당한 exact replay는 허용, ACTIVE 대상의 payload 불일치는 IDEMPOTENCY_PAYLOAD_CONFLICT를 권장한다.
+여러 조건이 겹친 실제 SQL/lock 순서와 공개 precedence는 T01에서 입증한 뒤 채택하며 단일 전역 error enum으로
+결정하지 않는다. ownership을 보지 않은 constraint 오류로 다른 owner의 상태를 노출하지 않는다.
+
+retryable은 오류의 계약 속성이며 자동 재시도 허가·미commit 증거가 아니다. timeout/503/500/취소와 commit
+UNKNOWN·cleanup 실패가 겹치면 먼저 내부 결과/자원 상태를 보존한다. 같은 key·payload와 유효한 새 인증으로
+영속 상태를 복구하며 새 key나 단순 SELECT miss로 미접수를 단정하지 않는다. 제어할 수 없는 전체 retry를 추가하지 않는다.
+
+### P03: 안전한 한국어 메시지 후보와 trace
+
+다음은 **catalog 검토 문구**다. runtime 문자열·기존 public 문구를 교체하지 않는다. code/retryable을 문구로
+추론하지 않고 New 입력과 Restore 저장 실패를 경계에서 분류한다. err.Error()/stack/SQL·토큰·owner/원문 값은 제외한다.
+
+| code/분류 | 안전한 문구 후보 |
+|---|---|
+| AUTHENTICATION_REQUIRED | 로그인이 필요합니다. |
+| REQUEST_INVALID / IDEMPOTENCY_KEY_INVALID | 요청 형식을 확인해 주세요. |
+| RESOURCE_NOT_FOUND | 요청한 정보를 찾을 수 없습니다. |
+| RESOURCE_DELETED | 삭제 중이거나 삭제된 정보입니다. |
+| IDEMPOTENCY_PAYLOAD_CONFLICT | 같은 요청 키에 다른 내용이 사용되었습니다. |
+| RESOURCE_STATE_CONFLICT | 현재 상태에서는 요청을 처리할 수 없습니다. |
+| CONCURRENT_MODIFICATION | 상태가 변경되었습니다. 현재 상태를 확인해 주세요. |
+| REVIEW_TIMEZONE_INVALID | 지원하는 시간대를 선택해 주세요. |
+| MEMBER_ACCESS_DENIED / CSRF 거절 | 이 요청을 수행할 수 없습니다. |
+| 내부 인증/authority/일시 의존성·INTERNAL_ERROR | 요청을 처리할 수 없습니다. |
+| REQUEST_DEADLINE_EXCEEDED | 응답을 확인하지 못했습니다. 같은 요청으로 상태를 확인해 주세요. |
+
+마지막 문구도 새 key로 접수를 반복하라는 뜻이 아니며 HTTP method/요청 의미에 맞춰 최종 catalog를 리뷰한다.
+details는 승인된 field/reason만 노출하고 field=reviewTimezone 등 wire 이름을 명시한다. userAction/occurredAt은
+기존 Core 부가 필드일 뿐 새 Go 응답의 필수 필드가 아니다.
+
+Core와 Go는 검증한 traceparent/tracestate로 hop별 span을 연결하고 오류 traceId는 안전한 correlation 값으로
+명시 매핑하는 방향이다. 기존 UUID를 W3C trace-id로 표시하지 않는다. 미유효 parent는 새 trace로 시작하고,
+parent 없는 tracestate·baggage·토큰/원문 식별자는 전달하지 않는다. response traceId도 승인된 형식/상한을 검증하며
+internal 값·header를 무조건 public에 복사하지 않는다. 정확한 상한·실제 로그 연결·UI 진단 전달은 적용 gate다.
+내부 WWW-Authenticate/Set-Cookie/Retry-After는 allowlist와 계약 없이 전달하지 않고 no-store를 각 경계에서 검증한다.
+
+### P04: profile·Member 권위·실행 주체
+
+| 경계 | 유지할 권장안·필수 gate |
+|---|---|
+| Core/Gateway→Go | caller별 Go 대상 credential AND 별도 사용자 위임. 외부 내부용 header를 제거하고 실제 인증 caller와 act.sub를 결속. 사용자/body owner·ADMIN을 근거로 다른 owner 허용 금지 |
+| profile 교체 | owner-query:v1/read 전용 실험을 account-book:v1의 read/create/delete에 재사용하지 않음. issuer/verifier/authority/registry의 정확한 aud·scope·operation 허용과 old/new 전환을 함께 리뷰 |
+| Go→Core authority | 별도 Core 대상 자격, 원 위임·expectedActor/checkId/hash/identity 결속·현재 권위 상태 확인. inbound key·Compute 공용 key·cookie를 재사용하지 않음 |
+| authority→Go owner/Guard | active=true는 scope 소유권·삭제 Guard의 대체가 아님. active=false/불일치/장애이면 resource lookup·claim·DB 업무 쓰기 중단 |
+| 키/상태 운영 | public key 신뢰 snapshot과 실제 Member/caller/kid/jti 철회 상태는 별개. 기존 logout의 refresh-family 철회를 새 위임의 즉시 철회로 간주하지 않음. TTL·수치·키 운영은 초안 gate 유지 |
+| Worker | 승인된 입력·owner·업무 상태/현재 Guard를 사용. 사용자 위임을 DB/checkpoint에 저장하거나 만료될 때마다 같은 토큰으로 authority 재조회하지 않음. Member 탈퇴 연계는 별도 lifecycle 인계 |
+
+**쓰기의 Member 차단 선형화는 아직 미확정**이다. 기존 authority 초안은 권위 snapshot 뒤 시작한 제한된
+read의 완료를 허용하며 Core/Go의 하나의 Tx나 전역 즉시 철회를 보장하지 않는다. 그 문구만으로 새 create/delete
+commit까지 승인했다고 하지 않는다. 제한된 admission의 기준을 authority snapshot으로 둘지, Member 차단의
+완료 정의에 Go admission fence/후속 조율을 포함할지 비교해 별도 확정해야 한다. DB Tx 안의 authority RPC나
+단순 두 번 조회로 이 경합이 해결됐다고 주장하지 않는다. 서비스 소유권을 넘는 임의 Member table lock도 도입하지 않는다.
+
+초기 callback은 Core proxy→Go gate→Core authority→Core 권위 조회다. proxy는 DB Tx/row lock이나 authority에
+필요한 자원을 잡은 채 Go를 기다리지 않고 authority는 Go/public proxy를 다시 호출하지 않는다. import DAG만으로
+안전성을 증명하지 않으며 유한 budget·동시성/부하·장애를 검증한다. Gateway 도입 시 실제 Gateway caller와 위임
+actor를 등록하며 Core를 사칭하거나 read token을 쓰기 profile로 승격하지 않는다.
+
+### P04: timeout·브라우저 취소·durable 작업 수명
+
+| 수명/상황 | 규칙과 실제로 확인할 결과 |
+|---|---|
+| ingress request | 검증된 upstream 남은 예산과 Go 설정 중 더 짧은 유한 budget. 새 숫자/미검증 client deadline header를 채택하지 않음 |
+| outbound authority/Compute/Storage | 각 connect/TLS/read/전체 통신 예산을 request 또는 Worker Context 안에서 한정. 요청별 타이머 합산이 무제한 request 연장이 아님 |
+| DB lock/statement/Tx cleanup | 남은 요청 예산·잠금 정책을 반영. rollback cleanup은 Runner의 독립 유한 Context. cancellation/UNKNOWN·cleanup 실패 보존 |
+| Account/Book 생성 | 동기 metadata command이며 장기 Run이 아님. 응답 전 commit, 응답 유실 뒤 same-key 복구. disconnect가 생성 취소/미접수 증거는 아님 |
+| 삭제 202 | DeletionRequest와 차단의 durable 접수. 연결 종료와 독립해 purge 재개. Root 없는 기존 status/replay는 owner control로 확인 |
+| Worker lease / attempt / 전체 Run deadline | 서로 다른 소유/조건. 재시작·새 HTTP retry로 deadline을 연장하지 않음. token expiry·HTTP timeout을 job deadline/cancel 상태로 사용하지 않음 |
+| 명시 작업 취소 | 승인된 별도 command·owner/state·영속 취소 의도·publication Guard 경쟁·실제 종료/정리 확인. 현재 9개 Account/Book operation에 새 cancel API는 없음 |
+
+브라우저가 끊기면 전송 불가한 응답을 강제하지 않고 내부 취소/commit 상태를 관측한다. 새 public 499를 추가하지
+않는다. 이미 commit된 삭제 요청을 abort로 되돌리거나 purge 완료/취소 완료로 표시하지 않는다. 재발급 위임의 jti,
+새 hop trace는 달라질 수 있지만 owner·기존 operation namespace·semantic body/대상·Idempotency-Key는 보존한다.
+삭제 실패의 remediation은 단순 request retry와 별개이며 기존 lifecycle identity/상태를 보존한다.
+
+### P03/P04 수용 계획과 다음 순서
+
+아래는 **미실행 로컬 검토 사례**다. 정본 Scenario ID·fixture나 서명/권위 DB/HTTP 검증 완료가 아니다.
+
+| ID | Given / When | Then 계획 |
+|---|---|---|
+| P03-E01 | 브라우저 미인증 또는 CSRF 거절 | Core에서 거절, Go 호출 0 |
+| P03-E02 | Go service/위임 인증 실패 또는 caller 불허 | 내부 401/403을 public 사용자 401로 중계하지 않고 Web refresh를 유발하지 않음; 502/code 채택 gate 유지 |
+| P03-E03 | authority inactive / authority 자격 실패 | 각각 사용자 접근 거절 / authority unavailable로 분리, 둘 다 resource lookup·업무 write 0 |
+| P03-E04 | 같은 Domain 값 검증 실패가 New 입력 / Restore 저장 값에서 발생 | 입력 오류 / 내부 저장 이상을 분리. Restore를 public 400/422로 축약하지 않음 |
+| P03-E05 | 삭제·archive·다른 payload·CAS가 중첩 | P03-R1과 T01의 owner/Guard·matched replay·신규 state·claim 순서를 검증. 예상 못한 unique/0건을 무조건 409로 바꾸지 않음 |
+| P03-E06 | 내부 HTML/redirect·잘못된 JSON/알 수 없는 code·unsafe error message | 제한된 오류로 변환, 원문/header/credential 미노출. 정상 응답·빈 목록으로 처리하지 않음 |
+| P03-E07 | deadline/취소와 commit UNKNOWN·cleanup 실패가 동시 존재 | 모든 원인/결과 보존·same-key 복구. 임의 미commit/자동 retry로 단정하지 않음 |
+| P03-E08 | malformed trace·internal challenge·raw payload가 error 경로로 유입 | correlation/새 trace·header allowlist/no-store 검증, token/원문·PII 미노출 |
+| P04-A01 | 서비스 자격 또는 사용자 위임 하나만 유효 | AND 검증 거절, owner lookup·claim 0 |
+| P04-A02 | 기존 read-only audience 또는 read scope로 create/delete/replay | 거절. DELETE replay에도 delete scope, old profile의 암묵적 fallback 없음 |
+| P04-A03 | authority checkId/hash/actor/aud/scope/만료 binding 불일치 | unavailable로 fail closed, owner lookup·쓰기 0 |
+| P04-A04 | Gateway가 Core actor를 사용하거나 실제 인증 caller와 act.sub 불일치 | 실제 caller binding 실패, 키 rotation으로 actor/scope를 바꾸지 않음 |
+| P04-A05 | Member 차단 snapshot과 진행 중 create/delete commit이 경합 | 쓰기 admission/차단 완료의 별도 합의를 먼저 확정·검증. 기존 제한된 read 성공으로 쓰기 차단 보장을 증명하지 않음 |
+| P04-A06 | Core proxy가 authority 자원을 점유하거나 authority가 다시 Go 호출 | 부하/장애에서 유한 실패·교착/재귀 방지, DB Tx 안의 원격 호출 없음 |
+| P04-A07 | commit 전 request 취소 | rollback 시도/cleanup 및 실제 결과 확인. 의도적 취소를 durable job cancel로 바꾸지 않음 |
+| P04-A08 | 생성 commit 뒤 response 유실 | 같은 key/body·재인증으로 같은 identity 복구. 새 resource/멱등 성공 mapping 중복 없음 |
+| P04-A09 | 삭제 접수 commit/202 뒤 브라우저 종료 | 차단·request/checkpoint 유지, Worker 독립 재개·상태 조회. abort로 새 취소/COMPLETED 만들지 않음 |
+| P04-A10 | 위임 expiry·lease 만료·attempt/Run deadline 중 하나만 경과 | 서로 다른 정책/상태를 적용. HTTP retry가 영속 deadline을 연장하지 않음 |
+| P04-A11 | ADMIN 또는 다른 owner가 read/create/delete/status 요청 | role/token scope만으로 owner/parent/control Guard 우회 불가 |
+| P04-A12 | Go→Core authority credential이 회수되거나 policy store 장애 | unavailable, inbound/Compute key·옛 allow로 fallback하지 않음 |
+
+다음은 T01~T03의 실제 소비자별 fence/Tx·삭제 control·overlap/count와 T04/T05의 ID/metadata·legacy 증거를
+좁힌다. P03/P04의 권장안도 public 오류 schema/profile 전환·쓰기 철회 의미·실제 issuer/authority/운영과 함께
+채택해야 하며 이번 문서·정적 checker 성공만으로 업무 구현 단계로 전환하지 않는다.
+
+근거: [Core Trading Review handler](https://github.com/refinvest-dev/core-api/blob/6a4f11ca1228a803c9b1eccf334eaa2220ee3551/tradingreview/adapter/web/src/main/kotlin/com/refinvest/core/tradingreview/adapter/web/error/TradingReviewExceptionHandler.kt),
+[Core security errors](https://github.com/refinvest-dev/core-api/tree/6a4f11ca1228a803c9b1eccf334eaa2220ee3551/auth/adapter/web/src/main/kotlin/com/refinvest/core/auth/adapter/web/error),
+[Web HTTP](https://github.com/refinvest-dev/web/blob/9354dfe321ee8543c10e0914249f06d6643ca6db/src/shared/api/http.ts),
+[Go experimental authority/ingress](https://github.com/refinvest-dev/trading-review-api/tree/33ced9312709e6f7342892072ad010c5943fbf62/experiments/memberauthority),
+[Member authority draft](TRADING_REVIEW_MEMBER_AUTHORITY_DRAFT.md), [key operations draft](TRADING_REVIEW_DELEGATION_KEY_OPERATIONS_DRAFT.md).
+
+
+## T01~T03 삭제 control·count 후속 리뷰
+
+[별도 삭제 control/overlap 초안](TRADING_REVIEW_DELETION_CONTROL_REVIEW_DRAFT.md)에 접수 시 count·논리 cleanup 범위와
+Worker workset, Session 0개/Root purge 뒤 관계·권한, parent/child/remediation·scope generation·늦은 job 식별자의
+관계를 구체화했다. Count 숫자만으로 정리 완료를 증명하지 않으며 10개 미실행 제품 수용 계획을 포함한다.
+미채택 리뷰이며 기존 public/Compute·9개 operation draft·lifecycle/ACK wire를 수정하지 않는다.
+
+
+## T04/T05 ID·값 호환성 후속 리뷰
+
+[별도 값/ID 초안](TRADING_REVIEW_ACCOUNT_BOOK_VALUE_REVIEW_DRAFT.md)에 Snowflake authority/legacy 보존·metadata
+정밀도·Unicode strict ingress·timezone catalog와 legacy projection/Restore 경계를 구체화했다.
+로컬 비교 증거와 8개 미실행 제품 계획을 구분하며 기존 public/Compute/OpenAPI·ID/hash·DB 값을 변경하지 않는다.
+발급/seed·driver/codec·운영 인계는 Go 기술 문서와 E01/E02 증거로 이어진다. 이번 리뷰는 정책 채택·업무 구현 전환이 아니다.
