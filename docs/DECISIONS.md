@@ -1368,3 +1368,11 @@ Guard/lock/UNKNOWN·read/대형 응답·단일 쓰기/DB 인계와 수용 증거
 snapshot 전파·구현 범위를 확정한다. Core는 중계/인증을 맡고 기존 TR writer/Worker를 중단하는 방향을 유지한다.
 
 Determinism 영향 없음. Point-in-Time 영향 없음. 기존 OpenAPI/vector·실제 DB·운영 설정 변경 없음.
+
+
+**ADR-076 HTTP 후보 보완**: [Import 내부 HTTP 초안](TRADING_REVIEW_IMPORT_HTTP_DRAFT.md)과
+[9개 operation OpenAPI](../openapi/drafts/trading-review-import.yaml)를 연결한다. 별도 Import audience와
+read/create/upload/admit/delete·service AND 서명 위임·현재 authority/owner/Guard를 제안한다.
+공통 deletion status는 ADR-075 별도 profile/control 조회를 재사용하며 token을 자동 승격하지 않는다.
+Member 차단과 쓰기 commit 선형화는 미확정이다. 정적 checker의 예제/schema·위험 변이 검증과
+24개 미실행 semantic 계획을 구분하며 runtime 인증/HTTP·multipart/SQL·정책 채택은 여전히 별도다.

@@ -1,0 +1,2259 @@
+openapi: 3.0.3
+info:
+  title: Trading Review Import HTTP API (DRAFT)
+  version: 0.1.0-draft
+  description: ADR-076 미채택 IC-P01~P06 후보. active public/Compute 계약·runtime을 변경하지 않는다.
+x-contract-status: draft
+x-policy-status: proposed
+x-runtime-enabled: false
+x-tls-required: true
+x-member-state-gate: required-before-resource-lookup
+x-member-write-linearization: unresolved-review-gate
+x-delegation-audience: refinvest:trading-review:import:v1
+x-user-delegation-profile:
+  status: proposed
+  algorithm: RS256
+  type: refinvest-user-delegation+jwt
+  subject: canonical-positive-decimal-int64
+  actor: act.sub must match authenticated service caller
+  issuerAndKeys: explicit trusted registry
+  scopeMatching: exact registered route permission; no wildcard/admin bypass
+  timeSizeRotation: separate review gate; no new numeric TTL/skew/deadline chosen
+  scopeEncoding: single-string-exact-operation-class
+x-operation-registry: method + route + import audience + exact scope + authenticated caller allowlist
+x-unknown-commit-recovery: same-owner-operation-key-and-authoritative-fence
+x-deletion-control:
+  contract: trading-review-account-book.yaml
+  operationId: getOwnerTradingDeletionRequest
+  path: /internal/trading-review/v1/deletion-requests/{deletionRequestId}
+  audience: refinvest:trading-review:account-book:v1
+  scope: trading-review:owner:read
+  accessMode: deletion-control-owner
+  separateDelegationRequired: true
+  status: separate-unadopted-profile; no import-token auto-upgrade
+security:
+- ServiceCredential: []
+  UserDelegation: []
+paths:
+  /internal/trading-review/v1/books/{bookId}/imports:
+    post:
+      operationId: createOwnerTradingImportSession
+      x-required-user-scope: trading-review:import:create
+      x-idempotency-namespace: createTradingImportSession
+      x-access-mode: owner-current-guard
+      x-replay-mode: current-resource
+      parameters:
+      - name: bookId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: 기존 요청의 접수/replay와 현재 허용 DTO. 202는 완료 보장이 아니며 응답은 이미 terminal일 수 있다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+              examples:
+                Received:
+                  $ref: '#/components/examples/Received'
+                Validating:
+                  $ref: '#/components/examples/Validating'
+                Accepted:
+                  $ref: '#/components/examples/Accepted'
+                Rejected:
+                  $ref: '#/components/examples/Rejected'
+                Failed:
+                  $ref: '#/components/examples/Failed'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateImport'
+            examples:
+              Create:
+                $ref: '#/components/examples/Create'
+    get:
+      operationId: listOwnerTradingImports
+      x-required-user-scope: trading-review:import:read
+      x-idempotency-namespace: null
+      x-access-mode: owner-current-guard
+      x-replay-mode: none
+      parameters:
+      - name: bookId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: 기존 요청의 접수/replay와 현재 허용 DTO. 202는 완료 보장이 아니며 응답은 이미 terminal일 수 있다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionPage'
+              examples:
+                Page:
+                  $ref: '#/components/examples/Page'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+  /internal/trading-review/v1/import-sessions/{sessionId}:
+    get:
+      operationId: getOwnerTradingImportSession
+      x-required-user-scope: trading-review:import:read
+      x-idempotency-namespace: null
+      x-access-mode: owner-current-guard
+      x-replay-mode: none
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      responses:
+        '200':
+          description: 기존 요청의 접수/replay와 현재 허용 DTO. 202는 완료 보장이 아니며 응답은 이미 terminal일 수 있다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+              examples:
+                Received:
+                  $ref: '#/components/examples/Received'
+                Validating:
+                  $ref: '#/components/examples/Validating'
+                Accepted:
+                  $ref: '#/components/examples/Accepted'
+                Rejected:
+                  $ref: '#/components/examples/Rejected'
+                Failed:
+                  $ref: '#/components/examples/Failed'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+    delete:
+      operationId: deleteOwnerTradingImportSession
+      x-required-user-scope: trading-review:import:delete
+      x-idempotency-namespace: deleteTradingImportSession
+      x-access-mode: owner-current-guard
+      x-replay-mode: existing-deletion-request
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: 기존 요청의 접수/replay와 현재 허용 DTO. 202는 완료 보장이 아니며 응답은 이미 terminal일 수 있다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDeletion'
+              examples:
+                Deletion:
+                  $ref: '#/components/examples/Deletion'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+  /internal/trading-review/v1/import-sessions/{sessionId}/artifacts:
+    post:
+      operationId: uploadOwnerTradingImportArtifact
+      x-required-user-scope: trading-review:import:upload
+      x-idempotency-namespace: uploadTradingImportArtifact
+      x-access-mode: owner-current-guard
+      x-replay-mode: current-resource
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: 기존 요청의 접수/replay와 현재 허용 DTO. 202는 완료 보장이 아니며 응답은 이미 terminal일 수 있다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Artifact'
+              examples:
+                Artifact:
+                  $ref: '#/components/examples/Artifact'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+        '200':
+          description: 기존 요청의 접수/replay와 현재 허용 DTO. 202는 완료 보장이 아니며 응답은 이미 terminal일 수 있다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Artifact'
+              examples:
+                Artifact:
+                  $ref: '#/components/examples/Artifact'
+      x-stream-contract:
+        partOrder: either
+        maxFileBytes: 52428800
+        metadataFilename: optional-nullable
+        fileExamples: symbolic-only; no actual multipart bytes tested
+        closeOwner: inbound-adapter; join-before-return
+        finalGuardAfterStorage: true
+        externalIOInTx: false
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadImport'
+            examples:
+              Upload:
+                $ref: '#/components/examples/Upload'
+            encoding:
+              metadata:
+                contentType: application/json
+              file:
+                contentType: text/csv, application/vnd.ms-excel
+  /internal/trading-review/v1/import-sessions/{sessionId}/validation:
+    post:
+      operationId: validateOwnerTradingImportSession
+      x-required-user-scope: trading-review:import:admit
+      x-idempotency-namespace: validateTradingImportSession
+      x-access-mode: owner-current-guard
+      x-replay-mode: current-resource
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: 기존 요청의 접수/replay와 현재 허용 DTO. 202는 완료 보장이 아니며 응답은 이미 terminal일 수 있다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+              examples:
+                Received:
+                  $ref: '#/components/examples/Received'
+                Validating:
+                  $ref: '#/components/examples/Validating'
+                Accepted:
+                  $ref: '#/components/examples/Accepted'
+                Rejected:
+                  $ref: '#/components/examples/Rejected'
+                Failed:
+                  $ref: '#/components/examples/Failed'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateImport'
+            examples:
+              ValidateEmpty:
+                $ref: '#/components/examples/ValidateEmpty'
+              ValidateExact:
+                $ref: '#/components/examples/ValidateExact'
+  /internal/trading-review/v1/import-sessions/{sessionId}/retry:
+    post:
+      operationId: retryOwnerTradingImportSession
+      x-required-user-scope: trading-review:import:admit
+      x-idempotency-namespace: retryTradingImportSession
+      x-access-mode: owner-current-guard
+      x-replay-mode: current-resource
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: 기존 요청의 접수/replay와 현재 허용 DTO. 202는 완료 보장이 아니며 응답은 이미 terminal일 수 있다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+              examples:
+                Received:
+                  $ref: '#/components/examples/Received'
+                Validating:
+                  $ref: '#/components/examples/Validating'
+                Accepted:
+                  $ref: '#/components/examples/Accepted'
+                Rejected:
+                  $ref: '#/components/examples/Rejected'
+                Failed:
+                  $ref: '#/components/examples/Failed'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          description: Retry 전용 410. code별 userAction/occurredAt 필수.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetryGone'
+              examples:
+                RetryExpired:
+                  $ref: '#/components/examples/RetryExpired'
+                RetryDeleted:
+                  $ref: '#/components/examples/RetryDeleted'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+  /internal/trading-review/v1/import-sessions/{sessionId}/quality-report:
+    get:
+      operationId: getOwnerTradingImportQualityReport
+      x-required-user-scope: trading-review:import:read
+      x-idempotency-namespace: null
+      x-access-mode: owner-current-guard
+      x-replay-mode: none
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      responses:
+        '200':
+          description: 기존 요청의 접수/replay와 현재 허용 DTO. 202는 완료 보장이 아니며 응답은 이미 terminal일 수 있다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quality'
+              examples:
+                Quality:
+                  $ref: '#/components/examples/Quality'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+  /internal/trading-review/v1/source-artifacts/{artifactId}:
+    delete:
+      operationId: deleteOwnerTradingSourceArtifact
+      x-required-user-scope: trading-review:import:delete
+      x-idempotency-namespace: deleteTradingSourceArtifact
+      x-access-mode: owner-current-guard
+      x-replay-mode: existing-deletion-request
+      parameters:
+      - name: artifactId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExistingNumericId'
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: 기존 요청의 접수/replay와 현재 허용 DTO. 202는 완료 보장이 아니며 응답은 이미 terminal일 수 있다.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RawDeletion'
+              examples:
+                RawDeletion:
+                  $ref: '#/components/examples/RawDeletion'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+components:
+  securitySchemes:
+    ServiceCredential:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-credential
+    UserDelegation:
+      type: apiKey
+      in: header
+      name: X-RefInvest-User-Delegation
+  schemas:
+    ExistingNumericId:
+      type: string
+      pattern: ^[1-9][0-9]{0,18}$
+      maxLength: 19
+      description: 기존/신규 decimal ID 후보. int64 상한·owner는 별도 semantic gate로 검증한다.
+    CreateImport:
+      $ref: ../core-api.yaml#/components/schemas/CreateTradingImportSessionRequest
+    ExactSessionVersionSet:
+      type: object
+      additionalProperties: false
+      required:
+      - normalizer
+      - reconstruction
+      - versionSetHash
+      properties:
+        normalizer:
+          $ref: ../core-api.yaml#/components/schemas/NormalizerVersionSet
+        reconstruction:
+          $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+        analytics:
+          allOf:
+          - $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+          nullable: true
+        versionSetHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+    ValidateImport:
+      type: object
+      additionalProperties: false
+      properties:
+        targetVersionSet:
+          allOf:
+          - $ref: '#/components/schemas/ExactSessionVersionSet'
+          nullable: true
+    UploadMetadata:
+      type: object
+      required:
+      - role
+      - contentType
+      - byteSize
+      - sha256
+      - dialectCandidate
+      additionalProperties: false
+      properties:
+        role:
+          $ref: ../core-api.yaml#/components/schemas/TradingArtifactRole
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: 'IC-P01 미채택 후보: omitted/null filename 허용. non-null일 때만 안전 basename·Unicode/길이를 검증한다.'
+          nullable: true
+        contentType:
+          type: string
+          enum:
+          - text/csv
+          - application/vnd.ms-excel
+        byteSize:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 52428800
+        sha256:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+        dialectCandidate:
+          type: string
+          enum:
+          - AUTO
+          - BINANCE_USDS_TRADE_HISTORY_V1
+          - BINANCE_USDS_POSITION_HISTORY_V1
+      oneOf:
+      - properties:
+          role:
+            enum:
+            - TRADE_HISTORY
+          dialectCandidate:
+            enum:
+            - AUTO
+            - BINANCE_USDS_TRADE_HISTORY_V1
+      - properties:
+          role:
+            enum:
+            - POSITION_HISTORY
+          dialectCandidate:
+            enum:
+            - AUTO
+            - BINANCE_USDS_POSITION_HISTORY_V1
+    UploadImport:
+      type: object
+      additionalProperties: false
+      required:
+      - metadata
+      - file
+      properties:
+        metadata:
+          $ref: '#/components/schemas/UploadMetadata'
+        file:
+          type: string
+          format: binary
+    Artifact:
+      type: object
+      required:
+      - id
+      - importSessionId
+      - role
+      - contentType
+      - byteSize
+      - sha256
+      - uploadStatus
+      - retentionStatus
+      - rawReparseAvailable
+      - coverage
+      - uploadedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/ExistingNumericId'
+        importSessionId:
+          $ref: '#/components/schemas/ExistingNumericId'
+        role:
+          $ref: ../core-api.yaml#/components/schemas/TradingArtifactRole
+        filename:
+          type: string
+          nullable: true
+          description: raw lifecycle 뒤 null; storage path가 아니다.
+        contentType:
+          type: string
+          enum:
+          - text/csv
+          - application/vnd.ms-excel
+        byteSize:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 52428800
+        sha256:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+        dialectCandidate:
+          type: string
+        detectedDialect:
+          type: string
+          nullable: true
+        schemaFingerprint:
+          type: string
+          nullable: true
+        uploadStatus:
+          $ref: ../core-api.yaml#/components/schemas/ArtifactUploadStatus
+        retentionStatus:
+          $ref: ../core-api.yaml#/components/schemas/ArtifactRetentionStatus
+        rawReparseAvailable:
+          type: boolean
+        coverage:
+          allOf:
+          - $ref: ../core-api.yaml#/components/schemas/ArtifactCoverage
+          type: object
+          nullable: true
+          description: validation 전 또는 timestamp parse 실패 시 null; 유효 artifact는 role별 독립 observed coverage를 보존한다.
+        rawExpiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        uploadedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+      additionalProperties: false
+    ValidationIssue:
+      type: object
+      required:
+      - code
+      - severity
+      - artifactRole
+      properties:
+        code:
+          type: string
+        severity:
+          type: string
+          enum:
+          - WARNING
+          - ERROR
+        artifactRole:
+          $ref: ../core-api.yaml#/components/schemas/TradingArtifactRole
+        sourceRowNumber:
+          type: integer
+          minimum: 1
+          nullable: true
+        field:
+          type: string
+          nullable: true
+      description: offending raw value는 포함하지 않는다.
+      additionalProperties: false
+    Quality:
+      type: object
+      required:
+      - qualityStatus
+      - rowCountsByArtifactRole
+      - ignoredNonTradingRowCounts
+      - validationIssues
+      - reconciliationStatusCounts
+      - capability
+      - excludedReasonCounts
+      properties:
+        qualityStatus:
+          $ref: ../core-api.yaml#/components/schemas/QualityStatus
+        rowCountsByArtifactRole:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+            minimum: 0
+        ignoredNonTradingRowCounts:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+            minimum: 0
+        validationIssues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+        reconciliationStatusCounts:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+            minimum: 0
+        capability:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: ../core-api.yaml#/components/schemas/AnalysisCapability
+        excludedReasonCounts:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+            minimum: 0
+      additionalProperties: false
+    Session:
+      type: object
+      required:
+      - id
+      - tradingBookId
+      - sourceTimezone
+      - reviewTimezone
+      - declaredPositionMode
+      - artifacts
+      - dataPolicyVersion
+      - retentionPolicy
+      - maskingPolicyVersion
+      - evidenceRetention
+      - deletionPolicyVersion
+      - versions
+      - createdAt
+      - status
+      properties:
+        id:
+          $ref: '#/components/schemas/ExistingNumericId'
+        tradingBookId:
+          $ref: '#/components/schemas/ExistingNumericId'
+        sourceTimezone:
+          type: string
+        reviewTimezone:
+          type: string
+        declaredPositionMode:
+          $ref: ../core-api.yaml#/components/schemas/TradingPositionMode
+        artifacts:
+          type: array
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/Artifact'
+        dataPolicyVersion:
+          $ref: ../core-api.yaml#/components/schemas/VersionIdentifier
+        retentionPolicy:
+          $ref: ../core-api.yaml#/components/schemas/VersionIdentifier
+        maskingPolicyVersion:
+          $ref: ../core-api.yaml#/components/schemas/VersionIdentifier
+        evidenceRetention:
+          type: string
+          enum:
+          - BOOK_LIFECYCLE
+        deletionPolicyVersion:
+          $ref: ../core-api.yaml#/components/schemas/VersionIdentifier
+        versions:
+          $ref: '#/components/schemas/ExactSessionVersionSet'
+        createdAt:
+          type: string
+          format: date-time
+        validationStartedAt:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum:
+          - RECEIVED
+          - VALIDATING
+          - ACCEPTED
+          - REJECTED
+          - PROCESSING_FAILED
+        qualitySummary:
+          allOf:
+          - $ref: '#/components/schemas/Quality'
+          nullable: true
+        failure:
+          allOf:
+          - $ref: ../core-api.yaml#/components/schemas/TradingImportFailure
+          nullable: true
+        createdLedgerRevisionId:
+          type: string
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        uploadedArtifactRoles:
+          type: array
+          uniqueItems: true
+          maxItems: 2
+          items:
+            $ref: ../core-api.yaml#/components/schemas/TradingArtifactRole
+        missingArtifactRoles:
+          type: array
+          uniqueItems: true
+          maxItems: 2
+          items:
+            $ref: ../core-api.yaml#/components/schemas/TradingArtifactRole
+        canValidate:
+          type: boolean
+      additionalProperties: false
+      oneOf:
+      - properties:
+          status:
+            enum:
+            - RECEIVED
+            - VALIDATING
+          failure:
+            type: string
+            nullable: true
+            enum:
+            - null
+          qualitySummary:
+            type: string
+            nullable: true
+            enum:
+            - null
+          createdLedgerRevisionId:
+            type: string
+            nullable: true
+            enum:
+            - null
+          completedAt:
+            type: string
+            nullable: true
+            enum:
+            - null
+      - required:
+        - qualitySummary
+        - createdLedgerRevisionId
+        - completedAt
+        properties:
+          status:
+            enum:
+            - ACCEPTED
+          qualitySummary:
+            $ref: '#/components/schemas/Quality'
+          createdLedgerRevisionId:
+            type: string
+            minLength: 1
+          completedAt:
+            type: string
+            format: date-time
+          failure:
+            type: string
+            nullable: true
+            enum:
+            - null
+      - required:
+        - qualitySummary
+        - failure
+        - completedAt
+        properties:
+          status:
+            enum:
+            - REJECTED
+          failure:
+            $ref: ../core-api.yaml#/components/schemas/TradingImportFailure
+          completedAt:
+            type: string
+            format: date-time
+          createdLedgerRevisionId:
+            type: string
+            nullable: true
+            enum:
+            - null
+      - required:
+        - failure
+        - completedAt
+        properties:
+          status:
+            enum:
+            - PROCESSING_FAILED
+          failure:
+            $ref: ../core-api.yaml#/components/schemas/TradingImportFailure
+          completedAt:
+            type: string
+            format: date-time
+          qualitySummary:
+            type: string
+            nullable: true
+            enum:
+            - null
+          createdLedgerRevisionId:
+            type: string
+            nullable: true
+            enum:
+            - null
+    SessionPage:
+      allOf:
+      - $ref: ../core-api.yaml#/components/schemas/PageMetadata
+      - type: object
+        required:
+        - items
+        properties:
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/Session'
+    SessionDeletion:
+      allOf:
+      - $ref: ../core-api.yaml#/components/schemas/DeletionRequest
+      - properties:
+          id:
+            $ref: '#/components/schemas/ExistingNumericId'
+          targetId:
+            $ref: '#/components/schemas/ExistingNumericId'
+          targetType:
+            enum:
+            - TRADING_IMPORT_SESSION
+          requestedScope:
+            enum:
+            - IMPORT_SESSION_SUBTREE
+            - IMPORT_SUBTREE
+    RawDeletion:
+      allOf:
+      - $ref: ../core-api.yaml#/components/schemas/DeletionRequest
+      - properties:
+          id:
+            $ref: '#/components/schemas/ExistingNumericId'
+          targetId:
+            $ref: '#/components/schemas/ExistingNumericId'
+          targetType:
+            enum:
+            - TRADING_SOURCE_ARTIFACT
+          requestedScope:
+            enum:
+            - RAW_ONLY
+    Error:
+      $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+    RetryGone:
+      allOf:
+      - $ref: ../core-api.yaml#/components/schemas/TradingImportRetryError
+      - oneOf:
+        - properties:
+            code:
+              enum:
+              - SOURCE_ARTIFACT_EXPIRED
+            userAction:
+              enum:
+              - REUPLOAD_REQUIRED
+        - properties:
+            code:
+              enum:
+              - RESOURCE_DELETED
+            userAction:
+              enum:
+              - NONE
+  parameters:
+    IdempotencyKey:
+      $ref: ../core-api.yaml#/components/parameters/PublicIdempotencyKey
+    Page:
+      $ref: ../core-api.yaml#/components/parameters/PageParam
+    Size:
+      $ref: ../core-api.yaml#/components/parameters/SizeParam
+    Traceparent:
+      name: traceparent
+      in: header
+      required: false
+      schema:
+        type: string
+    Tracestate:
+      name: tracestate
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 512
+  headers:
+    NoStore:
+      required: true
+      schema:
+        type: string
+        enum:
+        - no-store
+  responses:
+    Error400:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - REQUEST_INVALID
+      - IDEMPOTENCY_KEY_INVALID
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: REQUEST_INVALID
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error401:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - SERVICE_AUTHENTICATION_FAILED
+      - USER_DELEGATION_INVALID
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: SERVICE_AUTHENTICATION_FAILED
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error403:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - CALLER_NOT_ALLOWED
+      - MEMBER_ACCESS_DENIED
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: CALLER_NOT_ALLOWED
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error404:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - RESOURCE_NOT_FOUND
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RESOURCE_NOT_FOUND
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error409:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - RESOURCE_STATE_CONFLICT
+      - IDEMPOTENCY_PAYLOAD_CONFLICT
+      - ARTIFACT_ROLE_CONFLICT
+      - ARTIFACT_IDENTITY_CONFLICT
+      - CONCURRENT_MODIFICATION
+      - RESULT_NOT_AVAILABLE
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RESOURCE_STATE_CONFLICT
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error410:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - RESOURCE_DELETED
+      - SOURCE_ARTIFACT_EXPIRED
+      - SOURCE_ARTIFACT_DELETED
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RESOURCE_DELETED
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error413:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - FILE_TOO_LARGE
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FILE_TOO_LARGE
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error415:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - UNSUPPORTED_MEDIA_TYPE
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNSUPPORTED_MEDIA_TYPE
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error422:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - MISSING_REQUIRED_ARTIFACT
+      - VERSION_UNAVAILABLE
+      - CHECKSUM_MISMATCH
+      - SOURCE_TIMEZONE_INVALID
+      - REVIEW_TIMEZONE_INVALID
+      - POSITION_MODE_UNSUPPORTED
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: MISSING_REQUIRED_ARTIFACT
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error500:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - INTERNAL_ERROR
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: false
+    Error503:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - TEMPORARY_DEPENDENCY_FAILURE
+      - AUTHORITY_UNAVAILABLE
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: TEMPORARY_DEPENDENCY_FAILURE
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: true
+    Error504:
+      description: 미채택 내부 오류. timeout/5xx는 미접수 보장이 아니며 public 번역은 문서의 표를 따른다.
+      x-error-codes:
+      - REQUEST_DEADLINE_EXCEEDED
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: REQUEST_DEADLINE_EXCEEDED
+            message: 요청을 처리할 수 없습니다.
+            traceId: draft-correlation
+            retryable: true
+  examples:
+    Create:
+      value:
+        sourceTimezone: Asia/Seoul
+        reviewTimezone: UTC
+        declaredPositionMode: ONE_WAY
+    ValidateEmpty:
+      value: {}
+    ValidateExact:
+      value:
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: TRADE_V1
+              POSITION_HISTORY: POSITION_V1
+            adapterVersion: ADAPTER_V1
+            normalizerVersion: NORMALIZER_V1
+            canonicalSchemaVersion: CANONICAL_V1
+            implementationDigest: digest-normalizer-example
+            versionSetHash: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              instrument-example: TERMS_V1
+            reconstructionPolicyVersion: RECONSTRUCTION_V1
+            reconciliationVersion: RECONCILIATION_V1
+            reviewUnitSchemaVersion: REVIEW_UNIT_V1
+            evidenceSchemaVersion: EVIDENCE_V1
+            implementationDigest: digest-reconstruction-example
+            versionSetHash: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+          versionSetHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+    Upload:
+      value:
+        metadata:
+          role: TRADE_HISTORY
+          contentType: text/csv
+          byteSize: 16
+          sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          dialectCandidate: AUTO
+        file: SYNTHETIC_BYTES
+    Artifact:
+      value:
+        id: '9223372036854775805'
+        importSessionId: '9223372036854775806'
+        role: TRADE_HISTORY
+        filename: null
+        contentType: text/csv
+        byteSize: 16
+        sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        dialectCandidate: AUTO
+        detectedDialect: null
+        schemaFingerprint: null
+        uploadStatus: UPLOADED
+        retentionStatus: ACTIVE
+        rawReparseAvailable: true
+        coverage: null
+        rawExpiresAt: '2026-11-11T00:00:00Z'
+        uploadedAt: '2026-11-10T00:00:00Z'
+        deletedAt: null
+    Received:
+      value:
+        id: '9223372036854775806'
+        tradingBookId: '9223372036854775807'
+        sourceTimezone: Asia/Seoul
+        reviewTimezone: UTC
+        declaredPositionMode: ONE_WAY
+        artifacts: []
+        dataPolicyVersion: TRADING_DATA_POLICY_V1
+        retentionPolicy: TRADING_RAW_RETENTION_V1
+        maskingPolicyVersion: TRADING_MASKING_V1
+        evidenceRetention: BOOK_LIFECYCLE
+        deletionPolicyVersion: TRADING_DELETION_V1
+        versions:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: TRADE_V1
+              POSITION_HISTORY: POSITION_V1
+            adapterVersion: ADAPTER_V1
+            normalizerVersion: NORMALIZER_V1
+            canonicalSchemaVersion: CANONICAL_V1
+            implementationDigest: digest-normalizer-example
+            versionSetHash: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              instrument-example: TERMS_V1
+            reconstructionPolicyVersion: RECONSTRUCTION_V1
+            reconciliationVersion: RECONCILIATION_V1
+            reviewUnitSchemaVersion: REVIEW_UNIT_V1
+            evidenceSchemaVersion: EVIDENCE_V1
+            implementationDigest: digest-reconstruction-example
+            versionSetHash: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+          versionSetHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+        createdAt: '2026-11-10T00:00:00Z'
+        validationStartedAt: null
+        status: RECEIVED
+        uploadedArtifactRoles: []
+        missingArtifactRoles:
+        - POSITION_HISTORY
+        - TRADE_HISTORY
+        canValidate: false
+        failure: null
+        qualitySummary: null
+        createdLedgerRevisionId: null
+        completedAt: null
+    Validating:
+      value:
+        id: '9223372036854775806'
+        tradingBookId: '9223372036854775807'
+        sourceTimezone: Asia/Seoul
+        reviewTimezone: UTC
+        declaredPositionMode: ONE_WAY
+        artifacts:
+        - id: '9223372036854775805'
+          importSessionId: '9223372036854775806'
+          role: TRADE_HISTORY
+          filename: null
+          contentType: text/csv
+          byteSize: 16
+          sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          dialectCandidate: AUTO
+          detectedDialect: null
+          schemaFingerprint: null
+          uploadStatus: UPLOADED
+          retentionStatus: ACTIVE
+          rawReparseAvailable: true
+          coverage: null
+          rawExpiresAt: '2026-11-11T00:00:00Z'
+          uploadedAt: '2026-11-10T00:00:00Z'
+          deletedAt: null
+        - id: '9223372036854775804'
+          importSessionId: '9223372036854775806'
+          role: POSITION_HISTORY
+          filename: null
+          contentType: text/csv
+          byteSize: 16
+          sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          dialectCandidate: AUTO
+          detectedDialect: null
+          schemaFingerprint: null
+          uploadStatus: UPLOADED
+          retentionStatus: ACTIVE
+          rawReparseAvailable: true
+          coverage: null
+          rawExpiresAt: '2026-11-11T00:00:00Z'
+          uploadedAt: '2026-11-10T00:00:00Z'
+          deletedAt: null
+        dataPolicyVersion: TRADING_DATA_POLICY_V1
+        retentionPolicy: TRADING_RAW_RETENTION_V1
+        maskingPolicyVersion: TRADING_MASKING_V1
+        evidenceRetention: BOOK_LIFECYCLE
+        deletionPolicyVersion: TRADING_DELETION_V1
+        versions:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: TRADE_V1
+              POSITION_HISTORY: POSITION_V1
+            adapterVersion: ADAPTER_V1
+            normalizerVersion: NORMALIZER_V1
+            canonicalSchemaVersion: CANONICAL_V1
+            implementationDigest: digest-normalizer-example
+            versionSetHash: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              instrument-example: TERMS_V1
+            reconstructionPolicyVersion: RECONSTRUCTION_V1
+            reconciliationVersion: RECONCILIATION_V1
+            reviewUnitSchemaVersion: REVIEW_UNIT_V1
+            evidenceSchemaVersion: EVIDENCE_V1
+            implementationDigest: digest-reconstruction-example
+            versionSetHash: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+          versionSetHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+        createdAt: '2026-11-10T00:00:00Z'
+        validationStartedAt: '2026-11-10T00:00:00Z'
+        status: VALIDATING
+        uploadedArtifactRoles:
+        - POSITION_HISTORY
+        - TRADE_HISTORY
+        missingArtifactRoles: []
+        canValidate: false
+        failure: null
+        qualitySummary: null
+        createdLedgerRevisionId: null
+        completedAt: null
+    Accepted:
+      value:
+        id: '9223372036854775806'
+        tradingBookId: '9223372036854775807'
+        sourceTimezone: Asia/Seoul
+        reviewTimezone: UTC
+        declaredPositionMode: ONE_WAY
+        artifacts:
+        - id: '9223372036854775805'
+          importSessionId: '9223372036854775806'
+          role: TRADE_HISTORY
+          filename: null
+          contentType: text/csv
+          byteSize: 16
+          sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          dialectCandidate: AUTO
+          detectedDialect: null
+          schemaFingerprint: null
+          uploadStatus: UPLOADED
+          retentionStatus: ACTIVE
+          rawReparseAvailable: true
+          coverage: null
+          rawExpiresAt: '2026-11-11T00:00:00Z'
+          uploadedAt: '2026-11-10T00:00:00Z'
+          deletedAt: null
+        - id: '9223372036854775804'
+          importSessionId: '9223372036854775806'
+          role: POSITION_HISTORY
+          filename: null
+          contentType: text/csv
+          byteSize: 16
+          sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          dialectCandidate: AUTO
+          detectedDialect: null
+          schemaFingerprint: null
+          uploadStatus: UPLOADED
+          retentionStatus: ACTIVE
+          rawReparseAvailable: true
+          coverage: null
+          rawExpiresAt: '2026-11-11T00:00:00Z'
+          uploadedAt: '2026-11-10T00:00:00Z'
+          deletedAt: null
+        dataPolicyVersion: TRADING_DATA_POLICY_V1
+        retentionPolicy: TRADING_RAW_RETENTION_V1
+        maskingPolicyVersion: TRADING_MASKING_V1
+        evidenceRetention: BOOK_LIFECYCLE
+        deletionPolicyVersion: TRADING_DELETION_V1
+        versions:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: TRADE_V1
+              POSITION_HISTORY: POSITION_V1
+            adapterVersion: ADAPTER_V1
+            normalizerVersion: NORMALIZER_V1
+            canonicalSchemaVersion: CANONICAL_V1
+            implementationDigest: digest-normalizer-example
+            versionSetHash: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              instrument-example: TERMS_V1
+            reconstructionPolicyVersion: RECONSTRUCTION_V1
+            reconciliationVersion: RECONCILIATION_V1
+            reviewUnitSchemaVersion: REVIEW_UNIT_V1
+            evidenceSchemaVersion: EVIDENCE_V1
+            implementationDigest: digest-reconstruction-example
+            versionSetHash: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+          versionSetHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+        createdAt: '2026-11-10T00:00:00Z'
+        validationStartedAt: '2026-11-10T00:00:00Z'
+        status: ACCEPTED
+        uploadedArtifactRoles:
+        - POSITION_HISTORY
+        - TRADE_HISTORY
+        missingArtifactRoles: []
+        canValidate: false
+        failure: null
+        qualitySummary:
+          qualityStatus: ACCEPTABLE
+          rowCountsByArtifactRole:
+            TRADE_HISTORY: 1
+            POSITION_HISTORY: 1
+          ignoredNonTradingRowCounts: {}
+          validationIssues: []
+          reconciliationStatusCounts: {}
+          capability: []
+          excludedReasonCounts: {}
+        createdLedgerRevisionId: legacy-revision-example
+        completedAt: '2026-11-10T00:00:00Z'
+    Rejected:
+      value:
+        id: '9223372036854775806'
+        tradingBookId: '9223372036854775807'
+        sourceTimezone: Asia/Seoul
+        reviewTimezone: UTC
+        declaredPositionMode: ONE_WAY
+        artifacts:
+        - id: '9223372036854775805'
+          importSessionId: '9223372036854775806'
+          role: TRADE_HISTORY
+          filename: null
+          contentType: text/csv
+          byteSize: 16
+          sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          dialectCandidate: AUTO
+          detectedDialect: null
+          schemaFingerprint: null
+          uploadStatus: UPLOADED
+          retentionStatus: ACTIVE
+          rawReparseAvailable: true
+          coverage: null
+          rawExpiresAt: '2026-11-11T00:00:00Z'
+          uploadedAt: '2026-11-10T00:00:00Z'
+          deletedAt: null
+        - id: '9223372036854775804'
+          importSessionId: '9223372036854775806'
+          role: POSITION_HISTORY
+          filename: null
+          contentType: text/csv
+          byteSize: 16
+          sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          dialectCandidate: AUTO
+          detectedDialect: null
+          schemaFingerprint: null
+          uploadStatus: UPLOADED
+          retentionStatus: ACTIVE
+          rawReparseAvailable: true
+          coverage: null
+          rawExpiresAt: '2026-11-11T00:00:00Z'
+          uploadedAt: '2026-11-10T00:00:00Z'
+          deletedAt: null
+        dataPolicyVersion: TRADING_DATA_POLICY_V1
+        retentionPolicy: TRADING_RAW_RETENTION_V1
+        maskingPolicyVersion: TRADING_MASKING_V1
+        evidenceRetention: BOOK_LIFECYCLE
+        deletionPolicyVersion: TRADING_DELETION_V1
+        versions:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: TRADE_V1
+              POSITION_HISTORY: POSITION_V1
+            adapterVersion: ADAPTER_V1
+            normalizerVersion: NORMALIZER_V1
+            canonicalSchemaVersion: CANONICAL_V1
+            implementationDigest: digest-normalizer-example
+            versionSetHash: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              instrument-example: TERMS_V1
+            reconstructionPolicyVersion: RECONSTRUCTION_V1
+            reconciliationVersion: RECONCILIATION_V1
+            reviewUnitSchemaVersion: REVIEW_UNIT_V1
+            evidenceSchemaVersion: EVIDENCE_V1
+            implementationDigest: digest-reconstruction-example
+            versionSetHash: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+          versionSetHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+        createdAt: '2026-11-10T00:00:00Z'
+        validationStartedAt: '2026-11-10T00:00:00Z'
+        status: REJECTED
+        uploadedArtifactRoles:
+        - POSITION_HISTORY
+        - TRADE_HISTORY
+        missingArtifactRoles: []
+        canValidate: false
+        failure:
+          code: REQUIRED_COLUMN_MISSING
+          retryable: false
+          userAction: REUPLOAD_REQUIRED
+          occurredAt: '2026-11-10T00:00:00Z'
+        qualitySummary: null
+        createdLedgerRevisionId: null
+        completedAt: '2026-11-10T00:00:00Z'
+    Failed:
+      value:
+        id: '9223372036854775806'
+        tradingBookId: '9223372036854775807'
+        sourceTimezone: Asia/Seoul
+        reviewTimezone: UTC
+        declaredPositionMode: ONE_WAY
+        artifacts:
+        - id: '9223372036854775805'
+          importSessionId: '9223372036854775806'
+          role: TRADE_HISTORY
+          filename: null
+          contentType: text/csv
+          byteSize: 16
+          sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          dialectCandidate: AUTO
+          detectedDialect: null
+          schemaFingerprint: null
+          uploadStatus: UPLOADED
+          retentionStatus: ACTIVE
+          rawReparseAvailable: true
+          coverage: null
+          rawExpiresAt: '2026-11-11T00:00:00Z'
+          uploadedAt: '2026-11-10T00:00:00Z'
+          deletedAt: null
+        - id: '9223372036854775804'
+          importSessionId: '9223372036854775806'
+          role: POSITION_HISTORY
+          filename: null
+          contentType: text/csv
+          byteSize: 16
+          sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          dialectCandidate: AUTO
+          detectedDialect: null
+          schemaFingerprint: null
+          uploadStatus: UPLOADED
+          retentionStatus: ACTIVE
+          rawReparseAvailable: true
+          coverage: null
+          rawExpiresAt: '2026-11-11T00:00:00Z'
+          uploadedAt: '2026-11-10T00:00:00Z'
+          deletedAt: null
+        dataPolicyVersion: TRADING_DATA_POLICY_V1
+        retentionPolicy: TRADING_RAW_RETENTION_V1
+        maskingPolicyVersion: TRADING_MASKING_V1
+        evidenceRetention: BOOK_LIFECYCLE
+        deletionPolicyVersion: TRADING_DELETION_V1
+        versions:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: TRADE_V1
+              POSITION_HISTORY: POSITION_V1
+            adapterVersion: ADAPTER_V1
+            normalizerVersion: NORMALIZER_V1
+            canonicalSchemaVersion: CANONICAL_V1
+            implementationDigest: digest-normalizer-example
+            versionSetHash: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              instrument-example: TERMS_V1
+            reconstructionPolicyVersion: RECONSTRUCTION_V1
+            reconciliationVersion: RECONCILIATION_V1
+            reviewUnitSchemaVersion: REVIEW_UNIT_V1
+            evidenceSchemaVersion: EVIDENCE_V1
+            implementationDigest: digest-reconstruction-example
+            versionSetHash: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+          versionSetHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+        createdAt: '2026-11-10T00:00:00Z'
+        validationStartedAt: '2026-11-10T00:00:00Z'
+        status: PROCESSING_FAILED
+        uploadedArtifactRoles:
+        - POSITION_HISTORY
+        - TRADE_HISTORY
+        missingArtifactRoles: []
+        canValidate: false
+        failure:
+          code: TEMPORARY_DEPENDENCY_FAILURE
+          retryable: true
+          userAction: RETRY
+          occurredAt: '2026-11-10T00:00:00Z'
+        qualitySummary: null
+        createdLedgerRevisionId: null
+        completedAt: '2026-11-10T00:00:00Z'
+    Page:
+      value:
+        items: []
+        page: 0
+        size: 20
+        total: 0
+    Quality:
+      value:
+        qualityStatus: ACCEPTABLE
+        rowCountsByArtifactRole:
+          TRADE_HISTORY: 1
+          POSITION_HISTORY: 1
+        ignoredNonTradingRowCounts: {}
+        validationIssues: []
+        reconciliationStatusCounts: {}
+        capability: []
+        excludedReasonCounts: {}
+    Deletion:
+      value:
+        id: '9223372036854775805'
+        targetType: TRADING_IMPORT_SESSION
+        targetId: '9223372036854775806'
+        requestedScope: IMPORT_SESSION_SUBTREE
+        state: REQUESTED
+        affectedResources:
+          accounts: 0
+          books: 0
+          importSessions: 1
+          artifacts: 2
+          ledgerRevisions: 0
+          analysisRuns: 0
+          reprocessingRuns: 0
+          snapshotStatus: REQUEST_TIME_SNAPSHOT
+        revokedAt: '2026-11-09T00:00:00Z'
+        primaryPurgeStatus: NOT_STARTED
+        objectPurgeStatus: NOT_STARTED
+        computeRuntimePurgeStatus: NOT_STARTED
+        backupPurgeStatus: IN_PROGRESS
+        retryable: true
+        requestedAt: '2026-11-09T00:00:00Z'
+        updatedAt: '2026-11-09T00:00:00Z'
+        startedAt: null
+        completedAt: null
+        failure: null
+    RawDeletion:
+      value:
+        id: '9223372036854775805'
+        targetType: TRADING_SOURCE_ARTIFACT
+        targetId: '9223372036854775805'
+        requestedScope: RAW_ONLY
+        state: REQUESTED
+        affectedResources:
+          accounts: 0
+          books: 0
+          importSessions: 0
+          artifacts: 1
+          ledgerRevisions: 0
+          analysisRuns: 0
+          reprocessingRuns: 0
+          snapshotStatus: REQUEST_TIME_SNAPSHOT
+        revokedAt: '2026-11-09T00:00:00Z'
+        primaryPurgeStatus: NOT_STARTED
+        objectPurgeStatus: NOT_STARTED
+        computeRuntimePurgeStatus: NOT_STARTED
+        backupPurgeStatus: NOT_APPLICABLE
+        retryable: true
+        requestedAt: '2026-11-09T00:00:00Z'
+        updatedAt: '2026-11-09T00:00:00Z'
+        startedAt: null
+        completedAt: null
+        failure: null
+    RetryExpired:
+      value:
+        code: SOURCE_ARTIFACT_EXPIRED
+        message: 원본을 다시 업로드해 주세요.
+        traceId: draft-correlation
+        retryable: false
+        userAction: REUPLOAD_REQUIRED
+        occurredAt: '2026-11-10T00:00:00Z'
+    RetryDeleted:
+      value:
+        code: RESOURCE_DELETED
+        message: 삭제된 자료입니다.
+        traceId: draft-correlation
+        retryable: false
+        userAction: NONE
+        occurredAt: '2026-11-10T00:00:00Z'
+x-schema-cases:
+- name: accept-Received
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Received
+  valid: true
+  patch: []
+- name: accept-Validating
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Validating
+  valid: true
+  patch: []
+- name: accept-Accepted
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Accepted
+  valid: true
+  patch: []
+- name: accept-Rejected
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Rejected
+  valid: true
+  patch: []
+- name: accept-Failed
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Failed
+  valid: true
+  patch: []
+- name: accept-Create
+  schema:
+    $ref: '#/components/schemas/CreateImport'
+  example: Create
+  valid: true
+  patch: []
+- name: accept-ValidateEmpty
+  schema:
+    $ref: '#/components/schemas/ValidateImport'
+  example: ValidateEmpty
+  valid: true
+  patch: []
+- name: accept-ValidateExact
+  schema:
+    $ref: '#/components/schemas/ValidateImport'
+  example: ValidateExact
+  valid: true
+  patch: []
+- name: accept-Upload
+  schema:
+    $ref: '#/components/schemas/UploadImport'
+  example: Upload
+  valid: true
+  patch: []
+- name: accept-RetryExpired
+  schema:
+    $ref: '#/components/schemas/RetryGone'
+  example: RetryExpired
+  valid: true
+  patch: []
+- name: accept-RetryDeleted
+  schema:
+    $ref: '#/components/schemas/RetryGone'
+  example: RetryDeleted
+  valid: true
+  patch: []
+- name: owner-in-body
+  schema:
+    $ref: '#/components/schemas/CreateImport'
+  example: Create
+  valid: false
+  patch:
+  - op: set
+    path: /ownerId
+    value: '7'
+- name: mode-hedge
+  schema:
+    $ref: '#/components/schemas/CreateImport'
+  example: Create
+  valid: false
+  patch:
+  - op: set
+    path: /declaredPositionMode
+    value: HEDGE
+- name: missing-source-zone
+  schema:
+    $ref: '#/components/schemas/CreateImport'
+  example: Create
+  valid: false
+  patch:
+  - op: remove
+    path: /sourceTimezone
+- name: target-hash-only
+  schema:
+    $ref: '#/components/schemas/ValidateImport'
+  example: ValidateExact
+  valid: false
+  patch:
+  - op: set
+    path: /targetVersionSet
+    value:
+      versionSetHash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+- name: upload-owner
+  schema:
+    $ref: '#/components/schemas/UploadImport'
+  example: Upload
+  valid: false
+  patch:
+  - op: set
+    path: /metadata/ownerId
+    value: '7'
+- name: missing-upload-role
+  schema:
+    $ref: '#/components/schemas/UploadImport'
+  example: Upload
+  valid: false
+  patch:
+  - op: remove
+    path: /metadata/role
+- name: oversize-upload
+  schema:
+    $ref: '#/components/schemas/UploadImport'
+  example: Upload
+  valid: false
+  patch:
+  - op: set
+    path: /metadata/byteSize
+    value: 52428801
+- name: fractional-size
+  schema:
+    $ref: '#/components/schemas/UploadImport'
+  example: Upload
+  valid: false
+  patch:
+  - op: set
+    path: /metadata/byteSize
+    value: 1.5
+- name: uppercase-sha
+  schema:
+    $ref: '#/components/schemas/UploadImport'
+  example: Upload
+  valid: false
+  patch:
+  - op: set
+    path: /metadata/sha256
+    value: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+- name: accepted-null-report
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Accepted
+  valid: false
+  patch:
+  - op: set
+    path: /qualitySummary
+    value: null
+- name: accepted-no-revision
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Accepted
+  valid: false
+  patch:
+  - op: remove
+    path: /createdLedgerRevisionId
+- name: rejected-no-quality-key
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Rejected
+  valid: false
+  patch:
+  - op: remove
+    path: /qualitySummary
+- name: rejected-no-failure
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Rejected
+  valid: false
+  patch:
+  - op: set
+    path: /failure
+    value: null
+- name: failed-success-revision
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Failed
+  valid: false
+  patch:
+  - op: set
+    path: /createdLedgerRevisionId
+    value: other
+- name: nonterminal-success-quality
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Received
+  valid: false
+  patch:
+  - op: set
+    path: /qualitySummary
+    value:
+      qualityStatus: ACCEPTABLE
+      rowCountsByArtifactRole:
+        TRADE_HISTORY: 1
+        POSITION_HISTORY: 1
+      ignoredNonTradingRowCounts: {}
+      validationIssues: []
+      reconciliationStatusCounts: {}
+      capability: []
+      excludedReasonCounts: {}
+- name: session-number-id
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Received
+  valid: false
+  patch:
+  - op: set
+    path: /id
+    value: 9223372036854775806
+- name: private-object-key
+  schema:
+    $ref: '#/components/schemas/Session'
+  example: Received
+  valid: false
+  patch:
+  - op: set
+    path: /objectKey
+    value: private
+- name: retry-no-action
+  schema:
+    $ref: '#/components/schemas/RetryGone'
+  example: RetryExpired
+  valid: false
+  patch:
+  - op: remove
+    path: /userAction
+- name: retry-no-time
+  schema:
+    $ref: '#/components/schemas/RetryGone'
+  example: RetryExpired
+  valid: false
+  patch:
+  - op: remove
+    path: /occurredAt
+- name: retry-true
+  schema:
+    $ref: '#/components/schemas/RetryGone'
+  example: RetryExpired
+  valid: false
+  patch:
+  - op: set
+    path: /retryable
+    value: true
+- name: retry-wrong-action
+  schema:
+    $ref: '#/components/schemas/RetryGone'
+  example: RetryExpired
+  valid: false
+  patch:
+  - op: set
+    path: /userAction
+    value: NONE
+- name: filename-empty
+  schema:
+    $ref: '#/components/schemas/UploadImport'
+  example: Upload
+  valid: false
+  patch:
+  - op: set
+    path: /metadata/filename
+    value: ''
+- name: raw-scope-book
+  schema:
+    $ref: '#/components/schemas/RawDeletion'
+  example: RawDeletion
+  valid: false
+  patch:
+  - op: set
+    path: /targetType
+    value: TRADING_BOOK
+- name: raw-scope-subtree
+  schema:
+    $ref: '#/components/schemas/RawDeletion'
+  example: RawDeletion
+  valid: false
+  patch:
+  - op: set
+    path: /requestedScope
+    value: BOOK_SUBTREE
+- name: filename-null
+  schema:
+    $ref: '#/components/schemas/UploadImport'
+  example: Upload
+  valid: true
+  patch:
+  - op: set
+    path: /metadata/filename
+    value: null
+- name: filename-present
+  schema:
+    $ref: '#/components/schemas/UploadImport'
+  example: Upload
+  valid: true
+  patch:
+  - op: set
+    path: /metadata/filename
+    value: synthetic.csv
+- name: target-null
+  schema:
+    $ref: '#/components/schemas/ValidateImport'
+  example: ValidateEmpty
+  valid: true
+  patch:
+  - op: set
+    path: /targetVersionSet
+    value: null
+- name: role-dialect-mismatch
+  schema:
+    $ref: '#/components/schemas/UploadImport'
+  example: Upload
+  valid: false
+  patch:
+  - op: set
+    path: /metadata/dialectCandidate
+    value: BINANCE_USDS_POSITION_HISTORY_V1
+x-semantic-plans:
+- id: TR-PLAN-IMPORT-HTTP-001
+  operationId: createOwnerTradingImportSession
+  expectedStatus: '201'
+  scenario: same-key-current-pin
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-002
+  operationId: createOwnerTradingImportSession
+  expectedStatus: '409'
+  scenario: same-key-different-book
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-003
+  operationId: uploadOwnerTradingImportArtifact
+  expectedStatus: '200'
+  scenario: same-artifact-replay
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-004
+  operationId: uploadOwnerTradingImportArtifact
+  expectedStatus: '410'
+  scenario: expired-raw-replay
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-005
+  operationId: uploadOwnerTradingImportArtifact
+  expectedStatus: '413'
+  scenario: actual-body-limit
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-006
+  operationId: uploadOwnerTradingImportArtifact
+  expectedStatus: '422'
+  scenario: actual-byte-hash-mismatch
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-007
+  operationId: validateOwnerTradingImportSession
+  expectedStatus: '422'
+  scenario: missing-role
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-008
+  operationId: validateOwnerTradingImportSession
+  expectedStatus: '422'
+  scenario: unsupported-exact-version
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-009
+  operationId: validateOwnerTradingImportSession
+  expectedStatus: '202'
+  scenario: known-replay-terminal
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-010
+  operationId: retryOwnerTradingImportSession
+  expectedStatus: '410'
+  scenario: raw-expired
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-011
+  operationId: retryOwnerTradingImportSession
+  expectedStatus: '409'
+  scenario: wrong-state
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-012
+  operationId: getOwnerTradingImportSession
+  expectedStatus: '410'
+  scenario: owned-deletion
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-013
+  operationId: getOwnerTradingImportSession
+  expectedStatus: '404'
+  scenario: foreign-hidden
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-014
+  operationId: getOwnerTradingImportQualityReport
+  expectedStatus: '409'
+  scenario: rejected-null-quality
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-015
+  operationId: listOwnerTradingImports
+  expectedStatus: '200'
+  scenario: consistent-bounded-page
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-016
+  operationId: deleteOwnerTradingSourceArtifact
+  expectedStatus: '202'
+  scenario: raw-only-preserves-results
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-017
+  operationId: deleteOwnerTradingImportSession
+  expectedStatus: '202'
+  scenario: scope-count-checklist-atomic
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-018
+  operationId: deleteOwnerTradingImportSession
+  expectedStatus: '503'
+  scenario: cross-module-rollback
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-019
+  operationId: validateOwnerTradingImportSession
+  expectedStatus: '503'
+  scenario: unknown-commit-fence
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-020
+  operationId: uploadOwnerTradingImportArtifact
+  expectedStatus: '503'
+  scenario: object-adoption-unknown
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-021
+  operationId: createOwnerTradingImportSession
+  expectedStatus: '403'
+  scenario: write-authority-linearization
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-022
+  operationId: uploadOwnerTradingImportArtifact
+  expectedStatus: '504'
+  scenario: cancel-stream-close
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-023
+  operationId: getOwnerTradingImportSession
+  expectedStatus: '401'
+  scenario: wrong-audience-actor
+  execution: not-executed
+- id: TR-PLAN-IMPORT-HTTP-024
+  operationId: retryOwnerTradingImportSession
+  expectedStatus: '202'
+  scenario: original-pin-new-run
+  execution: not-executed
+x-authority-profile-support:
+  status: requires-import-profile-extension-before-adoption
+  currentContract: trading-review-member-authority.yaml
+  readOnlyProofReusable: false

@@ -105,3 +105,11 @@ ADR-074/075는 여전히 미채택이다. signed 위임 없이 owner 숫자를 �
 
 이번에 채택한 제품 정책은 없다. 다음은 이 후보의 consumer/오류·identity 수용, 후속 OpenAPI와 정확한 내부 profile 리뷰이며
 문서만으로 Store/HTTP/Worker 구현이나 실제 DB/운영 전환을 시작하지 않는다.
+
+
+## 내부 HTTP 후보 보완
+
+[내부 HTTP 초안](TRADING_REVIEW_IMPORT_HTTP_DRAFT.md)·[OpenAPI](../openapi/drafts/trading-review-import.yaml)에서
+IC-P01~P06의 9개 operation·별도 auth/profile·scope·req/res·오류/멱등성·stream/control 경계를 구체화했다.
+현재 active public/Compute OpenAPI와 정책을 대체하지 않으며 별도 정적 checker·24개 미실행 semantic 계획을 따른다.
+내부 path/profile도 미채택이다. 새 wire를 작성했다는 사실만으로 authority/저장/Worker 구현을 완료하지 않는다.
