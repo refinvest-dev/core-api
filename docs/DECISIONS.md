@@ -1400,3 +1400,28 @@ TEXT/dual-column은 Go 소유 물리 이관 대안이며 이 ADR이 DDL을 채�
 Core 중계와 기존 TR writer/Worker 중단·같은 PostgreSQL의 TR 데이터만 인계하는 방향은 유지한다.
 
 Determinism 영향 없음. Point-in-Time 영향 없음. 현재 OpenAPI/vector·업무 코드·DB·운영 설정 변경 없음.
+
+
+---
+
+## ADR-078 — Trading Review Analysis Admission and Read Contract Candidate (DRAFT)
+
+**상태**: 검토 초안·미채택·runtime 미구현. ADR-072와 현재 public/Compute OpenAPI·계산/hash/vector·상태/ACK를 유지한다.
+문서 merge/CI는 정책 채택·Go 업무 구현 전환이 아니다. ADR-071/073~077 및 LP 후보도 승인하지 않는다.
+
+**문제**: Analysis AUC-01~10을 연결하기 전에 request/logical/source binding·public Review 전역 통계와 typed Metric,
+selection/미분류 Unit·direct evidence·취소/ingress/오류를 현재 producer/consumer와 정합화해야 한다.
+
+**우선 후보**: [접수·운영 AP01/05/06](TRADING_REVIEW_ANALYSIS_CONTRACT_DRAFT.md),
+[Review·typed Metric AP02/03](TRADING_REVIEW_ANALYSIS_RESPONSE_DRAFT.md),
+[selection AP04](TRADING_REVIEW_ANALYSIS_SELECTION_DRAFT.md)를 검토한다.
+원 resolved pin replay·full source/publish binding, versioned per-Metric 통계/typed wrapper·hash 분리,
+classification absent·7role/명시 selection·allocation/direct page 구분을 제안한다. 기존 hash/schema를 변경하지 않는다.
+현재 public 8개를 유지하는 취소 범위와 별도 ingress/권위·오류 중계를 검토하며 input 준비 예산·취소 terminal mapping은 미확정이다.
+
+**채택 전**: [consumer·수용/전파](TRADING_REVIEW_ANALYSIS_CONTRACT_ACCEPTANCE_DRAFT.md)의 AR-G01~08을 충족한다.
+logical source 충돌/legacy receipt·실패 재접수, read version/decoder/cache·hash/근거/대형 응답,
+authority/commit·scope/SQL/UNKNOWN/ACK·운영 인계와 실제 HTTP/SQL/부하 증적이 필요하다. 새 계획 16개는 미실행이다.
+Core 기존 TR writer/Worker 중단·같은 PostgreSQL의 TR만 Go에 인계하는 방향은 유지한다.
+
+Determinism 영향 없음. Point-in-Time 영향 없음. 이번 변경은 Markdown이며 active wire/계산·DB·운영 설정은 변경하지 않는다.
