@@ -52,12 +52,12 @@
 ## 5. PR 작성 시 확인할 것
 
 - `.github/pull_request_template.md`와 AGENTS.md의 PR 본문 형식을 따른다.
-  Summary/Changes/Validation/Impact/Related Links를 영어 H2로 쓰고 본문은 한국어로 작성한다.
-  Migration Plan/Rollback/Evidence 등 필요한 추가 항목도 영어 H2로 쓴다.
+  Summary/Changes만 필수이며 제목은 영어 H2, 본문은 한국어로 작성한다.
+  그 외 항목은 이번 변경의 검토에 필요한 내용이 있을 때만 추가하고 같은 설명을 반복하지 않는다.
 
-- 변경이 `docs/DECISIONS.md`의 기존 ADR과 충돌하지 않는지 명시한다.
+- 기존 ADR과의 충돌이나 새 결정이 있으면 해당 변경과 근거를 명시한다.
 - Core↔Compute API 계약을 바꿨다면 `system` 레포의 OpenAPI 스펙도 같은 PR 세트에 포함한다(레포가 다르더라도 PR 설명에 서로 링크).
-- Determinism에 영향을 주는 변경(§ AGENTS.md 4항)은 PR 설명에 "Determinism 영향 없음" 또는 "영향 있음 + 마이그레이션 계획"을 명시한다.
+- Determinism에 영향을 주면 변경 의미와 필요한 마이그레이션 계획을 명시한다. 영향 없는 PR에 동일 문구를 반복하지 않는다.
 
 ## 6. 모호할 때
 
