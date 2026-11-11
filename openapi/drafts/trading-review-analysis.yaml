@@ -1,0 +1,3275 @@
+openapi: 3.0.3
+info:
+  title: Trading Analysis internal HTTP API (DRAFT)
+  version: 0.1.0-draft
+  description: ADR-078/AP01~06 candidate. Profile/path literals are unadopted; Compute protocol is unchanged.
+x-contract-status: draft
+x-policy-status: proposed
+x-runtime-enabled: false
+x-tls-required: true
+x-member-state-gate: required-before-resource-lookup
+x-member-write-linearization: unresolved-review-gate
+x-delegation-audience: refinvest:trading-review:analysis:v1
+x-user-delegation-profile:
+  status: proposed
+  algorithm: RS256
+  type: refinvest-user-delegation+jwt
+  actor: act.sub must match authenticated service caller
+  subject: canonical-positive-decimal-int64
+  scopeMatching: single-string-exact-operation-class
+  issuerAndKeys: explicit trusted registry
+  timeSizeRotation: separate review gate; no new TTL/skew/deadline
+x-operation-registry: method + route + analysis audience + exact scope + authenticated caller allowlist
+security:
+- ServiceCredential: []
+  UserDelegation: []
+paths:
+  /internal/trading-review/v1/trading-analysis-runs/{analysisRunId}:
+    get:
+      operationId: ownerGetAnalysisRunV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                $ref: ../core-api.yaml#/components/schemas/TradingAnalysisRun
+              examples:
+                CompletedRun:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/CompletedRun
+                PendingRun:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/PendingRun
+                FailedRun:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/FailedRun
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error400
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - SERVICE_OR_DELEGATION_REJECTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/InternalAuthError'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error403
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error404
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error409
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error410
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error422
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error500
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error503
+      x-page-unit: none
+      x-public-operation-id: getAnalysisRunV2
+      x-public-path: /trading-review/v2/trading-analysis-runs/{analysisRunId}
+      x-required-user-scope: trading-review:analysis:read
+      x-replay-mode: none
+  /internal/trading-review/v1/trading-books/{tradingBookId}/analysis-runs:
+    get:
+      operationId: ownerListAnalysisRunsV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: tradingBookId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: page
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/Page
+      - name: size
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/Size
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                $ref: ../core-api.yaml#/components/schemas/TradingAnalysisRunPage
+              examples:
+                RunPage:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/RunPage
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error400
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - SERVICE_OR_DELEGATION_REJECTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/InternalAuthError'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error403
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error404
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error409
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error410
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error422
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error500
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error503
+      x-query-schema:
+        $ref: trading-review-analysis-read.yaml#/components/schemas/PageQuery
+      x-page-unit: run
+      x-public-operation-id: listAnalysisRunsV2
+      x-public-path: /trading-review/v2/trading-books/{tradingBookId}/analysis-runs
+      x-required-user-scope: trading-review:analysis:read
+      x-replay-mode: none
+  /internal/trading-review/v1/trading-analysis-runs/{analysisRunId}/review:
+    get:
+      operationId: ownerGetAnalysisReviewV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                $ref: trading-review-analysis-read.yaml#/components/schemas/ReviewView
+              examples:
+                Review:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Review
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error400
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - SERVICE_OR_DELEGATION_REJECTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/InternalAuthError'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error403
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error404
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error409
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error410
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error422
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error500
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error503
+      x-page-unit: none
+      x-public-operation-id: getAnalysisReviewV2
+      x-public-path: /trading-review/v2/trading-analysis-runs/{analysisRunId}/review
+      x-required-user-scope: trading-review:analysis:read
+      x-replay-mode: none
+  /internal/trading-review/v1/trading-analysis-runs/{analysisRunId}/metrics/{metricId}:
+    get:
+      operationId: ownerGetAnalysisMetricV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: metricId
+        in: path
+        required: true
+        schema:
+          $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                $ref: trading-review-analysis-read.yaml#/components/schemas/MetricView
+              examples:
+                Metric:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Metric
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error400
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - SERVICE_OR_DELEGATION_REJECTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/InternalAuthError'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error403
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error404
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error409
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error410
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error422
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error500
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error503
+      x-page-unit: none
+      x-public-operation-id: getAnalysisMetricV2
+      x-public-path: /trading-review/v2/trading-analysis-runs/{analysisRunId}/metrics/{metricId}
+      x-required-user-scope: trading-review:analysis:read
+      x-replay-mode: none
+  /internal/trading-review/v1/trading-analysis-runs/{analysisRunId}/review-units:
+    get:
+      operationId: ownerListAnalysisUnitsV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: metricId
+        in: query
+        required: false
+        schema:
+          $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+      - name: role
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/SelectionRole
+      - name: reason
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/Page
+      - name: size
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/Size
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                $ref: trading-review-analysis-read.yaml#/components/schemas/UnitPage
+              examples:
+                UnitPage:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/UnitPage
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error400
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - SERVICE_OR_DELEGATION_REJECTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/InternalAuthError'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error403
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error404
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error409
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error410
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error422
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error500
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error503
+      x-query-schema:
+        $ref: trading-review-analysis-read.yaml#/components/schemas/SelectionQuery
+      x-page-unit: distinct-review-unit
+      x-public-operation-id: listAnalysisUnitsV2
+      x-public-path: /trading-review/v2/trading-analysis-runs/{analysisRunId}/review-units
+      x-required-user-scope: trading-review:analysis:read
+      x-replay-mode: none
+  /internal/trading-review/v1/trading-analysis-runs/{analysisRunId}/review-units/{reviewUnitId}:
+    get:
+      operationId: ownerGetAnalysisUnitV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: reviewUnitId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                $ref: trading-review-analysis-read.yaml#/components/schemas/UnitView
+              examples:
+                Unit:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Unit
+                ClassifiedUnit:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/ClassifiedUnit
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error400
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - SERVICE_OR_DELEGATION_REJECTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/InternalAuthError'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error403
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error404
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error409
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error410
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error422
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error500
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error503
+      x-page-unit: none
+      x-public-operation-id: getAnalysisUnitV2
+      x-public-path: /trading-review/v2/trading-analysis-runs/{analysisRunId}/review-units/{reviewUnitId}
+      x-required-user-scope: trading-review:analysis:read
+      x-replay-mode: none
+  /internal/trading-review/v1/trading-analysis-runs/{analysisRunId}/review-units/{reviewUnitId}/evidence/allocations:
+    get:
+      operationId: ownerListAnalysisAllocationEvidenceV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: reviewUnitId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: metricId
+        in: query
+        required: true
+        schema:
+          $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+      - name: role
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/SelectionRole
+      - name: reason
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/Page
+      - name: size
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/Size
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                $ref: trading-review-analysis-read.yaml#/components/schemas/AllocationPage
+              examples:
+                AllocationPage:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/AllocationPage
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error400
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - SERVICE_OR_DELEGATION_REJECTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/InternalAuthError'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error403
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error404
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error409
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error410
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error422
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error500
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error503
+      x-query-schema:
+        $ref: trading-review-analysis-read.yaml#/components/schemas/EvidenceQuery
+      x-page-unit: allocation-bundle
+      x-public-operation-id: listAnalysisAllocationEvidenceV2
+      x-public-path: /trading-review/v2/trading-analysis-runs/{analysisRunId}/review-units/{reviewUnitId}/evidence/allocations
+      x-required-user-scope: trading-review:analysis:read
+      x-replay-mode: none
+  /internal/trading-review/v1/trading-analysis-runs/{analysisRunId}/review-units/{reviewUnitId}/evidence/direct-records:
+    get:
+      operationId: ownerListAnalysisDirectEvidenceV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: reviewUnitId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: metricId
+        in: query
+        required: true
+        schema:
+          $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+      - name: role
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/SelectionRole
+      - name: reason
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/Page
+      - name: size
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/Size
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                $ref: trading-review-analysis-read.yaml#/components/schemas/DirectEvidencePage
+              examples:
+                DirectEvidencePage:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/DirectEvidencePage
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error400
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - SERVICE_OR_DELEGATION_REJECTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/InternalAuthError'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error403
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error404
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error409
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error410
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error422
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error500
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error503
+      x-query-schema:
+        $ref: trading-review-analysis-read.yaml#/components/schemas/EvidenceQuery
+      x-page-unit: direct-record-bundle
+      x-public-operation-id: listAnalysisDirectEvidenceV2
+      x-public-path: /trading-review/v2/trading-analysis-runs/{analysisRunId}/review-units/{reviewUnitId}/evidence/direct-records
+      x-required-user-scope: trading-review:analysis:read
+      x-replay-mode: none
+  /internal/trading-review/v1/trading-analysis-runs/{analysisRunId}/metrics/{metricId}/memberships:
+    get:
+      operationId: ownerListAnalysisMembershipsV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: metricId
+        in: path
+        required: true
+        schema:
+          $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+      - name: role
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/SelectionRole
+      - name: reason
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/Page
+      - name: size
+        in: query
+        required: false
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/Size
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                $ref: trading-review-analysis-read.yaml#/components/schemas/MembershipPage
+              examples:
+                MembershipPage:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/MembershipPage
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error400
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - SERVICE_OR_DELEGATION_REJECTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/InternalAuthError'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error403
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error404
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error409
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error410
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error422
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error500
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error503
+      x-query-schema:
+        $ref: trading-review-analysis-read.yaml#/components/schemas/MembershipQuery
+      x-page-unit: membership
+      x-public-operation-id: listAnalysisMembershipsV2
+      x-public-path: /trading-review/v2/trading-analysis-runs/{analysisRunId}/metrics/{metricId}/memberships
+      x-required-user-scope: trading-review:analysis:read
+      x-replay-mode: none
+  /internal/trading-review/v1/ledger-revisions/{ledgerRevisionId}/analyses:
+    post:
+      operationId: admitOwnerTradingAnalysis
+      x-public-operation-id: runTradingAnalysis
+      x-public-path: /ledger-revisions/{ledgerRevisionId}/analyses
+      x-required-user-scope: trading-review:analysis:admit
+      x-idempotency-namespace: runTradingAnalysis
+      x-access-mode: owner-current-guard
+      x-replay-mode: current-resource
+      x-admission-boundary: V2-proof-before-Run; commit-Run-Dispatch-pins-before-response; Worker-prepares-input
+      x-preparation-budget: unresolved-review-gate
+      parameters:
+      - name: ledgerRevisionId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-analysis-read.yaml#/components/schemas/OpaqueId
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Admit'
+            examples:
+              Admit:
+                $ref: '#/components/examples/Admit'
+      responses:
+        '202':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                $ref: ../core-api.yaml#/components/schemas/TradingAnalysisRun
+              examples:
+                PendingRun:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/PendingRun
+                CompletedRun:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/CompletedRun
+                FailedRun:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/FailedRun
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error400
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - SERVICE_OR_DELEGATION_REJECTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/InternalAuthError'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error403
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error404
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - IDEMPOTENCY_CONFLICT
+                      - ANALYSIS_REQUEST_CONFLICT
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/AdmissionConflict'
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error410
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ANALYTICS_INPUT_UNAVAILABLE
+                      - VERSION_UNAVAILABLE
+                      - INVALID_ANALYSIS_CONFIG
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/AdmissionVersion'
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: trading-review-analysis-read.yaml#/components/examples/Error500
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Authorization, X-RefInvest-User-Delegation
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                      - ADMISSION_OUTCOME_UNCONFIRMED
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/AdmissionUnknown'
+components:
+  securitySchemes:
+    ServiceCredential:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-credential
+    UserDelegation:
+      type: apiKey
+      in: header
+      name: X-RefInvest-User-Delegation
+  schemas:
+    Admit:
+      $ref: ../core-api.yaml#/components/schemas/RunTradingAnalysisRequest
+  examples:
+    Admit:
+      value:
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2025-01-01T00:00:00Z'
+            endExclusive: '2025-02-01T00:00:00Z'
+          reviewTimezone: UTC
+          timezoneDatabaseVersion: 2025a
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 1
+            exposurePairs: 2
+            priorBaselineEpisodes: 3
+            holdingWins: 2
+            holdingLosses: 2
+          findingMinimums:
+            reentryEligibleLosses: 5
+            exposurePairs: 5
+            holdingWins: 5
+            holdingLosses: 5
+        analyticsVersionSet:
+          metricDefinitionVersionsByMetricId:
+            ENTRY_WITHIN_WINDOW_AFTER_LOSS: '1'
+            INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: '1'
+            WIN_LOSS_HOLDING_DURATION_DIFFERENCE: '1'
+          findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+          analysisConfigVersion: ANALYSIS_CONFIG_V1
+          evidenceSchemaVersion: TRADING_EVIDENCE_V1
+          implementationDigest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+          versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+        publishAsLatest: true
+    InternalAuthError:
+      value:
+        code: SERVICE_OR_DELEGATION_REJECTED
+        message: 내부 호출 인증을 확인할 수 없습니다.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    AdmissionConflict:
+      value:
+        code: ANALYSIS_REQUEST_CONFLICT
+        message: 이 요청을 기존 접수와 함께 처리할 수 없습니다.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    AdmissionVersion:
+      value:
+        code: ANALYTICS_INPUT_UNAVAILABLE
+        message: 이 거래 원장 버전에는 분석 입력 근거가 없습니다.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    AdmissionUnknown:
+      value:
+        code: ADMISSION_OUTCOME_UNCONFIRMED
+        message: 접수 상태를 확인하고 있습니다. 잠시 후 다시 확인해 주세요.
+        traceId: trace-analysis-synthetic
+        retryable: true
+x-error-code-status: proposed-not-current-registry

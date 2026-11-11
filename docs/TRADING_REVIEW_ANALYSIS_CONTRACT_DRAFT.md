@@ -107,3 +107,9 @@ Run list는 createdAt DESC·opaque ID binary ASC tie-break, page=0/size=20/max=1
 items는 full Run union이며 한 응답의 parent/items/total snapshot을 맞춘다. 페이지 간 동결/cursor·새 cap/GET 413은 채택하지 않는다.
 retained Go result는 Compute terminal/ACK TTL과 독립적으로 현재 Go lifecycle에 따라 조회한다. raw-only는 Ledger/Analysis를 보존한다.
 safe trace는 원 요청/비동기 Worker를 연결하되 PII/row/locator/token·private evidence 전체 hash를 복제하지 않는다.
+
+## 후속 HTTP/read 초안
+
+[Analysis HTTP 설명](TRADING_REVIEW_ANALYSIS_HTTP_DRAFT.md)에 versioned read 9 GET과 내부 10 operation·
+별도 service/위임 profile·req/res/selection·safe error 후보와 정적 사례/검증 한계를 구체화했다.
+path/view/audience/code literal은 계속 DRAFT이고 current API/hash/state를 대체하지 않는다. AR-G01~08·16개 계획은 여전히 미실행이다.

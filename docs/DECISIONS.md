@@ -1425,3 +1425,12 @@ authority/commit·scope/SQL/UNKNOWN/ACK·운영 인계와 실제 HTTP/SQL/부하
 Core 기존 TR writer/Worker 중단·같은 PostgreSQL의 TR만 Go에 인계하는 방향은 유지한다.
 
 Determinism 영향 없음. Point-in-Time 영향 없음. 이번 변경은 Markdown이며 active wire/계산·DB·운영 설정은 변경하지 않는다.
+
+
+**ADR-078 HTTP/read 후보 보완**: [계약 설명](TRADING_REVIEW_ANALYSIS_HTTP_DRAFT.md),
+[public versioned read](../openapi/drafts/trading-review-analysis-read.yaml)와
+[내부 HTTP](../openapi/drafts/trading-review-analysis.yaml)를 추가했다. 기존 public 8개는 유지하고
+review-only read GET 9개·내부 admit 1+read 9개·별도 Analysis audience/read-admit scope·service AND 서명 위임을 제안한다.
+typed wrapper/nullable classification·7role·membership/allocation/direct page·오류 literal도 미채택이다.
+정적 checker의 schema/example·변이 거부는 JWT/권위/SQL·수명/부하·업무 수용·운영 활성화를 구현하거나 검증한 것이 아니다.
+신규 pair 분류 integration #59·Core snapshot #129와 후속 새 snapshot 전파는 별도 선행 gate다.
