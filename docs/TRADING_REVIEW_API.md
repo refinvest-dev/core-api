@@ -713,3 +713,17 @@ archive/오류·DB 인계 gate와 실제 구현/전파 검증 이후에만 신�
 [응답/오류](TRADING_REVIEW_IMPORT_RESPONSE_DRAFT.md)의 정합성 검토안이다. **미채택**이며 이 문서의
 기존 설명이나 현재 OpenAPI를 자동 대체하지 않는다. 충돌/누락과 실제 consumer·미실행 수용 계획을 함께
 기록했으며 후속 정책/schema·snapshot·구현 범위를 확정하기 전 신규 동작을 활성화하지 않는다.
+
+## Ledger 후속 계약 리뷰 (미채택)
+
+[ADR-077 후보](TRADING_REVIEW_LEDGER_CONTRACT_DRAFT.md)는 createdAt·mixed ID·lineage·완전 응답/정렬과
+[evidence bundle/selection](TRADING_REVIEW_LEDGER_EVIDENCE_DRAFT.md)의 LP01~05를 검토한다.
+[consumer·수용/전파 gate](TRADING_REVIEW_LEDGER_CONTRACT_ACCEPTANCE_DRAFT.md)를 거친 별도 채택 전에는
+이 문서 §5.2/§7과 현재 OpenAPI를 그대로 적용한다. 새 내부 route/profile·evidence schema·DDL은 추가하지 않았다.
+
+## Analysis 후속 계약 리뷰 (미채택)
+
+[ADR-078·AP01~06](TRADING_REVIEW_ANALYSIS_CONTRACT_DRAFT.md)은 Analysis 접수 identity/source binding·
+[Review/typed Metric](TRADING_REVIEW_ANALYSIS_RESPONSE_DRAFT.md)·[selection/Unit/근거](TRADING_REVIEW_ANALYSIS_SELECTION_DRAFT.md)·
+취소/ingress/오류의 정합성 후보를 검토한다. [consumer·수용/전파](TRADING_REVIEW_ANALYSIS_CONTRACT_ACCEPTANCE_DRAFT.md)의
+gate·명시 채택 전에는 이 문서 §6/§7과 현재 OpenAPI를 계속 적용한다. 새 wire/schema·버전 literal·계산/hash·runtime은 추가하지 않았다.
