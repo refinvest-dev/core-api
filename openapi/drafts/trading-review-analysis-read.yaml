@@ -1,0 +1,4534 @@
+openapi: 3.0.3
+info:
+  title: Trading Analysis versioned read API (DRAFT)
+  version: 0.1.0-draft
+  description: ADR-078/AP02~04/06 candidate. New paths/literals are review-only; no current route/schema change.
+x-contract-status: draft
+x-policy-status: proposed
+x-runtime-enabled: false
+x-read-view-version: TRADING_ANALYSIS_READ_V2_DRAFT
+x-coherent-policy-group:
+- AP02
+- AP03
+- AP04
+x-compute-result-versions-unchanged: true
+x-example-evidence: schema/golden-Metric examples; synthetic evidence pages are separate and not a joined runtime fixture
+security:
+- AccessCookieAuth: []
+paths:
+  /trading-review/v2/trading-analysis-runs/{analysisRunId}:
+    get:
+      operationId: getAnalysisRunV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                $ref: ../core-api.yaml#/components/schemas/TradingAnalysisRun
+              examples:
+                CompletedRun:
+                  $ref: '#/components/examples/CompletedRun'
+                PendingRun:
+                  $ref: '#/components/examples/PendingRun'
+                FailedRun:
+                  $ref: '#/components/examples/FailedRun'
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error400'
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - AUTHENTICATION_REQUIRED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error401'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error403'
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error404'
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error409'
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error410'
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error422'
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error500'
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error503'
+      x-page-unit: none
+  /trading-review/v2/trading-books/{tradingBookId}/analysis-runs:
+    get:
+      operationId: listAnalysisRunsV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: tradingBookId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - name: page
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/Page'
+      - name: size
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/Size'
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                $ref: ../core-api.yaml#/components/schemas/TradingAnalysisRunPage
+              examples:
+                RunPage:
+                  $ref: '#/components/examples/RunPage'
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error400'
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - AUTHENTICATION_REQUIRED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error401'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error403'
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error404'
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error409'
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error410'
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error422'
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error500'
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error503'
+      x-query-schema:
+        $ref: '#/components/schemas/PageQuery'
+      x-page-unit: run
+  /trading-review/v2/trading-analysis-runs/{analysisRunId}/review:
+    get:
+      operationId: getAnalysisReviewV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewView'
+              examples:
+                Review:
+                  $ref: '#/components/examples/Review'
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error400'
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - AUTHENTICATION_REQUIRED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error401'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error403'
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error404'
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error409'
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error410'
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error422'
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error500'
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error503'
+      x-page-unit: none
+  /trading-review/v2/trading-analysis-runs/{analysisRunId}/metrics/{metricId}:
+    get:
+      operationId: getAnalysisMetricV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - name: metricId
+        in: path
+        required: true
+        schema:
+          $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricView'
+              examples:
+                Metric:
+                  $ref: '#/components/examples/Metric'
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error400'
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - AUTHENTICATION_REQUIRED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error401'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error403'
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error404'
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error409'
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error410'
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error422'
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error500'
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error503'
+      x-page-unit: none
+  /trading-review/v2/trading-analysis-runs/{analysisRunId}/review-units:
+    get:
+      operationId: listAnalysisUnitsV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - name: metricId
+        in: query
+        required: false
+        schema:
+          $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+      - name: role
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/SelectionRole'
+      - name: reason
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/Page'
+      - name: size
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/Size'
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitPage'
+              examples:
+                UnitPage:
+                  $ref: '#/components/examples/UnitPage'
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error400'
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - AUTHENTICATION_REQUIRED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error401'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error403'
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error404'
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error409'
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error410'
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error422'
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error500'
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error503'
+      x-query-schema:
+        $ref: '#/components/schemas/SelectionQuery'
+      x-page-unit: distinct-review-unit
+  /trading-review/v2/trading-analysis-runs/{analysisRunId}/review-units/{reviewUnitId}:
+    get:
+      operationId: getAnalysisUnitV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - name: reviewUnitId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitView'
+              examples:
+                Unit:
+                  $ref: '#/components/examples/Unit'
+                ClassifiedUnit:
+                  $ref: '#/components/examples/ClassifiedUnit'
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error400'
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - AUTHENTICATION_REQUIRED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error401'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error403'
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error404'
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error409'
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error410'
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error422'
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error500'
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error503'
+      x-page-unit: none
+  /trading-review/v2/trading-analysis-runs/{analysisRunId}/review-units/{reviewUnitId}/evidence/allocations:
+    get:
+      operationId: listAnalysisAllocationEvidenceV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - name: reviewUnitId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - name: metricId
+        in: query
+        required: true
+        schema:
+          $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+      - name: role
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/SelectionRole'
+      - name: reason
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/Page'
+      - name: size
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/Size'
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AllocationPage'
+              examples:
+                AllocationPage:
+                  $ref: '#/components/examples/AllocationPage'
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error400'
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - AUTHENTICATION_REQUIRED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error401'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error403'
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error404'
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error409'
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error410'
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error422'
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error500'
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error503'
+      x-query-schema:
+        $ref: '#/components/schemas/EvidenceQuery'
+      x-page-unit: allocation-bundle
+  /trading-review/v2/trading-analysis-runs/{analysisRunId}/review-units/{reviewUnitId}/evidence/direct-records:
+    get:
+      operationId: listAnalysisDirectEvidenceV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - name: reviewUnitId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - name: metricId
+        in: query
+        required: true
+        schema:
+          $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+      - name: role
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/SelectionRole'
+      - name: reason
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/Page'
+      - name: size
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/Size'
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectEvidencePage'
+              examples:
+                DirectEvidencePage:
+                  $ref: '#/components/examples/DirectEvidencePage'
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error400'
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - AUTHENTICATION_REQUIRED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error401'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error403'
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error404'
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error409'
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error410'
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error422'
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error500'
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error503'
+      x-query-schema:
+        $ref: '#/components/schemas/EvidenceQuery'
+      x-page-unit: direct-record-bundle
+  /trading-review/v2/trading-analysis-runs/{analysisRunId}/metrics/{metricId}/memberships:
+    get:
+      operationId: listAnalysisMembershipsV2
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      parameters:
+      - name: analysisRunId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - name: metricId
+        in: path
+        required: true
+        schema:
+          $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+      - name: role
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/SelectionRole'
+      - name: reason
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+      - name: page
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/Page'
+      - name: size
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/Size'
+      responses:
+        '200':
+          description: DRAFT read projection; not runtime evidence.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipPage'
+              examples:
+                MembershipPage:
+                  $ref: '#/components/examples/MembershipPage'
+        '400':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INVALID_REQUEST
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error400'
+        '401':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - AUTHENTICATION_REQUIRED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error401'
+        '403':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - ACCESS_DENIED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error403'
+        '404':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_NOT_FOUND
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error404'
+        '409':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESULT_NOT_AVAILABLE
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error409'
+        '410':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - RESOURCE_DELETED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error410'
+        '422':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - READ_VIEW_UNSUPPORTED
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error422'
+        '500':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - INTERNAL_ERROR
+                    retryable:
+                      enum:
+                      - false
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error500'
+        '503':
+          description: DRAFT safe code mapping; not an adopted runtime error.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-store
+            Vary:
+              schema:
+                type: string
+                enum:
+                - Cookie
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/ErrorResponse
+                - properties:
+                    code:
+                      enum:
+                      - DEPENDENCY_UNAVAILABLE
+                    retryable:
+                      enum:
+                      - true
+              examples:
+                SafeError:
+                  $ref: '#/components/examples/Error503'
+      x-query-schema:
+        $ref: '#/components/schemas/MembershipQuery'
+      x-page-unit: membership
+components:
+  securitySchemes:
+    AccessCookieAuth:
+      $ref: ../core-api.yaml#/components/securitySchemes/AccessCookieAuth
+  schemas:
+    OpaqueId:
+      type: string
+      minLength: 1
+      description: opaque wire ID; typed legacy/Snowflake/ownership checks are runtime gates
+    ViewVersion:
+      type: string
+      enum:
+      - TRADING_ANALYSIS_READ_V2_DRAFT
+    SelectionRole:
+      type: string
+      enum:
+      - SUBJECT
+      - COMPARISON
+      - EXCLUDED
+      - RELATION_CANDIDATE
+      - RELATED_ENTRY
+      - PRIOR_BASELINE
+      - SELECTION_BOUNDARY
+    Page:
+      type: integer
+      minimum: 0
+      default: 0
+    Size:
+      type: integer
+      minimum: 1
+      maximum: 100
+      default: 20
+    Total:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 9223372036854775807
+    LedgerUnitFacts:
+      type: object
+      required:
+      - id
+      - type
+      - instrumentIds
+      - direction
+      - reconstructionStatus
+      - reconciliationStatus
+      - capability
+      - dataQuality
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum:
+          - FUTURES_POSITION_EPISODE
+        instrumentIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        direction:
+          type: string
+          enum:
+          - LONG
+          - SHORT
+        openedAt:
+          type: string
+          format: date-time
+          nullable: true
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+        initialQuantity:
+          allOf:
+          - $ref: ../core-api.yaml#/components/schemas/Quantity
+          type: object
+          nullable: true
+        initialNotional:
+          allOf:
+          - $ref: ../core-api.yaml#/components/schemas/Money
+          type: object
+          nullable: true
+        reconstructionStatus:
+          $ref: ../core-api.yaml#/components/schemas/ReconstructionStatus
+        reconciliationStatus:
+          $ref: ../core-api.yaml#/components/schemas/ReconciliationStatus
+        capability:
+          type: array
+          items:
+            $ref: ../core-api.yaml#/components/schemas/AnalysisCapability
+        dataQuality:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    TypedMetric:
+      oneOf:
+      - $ref: ../compute-api.yaml#/components/schemas/AnalyticsReentryMetric
+      - $ref: ../compute-api.yaml#/components/schemas/AnalyticsExposureMetric
+      - $ref: ../compute-api.yaml#/components/schemas/AnalyticsHoldingMetric
+      discriminator:
+        propertyName: definitionId
+    Selection:
+      type: object
+      additionalProperties: false
+      required:
+      - analysisRunId
+      - ledgerRevisionId
+      - analysisResultHash
+      - kind
+      - metricId
+      - role
+      - reason
+      - order
+      properties:
+        analysisRunId:
+          $ref: '#/components/schemas/OpaqueId'
+        ledgerRevisionId:
+          $ref: '#/components/schemas/OpaqueId'
+        analysisResultHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+        kind:
+          type: string
+          enum:
+          - UNIT
+          - MEMBERSHIP
+          - ALLOCATION
+          - DIRECT_RECORD
+        metricId:
+          allOf:
+          - $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+          nullable: true
+        role:
+          allOf:
+          - $ref: '#/components/schemas/SelectionRole'
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        order:
+          type: string
+          enum:
+          - UTF16_CODE_UNIT_ASC
+    SelectionQuery:
+      type: object
+      additionalProperties: false
+      required: []
+      properties:
+        metricId:
+          $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+        role:
+          $ref: '#/components/schemas/SelectionRole'
+        reason:
+          type: string
+          minLength: 1
+        page:
+          $ref: '#/components/schemas/Page'
+        size:
+          $ref: '#/components/schemas/Size'
+      allOf:
+      - anyOf:
+        - not:
+            required:
+            - role
+        - required:
+          - metricId
+      - anyOf:
+        - not:
+            required:
+            - reason
+        - required:
+          - metricId
+          - role
+          properties:
+            role:
+              enum:
+              - EXCLUDED
+    EvidenceQuery:
+      allOf:
+      - $ref: '#/components/schemas/SelectionQuery'
+      - required:
+        - metricId
+    MembershipQuery:
+      allOf:
+      - $ref: '#/components/schemas/SelectionQuery'
+      - required:
+        - metricId
+    PageQuery:
+      type: object
+      additionalProperties: false
+      required: []
+      properties:
+        page:
+          $ref: '#/components/schemas/Page'
+        size:
+          $ref: '#/components/schemas/Size'
+    MembershipSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - selection
+      - page
+      - size
+      - total
+      - items
+      properties:
+        selection:
+          allOf:
+          - $ref: '#/components/schemas/Selection'
+          - properties:
+              kind:
+                enum:
+                - MEMBERSHIP
+              metricId:
+                $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+        page:
+          type: integer
+          enum:
+          - 0
+        size:
+          type: integer
+          enum:
+          - 20
+        total:
+          $ref: '#/components/schemas/Total'
+        items:
+          type: array
+          items:
+            $ref: ../compute-api.yaml#/components/schemas/InternalEvidenceMembership
+    MetricView:
+      type: object
+      additionalProperties: false
+      required:
+      - schemaVersion
+      - analysisRunId
+      - analysisResultHash
+      - metric
+      - membershipSummary
+      properties:
+        schemaVersion:
+          $ref: '#/components/schemas/ViewVersion'
+        analysisRunId:
+          $ref: '#/components/schemas/OpaqueId'
+        analysisResultHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+        metric:
+          $ref: '#/components/schemas/TypedMetric'
+        membershipSummary:
+          $ref: '#/components/schemas/MembershipSummary'
+    UnitView:
+      type: object
+      additionalProperties: false
+      required:
+      - schemaVersion
+      - analysisRunId
+      - ledgerRevisionId
+      - analysisResultHash
+      - unit
+      - classification
+      properties:
+        schemaVersion:
+          $ref: '#/components/schemas/ViewVersion'
+        analysisRunId:
+          $ref: '#/components/schemas/OpaqueId'
+        ledgerRevisionId:
+          $ref: '#/components/schemas/OpaqueId'
+        analysisResultHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+        unit:
+          $ref: '#/components/schemas/LedgerUnitFacts'
+        classification:
+          allOf:
+          - $ref: ../compute-api.yaml#/components/schemas/AnalyticsOutcomeClassification
+          nullable: true
+    RecordEvidence:
+      type: object
+      additionalProperties: false
+      required:
+      - tradingRecord
+      - sourceEvidence
+      properties:
+        tradingRecord:
+          $ref: ../core-api.yaml#/components/schemas/TradingRecordEvidence
+        sourceEvidence:
+          $ref: ../core-api.yaml#/components/schemas/SourceEvidenceSnapshot
+    AllocationBundle:
+      type: object
+      additionalProperties: false
+      required:
+      - allocationId
+      - allocation
+      - membershipIds
+      - records
+      properties:
+        allocationId:
+          $ref: '#/components/schemas/OpaqueId'
+        allocation:
+          $ref: ../core-api.yaml#/components/schemas/PositionAllocationEvidence
+        membershipIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpaqueId'
+          minItems: 1
+          uniqueItems: true
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordEvidence'
+          minItems: 1
+    DirectRecordBundle:
+      type: object
+      additionalProperties: false
+      required:
+      - recordId
+      - membershipIds
+      - evidence
+      properties:
+        recordId:
+          $ref: '#/components/schemas/OpaqueId'
+        membershipIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpaqueId'
+          minItems: 1
+          uniqueItems: true
+        evidence:
+          $ref: '#/components/schemas/RecordEvidence'
+    UnitPage:
+      type: object
+      additionalProperties: false
+      required:
+      - schemaVersion
+      - page
+      - size
+      - total
+      - items
+      - selection
+      properties:
+        schemaVersion:
+          $ref: '#/components/schemas/ViewVersion'
+        page:
+          $ref: '#/components/schemas/Page'
+        size:
+          $ref: '#/components/schemas/Size'
+        total:
+          $ref: '#/components/schemas/Total'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnitView'
+        selection:
+          allOf:
+          - $ref: '#/components/schemas/Selection'
+          - properties:
+              kind:
+                enum:
+                - UNIT
+    MembershipPage:
+      type: object
+      additionalProperties: false
+      required:
+      - schemaVersion
+      - page
+      - size
+      - total
+      - items
+      - selection
+      properties:
+        schemaVersion:
+          $ref: '#/components/schemas/ViewVersion'
+        page:
+          $ref: '#/components/schemas/Page'
+        size:
+          $ref: '#/components/schemas/Size'
+        total:
+          $ref: '#/components/schemas/Total'
+        items:
+          type: array
+          items:
+            $ref: ../compute-api.yaml#/components/schemas/InternalEvidenceMembership
+        selection:
+          allOf:
+          - $ref: '#/components/schemas/Selection'
+          - properties:
+              kind:
+                enum:
+                - MEMBERSHIP
+              metricId:
+                $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+    AllocationPage:
+      type: object
+      additionalProperties: false
+      required:
+      - schemaVersion
+      - page
+      - size
+      - total
+      - items
+      - selection
+      properties:
+        schemaVersion:
+          $ref: '#/components/schemas/ViewVersion'
+        page:
+          $ref: '#/components/schemas/Page'
+        size:
+          $ref: '#/components/schemas/Size'
+        total:
+          $ref: '#/components/schemas/Total'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AllocationBundle'
+        selection:
+          allOf:
+          - $ref: '#/components/schemas/Selection'
+          - properties:
+              kind:
+                enum:
+                - ALLOCATION
+              metricId:
+                $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+    DirectEvidencePage:
+      type: object
+      additionalProperties: false
+      required:
+      - schemaVersion
+      - page
+      - size
+      - total
+      - items
+      - selection
+      properties:
+        schemaVersion:
+          $ref: '#/components/schemas/ViewVersion'
+        page:
+          $ref: '#/components/schemas/Page'
+        size:
+          $ref: '#/components/schemas/Size'
+        total:
+          $ref: '#/components/schemas/Total'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectRecordBundle'
+        selection:
+          allOf:
+          - $ref: '#/components/schemas/Selection'
+          - properties:
+              kind:
+                enum:
+                - DIRECT_RECORD
+              metricId:
+                $ref: ../core-api.yaml#/components/schemas/BehaviorMetricId
+    ReviewView:
+      type: object
+      additionalProperties: false
+      required:
+      - schemaVersion
+      - analysisRunId
+      - ledgerRevisionId
+      - resultSchemaVersion
+      - analysisResultHash
+      - evidenceHash
+      - analysisPeriod
+      - qualitySummary
+      - capabilitySnapshot
+      - metrics
+      - findings
+      - analyticsVersionSet
+      - analysisConfig
+      - analysisConfigHash
+      - createdAt
+      - lineage
+      properties:
+        schemaVersion:
+          $ref: '#/components/schemas/ViewVersion'
+        analysisRunId:
+          $ref: '#/components/schemas/OpaqueId'
+        ledgerRevisionId:
+          $ref: '#/components/schemas/OpaqueId'
+        resultSchemaVersion:
+          type: string
+          enum:
+          - TRADING_ANALYTICS_RESULT_SCHEMA_V1
+        analysisResultHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+        evidenceHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+        analysisPeriod:
+          $ref: ../core-api.yaml#/components/schemas/AnalysisPeriod
+        qualitySummary:
+          $ref: ../core-api.yaml#/components/schemas/TradingQualityReport
+        capabilitySnapshot:
+          type: array
+          items:
+            $ref: ../core-api.yaml#/components/schemas/AnalysisCapability
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricView'
+          minItems: 3
+          maxItems: 3
+        findings:
+          type: array
+          items:
+            $ref: ../core-api.yaml#/components/schemas/BehaviorFinding
+          maxItems: 0
+        analyticsVersionSet:
+          $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+        analysisConfig:
+          $ref: ../core-api.yaml#/components/schemas/AnalysisConfig
+        analysisConfigHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+        createdAt:
+          type: string
+          format: date-time
+        lineage:
+          allOf:
+          - $ref: ../core-api.yaml#/components/schemas/VersionLineage
+          nullable: true
+  examples:
+    PendingRun:
+      value:
+        id: '201'
+        tradingBookId: '101'
+        ledgerRevisionId: ledger-v1
+        progressStage: QUEUED
+        analyticsVersionSet:
+          metricDefinitionVersionsByMetricId:
+            ENTRY_WITHIN_WINDOW_AFTER_LOSS: '1'
+            INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: '1'
+            WIN_LOSS_HOLDING_DURATION_DIFFERENCE: '1'
+          findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+          analysisConfigVersion: ANALYSIS_CONFIG_V1
+          evidenceSchemaVersion: TRADING_EVIDENCE_V1
+          implementationDigest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+          versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2025-01-01T00:00:00Z'
+            endExclusive: '2025-02-01T00:00:00Z'
+          reviewTimezone: UTC
+          timezoneDatabaseVersion: 2025a
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 1
+            exposurePairs: 2
+            priorBaselineEpisodes: 3
+            holdingWins: 2
+            holdingLosses: 2
+          findingMinimums:
+            reentryEligibleLosses: 5
+            exposurePairs: 5
+            holdingWins: 5
+            holdingLosses: 5
+        analysisConfigHash: cb99a38fd6d1506e6b6d1fc91fafee0b40b13ec946219eac8abeee06ea1ce1af
+        qualityStatus: ACCEPTABLE_WITH_EXCLUSIONS
+        createdAt: '2026-01-01T00:00:00Z'
+        updatedAt: '2026-01-01T00:00:00Z'
+        status: PENDING
+    CompletedRun:
+      value:
+        id: '201'
+        tradingBookId: '101'
+        ledgerRevisionId: ledger-v1
+        progressStage: TERMINAL
+        analyticsVersionSet:
+          metricDefinitionVersionsByMetricId:
+            ENTRY_WITHIN_WINDOW_AFTER_LOSS: '1'
+            INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: '1'
+            WIN_LOSS_HOLDING_DURATION_DIFFERENCE: '1'
+          findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+          analysisConfigVersion: ANALYSIS_CONFIG_V1
+          evidenceSchemaVersion: TRADING_EVIDENCE_V1
+          implementationDigest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+          versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2025-01-01T00:00:00Z'
+            endExclusive: '2025-02-01T00:00:00Z'
+          reviewTimezone: UTC
+          timezoneDatabaseVersion: 2025a
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 1
+            exposurePairs: 2
+            priorBaselineEpisodes: 3
+            holdingWins: 2
+            holdingLosses: 2
+          findingMinimums:
+            reentryEligibleLosses: 5
+            exposurePairs: 5
+            holdingWins: 5
+            holdingLosses: 5
+        analysisConfigHash: cb99a38fd6d1506e6b6d1fc91fafee0b40b13ec946219eac8abeee06ea1ce1af
+        qualityStatus: ACCEPTABLE_WITH_EXCLUSIONS
+        createdAt: '2026-01-01T00:00:00Z'
+        updatedAt: '2026-01-01T00:00:00Z'
+        status: COMPLETED
+        resultId: '301'
+        resultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+        evidenceHash: 258bbaa8327e00f427b103d14c78c46958c57abcb3e17d5d4e89505ea2bf1d71
+        completedAt: '2026-01-01T00:00:00Z'
+    FailedRun:
+      value:
+        id: '201'
+        tradingBookId: '101'
+        ledgerRevisionId: ledger-v1
+        progressStage: TERMINAL
+        analyticsVersionSet:
+          metricDefinitionVersionsByMetricId:
+            ENTRY_WITHIN_WINDOW_AFTER_LOSS: '1'
+            INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: '1'
+            WIN_LOSS_HOLDING_DURATION_DIFFERENCE: '1'
+          findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+          analysisConfigVersion: ANALYSIS_CONFIG_V1
+          evidenceSchemaVersion: TRADING_EVIDENCE_V1
+          implementationDigest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+          versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2025-01-01T00:00:00Z'
+            endExclusive: '2025-02-01T00:00:00Z'
+          reviewTimezone: UTC
+          timezoneDatabaseVersion: 2025a
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 1
+            exposurePairs: 2
+            priorBaselineEpisodes: 3
+            holdingWins: 2
+            holdingLosses: 2
+          findingMinimums:
+            reentryEligibleLosses: 5
+            exposurePairs: 5
+            holdingWins: 5
+            holdingLosses: 5
+        analysisConfigHash: cb99a38fd6d1506e6b6d1fc91fafee0b40b13ec946219eac8abeee06ea1ce1af
+        qualityStatus: ACCEPTABLE_WITH_EXCLUSIONS
+        createdAt: '2026-01-01T00:00:00Z'
+        updatedAt: '2026-01-01T00:00:00Z'
+        status: FAILED
+        completedAt: '2026-01-01T00:00:00Z'
+        failure:
+          code: TEMPORARY_DEPENDENCY_FAILURE
+          message: Dependency unavailable.
+          retryable: false
+    RunPage:
+      value:
+        page: 0
+        size: 20
+        total: 2
+        items:
+        - id: '201'
+          tradingBookId: '101'
+          ledgerRevisionId: ledger-v1
+          progressStage: QUEUED
+          analyticsVersionSet:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: '1'
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: '1'
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: '1'
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: ANALYSIS_CONFIG_V1
+            evidenceSchemaVersion: TRADING_EVIDENCE_V1
+            implementationDigest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analysisConfig:
+            schemaVersion: 1
+            analysisPeriod:
+              startInclusive: '2025-01-01T00:00:00Z'
+              endExclusive: '2025-02-01T00:00:00Z'
+            reviewTimezone: UTC
+            timezoneDatabaseVersion: 2025a
+            outcomeBasis: NET_TRADING_PNL
+            fundingTreatment: EXCLUDED
+            eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+            reversalTreatment: SEPARATE
+            reentryWindow: PT30M
+            baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+            metricMinimums:
+              reentryEligibleLosses: 1
+              exposurePairs: 2
+              priorBaselineEpisodes: 3
+              holdingWins: 2
+              holdingLosses: 2
+            findingMinimums:
+              reentryEligibleLosses: 5
+              exposurePairs: 5
+              holdingWins: 5
+              holdingLosses: 5
+          analysisConfigHash: cb99a38fd6d1506e6b6d1fc91fafee0b40b13ec946219eac8abeee06ea1ce1af
+          qualityStatus: ACCEPTABLE_WITH_EXCLUSIONS
+          createdAt: '2026-01-01T00:00:00Z'
+          updatedAt: '2026-01-01T00:00:00Z'
+          status: PENDING
+        - id: '201'
+          tradingBookId: '101'
+          ledgerRevisionId: ledger-v1
+          progressStage: TERMINAL
+          analyticsVersionSet:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: '1'
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: '1'
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: '1'
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: ANALYSIS_CONFIG_V1
+            evidenceSchemaVersion: TRADING_EVIDENCE_V1
+            implementationDigest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analysisConfig:
+            schemaVersion: 1
+            analysisPeriod:
+              startInclusive: '2025-01-01T00:00:00Z'
+              endExclusive: '2025-02-01T00:00:00Z'
+            reviewTimezone: UTC
+            timezoneDatabaseVersion: 2025a
+            outcomeBasis: NET_TRADING_PNL
+            fundingTreatment: EXCLUDED
+            eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+            reversalTreatment: SEPARATE
+            reentryWindow: PT30M
+            baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+            metricMinimums:
+              reentryEligibleLosses: 1
+              exposurePairs: 2
+              priorBaselineEpisodes: 3
+              holdingWins: 2
+              holdingLosses: 2
+            findingMinimums:
+              reentryEligibleLosses: 5
+              exposurePairs: 5
+              holdingWins: 5
+              holdingLosses: 5
+          analysisConfigHash: cb99a38fd6d1506e6b6d1fc91fafee0b40b13ec946219eac8abeee06ea1ce1af
+          qualityStatus: ACCEPTABLE_WITH_EXCLUSIONS
+          createdAt: '2026-01-01T00:00:00Z'
+          updatedAt: '2026-01-01T00:00:00Z'
+          status: COMPLETED
+          resultId: '301'
+          resultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+          evidenceHash: 258bbaa8327e00f427b103d14c78c46958c57abcb3e17d5d4e89505ea2bf1d71
+          completedAt: '2026-01-01T00:00:00Z'
+    Metric:
+      value:
+        schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+        analysisRunId: '201'
+        analysisResultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+        metric:
+          metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+          definitionId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+          definitionVersion: '1'
+          status: AVAILABLE
+          findingEligibility: INELIGIBLE_SAMPLE
+          requiredCapabilities:
+          - CLOSED_OUTCOME
+          - FEES
+          - STABLE_EPISODE_TIME
+          populationCount: 1
+          eligibleCount: 1
+          excludedCount: 0
+          excludedReasonCounts: {}
+          scalarInputs:
+          - reviewUnitId: entry-1
+            name: openedAt
+            value: '2025-01-10T00:05:00Z'
+          - reviewUnitId: loss-1
+            name: closedAt
+            value: '2025-01-10T00:00:00Z'
+          - reviewUnitId: loss-1
+            name: elapsedMicroseconds
+            value: '300000000'
+          relationIds:
+          - loss-1:ENTRY_WITHIN_WINDOW_AFTER_LOSS
+          membershipIds:
+          - 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:entry-1:RELATED_ENTRY:'
+          - 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:entry-1:RELATION_CANDIDATE:'
+          - 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:loss-1:SUBJECT:'
+          values:
+            eligibleLossCount: 1
+            lossWithEntryCount: 1
+            relatedEntryCount: 1
+            sameSymbolCount: 1
+            differentSymbolCount: 0
+            sameInstrumentRelatedEntryCount: 1
+            differentInstrumentRelatedEntryCount: 0
+            entryWithinWindowRate:
+              numerator: '1'
+              denominator: '1'
+            elapsedTimeDistribution:
+              count: 1
+              minimum:
+                numerator: '300000000'
+                denominator: '1'
+              p25:
+                numerator: '300000000'
+                denominator: '1'
+              median:
+                numerator: '300000000'
+                denominator: '1'
+              p75:
+                numerator: '300000000'
+                denominator: '1'
+              maximum:
+                numerator: '300000000'
+                denominator: '1'
+              mean:
+                numerator: '300000000'
+                denominator: '1'
+          metricHash: f08bc101121e93a8653676e0dfcca67f9c76dc6b7358c64b1fa1f11a32118b9f
+        membershipSummary:
+          selection:
+            analysisRunId: '201'
+            ledgerRevisionId: ledger-v1
+            analysisResultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+            kind: MEMBERSHIP
+            metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+            role: null
+            reason: null
+            order: UTF16_CODE_UNIT_ASC
+          page: 0
+          size: 20
+          total: 3
+          items:
+          - membershipId: 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:entry-1:RELATED_ENTRY:'
+            metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+            reviewUnitId: entry-1
+            role: RELATED_ENTRY
+            exclusionReason: null
+            reasons: []
+            allocationRecordIds:
+            - allocation-entry-1
+            canonicalRecordIds:
+            - record-entry-1
+            sourceEvidenceSnapshotIds:
+            - snapshot-entry-1
+          - membershipId: 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:entry-1:RELATION_CANDIDATE:'
+            metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+            reviewUnitId: entry-1
+            role: RELATION_CANDIDATE
+            exclusionReason: null
+            reasons: []
+            allocationRecordIds:
+            - allocation-entry-1
+            canonicalRecordIds:
+            - record-entry-1
+            sourceEvidenceSnapshotIds:
+            - snapshot-entry-1
+          - membershipId: 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:loss-1:SUBJECT:'
+            metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+            reviewUnitId: loss-1
+            role: SUBJECT
+            exclusionReason: null
+            reasons: []
+            allocationRecordIds:
+            - allocation-loss-1
+            canonicalRecordIds:
+            - record-loss-1
+            sourceEvidenceSnapshotIds:
+            - snapshot-loss-1
+    Review:
+      value:
+        schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+        analysisRunId: '201'
+        ledgerRevisionId: ledger-v1
+        resultSchemaVersion: TRADING_ANALYTICS_RESULT_SCHEMA_V1
+        analysisResultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+        evidenceHash: 258bbaa8327e00f427b103d14c78c46958c57abcb3e17d5d4e89505ea2bf1d71
+        analysisPeriod:
+          startInclusive: '2025-01-01T00:00:00Z'
+          endExclusive: '2025-02-01T00:00:00Z'
+        qualitySummary:
+          qualityStatus: ACCEPTABLE_WITH_EXCLUSIONS
+          rowCountsByArtifactRole:
+            TRADE_HISTORY: 1
+            POSITION_HISTORY: 1
+          ignoredNonTradingRowCounts:
+            TRADE_HISTORY: 0
+            POSITION_HISTORY: 0
+          validationIssues:
+          - code: SYNTHETIC_WARNING
+            severity: WARNING
+            artifactRole: TRADE_HISTORY
+            sourceRowNumber: 1
+          reconciliationStatusCounts:
+            INCOMPLETE_TRADES: 1
+          excludedReasonCounts:
+            EPISODE_RIGHT_CENSORED: 1
+          capability:
+          - INITIAL_EXPOSURE
+        capabilitySnapshot:
+        - INITIAL_EXPOSURE
+        metrics:
+        - schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+          analysisRunId: '201'
+          analysisResultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+          metric:
+            metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+            definitionId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+            definitionVersion: '1'
+            status: AVAILABLE
+            findingEligibility: INELIGIBLE_SAMPLE
+            requiredCapabilities:
+            - CLOSED_OUTCOME
+            - FEES
+            - STABLE_EPISODE_TIME
+            populationCount: 1
+            eligibleCount: 1
+            excludedCount: 0
+            excludedReasonCounts: {}
+            scalarInputs:
+            - reviewUnitId: entry-1
+              name: openedAt
+              value: '2025-01-10T00:05:00Z'
+            - reviewUnitId: loss-1
+              name: closedAt
+              value: '2025-01-10T00:00:00Z'
+            - reviewUnitId: loss-1
+              name: elapsedMicroseconds
+              value: '300000000'
+            relationIds:
+            - loss-1:ENTRY_WITHIN_WINDOW_AFTER_LOSS
+            membershipIds:
+            - 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:entry-1:RELATED_ENTRY:'
+            - 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:entry-1:RELATION_CANDIDATE:'
+            - 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:loss-1:SUBJECT:'
+            values:
+              eligibleLossCount: 1
+              lossWithEntryCount: 1
+              relatedEntryCount: 1
+              sameSymbolCount: 1
+              differentSymbolCount: 0
+              sameInstrumentRelatedEntryCount: 1
+              differentInstrumentRelatedEntryCount: 0
+              entryWithinWindowRate:
+                numerator: '1'
+                denominator: '1'
+              elapsedTimeDistribution:
+                count: 1
+                minimum:
+                  numerator: '300000000'
+                  denominator: '1'
+                p25:
+                  numerator: '300000000'
+                  denominator: '1'
+                median:
+                  numerator: '300000000'
+                  denominator: '1'
+                p75:
+                  numerator: '300000000'
+                  denominator: '1'
+                maximum:
+                  numerator: '300000000'
+                  denominator: '1'
+                mean:
+                  numerator: '300000000'
+                  denominator: '1'
+            metricHash: f08bc101121e93a8653676e0dfcca67f9c76dc6b7358c64b1fa1f11a32118b9f
+          membershipSummary:
+            selection:
+              analysisRunId: '201'
+              ledgerRevisionId: ledger-v1
+              analysisResultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+              kind: MEMBERSHIP
+              metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+              role: null
+              reason: null
+              order: UTF16_CODE_UNIT_ASC
+            page: 0
+            size: 20
+            total: 3
+            items:
+            - membershipId: 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:entry-1:RELATED_ENTRY:'
+              metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+              reviewUnitId: entry-1
+              role: RELATED_ENTRY
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-entry-1
+              canonicalRecordIds:
+              - record-entry-1
+              sourceEvidenceSnapshotIds:
+              - snapshot-entry-1
+            - membershipId: 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:entry-1:RELATION_CANDIDATE:'
+              metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+              reviewUnitId: entry-1
+              role: RELATION_CANDIDATE
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-entry-1
+              canonicalRecordIds:
+              - record-entry-1
+              sourceEvidenceSnapshotIds:
+              - snapshot-entry-1
+            - membershipId: 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:loss-1:SUBJECT:'
+              metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+              reviewUnitId: loss-1
+              role: SUBJECT
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-loss-1
+              canonicalRecordIds:
+              - record-loss-1
+              sourceEvidenceSnapshotIds:
+              - snapshot-loss-1
+        - schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+          analysisRunId: '201'
+          analysisResultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+          metric:
+            metricId: INITIAL_EXPOSURE_CHANGE_AFTER_LOSS
+            definitionId: INITIAL_EXPOSURE_CHANGE_AFTER_LOSS
+            definitionVersion: '1'
+            status: INSUFFICIENT_SAMPLE
+            findingEligibility: INELIGIBLE_METRIC_STATUS
+            requiredCapabilities:
+            - CLOSED_OUTCOME
+            - FEES
+            - INITIAL_EXPOSURE
+            - STABLE_EPISODE_TIME
+            populationCount: 1
+            eligibleCount: 1
+            excludedCount: 0
+            excludedReasonCounts: {}
+            scalarInputs:
+            - reviewUnitId: baseline-1
+              name: contractMultiplier
+              value: '1'
+            - reviewUnitId: baseline-1
+              name: initialPrice
+              value: '50'
+            - reviewUnitId: baseline-1
+              name: initialQuantity
+              value: '2.00'
+            - reviewUnitId: baseline-2
+              name: contractMultiplier
+              value: '1'
+            - reviewUnitId: baseline-2
+              name: initialPrice
+              value: '50'
+            - reviewUnitId: baseline-2
+              name: initialQuantity
+              value: '2.00'
+            - reviewUnitId: baseline-3
+              name: contractMultiplier
+              value: '1'
+            - reviewUnitId: baseline-3
+              name: initialPrice
+              value: '50'
+            - reviewUnitId: baseline-3
+              name: initialQuantity
+              value: '2.00'
+            - reviewUnitId: entry-1
+              name: contractMultiplier
+              value: '1'
+            - reviewUnitId: entry-1
+              name: initialNotional
+              value: '100'
+            - reviewUnitId: entry-1
+              name: initialPrice
+              value: '50'
+            - reviewUnitId: entry-1
+              name: initialQuantity
+              value: '2.00'
+            - reviewUnitId: entry-1
+              name: ratio
+              value: 1/1
+            - reviewUnitId: entry-1
+              name: settlementCurrency
+              value: USDT
+            - reviewUnitId: loss-1
+              name: contractMultiplier
+              value: '1'
+            - reviewUnitId: loss-1
+              name: initialNotional
+              value: '100'
+            - reviewUnitId: loss-1
+              name: initialPrice
+              value: '50'
+            - reviewUnitId: loss-1
+              name: initialQuantity
+              value: '2.00'
+            relationIds:
+            - loss-1:ENTRY_WITHIN_WINDOW_AFTER_LOSS
+            membershipIds:
+            - 'INITIAL_EXPOSURE_CHANGE_AFTER_LOSS:baseline-1:PRIOR_BASELINE:'
+            - 'INITIAL_EXPOSURE_CHANGE_AFTER_LOSS:baseline-2:PRIOR_BASELINE:'
+            - 'INITIAL_EXPOSURE_CHANGE_AFTER_LOSS:baseline-3:PRIOR_BASELINE:'
+            - 'INITIAL_EXPOSURE_CHANGE_AFTER_LOSS:entry-1:COMPARISON:'
+            - 'INITIAL_EXPOSURE_CHANGE_AFTER_LOSS:loss-1:SUBJECT:'
+            values:
+              pairCount: 1
+              increasedCount: 0
+              equalCount: 1
+              decreasedCount: 0
+              medianNextEntryVsLossEpisodeRatio: null
+              ratioDistribution: null
+              percentageDeltaDistribution: null
+              absoluteDeltaByCurrency: []
+              pairs:
+              - lossId: loss-1
+                entryId: entry-1
+                currency: USDT
+                lossNotional: '100'
+                entryNotional: '100'
+                absoluteDelta: '0'
+                ratio:
+                  numerator: '1'
+                  denominator: '1'
+                percentageDelta:
+                  numerator: '0'
+                  denominator: '1'
+                sameInstrument: true
+                sameDirection: true
+                baselineEpisodeIds:
+                - baseline-1
+                - baseline-2
+                - baseline-3
+                baselineMedian:
+                  numerator: '100'
+                  denominator: '1'
+                baselineRatio:
+                  numerator: '1'
+                  denominator: '1'
+                baselineDelta:
+                  numerator: '0'
+                  denominator: '1'
+                baselineReason: null
+            metricHash: 4f7efa98ab849f56a97b62972ea5311d84f2cfae7f8e92bfd06b061c2e437f01
+          membershipSummary:
+            selection:
+              analysisRunId: '201'
+              ledgerRevisionId: ledger-v1
+              analysisResultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+              kind: MEMBERSHIP
+              metricId: INITIAL_EXPOSURE_CHANGE_AFTER_LOSS
+              role: null
+              reason: null
+              order: UTF16_CODE_UNIT_ASC
+            page: 0
+            size: 20
+            total: 5
+            items:
+            - membershipId: 'INITIAL_EXPOSURE_CHANGE_AFTER_LOSS:baseline-1:PRIOR_BASELINE:'
+              metricId: INITIAL_EXPOSURE_CHANGE_AFTER_LOSS
+              reviewUnitId: baseline-1
+              role: PRIOR_BASELINE
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-baseline-1
+              canonicalRecordIds:
+              - record-baseline-1
+              sourceEvidenceSnapshotIds:
+              - snapshot-baseline-1
+            - membershipId: 'INITIAL_EXPOSURE_CHANGE_AFTER_LOSS:baseline-2:PRIOR_BASELINE:'
+              metricId: INITIAL_EXPOSURE_CHANGE_AFTER_LOSS
+              reviewUnitId: baseline-2
+              role: PRIOR_BASELINE
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-baseline-2
+              canonicalRecordIds:
+              - record-baseline-2
+              sourceEvidenceSnapshotIds:
+              - snapshot-baseline-2
+            - membershipId: 'INITIAL_EXPOSURE_CHANGE_AFTER_LOSS:baseline-3:PRIOR_BASELINE:'
+              metricId: INITIAL_EXPOSURE_CHANGE_AFTER_LOSS
+              reviewUnitId: baseline-3
+              role: PRIOR_BASELINE
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-baseline-3
+              canonicalRecordIds:
+              - record-baseline-3
+              sourceEvidenceSnapshotIds:
+              - snapshot-baseline-3
+            - membershipId: 'INITIAL_EXPOSURE_CHANGE_AFTER_LOSS:entry-1:COMPARISON:'
+              metricId: INITIAL_EXPOSURE_CHANGE_AFTER_LOSS
+              reviewUnitId: entry-1
+              role: COMPARISON
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-entry-1
+              canonicalRecordIds:
+              - record-entry-1
+              sourceEvidenceSnapshotIds:
+              - snapshot-entry-1
+            - membershipId: 'INITIAL_EXPOSURE_CHANGE_AFTER_LOSS:loss-1:SUBJECT:'
+              metricId: INITIAL_EXPOSURE_CHANGE_AFTER_LOSS
+              reviewUnitId: loss-1
+              role: SUBJECT
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-loss-1
+              canonicalRecordIds:
+              - record-loss-1
+              sourceEvidenceSnapshotIds:
+              - snapshot-loss-1
+        - schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+          analysisRunId: '201'
+          analysisResultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+          metric:
+            metricId: WIN_LOSS_HOLDING_DURATION_DIFFERENCE
+            definitionId: WIN_LOSS_HOLDING_DURATION_DIFFERENCE
+            definitionVersion: '1'
+            status: AVAILABLE
+            findingEligibility: INELIGIBLE_SAMPLE
+            requiredCapabilities:
+            - CLOSED_OUTCOME
+            - FEES
+            - STABLE_EPISODE_TIME
+            populationCount: 5
+            eligibleCount: 4
+            excludedCount: 1
+            excludedReasonCounts:
+              RECONSTRUCTION_NOT_COMPLETE: 1
+            scalarInputs:
+            - reviewUnitId: loss-1
+              name: closedAt
+              value: '2025-01-10T00:00:00Z'
+            - reviewUnitId: loss-1
+              name: holdingDurationMicroseconds
+              value: '30'
+            - reviewUnitId: loss-1
+              name: netTradingPnl
+              value: '-10'
+            - reviewUnitId: loss-1
+              name: openedAt
+              value: '2025-01-09T23:59:59.99997Z'
+            - reviewUnitId: loss-2
+              name: closedAt
+              value: '2025-01-13T00:00:00Z'
+            - reviewUnitId: loss-2
+              name: holdingDurationMicroseconds
+              value: '30'
+            - reviewUnitId: loss-2
+              name: netTradingPnl
+              value: '-5'
+            - reviewUnitId: loss-2
+              name: openedAt
+              value: '2025-01-12T23:59:59.99997Z'
+            - reviewUnitId: win-1
+              name: closedAt
+              value: '2025-01-11T00:00:00Z'
+            - reviewUnitId: win-1
+              name: holdingDurationMicroseconds
+              value: '30'
+            - reviewUnitId: win-1
+              name: netTradingPnl
+              value: '5'
+            - reviewUnitId: win-1
+              name: openedAt
+              value: '2025-01-10T23:59:59.99997Z'
+            - reviewUnitId: win-2
+              name: closedAt
+              value: '2025-01-12T00:00:00Z'
+            - reviewUnitId: win-2
+              name: holdingDurationMicroseconds
+              value: '30'
+            - reviewUnitId: win-2
+              name: netTradingPnl
+              value: '10'
+            - reviewUnitId: win-2
+              name: openedAt
+              value: '2025-01-11T23:59:59.99997Z'
+            relationIds: []
+            membershipIds:
+            - WIN_LOSS_HOLDING_DURATION_DIFFERENCE:censored-1:EXCLUDED:RECONSTRUCTION_NOT_COMPLETE
+            - 'WIN_LOSS_HOLDING_DURATION_DIFFERENCE:loss-1:COMPARISON:'
+            - 'WIN_LOSS_HOLDING_DURATION_DIFFERENCE:loss-2:COMPARISON:'
+            - 'WIN_LOSS_HOLDING_DURATION_DIFFERENCE:win-1:SUBJECT:'
+            - 'WIN_LOSS_HOLDING_DURATION_DIFFERENCE:win-2:SUBJECT:'
+            values:
+              winCount: 2
+              lossCount: 2
+              breakevenCount: 0
+              unavailableCount: 1
+              winDistribution:
+                count: 2
+                minimum:
+                  numerator: '30'
+                  denominator: '1'
+                p25:
+                  numerator: '30'
+                  denominator: '1'
+                median:
+                  numerator: '30'
+                  denominator: '1'
+                p75:
+                  numerator: '30'
+                  denominator: '1'
+                maximum:
+                  numerator: '30'
+                  denominator: '1'
+                mean:
+                  numerator: '30'
+                  denominator: '1'
+              lossDistribution:
+                count: 2
+                minimum:
+                  numerator: '30'
+                  denominator: '1'
+                p25:
+                  numerator: '30'
+                  denominator: '1'
+                median:
+                  numerator: '30'
+                  denominator: '1'
+                p75:
+                  numerator: '30'
+                  denominator: '1'
+                maximum:
+                  numerator: '30'
+                  denominator: '1'
+                mean:
+                  numerator: '30'
+                  denominator: '1'
+              medianDifferenceMicroseconds:
+                numerator: '0'
+                denominator: '1'
+              medianRatio:
+                numerator: '1'
+                denominator: '1'
+              medianRatioReason: null
+            metricHash: 7630a19f3a23036b2de0e263511c11274d1824cc76a90125068685b62f456fd3
+          membershipSummary:
+            selection:
+              analysisRunId: '201'
+              ledgerRevisionId: ledger-v1
+              analysisResultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+              kind: MEMBERSHIP
+              metricId: WIN_LOSS_HOLDING_DURATION_DIFFERENCE
+              role: null
+              reason: null
+              order: UTF16_CODE_UNIT_ASC
+            page: 0
+            size: 20
+            total: 5
+            items:
+            - membershipId: WIN_LOSS_HOLDING_DURATION_DIFFERENCE:censored-1:EXCLUDED:RECONSTRUCTION_NOT_COMPLETE
+              metricId: WIN_LOSS_HOLDING_DURATION_DIFFERENCE
+              reviewUnitId: censored-1
+              role: EXCLUDED
+              exclusionReason: RECONSTRUCTION_NOT_COMPLETE
+              reasons:
+              - RECONSTRUCTION_NOT_COMPLETE
+              allocationRecordIds:
+              - allocation-censored-1
+              canonicalRecordIds:
+              - record-censored-1
+              sourceEvidenceSnapshotIds:
+              - snapshot-censored-1
+            - membershipId: 'WIN_LOSS_HOLDING_DURATION_DIFFERENCE:loss-1:COMPARISON:'
+              metricId: WIN_LOSS_HOLDING_DURATION_DIFFERENCE
+              reviewUnitId: loss-1
+              role: COMPARISON
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-loss-1
+              canonicalRecordIds:
+              - record-loss-1
+              sourceEvidenceSnapshotIds:
+              - snapshot-loss-1
+            - membershipId: 'WIN_LOSS_HOLDING_DURATION_DIFFERENCE:loss-2:COMPARISON:'
+              metricId: WIN_LOSS_HOLDING_DURATION_DIFFERENCE
+              reviewUnitId: loss-2
+              role: COMPARISON
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-loss-2
+              canonicalRecordIds:
+              - record-loss-2
+              sourceEvidenceSnapshotIds:
+              - snapshot-loss-2
+            - membershipId: 'WIN_LOSS_HOLDING_DURATION_DIFFERENCE:win-1:SUBJECT:'
+              metricId: WIN_LOSS_HOLDING_DURATION_DIFFERENCE
+              reviewUnitId: win-1
+              role: SUBJECT
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-win-1
+              canonicalRecordIds:
+              - record-win-1
+              sourceEvidenceSnapshotIds:
+              - snapshot-win-1
+            - membershipId: 'WIN_LOSS_HOLDING_DURATION_DIFFERENCE:win-2:SUBJECT:'
+              metricId: WIN_LOSS_HOLDING_DURATION_DIFFERENCE
+              reviewUnitId: win-2
+              role: SUBJECT
+              exclusionReason: null
+              reasons: []
+              allocationRecordIds:
+              - allocation-win-2
+              canonicalRecordIds:
+              - record-win-2
+              sourceEvidenceSnapshotIds:
+              - snapshot-win-2
+        findings: []
+        analyticsVersionSet:
+          metricDefinitionVersionsByMetricId:
+            ENTRY_WITHIN_WINDOW_AFTER_LOSS: '1'
+            INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: '1'
+            WIN_LOSS_HOLDING_DURATION_DIFFERENCE: '1'
+          findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+          analysisConfigVersion: ANALYSIS_CONFIG_V1
+          evidenceSchemaVersion: TRADING_EVIDENCE_V1
+          implementationDigest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+          versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2025-01-01T00:00:00Z'
+            endExclusive: '2025-02-01T00:00:00Z'
+          reviewTimezone: UTC
+          timezoneDatabaseVersion: 2025a
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 1
+            exposurePairs: 2
+            priorBaselineEpisodes: 3
+            holdingWins: 2
+            holdingLosses: 2
+          findingMinimums:
+            reentryEligibleLosses: 5
+            exposurePairs: 5
+            holdingWins: 5
+            holdingLosses: 5
+        analysisConfigHash: cb99a38fd6d1506e6b6d1fc91fafee0b40b13ec946219eac8abeee06ea1ce1af
+        createdAt: '2026-01-01T00:00:00Z'
+        lineage: null
+    Unit:
+      value:
+        schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+        analysisRunId: '202'
+        ledgerRevisionId: revision-synthetic-1
+        analysisResultHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+        unit:
+          id: unit-synthetic-1
+          type: FUTURES_POSITION_EPISODE
+          instrumentIds:
+          - instrument-synthetic-1
+          direction: LONG
+          reconstructionStatus: RIGHT_CENSORED
+          reconciliationStatus: INCOMPLETE_TRADES
+          capability:
+          - INITIAL_EXPOSURE
+          dataQuality:
+          - EPISODE_RIGHT_CENSORED
+        classification: null
+    UnitPage:
+      value:
+        schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+        page: 0
+        size: 20
+        total: 1
+        items:
+        - schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+          analysisRunId: '202'
+          ledgerRevisionId: revision-synthetic-1
+          analysisResultHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+          unit:
+            id: unit-synthetic-1
+            type: FUTURES_POSITION_EPISODE
+            instrumentIds:
+            - instrument-synthetic-1
+            direction: LONG
+            reconstructionStatus: RIGHT_CENSORED
+            reconciliationStatus: INCOMPLETE_TRADES
+            capability:
+            - INITIAL_EXPOSURE
+            dataQuality:
+            - EPISODE_RIGHT_CENSORED
+          classification: null
+        selection:
+          analysisRunId: '202'
+          ledgerRevisionId: revision-synthetic-1
+          analysisResultHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+          kind: UNIT
+          metricId: null
+          role: null
+          reason: null
+          order: UTF16_CODE_UNIT_ASC
+    MembershipPage:
+      value:
+        schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+        page: 0
+        size: 20
+        total: 3
+        items:
+        - membershipId: 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:entry-1:RELATED_ENTRY:'
+          metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+          reviewUnitId: entry-1
+          role: RELATED_ENTRY
+          exclusionReason: null
+          reasons: []
+          allocationRecordIds:
+          - allocation-entry-1
+          canonicalRecordIds:
+          - record-entry-1
+          sourceEvidenceSnapshotIds:
+          - snapshot-entry-1
+        - membershipId: 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:entry-1:RELATION_CANDIDATE:'
+          metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+          reviewUnitId: entry-1
+          role: RELATION_CANDIDATE
+          exclusionReason: null
+          reasons: []
+          allocationRecordIds:
+          - allocation-entry-1
+          canonicalRecordIds:
+          - record-entry-1
+          sourceEvidenceSnapshotIds:
+          - snapshot-entry-1
+        - membershipId: 'ENTRY_WITHIN_WINDOW_AFTER_LOSS:loss-1:SUBJECT:'
+          metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+          reviewUnitId: loss-1
+          role: SUBJECT
+          exclusionReason: null
+          reasons: []
+          allocationRecordIds:
+          - allocation-loss-1
+          canonicalRecordIds:
+          - record-loss-1
+          sourceEvidenceSnapshotIds:
+          - snapshot-loss-1
+        selection:
+          analysisRunId: '201'
+          ledgerRevisionId: ledger-v1
+          analysisResultHash: 29fc9f6665cfe683c8d1a17be8292ab756a3057306738a06e3f6c752ecc4ff5d
+          kind: MEMBERSHIP
+          metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+          role: null
+          reason: null
+          order: UTF16_CODE_UNIT_ASC
+    AllocationPage:
+      value:
+        schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+        page: 0
+        size: 20
+        total: 1
+        items:
+        - allocationId: allocation-synthetic-1
+          allocation:
+            tradingRecordId: record-synthetic-1
+            action: OPEN
+            allocatedQuantity:
+              value: '2'
+              sourceScale: 0
+            allocatedFee:
+              amount: '0.1'
+              currency: USDT
+              sourceScale: 2
+            allocatedReportedPnl:
+              amount: '0'
+              currency: USDT
+              sourceScale: 2
+          membershipIds:
+          - synthetic-membership-1
+          records:
+          - tradingRecord:
+              recordId: record-synthetic-1
+              recordType: EXECUTION
+              occurredAt: '2025-01-01T00:00:00Z'
+              price:
+                value: '1.23'
+                sourceScale: 4
+              sourceEvidenceSnapshotId: evidence-synthetic-1
+            sourceEvidence:
+              id: evidence-synthetic-1
+              artifactId: artifact-trade-example
+              artifactRole: TRADE_HISTORY
+              sourceRowNumber: 1
+              sourceRowHash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+              dialect: SYNTHETIC_V1
+              evidenceKind: RETAINED_SNAPSHOT
+              rawAvailability: DELETED
+              rawReparseAvailable: false
+              maskingPolicyVersion: MASK_V1
+              allowlistedFields:
+              - name: kind
+                value: synthetic
+              capturedAt: '2025-01-01T00:00:01Z'
+        selection:
+          analysisRunId: '202'
+          ledgerRevisionId: revision-synthetic-1
+          analysisResultHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+          kind: ALLOCATION
+          metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+          role: null
+          reason: null
+          order: UTF16_CODE_UNIT_ASC
+    DirectEvidencePage:
+      value:
+        schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+        page: 0
+        size: 20
+        total: 1
+        items:
+        - recordId: record-synthetic-1
+          membershipIds:
+          - synthetic-direct-membership-1
+          evidence:
+            tradingRecord:
+              recordId: record-synthetic-1
+              recordType: EXECUTION
+              occurredAt: '2025-01-01T00:00:00Z'
+              price:
+                value: '1.23'
+                sourceScale: 4
+              sourceEvidenceSnapshotId: evidence-synthetic-1
+            sourceEvidence:
+              id: evidence-synthetic-1
+              artifactId: artifact-trade-example
+              artifactRole: TRADE_HISTORY
+              sourceRowNumber: 1
+              sourceRowHash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+              dialect: SYNTHETIC_V1
+              evidenceKind: RETAINED_SNAPSHOT
+              rawAvailability: DELETED
+              rawReparseAvailable: false
+              maskingPolicyVersion: MASK_V1
+              allowlistedFields:
+              - name: kind
+                value: synthetic
+              capturedAt: '2025-01-01T00:00:01Z'
+        selection:
+          analysisRunId: '202'
+          ledgerRevisionId: revision-synthetic-1
+          analysisResultHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+          kind: DIRECT_RECORD
+          metricId: ENTRY_WITHIN_WINDOW_AFTER_LOSS
+          role: null
+          reason: null
+          order: UTF16_CODE_UNIT_ASC
+    Admit:
+      value:
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2025-01-01T00:00:00Z'
+            endExclusive: '2025-02-01T00:00:00Z'
+          reviewTimezone: UTC
+          timezoneDatabaseVersion: 2025a
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 1
+            exposurePairs: 2
+            priorBaselineEpisodes: 3
+            holdingWins: 2
+            holdingLosses: 2
+          findingMinimums:
+            reentryEligibleLosses: 5
+            exposurePairs: 5
+            holdingWins: 5
+            holdingLosses: 5
+        analyticsVersionSet:
+          metricDefinitionVersionsByMetricId:
+            ENTRY_WITHIN_WINDOW_AFTER_LOSS: '1'
+            INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: '1'
+            WIN_LOSS_HOLDING_DURATION_DIFFERENCE: '1'
+          findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+          analysisConfigVersion: ANALYSIS_CONFIG_V1
+          evidenceSchemaVersion: TRADING_EVIDENCE_V1
+          implementationDigest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+          versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+        publishAsLatest: true
+    Error:
+      value:
+        code: RESULT_NOT_AVAILABLE
+        message: Result is unavailable.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    ClassifiedUnit:
+      value:
+        schemaVersion: TRADING_ANALYSIS_READ_V2_DRAFT
+        analysisRunId: '202'
+        ledgerRevisionId: revision-synthetic-1
+        analysisResultHash: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+        unit:
+          id: censored-1
+          type: FUTURES_POSITION_EPISODE
+          instrumentIds:
+          - instrument-synthetic-1
+          direction: LONG
+          reconstructionStatus: RIGHT_CENSORED
+          reconciliationStatus: INCOMPLETE_TRADES
+          capability:
+          - INITIAL_EXPOSURE
+          dataQuality:
+          - EPISODE_RIGHT_CENSORED
+        classification:
+          reviewUnitId: censored-1
+          outcome: UNAVAILABLE
+          netTradingPnl: null
+          settlementCurrency: null
+          allocatedReportedPnl: []
+          allocatedFees: []
+          membershipId: WIN_LOSS_HOLDING_DURATION_DIFFERENCE:censored-1:EXCLUDED:RECONSTRUCTION_NOT_COMPLETE
+    Error400:
+      value:
+        code: INVALID_REQUEST
+        message: 요청 값이 올바르지 않습니다.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    Error401:
+      value:
+        code: AUTHENTICATION_REQUIRED
+        message: 인증이 필요합니다.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    Error403:
+      value:
+        code: ACCESS_DENIED
+        message: 이 작업을 허용할 수 없습니다.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    Error404:
+      value:
+        code: RESOURCE_NOT_FOUND
+        message: 리소스를 찾을 수 없습니다.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    Error409:
+      value:
+        code: RESULT_NOT_AVAILABLE
+        message: 결과를 아직 조회할 수 없습니다.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    Error410:
+      value:
+        code: RESOURCE_DELETED
+        message: 삭제된 리소스입니다.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    Error422:
+      value:
+        code: READ_VIEW_UNSUPPORTED
+        message: 이 결과는 현재 표시할 수 없습니다.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    Error500:
+      value:
+        code: INTERNAL_ERROR
+        message: 처리 중 오류가 발생했습니다.
+        traceId: trace-analysis-synthetic
+        retryable: false
+    Error503:
+      value:
+        code: DEPENDENCY_UNAVAILABLE
+        message: 일시적으로 처리할 수 없습니다.
+        traceId: trace-analysis-synthetic
+        retryable: true
+x-error-code-status: proposed-not-current-registry

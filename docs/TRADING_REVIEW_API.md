@@ -726,4 +726,5 @@ archive/오류·DB 인계 gate와 실제 구현/전파 검증 이후에만 신�
 [ADR-078·AP01~06](TRADING_REVIEW_ANALYSIS_CONTRACT_DRAFT.md)은 Analysis 접수 identity/source binding·
 [Review/typed Metric](TRADING_REVIEW_ANALYSIS_RESPONSE_DRAFT.md)·[selection/Unit/근거](TRADING_REVIEW_ANALYSIS_SELECTION_DRAFT.md)·
 취소/ingress/오류의 정합성 후보를 검토한다. [consumer·수용/전파](TRADING_REVIEW_ANALYSIS_CONTRACT_ACCEPTANCE_DRAFT.md)의
-gate·명시 채택 전에는 이 문서 §6/§7과 현재 OpenAPI를 계속 적용한다. 새 wire/schema·버전 literal·계산/hash·runtime은 추가하지 않았다.
+gate·명시 채택 전에는 이 문서 §6/§7과 현재 OpenAPI를 계속 적용한다. current active wire/schema·계산/hash·runtime은 유지한다. 후속 [Analysis HTTP/OpenAPI 초안](TRADING_REVIEW_ANALYSIS_HTTP_DRAFT.md)의
+path/view/audience/code literal은 review-only이며 정책 채택/활성화와 다르다.
