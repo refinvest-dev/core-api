@@ -101,3 +101,8 @@
 - 기존 Trading Review 문서의 Core actor는 서비스 경계의 역할 대응 규칙으로 읽는다. wire/hash 입력은 바꾸지 않는다.
 - 기존 Kotlin 구현은 이관 비교 근거이며 Go 코드를 Core 소스나 Gradle 모듈 안에 추가하지 않는다.
 - snapshot/fixture 전파와 Go 포함 증적은 별도 gate다. 문서 변경 후 기존 동기화가 통과했다고 가정하지 않는다.
+- Workflow 재처리 계약은 [ADR-079/WP01~04](docs/TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md)와
+  [identity·child](docs/TRADING_REVIEW_REPROCESSING_IDENTITY_DRAFT.md)의 미채택 후보를 확인한다.
+  요청 산출물·동기 실패와 durable Run·replay/retry·accepted Session 보존은 current wire와 구분한다.
+- [WR-G01~08](docs/TRADING_REVIEW_WORKFLOW_CONTRACT_ACCEPTANCE_DRAFT.md)의 schema/consumer·legacy/hash·
+  child/물리 Tx·수명/실제 부재·authority/운영 수용 전에는 후보를 활성화하지 않는다.
