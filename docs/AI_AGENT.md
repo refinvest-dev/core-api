@@ -52,12 +52,12 @@
 ## 5. PR 작성 시 확인할 것
 
 - `.github/pull_request_template.md`와 AGENTS.md의 PR 본문 형식을 따른다.
-  Summary/Changes/Validation/Impact/Related Links를 영어 H2로 쓰고 본문은 한국어로 작성한다.
-  Migration Plan/Rollback/Evidence 등 필요한 추가 항목도 영어 H2로 쓴다.
+  Summary/Changes만 필수이며 제목은 영어 H2, 본문은 한국어로 작성한다.
+  그 외 항목은 이번 변경의 검토에 필요한 내용이 있을 때만 추가하고 같은 설명을 반복하지 않는다.
 
-- 변경이 `docs/DECISIONS.md`의 기존 ADR과 충돌하지 않는지 명시한다.
+- 기존 ADR과의 충돌이나 새 결정이 있으면 해당 변경과 근거를 명시한다.
 - Core↔Compute API 계약을 바꿨다면 `system` 레포의 OpenAPI 스펙도 같은 PR 세트에 포함한다(레포가 다르더라도 PR 설명에 서로 링크).
-- Determinism에 영향을 주는 변경(§ AGENTS.md 4항)은 PR 설명에 "Determinism 영향 없음" 또는 "영향 있음 + 마이그레이션 계획"을 명시한다.
+- Determinism에 영향을 주면 변경 의미와 필요한 마이그레이션 계획을 명시한다. 영향 없는 PR에 동일 문구를 반복하지 않는다.
 
 ## 6. 모호할 때
 
@@ -101,3 +101,11 @@
 - 기존 Trading Review 문서의 Core actor는 서비스 경계의 역할 대응 규칙으로 읽는다. wire/hash 입력은 바꾸지 않는다.
 - 기존 Kotlin 구현은 이관 비교 근거이며 Go 코드를 Core 소스나 Gradle 모듈 안에 추가하지 않는다.
 - snapshot/fixture 전파와 Go 포함 증적은 별도 gate다. 문서 변경 후 기존 동기화가 통과했다고 가정하지 않는다.
+- Workflow 재처리 계약은 [ADR-079/WP01~04](docs/TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md)와
+  [identity·child](docs/TRADING_REVIEW_REPROCESSING_IDENTITY_DRAFT.md)의 미채택 후보를 확인한다.
+  요청 산출물·동기 실패와 durable Run·replay/retry·accepted Session 보존은 current wire와 구분한다.
+  [Workflow HTTP](docs/TRADING_REVIEW_WORKFLOW_HTTP_DRAFT.md)·[DTO 후보](docs/TRADING_REVIEW_WORKFLOW_DTO_DRAFT.md)의
+  기존 삭제 registry 재사용·재처리 profile/원 receipt/selector·retry/error Run 연결도 미채택 문서 모델이다.
+  신규 YAML/fixture·정적 schema·실제 HTTP/authority/consumer 지원으로 해석하지 않는다.
+- [WR-G01~08](docs/TRADING_REVIEW_WORKFLOW_CONTRACT_ACCEPTANCE_DRAFT.md)의 schema/consumer·legacy/hash·
+  child/물리 Tx·수명/실제 부재·authority/운영 수용 전에는 후보를 활성화하지 않는다.

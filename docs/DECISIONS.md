@@ -1434,3 +1434,31 @@ review-only read GET 9개·내부 admit 1+read 9개·별도 Analysis audience/re
 typed wrapper/nullable classification·7role·membership/allocation/direct page·오류 literal도 미채택이다.
 정적 checker의 schema/example·변이 거부는 JWT/권위/SQL·수명/부하·업무 수용·운영 활성화를 구현하거나 검증한 것이 아니다.
 신규 pair 분류 integration #59·Core snapshot #129와 후속 새 snapshot 전파는 별도 선행 gate다.
+
+---
+
+## ADR-079 — Trading Review Workflow Reprocessing Contract Candidate (DRAFT)
+
+**상태**: 검토 초안·미채택·runtime 미구현. ADR-072와 현재 public/Compute OpenAPI·hash/vector·상태/ACK를 유지한다.
+문서 merge/CI는 정책 채택·Go 업무 구현 전환이 아니다. ADR-071/073~078·삭제 control/private 수명도 승인하지 않는다.
+
+**문제**: Go Workflow WF-G01/02의 요청 산출물·접수 실패 기록/동기 HTTP·replay와 명시 retry·
+accepted Session과 분리된 child 실행 binding이 현재 제품/consumer·Compute 계약에서 충분히 정해지지 않았다.
+
+**우선 후보**: [WP01/02 접수·산출물](TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md)과
+[WP03/04 identity·child](TRADING_REVIEW_REPROCESSING_IDENTITY_DRAFT.md)를 검토한다.
+명시 outputs·full binding, 현재 동기 410/422와 durable FAILED/오류 receipt의 원자 기록,
+같은 key의 원 receipt replay·새 key와 명시 실패 parent의 retry, 원 Session을 변경하지 않는 child profile을 제안한다.
+ownerId/ownerScope projection·새 schema/legacy default·unsupported Compute surface는 미확정이다.
+Workflow 자체 Aggregate/진행 상태/engine을 만들지 않고 Record/Analysis 소유 상태를 조율한다.
+
+**채택 전**: [consumer·수용·전파](TRADING_REVIEW_WORKFLOW_CONTRACT_ACCEPTANCE_DRAFT.md)의 WR-G01~08을 충족한다.
+14개 후보 수용 assertion은 미실행이다. stable private ID/FK·Ledger-only latest/공통 graph·결과 수명·Analytics 실제 부재·
+authority·단일 writer/DB 인계와 명시 구현 범위 전환은 별도 조건이다. 현재 OpenAPI/계산/업무 코드·DB/환경 설정 변경은 없다.
+
+
+**HTTP/DTO 문서 후보 보완**: [registry/중계](TRADING_REVIEW_WORKFLOW_HTTP_DRAFT.md)·
+[request/response](TRADING_REVIEW_WORKFLOW_DTO_DRAFT.md)에 기존 삭제 5개 operation 재사용·재처리 4개 registry 후보,
+명시 outputs/retry parent·recorded failure Run 연결·원 receipt/current trace·별도 reprocessing 위임을 구체화했다.
+이는 여전히 미채택이며 새 OpenAPI YAML·fixture/schema 검사·runtime은 추가하지 않았다. exact literal/legacy/consumer·
+issuer/authority 및 기존 WR gate를 검토한 뒤 다음 machine contract 단계로 옮긴다.
