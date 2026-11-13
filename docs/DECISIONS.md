@@ -1462,3 +1462,12 @@ authority·단일 writer/DB 인계와 명시 구현 범위 전환은 별도 조�
 명시 outputs/retry parent·recorded failure Run 연결·원 receipt/current trace·별도 reprocessing 위임을 구체화했다.
 이는 여전히 미채택이며 새 OpenAPI YAML·fixture/schema 검사·runtime은 추가하지 않았다. exact literal/legacy/consumer·
 issuer/authority 및 기존 WR gate를 검토한 뒤 다음 machine contract 단계로 옮긴다.
+
+
+**OpenAPI 정적 후보 보완**: [Reprocessing public/internal 후보](TRADING_REVIEW_REPROCESSING_OPENAPI_DRAFT.md)에
+기존 삭제 registry를 재사용한 8개 operation·별도 위임/CSRF·필수 outputs/config/target component·명시 nullable Run·
+확정 410/422 실패 receipt의 Run 참조·UNKNOWN 미노출을 표현했다. 현재 logical SHA root·namespace·Compute/vector는 유지한다.
+새 YAML의 schema/예제/변이 검사는 static synthetic 자료이며 WP01~04·ADR-079/073/AP/LP 채택이나
+실제 decoder/client·권위/Member 선형화·SQL/UNKNOWN·child/private/actual absence·단일 writer/운영 수용 증거가 아니다.
+[Integration #61](https://github.com/refinvest-dev/integration/pull/61)의 exact mapping/gate가 선행 병합됐다.
+후속 schema 소비자/legacy/receipt/profile·기존 WR gate를 리뷰하며 업무 구현 전환은 별도로 확정한다.

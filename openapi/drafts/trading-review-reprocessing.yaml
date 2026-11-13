@@ -1,0 +1,790 @@
+openapi: 3.0.3
+info:
+  title: Trading Reprocessing internal HTTP API (DRAFT)
+  version: 0.1.0-draft
+  description: ADR-079/WP01~04 unadopted candidate. Existing active API/Compute/hash vectors unchanged.
+x-contract-status: draft
+x-policy-status: proposed
+x-runtime-enabled: false
+x-error-code-status: proposed-not-current-registry
+x-example-evidence: synthetic transport/schema examples; no hash oracle, execution support or runtime acceptance
+x-logical-hash-projection: unchanged; outputs/publish/retry are full binding, not added to the existing logical
+  SHA root
+x-strict-decoder: reject duplicate keys, coercion, duplicate query values and cancellation body; runtime gate
+x-safe-error-details: allowlisted-only-runtime-gate
+x-receipt-replay: current-authority-before-original-admission-kind; current-view-and-trace-are-not-frozen-bytes
+x-timeouts: request lifetime is separate from durable work; browser abort does not cancel admitted work
+paths:
+  /internal/trading-review/v1/trading-books/{tradingBookId}/reprocessing-runs:
+    post:
+      operationId: admitOwnerTradingReprocessing
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: durable-intent-only
+      x-replay-mode: original-admission-kind-current-view
+      parameters:
+      - name: tradingBookId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-reprocessing-public.yaml#/components/schemas/OpaqueId
+      - $ref: ../core-api.yaml#/components/parameters/PublicIdempotencyKey
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '202':
+          $ref: '#/components/responses/Run202'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Admit410'
+        '422':
+          $ref: '#/components/responses/Admit422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Admit503'
+      x-required-user-scope: trading-review:reprocessing:admit
+      x-public-operation-id: requestTradingReprocessingV2Draft
+      x-public-path: /trading-review/v2/trading-books/{tradingBookId}/reprocessing-runs
+      x-idempotency-namespace: requestTradingReprocessing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: trading-review-reprocessing-public.yaml#/components/schemas/RequestReprocessingV2Draft
+            examples:
+              REPARSE_SOURCE_LEDGER_ONLY:
+                $ref: trading-review-reprocessing-public.yaml#/components/examples/REPARSE_SOURCE_LEDGER_ONLY
+              REPARSE_SOURCE_LEDGER_AND_ANALYSIS:
+                $ref: trading-review-reprocessing-public.yaml#/components/examples/REPARSE_SOURCE_LEDGER_AND_ANALYSIS
+              REBUILD_LEDGER_LEDGER_ONLY:
+                $ref: trading-review-reprocessing-public.yaml#/components/examples/REBUILD_LEDGER_LEDGER_ONLY
+              REBUILD_LEDGER_LEDGER_AND_ANALYSIS:
+                $ref: trading-review-reprocessing-public.yaml#/components/examples/REBUILD_LEDGER_LEDGER_AND_ANALYSIS
+              RERUN_RECONSTRUCTION_LEDGER_ONLY:
+                $ref: trading-review-reprocessing-public.yaml#/components/examples/RERUN_RECONSTRUCTION_LEDGER_ONLY
+              RERUN_RECONSTRUCTION_LEDGER_AND_ANALYSIS:
+                $ref: trading-review-reprocessing-public.yaml#/components/examples/RERUN_RECONSTRUCTION_LEDGER_AND_ANALYSIS
+              RERUN_ANALYTICS_ANALYSIS_ONLY:
+                $ref: trading-review-reprocessing-public.yaml#/components/examples/RERUN_ANALYTICS_ANALYSIS_ONLY
+              REEVALUATE_FINDINGS_ANALYSIS_ONLY:
+                $ref: trading-review-reprocessing-public.yaml#/components/examples/REEVALUATE_FINDINGS_ANALYSIS_ONLY
+              RetryRequest:
+                $ref: trading-review-reprocessing-public.yaml#/components/examples/RetryRequest
+              OmittedPublishAndNullOptionalSource:
+                $ref: trading-review-reprocessing-public.yaml#/components/examples/OmittedPublishAndNullOptionalSource
+    get:
+      operationId: listOwnerTradingReprocessingRuns
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      x-replay-mode: none
+      parameters:
+      - name: tradingBookId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-reprocessing-public.yaml#/components/schemas/OpaqueId
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          $ref: '#/components/responses/Page200'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-required-user-scope: trading-review:reprocessing:read
+      x-public-operation-id: listTradingReprocessingRunsV2Draft
+      x-public-path: /trading-review/v2/trading-books/{tradingBookId}/reprocessing-runs
+  /internal/trading-review/v1/trading-reprocessing-runs/{reprocessingRunId}:
+    get:
+      operationId: getOwnerTradingReprocessingRun
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      x-replay-mode: none
+      parameters:
+      - name: reprocessingRunId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-reprocessing-public.yaml#/components/schemas/OpaqueId
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Run200'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-required-user-scope: trading-review:reprocessing:read
+      x-public-operation-id: getTradingReprocessingRunV2Draft
+      x-public-path: /trading-review/v2/trading-reprocessing-runs/{reprocessingRunId}
+  /internal/trading-review/v1/trading-reprocessing-runs/{reprocessingRunId}/cancellation:
+    post:
+      operationId: cancelOwnerTradingReprocessing
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: durable-intent-only
+      x-replay-mode: original-admission-kind-current-view
+      parameters:
+      - name: reprocessingRunId
+        in: path
+        required: true
+        schema:
+          $ref: trading-review-reprocessing-public.yaml#/components/schemas/OpaqueId
+      - $ref: ../core-api.yaml#/components/parameters/PublicIdempotencyKey
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '202':
+          $ref: '#/components/responses/Run202'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-required-user-scope: trading-review:reprocessing:cancel
+      x-public-operation-id: cancelTradingReprocessingV2Draft
+      x-public-path: /trading-review/v2/trading-reprocessing-runs/{reprocessingRunId}/cancellation
+      x-idempotency-namespace: cancelTradingReprocessing
+      x-request-body: forbidden
+components:
+  securitySchemes:
+    ServiceCredential:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-credential
+    UserDelegation:
+      type: apiKey
+      in: header
+      name: X-RefInvest-User-Delegation
+  responses:
+    Run200:
+      description: DRAFT current owner projection. 202 retains original admission kind; cancellation is not proof
+        of remote purge.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            $ref: trading-review-reprocessing-public.yaml#/components/schemas/ReprocessingRunV2Draft
+          examples:
+            PendingRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/PendingRun
+            ValidatingRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/ValidatingRun
+            RunningPrivateRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/RunningPrivateRun
+            FailedRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/FailedRun
+            CancelledRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/CancelledRun
+            CompletedLedgerRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/CompletedLedgerRun
+            CompletedPairRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/CompletedPairRun
+            CompletedAnalysisRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/CompletedAnalysisRun
+            VersionRejectedRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/VersionRejectedRun
+    Run202:
+      description: DRAFT current owner projection. 202 retains original admission kind; cancellation is not proof
+        of remote purge.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            $ref: trading-review-reprocessing-public.yaml#/components/schemas/ReprocessingRunV2Draft
+          examples:
+            PendingRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/PendingRun
+            ValidatingRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/ValidatingRun
+            RunningPrivateRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/RunningPrivateRun
+            FailedRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/FailedRun
+            CancelledRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/CancelledRun
+            CompletedLedgerRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/CompletedLedgerRun
+            CompletedPairRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/CompletedPairRun
+            CompletedAnalysisRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/CompletedAnalysisRun
+            VersionRejectedRun:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/VersionRejectedRun
+    Page200:
+      description: DRAFT current owner projection. 202 retains original admission kind; cancellation is not proof
+        of remote purge.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            $ref: trading-review-reprocessing-public.yaml#/components/schemas/ReprocessingPageV2Draft
+          examples:
+            RunPage:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/RunPage
+            EmptyRunPage:
+              $ref: trading-review-reprocessing-public.yaml#/components/examples/EmptyRunPage
+    Error400:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - INVALID_REQUEST
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: INVALID_REQUEST
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error401:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - SERVICE_OR_DELEGATION_REJECTED
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: SERVICE_OR_DELEGATION_REJECTED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error403:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - ACCESS_DENIED
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: ACCESS_DENIED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error404:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - RESOURCE_NOT_FOUND
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: RESOURCE_NOT_FOUND
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error409:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - REPROCESSING_CONFLICT
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: REPROCESSING_CONFLICT
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error410:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - RESOURCE_DELETED
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: RESOURCE_DELETED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error422:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - READ_VIEW_UNSUPPORTED
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: READ_VIEW_UNSUPPORTED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error500:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - INTERNAL_ERROR
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: INTERNAL_ERROR
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error503:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - DEPENDENCY_UNAVAILABLE
+                retryable:
+                  enum:
+                  - true
+          examples:
+            GenericError:
+              value:
+                code: DEPENDENCY_UNAVAILABLE
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: true
+    Admit410:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            oneOf:
+            - allOf:
+              - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+              - properties:
+                  code:
+                    enum:
+                    - RESOURCE_DELETED
+                  retryable:
+                    enum:
+                    - false
+            - allOf:
+              - $ref: trading-review-reprocessing-public.yaml#/components/schemas/RecordedFailureV2Draft
+              - properties:
+                  code:
+                    enum:
+                    - REPROCESSING_SOURCE_UNAVAILABLE
+                  retryable:
+                    enum:
+                    - false
+          examples:
+            GenericError:
+              value:
+                code: RESOURCE_DELETED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+            RecordedFailure:
+              summary: Only after confirmed WP02 commit and current authorized access; not proven by schema.
+              value:
+                code: REPROCESSING_SOURCE_UNAVAILABLE
+                message: 접수 실패가 기록되었습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+                reprocessingRunId: '725400000000000033'
+      x-recorded-failure-link: confirmed-commit-and-current-owner-access-only
+    Admit422:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/RecordedFailureV2Draft
+            - properties:
+                code:
+                  enum:
+                  - VERSION_UNAVAILABLE
+                  - VERSION_INCOMPATIBLE
+                  - TARGET_VERSION_RETIRED
+                  - REPROCESSING_NOT_SUPPORTED
+                  - CANONICAL_SCHEMA_INCOMPATIBLE
+                  - INSTRUMENT_TERMS_UNAVAILABLE
+                  - ANALYTICS_INPUT_UNAVAILABLE
+                  - INVALID_ANALYSIS_CONFIG
+                retryable:
+                  enum:
+                  - false
+          examples:
+            RecordedFailure:
+              summary: Only after confirmed WP02 commit and current authorized access; not proven by schema.
+              value:
+                code: VERSION_UNAVAILABLE
+                message: 접수 실패가 기록되었습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+                reprocessingRunId: '725400000000000038'
+      x-recorded-failure-link: confirmed-commit-and-current-owner-access-only
+    Admit503:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - ADMISSION_OUTCOME_UNCONFIRMED
+                  - DEPENDENCY_UNAVAILABLE
+                retryable:
+                  enum:
+                  - true
+          examples:
+            GenericError:
+              value:
+                code: ADMISSION_OUTCOME_UNCONFIRMED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: true
+x-tls-required: true
+x-member-state-gate: required-before-resource-lookup
+x-member-write-linearization: unresolved-review-gate
+x-delegation-audience: refinvest:trading-review:reprocessing:v1
+x-user-delegation-profile:
+  status: proposed
+  algorithm: RS256
+  type: refinvest-user-delegation+jwt
+  subject: canonical-positive-decimal-int64
+  actor: act.sub must match authenticated service caller
+  scopeMatching: single-string-exact-operation-class
+  issuerAndKeys: explicit trusted registry
+  timeSizeRotation: separate review gate; no new TTL/skew/deadline
+x-operation-registry: method + route + reprocessing audience + exact scope + authenticated caller allowlist
+security:
+- ServiceCredential: []
+  UserDelegation: []
