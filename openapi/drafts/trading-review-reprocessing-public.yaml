@@ -1,0 +1,3138 @@
+openapi: 3.0.3
+info:
+  title: Trading Reprocessing public HTTP API (DRAFT)
+  version: 0.1.0-draft
+  description: ADR-079/WP01~04 unadopted candidate. Existing active API/Compute/hash vectors unchanged.
+x-contract-status: draft
+x-policy-status: proposed
+x-runtime-enabled: false
+x-error-code-status: proposed-not-current-registry
+x-example-evidence: synthetic transport/schema examples; no hash oracle, execution support or runtime acceptance
+x-logical-hash-projection: unchanged; outputs/publish/retry are full binding, not added to the existing logical
+  SHA root
+x-strict-decoder: reject duplicate keys, coercion, duplicate query values and cancellation body; runtime gate
+x-safe-error-details: allowlisted-only-runtime-gate
+x-receipt-replay: current-authority-before-original-admission-kind; current-view-and-trace-are-not-frozen-bytes
+x-timeouts: request lifetime is separate from durable work; browser abort does not cancel admitted work
+paths:
+  /trading-review/v2/trading-books/{tradingBookId}/reprocessing-runs:
+    post:
+      operationId: requestTradingReprocessingV2Draft
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: durable-intent-only
+      x-replay-mode: original-admission-kind-current-view
+      parameters:
+      - name: tradingBookId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - $ref: ../core-api.yaml#/components/parameters/PublicIdempotencyKey
+      - $ref: ../core-api.yaml#/components/parameters/CsrfToken
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '202':
+          $ref: '#/components/responses/Run202'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Admit410'
+        '422':
+          $ref: '#/components/responses/Admit422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Admit503'
+      x-idempotency-namespace: requestTradingReprocessing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestReprocessingV2Draft'
+            examples:
+              REPARSE_SOURCE_LEDGER_ONLY:
+                $ref: '#/components/examples/REPARSE_SOURCE_LEDGER_ONLY'
+              REPARSE_SOURCE_LEDGER_AND_ANALYSIS:
+                $ref: '#/components/examples/REPARSE_SOURCE_LEDGER_AND_ANALYSIS'
+              REBUILD_LEDGER_LEDGER_ONLY:
+                $ref: '#/components/examples/REBUILD_LEDGER_LEDGER_ONLY'
+              REBUILD_LEDGER_LEDGER_AND_ANALYSIS:
+                $ref: '#/components/examples/REBUILD_LEDGER_LEDGER_AND_ANALYSIS'
+              RERUN_RECONSTRUCTION_LEDGER_ONLY:
+                $ref: '#/components/examples/RERUN_RECONSTRUCTION_LEDGER_ONLY'
+              RERUN_RECONSTRUCTION_LEDGER_AND_ANALYSIS:
+                $ref: '#/components/examples/RERUN_RECONSTRUCTION_LEDGER_AND_ANALYSIS'
+              RERUN_ANALYTICS_ANALYSIS_ONLY:
+                $ref: '#/components/examples/RERUN_ANALYTICS_ANALYSIS_ONLY'
+              REEVALUATE_FINDINGS_ANALYSIS_ONLY:
+                $ref: '#/components/examples/REEVALUATE_FINDINGS_ANALYSIS_ONLY'
+              RetryRequest:
+                $ref: '#/components/examples/RetryRequest'
+              OmittedPublishAndNullOptionalSource:
+                $ref: '#/components/examples/OmittedPublishAndNullOptionalSource'
+    get:
+      operationId: listTradingReprocessingRunsV2Draft
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      x-replay-mode: none
+      parameters:
+      - name: tradingBookId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          $ref: '#/components/responses/Page200'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /trading-review/v2/trading-reprocessing-runs/{reprocessingRunId}:
+    get:
+      operationId: getTradingReprocessingRunV2Draft
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: none
+      x-replay-mode: none
+      parameters:
+      - name: reprocessingRunId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Run200'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /trading-review/v2/trading-reprocessing-runs/{reprocessingRunId}/cancellation:
+    post:
+      operationId: cancelTradingReprocessingV2Draft
+      x-access-mode: owner-current-guard
+      x-result-scope: published-only
+      x-side-effects: durable-intent-only
+      x-replay-mode: original-admission-kind-current-view
+      parameters:
+      - name: reprocessingRunId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/OpaqueId'
+      - $ref: ../core-api.yaml#/components/parameters/PublicIdempotencyKey
+      - $ref: ../core-api.yaml#/components/parameters/CsrfToken
+      - name: traceparent
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: tracestate
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        '202':
+          $ref: '#/components/responses/Run202'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-idempotency-namespace: cancelTradingReprocessing
+      x-request-body: forbidden
+components:
+  securitySchemes:
+    AccessCookieAuth:
+      $ref: ../core-api.yaml#/components/securitySchemes/AccessCookieAuth
+  responses:
+    Run200:
+      description: DRAFT current owner projection. 202 retains original admission kind; cancellation is not proof
+        of remote purge.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReprocessingRunV2Draft'
+          examples:
+            PendingRun:
+              $ref: '#/components/examples/PendingRun'
+            ValidatingRun:
+              $ref: '#/components/examples/ValidatingRun'
+            RunningPrivateRun:
+              $ref: '#/components/examples/RunningPrivateRun'
+            FailedRun:
+              $ref: '#/components/examples/FailedRun'
+            CancelledRun:
+              $ref: '#/components/examples/CancelledRun'
+            CompletedLedgerRun:
+              $ref: '#/components/examples/CompletedLedgerRun'
+            CompletedPairRun:
+              $ref: '#/components/examples/CompletedPairRun'
+            CompletedAnalysisRun:
+              $ref: '#/components/examples/CompletedAnalysisRun'
+            VersionRejectedRun:
+              $ref: '#/components/examples/VersionRejectedRun'
+    Run202:
+      description: DRAFT current owner projection. 202 retains original admission kind; cancellation is not proof
+        of remote purge.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReprocessingRunV2Draft'
+          examples:
+            PendingRun:
+              $ref: '#/components/examples/PendingRun'
+            ValidatingRun:
+              $ref: '#/components/examples/ValidatingRun'
+            RunningPrivateRun:
+              $ref: '#/components/examples/RunningPrivateRun'
+            FailedRun:
+              $ref: '#/components/examples/FailedRun'
+            CancelledRun:
+              $ref: '#/components/examples/CancelledRun'
+            CompletedLedgerRun:
+              $ref: '#/components/examples/CompletedLedgerRun'
+            CompletedPairRun:
+              $ref: '#/components/examples/CompletedPairRun'
+            CompletedAnalysisRun:
+              $ref: '#/components/examples/CompletedAnalysisRun'
+            VersionRejectedRun:
+              $ref: '#/components/examples/VersionRejectedRun'
+    Page200:
+      description: DRAFT current owner projection. 202 retains original admission kind; cancellation is not proof
+        of remote purge.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReprocessingPageV2Draft'
+          examples:
+            RunPage:
+              $ref: '#/components/examples/RunPage'
+            EmptyRunPage:
+              $ref: '#/components/examples/EmptyRunPage'
+    Error400:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - INVALID_REQUEST
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: INVALID_REQUEST
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error401:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - AUTHENTICATION_REQUIRED
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: AUTHENTICATION_REQUIRED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error403:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - ACCESS_DENIED
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: ACCESS_DENIED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error404:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - RESOURCE_NOT_FOUND
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: RESOURCE_NOT_FOUND
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error409:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - REPROCESSING_CONFLICT
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: REPROCESSING_CONFLICT
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error410:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - RESOURCE_DELETED
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: RESOURCE_DELETED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error422:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - READ_VIEW_UNSUPPORTED
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: READ_VIEW_UNSUPPORTED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error500:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - INTERNAL_ERROR
+                retryable:
+                  enum:
+                  - false
+          examples:
+            GenericError:
+              value:
+                code: INTERNAL_ERROR
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error503:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - DEPENDENCY_UNAVAILABLE
+                retryable:
+                  enum:
+                  - true
+          examples:
+            GenericError:
+              value:
+                code: DEPENDENCY_UNAVAILABLE
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: true
+    Admit410:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            oneOf:
+            - allOf:
+              - $ref: '#/components/schemas/ErrorResponseV2Draft'
+              - properties:
+                  code:
+                    enum:
+                    - RESOURCE_DELETED
+                  retryable:
+                    enum:
+                    - false
+            - allOf:
+              - $ref: '#/components/schemas/RecordedFailureV2Draft'
+              - properties:
+                  code:
+                    enum:
+                    - REPROCESSING_SOURCE_UNAVAILABLE
+                  retryable:
+                    enum:
+                    - false
+          examples:
+            GenericError:
+              value:
+                code: RESOURCE_DELETED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+            RecordedFailure:
+              summary: Only after confirmed WP02 commit and current authorized access; not proven by schema.
+              value:
+                code: REPROCESSING_SOURCE_UNAVAILABLE
+                message: 접수 실패가 기록되었습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+                reprocessingRunId: '725400000000000033'
+      x-recorded-failure-link: confirmed-commit-and-current-owner-access-only
+    Admit422:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/RecordedFailureV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - VERSION_UNAVAILABLE
+                  - VERSION_INCOMPATIBLE
+                  - TARGET_VERSION_RETIRED
+                  - REPROCESSING_NOT_SUPPORTED
+                  - CANONICAL_SCHEMA_INCOMPATIBLE
+                  - INSTRUMENT_TERMS_UNAVAILABLE
+                  - ANALYTICS_INPUT_UNAVAILABLE
+                  - INVALID_ANALYSIS_CONFIG
+                retryable:
+                  enum:
+                  - false
+          examples:
+            RecordedFailure:
+              summary: Only after confirmed WP02 commit and current authorized access; not proven by schema.
+              value:
+                code: VERSION_UNAVAILABLE
+                message: 접수 실패가 기록되었습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+                reprocessingRunId: '725400000000000038'
+      x-recorded-failure-link: confirmed-commit-and-current-owner-access-only
+    Admit503:
+      description: Proposed safe error; no driver, raw payload or storage locator.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - ADMISSION_OUTCOME_UNCONFIRMED
+                  - DEPENDENCY_UNAVAILABLE
+                retryable:
+                  enum:
+                  - true
+          examples:
+            GenericError:
+              value:
+                code: ADMISSION_OUTCOME_UNCONFIRMED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: true
+  schemas:
+    OpaqueId:
+      type: string
+      minLength: 1
+      description: Opaque legacy/Snowflake ID; Member subject rules are separate. Typed ownership is a runtime gate.
+    NullOnly:
+      type: string
+      nullable: true
+      enum:
+      - null
+    RequestedOutputs:
+      type: string
+      enum:
+      - LEDGER_ONLY
+      - LEDGER_AND_ANALYSIS
+      - ANALYSIS_ONLY
+    ReasonCode:
+      type: string
+      enum:
+      - USER_REQUESTED
+      - BUG_FIX
+      - DEFINITION_UPGRADE
+      - SUPPORT_RECOVERY
+    Target:
+      type: object
+      required:
+      - versionSetHash
+      properties:
+        normalizer:
+          oneOf:
+          - $ref: ../core-api.yaml#/components/schemas/NormalizerVersionSet
+          - $ref: '#/components/schemas/NullOnly'
+        reconstruction:
+          oneOf:
+          - $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+          - $ref: '#/components/schemas/NullOnly'
+        analytics:
+          oneOf:
+          - $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+          - $ref: '#/components/schemas/NullOnly'
+        versionSetHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+      additionalProperties: false
+    RequestReprocessingV2Draft:
+      type: object
+      additionalProperties: false
+      required:
+      - sourceLedgerRevisionId
+      - reprocessingType
+      - targetVersionSet
+      - requestedOutputs
+      - reasonCode
+      properties:
+        sourceLedgerRevisionId:
+          $ref: '#/components/schemas/OpaqueId'
+        sourceAnalysisRunId:
+          type: string
+          minLength: 1
+          nullable: true
+        reprocessingType:
+          $ref: ../core-api.yaml#/components/schemas/ReprocessingType
+        targetVersionSet:
+          $ref: '#/components/schemas/Target'
+        requestedOutputs:
+          $ref: '#/components/schemas/RequestedOutputs'
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        analysisConfig:
+          $ref: ../core-api.yaml#/components/schemas/AnalysisConfig
+        publishAsLatest:
+          type: boolean
+          default: true
+        retryOfReprocessingRunId:
+          $ref: '#/components/schemas/OpaqueId'
+      oneOf:
+      - properties:
+          reprocessingType:
+            enum:
+            - REPARSE_SOURCE
+          requestedOutputs:
+            enum:
+            - LEDGER_ONLY
+          targetVersionSet:
+            type: object
+            required:
+            - normalizer
+            - reconstruction
+            properties:
+              normalizer:
+                $ref: ../core-api.yaml#/components/schemas/NormalizerVersionSet
+              reconstruction:
+                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+        not:
+          required:
+          - analysisConfig
+      - properties:
+          reprocessingType:
+            enum:
+            - REPARSE_SOURCE
+          requestedOutputs:
+            enum:
+            - LEDGER_AND_ANALYSIS
+          targetVersionSet:
+            type: object
+            required:
+            - normalizer
+            - reconstruction
+            - analytics
+            properties:
+              normalizer:
+                $ref: ../core-api.yaml#/components/schemas/NormalizerVersionSet
+              reconstruction:
+                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+              analytics:
+                $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+        required:
+        - analysisConfig
+      - properties:
+          reprocessingType:
+            enum:
+            - REBUILD_LEDGER
+          requestedOutputs:
+            enum:
+            - LEDGER_ONLY
+          targetVersionSet:
+            type: object
+            required:
+            - reconstruction
+            properties:
+              reconstruction:
+                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+        not:
+          required:
+          - analysisConfig
+      - properties:
+          reprocessingType:
+            enum:
+            - REBUILD_LEDGER
+          requestedOutputs:
+            enum:
+            - LEDGER_AND_ANALYSIS
+          targetVersionSet:
+            type: object
+            required:
+            - reconstruction
+            - analytics
+            properties:
+              reconstruction:
+                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+              analytics:
+                $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+        required:
+        - analysisConfig
+      - properties:
+          reprocessingType:
+            enum:
+            - RERUN_RECONSTRUCTION
+          requestedOutputs:
+            enum:
+            - LEDGER_ONLY
+          targetVersionSet:
+            type: object
+            required:
+            - reconstruction
+            properties:
+              reconstruction:
+                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+        not:
+          required:
+          - analysisConfig
+      - properties:
+          reprocessingType:
+            enum:
+            - RERUN_RECONSTRUCTION
+          requestedOutputs:
+            enum:
+            - LEDGER_AND_ANALYSIS
+          targetVersionSet:
+            type: object
+            required:
+            - reconstruction
+            - analytics
+            properties:
+              reconstruction:
+                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+              analytics:
+                $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+        required:
+        - analysisConfig
+      - properties:
+          reprocessingType:
+            enum:
+            - RERUN_ANALYTICS
+          requestedOutputs:
+            enum:
+            - ANALYSIS_ONLY
+          targetVersionSet:
+            type: object
+            required:
+            - analytics
+            properties:
+              analytics:
+                $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+        required:
+        - analysisConfig
+      - properties:
+          reprocessingType:
+            enum:
+            - REEVALUATE_FINDINGS
+          requestedOutputs:
+            enum:
+            - ANALYSIS_ONLY
+          targetVersionSet:
+            type: object
+            required:
+            - analytics
+            properties:
+              analytics:
+                $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+        required:
+        - analysisConfig
+    SafeFailure:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - retryable
+      properties:
+        code:
+          $ref: ../core-api.yaml#/components/schemas/TradingReviewFailureCode
+        message:
+          type: string
+        retryable:
+          type: boolean
+        details:
+          type: array
+          items:
+            $ref: ../core-api.yaml#/components/schemas/ErrorDetail
+    ReprocessingRunV2Draft:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - tradingBookId
+      - sourceLedgerRevisionId
+      - reprocessingType
+      - sourceVersionSet
+      - targetVersionSet
+      - inputAvailability
+      - status
+      - progressStage
+      - lineageParentRevisionIds
+      - createdAt
+      - updatedAt
+      - requestedOutputs
+      - publishAsLatest
+      - reasonCode
+      - createdLedgerRevisionId
+      - createdAnalysisRunId
+      - differenceSummary
+      - failure
+      - completedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/OpaqueId'
+        tradingBookId:
+          $ref: '#/components/schemas/OpaqueId'
+        sourceLedgerRevisionId:
+          $ref: '#/components/schemas/OpaqueId'
+        sourceAnalysisRunId:
+          type: string
+          minLength: 1
+          nullable: true
+        reprocessingType:
+          $ref: ../core-api.yaml#/components/schemas/ReprocessingType
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        sourceVersionSet:
+          $ref: '#/components/schemas/Target'
+        targetVersionSet:
+          $ref: '#/components/schemas/Target'
+        inputAvailability:
+          $ref: ../core-api.yaml#/components/schemas/ReprocessingInputAvailability
+        status:
+          $ref: ../core-api.yaml#/components/schemas/ReprocessingRunStatus
+        progressStage:
+          type: string
+        lineageParentRevisionIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        retryOfReprocessingRunId:
+          type: string
+          minLength: 1
+          nullable: true
+        createdLedgerRevisionId:
+          type: string
+          minLength: 1
+          nullable: true
+        createdAnalysisRunId:
+          type: string
+          minLength: 1
+          nullable: true
+        differenceSummary:
+          oneOf:
+          - $ref: '#/components/schemas/Difference'
+          - $ref: '#/components/schemas/NullOnly'
+        failure:
+          oneOf:
+          - $ref: '#/components/schemas/SafeFailure'
+          - $ref: '#/components/schemas/NullOnly'
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        requestedOutputs:
+          $ref: '#/components/schemas/RequestedOutputs'
+        publishAsLatest:
+          type: boolean
+      allOf:
+      - oneOf:
+        - properties:
+            reprocessingType:
+              enum:
+              - REPARSE_SOURCE
+            requestedOutputs:
+              enum:
+              - LEDGER_ONLY
+        - properties:
+            reprocessingType:
+              enum:
+              - REPARSE_SOURCE
+            requestedOutputs:
+              enum:
+              - LEDGER_AND_ANALYSIS
+        - properties:
+            reprocessingType:
+              enum:
+              - REBUILD_LEDGER
+            requestedOutputs:
+              enum:
+              - LEDGER_ONLY
+        - properties:
+            reprocessingType:
+              enum:
+              - REBUILD_LEDGER
+            requestedOutputs:
+              enum:
+              - LEDGER_AND_ANALYSIS
+        - properties:
+            reprocessingType:
+              enum:
+              - RERUN_RECONSTRUCTION
+            requestedOutputs:
+              enum:
+              - LEDGER_ONLY
+        - properties:
+            reprocessingType:
+              enum:
+              - RERUN_RECONSTRUCTION
+            requestedOutputs:
+              enum:
+              - LEDGER_AND_ANALYSIS
+        - properties:
+            reprocessingType:
+              enum:
+              - RERUN_ANALYTICS
+            requestedOutputs:
+              enum:
+              - ANALYSIS_ONLY
+        - properties:
+            reprocessingType:
+              enum:
+              - REEVALUATE_FINDINGS
+            requestedOutputs:
+              enum:
+              - ANALYSIS_ONLY
+      oneOf:
+      - properties:
+          createdLedgerRevisionId:
+            $ref: '#/components/schemas/NullOnly'
+          createdAnalysisRunId:
+            $ref: '#/components/schemas/NullOnly'
+          differenceSummary:
+            $ref: '#/components/schemas/NullOnly'
+          status:
+            enum:
+            - PENDING
+            - VALIDATING_INPUT
+            - RUNNING
+          completedAt:
+            $ref: '#/components/schemas/NullOnly'
+          failure:
+            $ref: '#/components/schemas/NullOnly'
+      - properties:
+          createdLedgerRevisionId:
+            $ref: '#/components/schemas/NullOnly'
+          createdAnalysisRunId:
+            $ref: '#/components/schemas/NullOnly'
+          differenceSummary:
+            $ref: '#/components/schemas/NullOnly'
+          status:
+            enum:
+            - FAILED
+          completedAt:
+            type: string
+            format: date-time
+          failure:
+            $ref: '#/components/schemas/SafeFailure'
+      - properties:
+          createdLedgerRevisionId:
+            $ref: '#/components/schemas/NullOnly'
+          createdAnalysisRunId:
+            $ref: '#/components/schemas/NullOnly'
+          differenceSummary:
+            $ref: '#/components/schemas/NullOnly'
+          status:
+            enum:
+            - CANCELLED
+          completedAt:
+            type: string
+            format: date-time
+      - properties:
+          status:
+            enum:
+            - COMPLETED
+          requestedOutputs:
+            enum:
+            - LEDGER_ONLY
+          createdLedgerRevisionId:
+            $ref: '#/components/schemas/OpaqueId'
+          createdAnalysisRunId:
+            $ref: '#/components/schemas/NullOnly'
+          differenceSummary:
+            $ref: '#/components/schemas/Difference'
+          failure:
+            $ref: '#/components/schemas/NullOnly'
+          completedAt:
+            type: string
+            format: date-time
+      - properties:
+          status:
+            enum:
+            - COMPLETED
+          requestedOutputs:
+            enum:
+            - LEDGER_AND_ANALYSIS
+          createdLedgerRevisionId:
+            $ref: '#/components/schemas/OpaqueId'
+          createdAnalysisRunId:
+            $ref: '#/components/schemas/OpaqueId'
+          differenceSummary:
+            $ref: '#/components/schemas/Difference'
+          failure:
+            $ref: '#/components/schemas/NullOnly'
+          completedAt:
+            type: string
+            format: date-time
+      - properties:
+          status:
+            enum:
+            - COMPLETED
+          requestedOutputs:
+            enum:
+            - ANALYSIS_ONLY
+          createdLedgerRevisionId:
+            $ref: '#/components/schemas/NullOnly'
+          createdAnalysisRunId:
+            $ref: '#/components/schemas/OpaqueId'
+          differenceSummary:
+            $ref: '#/components/schemas/Difference'
+          failure:
+            $ref: '#/components/schemas/NullOnly'
+          completedAt:
+            type: string
+            format: date-time
+    ReprocessingPageV2Draft:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReprocessingRunV2Draft'
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+    ErrorResponseV2Draft:
+      type: object
+      required:
+      - code
+      - message
+      - traceId
+      - retryable
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        traceId:
+          type: string
+          description: 거래 payload와 무관한 correlation identifier.
+        retryable:
+          type: boolean
+        details:
+          type: array
+          items:
+            $ref: ../core-api.yaml#/components/schemas/ErrorDetail
+          description: raw source value/identifier/storage locator를 포함하지 않는 allowlisted detail.
+      additionalProperties: false
+    RecordedFailureV2Draft:
+      type: object
+      required:
+      - code
+      - message
+      - traceId
+      - retryable
+      - reprocessingRunId
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        traceId:
+          type: string
+          description: 거래 payload와 무관한 correlation identifier.
+        retryable:
+          type: boolean
+        details:
+          type: array
+          items:
+            $ref: ../core-api.yaml#/components/schemas/ErrorDetail
+          description: raw source value/identifier/storage locator를 포함하지 않는 allowlisted detail.
+        reprocessingRunId:
+          $ref: '#/components/schemas/OpaqueId'
+      additionalProperties: false
+    Difference:
+      type: object
+      required:
+      - sourceRevisionId
+      - targetRevisionId
+      - canonicalRecordCountDelta
+      - episodeCountDelta
+      - eligibleCountDelta
+      - excludedCountDelta
+      - exclusionReasonChanges
+      - metricChanges
+      - evidenceChanges
+      - sourceVersionSet
+      - targetVersionSet
+      - outcomeChanged
+      properties:
+        sourceRevisionId:
+          type: string
+        targetRevisionId:
+          type: string
+        sourceAnalysisRunId:
+          type: string
+          nullable: true
+        targetAnalysisRunId:
+          type: string
+          nullable: true
+        canonicalRecordCountDelta:
+          type: integer
+          format: int64
+        episodeCountDelta:
+          type: integer
+          format: int64
+        eligibleCountDelta:
+          type: integer
+          format: int64
+        excludedCountDelta:
+          type: integer
+          format: int64
+        exclusionReasonChanges:
+          type: array
+          items:
+            type: string
+        metricChanges:
+          type: array
+          items:
+            type: string
+        evidenceChanges:
+          type: array
+          items:
+            type: string
+        sourceVersionSet:
+          $ref: '#/components/schemas/Target'
+        targetVersionSet:
+          $ref: '#/components/schemas/Target'
+        outcomeChanged:
+          type: boolean
+      additionalProperties: false
+  examples:
+    REPARSE_SOURCE_LEDGER_ONLY:
+      summary: Complete synthetic request; execution support and hashes are unverified.
+      value:
+        sourceLedgerRevisionId: '725400000000000010'
+        reprocessingType: REPARSE_SOURCE
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        requestedOutputs: LEDGER_ONLY
+        reasonCode: USER_REQUESTED
+        publishAsLatest: false
+    REPARSE_SOURCE_LEDGER_AND_ANALYSIS:
+      summary: Complete synthetic request; execution support and hashes are unverified.
+      value:
+        sourceLedgerRevisionId: '725400000000000010'
+        reprocessingType: REPARSE_SOURCE
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        requestedOutputs: LEDGER_AND_ANALYSIS
+        reasonCode: USER_REQUESTED
+        publishAsLatest: false
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2026-01-01T00:00:00Z'
+            endExclusive: '2026-02-01T00:00:00Z'
+          reviewTimezone: Asia/Seoul
+          timezoneDatabaseVersion: synthetic-tzdb-v1
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            priorBaselineEpisodes: 3
+            holdingWins: 3
+            holdingLosses: 3
+          findingMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            holdingWins: 3
+            holdingLosses: 3
+    REBUILD_LEDGER_LEDGER_ONLY:
+      summary: Complete synthetic request; execution support and hashes are unverified.
+      value:
+        sourceLedgerRevisionId: '725400000000000010'
+        reprocessingType: REBUILD_LEDGER
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        requestedOutputs: LEDGER_ONLY
+        reasonCode: USER_REQUESTED
+        publishAsLatest: false
+    REBUILD_LEDGER_LEDGER_AND_ANALYSIS:
+      summary: Complete synthetic request; execution support and hashes are unverified.
+      value:
+        sourceLedgerRevisionId: '725400000000000010'
+        reprocessingType: REBUILD_LEDGER
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        requestedOutputs: LEDGER_AND_ANALYSIS
+        reasonCode: USER_REQUESTED
+        publishAsLatest: false
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2026-01-01T00:00:00Z'
+            endExclusive: '2026-02-01T00:00:00Z'
+          reviewTimezone: Asia/Seoul
+          timezoneDatabaseVersion: synthetic-tzdb-v1
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            priorBaselineEpisodes: 3
+            holdingWins: 3
+            holdingLosses: 3
+          findingMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            holdingWins: 3
+            holdingLosses: 3
+    RERUN_RECONSTRUCTION_LEDGER_ONLY:
+      summary: Complete synthetic request; execution support and hashes are unverified.
+      value:
+        sourceLedgerRevisionId: '725400000000000010'
+        reprocessingType: RERUN_RECONSTRUCTION
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        requestedOutputs: LEDGER_ONLY
+        reasonCode: USER_REQUESTED
+        publishAsLatest: false
+    RERUN_RECONSTRUCTION_LEDGER_AND_ANALYSIS:
+      summary: Complete synthetic request; execution support and hashes are unverified.
+      value:
+        sourceLedgerRevisionId: '725400000000000010'
+        reprocessingType: RERUN_RECONSTRUCTION
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        requestedOutputs: LEDGER_AND_ANALYSIS
+        reasonCode: USER_REQUESTED
+        publishAsLatest: false
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2026-01-01T00:00:00Z'
+            endExclusive: '2026-02-01T00:00:00Z'
+          reviewTimezone: Asia/Seoul
+          timezoneDatabaseVersion: synthetic-tzdb-v1
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            priorBaselineEpisodes: 3
+            holdingWins: 3
+            holdingLosses: 3
+          findingMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            holdingWins: 3
+            holdingLosses: 3
+    RERUN_ANALYTICS_ANALYSIS_ONLY:
+      summary: Complete synthetic request; execution support and hashes are unverified.
+      value:
+        sourceLedgerRevisionId: '725400000000000010'
+        reprocessingType: RERUN_ANALYTICS
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        requestedOutputs: ANALYSIS_ONLY
+        reasonCode: USER_REQUESTED
+        publishAsLatest: false
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2026-01-01T00:00:00Z'
+            endExclusive: '2026-02-01T00:00:00Z'
+          reviewTimezone: Asia/Seoul
+          timezoneDatabaseVersion: synthetic-tzdb-v1
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            priorBaselineEpisodes: 3
+            holdingWins: 3
+            holdingLosses: 3
+          findingMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            holdingWins: 3
+            holdingLosses: 3
+    REEVALUATE_FINDINGS_ANALYSIS_ONLY:
+      summary: Complete synthetic request; execution support and hashes are unverified.
+      value:
+        sourceLedgerRevisionId: '725400000000000010'
+        reprocessingType: REEVALUATE_FINDINGS
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        requestedOutputs: ANALYSIS_ONLY
+        reasonCode: USER_REQUESTED
+        publishAsLatest: false
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2026-01-01T00:00:00Z'
+            endExclusive: '2026-02-01T00:00:00Z'
+          reviewTimezone: Asia/Seoul
+          timezoneDatabaseVersion: synthetic-tzdb-v1
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            priorBaselineEpisodes: 3
+            holdingWins: 3
+            holdingLosses: 3
+          findingMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            holdingWins: 3
+            holdingLosses: 3
+        sourceAnalysisRunId: '725400000000000011'
+    RetryRequest:
+      summary: New public key plus explicit FAILED parent is a runtime admission gate.
+      value:
+        sourceLedgerRevisionId: '725400000000000010'
+        reprocessingType: REPARSE_SOURCE
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        requestedOutputs: LEDGER_AND_ANALYSIS
+        reasonCode: USER_REQUESTED
+        publishAsLatest: false
+        analysisConfig:
+          schemaVersion: 1
+          analysisPeriod:
+            startInclusive: '2026-01-01T00:00:00Z'
+            endExclusive: '2026-02-01T00:00:00Z'
+          reviewTimezone: Asia/Seoul
+          timezoneDatabaseVersion: synthetic-tzdb-v1
+          outcomeBasis: NET_TRADING_PNL
+          fundingTreatment: EXCLUDED
+          eligibleReviewUnitPolicy: COMPLETE_AND_RECONCILED_ONLY
+          reversalTreatment: SEPARATE
+          reentryWindow: PT30M
+          baselinePolicy: PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+          metricMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            priorBaselineEpisodes: 3
+            holdingWins: 3
+            holdingLosses: 3
+          findingMinimums:
+            reentryEligibleLosses: 3
+            exposurePairs: 3
+            holdingWins: 3
+            holdingLosses: 3
+        retryOfReprocessingRunId: '725400000000000020'
+    OmittedPublishAndNullOptionalSource:
+      value:
+        sourceLedgerRevisionId: '725400000000000010'
+        reprocessingType: REBUILD_LEDGER
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        requestedOutputs: LEDGER_ONLY
+        reasonCode: USER_REQUESTED
+        sourceAnalysisRunId: null
+    PendingRun:
+      summary: Synthetic public projection; no private IDs or locators.
+      value:
+        id: '725400000000000030'
+        tradingBookId: '725400000000000001'
+        sourceLedgerRevisionId: '725400000000000010'
+        sourceAnalysisRunId: null
+        reprocessingType: REPARSE_SOURCE
+        reasonCode: USER_REQUESTED
+        sourceVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        inputAvailability: RAW_AND_CANONICAL
+        status: PENDING
+        progressStage: PENDING
+        lineageParentRevisionIds:
+        - '725400000000000010'
+        retryOfReprocessingRunId: null
+        requestedOutputs: LEDGER_AND_ANALYSIS
+        publishAsLatest: false
+        createdLedgerRevisionId: null
+        createdAnalysisRunId: null
+        differenceSummary: null
+        failure: null
+        createdAt: '2026-11-13T00:00:00Z'
+        startedAt: null
+        updatedAt: '2026-11-13T00:00:00Z'
+        completedAt: null
+    ValidatingRun:
+      summary: Synthetic public projection; no private IDs or locators.
+      value:
+        id: '725400000000000031'
+        tradingBookId: '725400000000000001'
+        sourceLedgerRevisionId: '725400000000000010'
+        sourceAnalysisRunId: null
+        reprocessingType: REPARSE_SOURCE
+        reasonCode: USER_REQUESTED
+        sourceVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        inputAvailability: RAW_AND_CANONICAL
+        status: VALIDATING_INPUT
+        progressStage: VALIDATING_INPUT
+        lineageParentRevisionIds:
+        - '725400000000000010'
+        retryOfReprocessingRunId: null
+        requestedOutputs: LEDGER_AND_ANALYSIS
+        publishAsLatest: false
+        createdLedgerRevisionId: null
+        createdAnalysisRunId: null
+        differenceSummary: null
+        failure: null
+        createdAt: '2026-11-13T00:00:00Z'
+        startedAt: '2026-11-13T00:00:01Z'
+        updatedAt: '2026-11-13T00:00:02Z'
+        completedAt: null
+    RunningPrivateRun:
+      summary: Synthetic public projection; no private IDs or locators.
+      value:
+        id: '725400000000000032'
+        tradingBookId: '725400000000000001'
+        sourceLedgerRevisionId: '725400000000000010'
+        sourceAnalysisRunId: null
+        reprocessingType: REPARSE_SOURCE
+        reasonCode: USER_REQUESTED
+        sourceVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        inputAvailability: RAW_AND_CANONICAL
+        status: RUNNING
+        progressStage: RUNNING
+        lineageParentRevisionIds:
+        - '725400000000000010'
+        retryOfReprocessingRunId: null
+        requestedOutputs: LEDGER_AND_ANALYSIS
+        publishAsLatest: false
+        createdLedgerRevisionId: null
+        createdAnalysisRunId: null
+        differenceSummary: null
+        failure: null
+        createdAt: '2026-11-13T00:00:00Z'
+        startedAt: '2026-11-13T00:00:01Z'
+        updatedAt: '2026-11-13T00:00:02Z'
+        completedAt: null
+    FailedRun:
+      summary: Synthetic public projection; no private IDs or locators.
+      value:
+        id: '725400000000000033'
+        tradingBookId: '725400000000000001'
+        sourceLedgerRevisionId: '725400000000000010'
+        sourceAnalysisRunId: null
+        reprocessingType: REPARSE_SOURCE
+        reasonCode: USER_REQUESTED
+        sourceVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        inputAvailability: CANONICAL_ONLY
+        status: FAILED
+        progressStage: FAILED
+        lineageParentRevisionIds:
+        - '725400000000000010'
+        retryOfReprocessingRunId: null
+        requestedOutputs: LEDGER_AND_ANALYSIS
+        publishAsLatest: false
+        createdLedgerRevisionId: null
+        createdAnalysisRunId: null
+        differenceSummary: null
+        failure:
+          code: REPROCESSING_SOURCE_UNAVAILABLE
+          message: 재파싱 원본을 사용할 수 없습니다.
+          retryable: false
+        createdAt: '2026-11-13T00:00:00Z'
+        startedAt: null
+        updatedAt: '2026-11-13T00:00:02Z'
+        completedAt: '2026-11-13T00:00:02Z'
+    CancelledRun:
+      summary: Synthetic public projection; no private IDs or locators.
+      value:
+        id: '725400000000000034'
+        tradingBookId: '725400000000000001'
+        sourceLedgerRevisionId: '725400000000000010'
+        sourceAnalysisRunId: null
+        reprocessingType: REPARSE_SOURCE
+        reasonCode: USER_REQUESTED
+        sourceVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        inputAvailability: RAW_AND_CANONICAL
+        status: CANCELLED
+        progressStage: CANCELLED
+        lineageParentRevisionIds:
+        - '725400000000000010'
+        retryOfReprocessingRunId: null
+        requestedOutputs: LEDGER_AND_ANALYSIS
+        publishAsLatest: false
+        createdLedgerRevisionId: null
+        createdAnalysisRunId: null
+        differenceSummary: null
+        failure: null
+        createdAt: '2026-11-13T00:00:00Z'
+        startedAt: '2026-11-13T00:00:01Z'
+        updatedAt: '2026-11-13T00:00:02Z'
+        completedAt: '2026-11-13T00:00:02Z'
+    CompletedLedgerRun:
+      summary: Synthetic known-zero differences, not a computed fixture or a default for unknown values.
+      value:
+        id: '725400000000000035'
+        tradingBookId: '725400000000000001'
+        sourceLedgerRevisionId: '725400000000000010'
+        sourceAnalysisRunId: null
+        reprocessingType: REPARSE_SOURCE
+        reasonCode: USER_REQUESTED
+        sourceVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        inputAvailability: RAW_AND_CANONICAL
+        status: COMPLETED
+        progressStage: COMPLETED
+        lineageParentRevisionIds:
+        - '725400000000000010'
+        retryOfReprocessingRunId: null
+        requestedOutputs: LEDGER_ONLY
+        publishAsLatest: false
+        createdLedgerRevisionId: '725400000000000040'
+        createdAnalysisRunId: null
+        differenceSummary:
+          sourceRevisionId: '725400000000000010'
+          targetRevisionId: '725400000000000040'
+          sourceAnalysisRunId: null
+          targetAnalysisRunId: null
+          canonicalRecordCountDelta: 0
+          episodeCountDelta: 0
+          eligibleCountDelta: 0
+          excludedCountDelta: 0
+          exclusionReasonChanges: []
+          metricChanges: []
+          evidenceChanges: []
+          sourceVersionSet:
+            normalizer:
+              sourceDialectVersionsByArtifactRole:
+                TRADE_HISTORY: synthetic-trades-v1
+                POSITION_HISTORY: synthetic-positions-v1
+              adapterVersion: synthetic-adapter-v1
+              normalizerVersion: synthetic-normalizer-v1
+              canonicalSchemaVersion: synthetic-canonical-v1
+              implementationDigest: synthetic-digest-normalizer
+              versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+            reconstruction:
+              instrumentTermsVersionByInstrument:
+                BTCUSDT: synthetic-terms-v1
+              reconstructionPolicyVersion: synthetic-reconstruction-v1
+              reconciliationVersion: synthetic-reconciliation-v1
+              reviewUnitSchemaVersion: synthetic-review-unit-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-reconstruction
+              versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+            analytics:
+              metricDefinitionVersionsByMetricId:
+                ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+              findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+              analysisConfigVersion: synthetic-config-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-analytics
+              versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+            versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+          targetVersionSet:
+            normalizer:
+              sourceDialectVersionsByArtifactRole:
+                TRADE_HISTORY: synthetic-trades-v1
+                POSITION_HISTORY: synthetic-positions-v1
+              adapterVersion: synthetic-adapter-v1
+              normalizerVersion: synthetic-normalizer-v1
+              canonicalSchemaVersion: synthetic-canonical-v1
+              implementationDigest: synthetic-digest-normalizer
+              versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+            reconstruction:
+              instrumentTermsVersionByInstrument:
+                BTCUSDT: synthetic-terms-v1
+              reconstructionPolicyVersion: synthetic-reconstruction-v1
+              reconciliationVersion: synthetic-reconciliation-v1
+              reviewUnitSchemaVersion: synthetic-review-unit-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-reconstruction
+              versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+            analytics:
+              metricDefinitionVersionsByMetricId:
+                ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+              findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+              analysisConfigVersion: synthetic-config-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-analytics
+              versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+            versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+          outcomeChanged: false
+        failure: null
+        createdAt: '2026-11-13T00:00:00Z'
+        startedAt: '2026-11-13T00:00:01Z'
+        updatedAt: '2026-11-13T00:00:02Z'
+        completedAt: '2026-11-13T00:00:02Z'
+    CompletedPairRun:
+      summary: Synthetic known-zero differences, not a computed fixture or a default for unknown values.
+      value:
+        id: '725400000000000036'
+        tradingBookId: '725400000000000001'
+        sourceLedgerRevisionId: '725400000000000010'
+        sourceAnalysisRunId: null
+        reprocessingType: REPARSE_SOURCE
+        reasonCode: USER_REQUESTED
+        sourceVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        inputAvailability: RAW_AND_CANONICAL
+        status: COMPLETED
+        progressStage: COMPLETED
+        lineageParentRevisionIds:
+        - '725400000000000010'
+        retryOfReprocessingRunId: null
+        requestedOutputs: LEDGER_AND_ANALYSIS
+        publishAsLatest: false
+        createdLedgerRevisionId: '725400000000000040'
+        createdAnalysisRunId: '725400000000000041'
+        differenceSummary:
+          sourceRevisionId: '725400000000000010'
+          targetRevisionId: '725400000000000040'
+          sourceAnalysisRunId: null
+          targetAnalysisRunId: '725400000000000041'
+          canonicalRecordCountDelta: 0
+          episodeCountDelta: 0
+          eligibleCountDelta: 0
+          excludedCountDelta: 0
+          exclusionReasonChanges: []
+          metricChanges: []
+          evidenceChanges: []
+          sourceVersionSet:
+            normalizer:
+              sourceDialectVersionsByArtifactRole:
+                TRADE_HISTORY: synthetic-trades-v1
+                POSITION_HISTORY: synthetic-positions-v1
+              adapterVersion: synthetic-adapter-v1
+              normalizerVersion: synthetic-normalizer-v1
+              canonicalSchemaVersion: synthetic-canonical-v1
+              implementationDigest: synthetic-digest-normalizer
+              versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+            reconstruction:
+              instrumentTermsVersionByInstrument:
+                BTCUSDT: synthetic-terms-v1
+              reconstructionPolicyVersion: synthetic-reconstruction-v1
+              reconciliationVersion: synthetic-reconciliation-v1
+              reviewUnitSchemaVersion: synthetic-review-unit-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-reconstruction
+              versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+            analytics:
+              metricDefinitionVersionsByMetricId:
+                ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+              findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+              analysisConfigVersion: synthetic-config-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-analytics
+              versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+            versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+          targetVersionSet:
+            normalizer:
+              sourceDialectVersionsByArtifactRole:
+                TRADE_HISTORY: synthetic-trades-v1
+                POSITION_HISTORY: synthetic-positions-v1
+              adapterVersion: synthetic-adapter-v1
+              normalizerVersion: synthetic-normalizer-v1
+              canonicalSchemaVersion: synthetic-canonical-v1
+              implementationDigest: synthetic-digest-normalizer
+              versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+            reconstruction:
+              instrumentTermsVersionByInstrument:
+                BTCUSDT: synthetic-terms-v1
+              reconstructionPolicyVersion: synthetic-reconstruction-v1
+              reconciliationVersion: synthetic-reconciliation-v1
+              reviewUnitSchemaVersion: synthetic-review-unit-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-reconstruction
+              versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+            analytics:
+              metricDefinitionVersionsByMetricId:
+                ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+              findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+              analysisConfigVersion: synthetic-config-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-analytics
+              versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+            versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+          outcomeChanged: false
+        failure: null
+        createdAt: '2026-11-13T00:00:00Z'
+        startedAt: '2026-11-13T00:00:01Z'
+        updatedAt: '2026-11-13T00:00:02Z'
+        completedAt: '2026-11-13T00:00:02Z'
+    CompletedAnalysisRun:
+      summary: Synthetic known-zero differences, not a computed fixture or a default for unknown values.
+      value:
+        id: '725400000000000037'
+        tradingBookId: '725400000000000001'
+        sourceLedgerRevisionId: '725400000000000010'
+        sourceAnalysisRunId: null
+        reprocessingType: RERUN_ANALYTICS
+        reasonCode: USER_REQUESTED
+        sourceVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        inputAvailability: RAW_AND_CANONICAL
+        status: COMPLETED
+        progressStage: COMPLETED
+        lineageParentRevisionIds:
+        - '725400000000000010'
+        retryOfReprocessingRunId: null
+        requestedOutputs: ANALYSIS_ONLY
+        publishAsLatest: false
+        createdLedgerRevisionId: null
+        createdAnalysisRunId: '725400000000000041'
+        differenceSummary:
+          sourceRevisionId: '725400000000000010'
+          targetRevisionId: '725400000000000010'
+          sourceAnalysisRunId: null
+          targetAnalysisRunId: '725400000000000041'
+          canonicalRecordCountDelta: 0
+          episodeCountDelta: 0
+          eligibleCountDelta: 0
+          excludedCountDelta: 0
+          exclusionReasonChanges: []
+          metricChanges: []
+          evidenceChanges: []
+          sourceVersionSet:
+            normalizer:
+              sourceDialectVersionsByArtifactRole:
+                TRADE_HISTORY: synthetic-trades-v1
+                POSITION_HISTORY: synthetic-positions-v1
+              adapterVersion: synthetic-adapter-v1
+              normalizerVersion: synthetic-normalizer-v1
+              canonicalSchemaVersion: synthetic-canonical-v1
+              implementationDigest: synthetic-digest-normalizer
+              versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+            reconstruction:
+              instrumentTermsVersionByInstrument:
+                BTCUSDT: synthetic-terms-v1
+              reconstructionPolicyVersion: synthetic-reconstruction-v1
+              reconciliationVersion: synthetic-reconciliation-v1
+              reviewUnitSchemaVersion: synthetic-review-unit-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-reconstruction
+              versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+            analytics:
+              metricDefinitionVersionsByMetricId:
+                ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+              findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+              analysisConfigVersion: synthetic-config-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-analytics
+              versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+            versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+          targetVersionSet:
+            normalizer:
+              sourceDialectVersionsByArtifactRole:
+                TRADE_HISTORY: synthetic-trades-v1
+                POSITION_HISTORY: synthetic-positions-v1
+              adapterVersion: synthetic-adapter-v1
+              normalizerVersion: synthetic-normalizer-v1
+              canonicalSchemaVersion: synthetic-canonical-v1
+              implementationDigest: synthetic-digest-normalizer
+              versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+            reconstruction:
+              instrumentTermsVersionByInstrument:
+                BTCUSDT: synthetic-terms-v1
+              reconstructionPolicyVersion: synthetic-reconstruction-v1
+              reconciliationVersion: synthetic-reconciliation-v1
+              reviewUnitSchemaVersion: synthetic-review-unit-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-reconstruction
+              versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+            analytics:
+              metricDefinitionVersionsByMetricId:
+                ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+              findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+              analysisConfigVersion: synthetic-config-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-analytics
+              versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+            versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+          outcomeChanged: false
+        failure: null
+        createdAt: '2026-11-13T00:00:00Z'
+        startedAt: '2026-11-13T00:00:01Z'
+        updatedAt: '2026-11-13T00:00:02Z'
+        completedAt: '2026-11-13T00:00:02Z'
+    RunPage:
+      value:
+        items:
+        - id: '725400000000000032'
+          tradingBookId: '725400000000000001'
+          sourceLedgerRevisionId: '725400000000000010'
+          sourceAnalysisRunId: null
+          reprocessingType: REPARSE_SOURCE
+          reasonCode: USER_REQUESTED
+          sourceVersionSet:
+            normalizer:
+              sourceDialectVersionsByArtifactRole:
+                TRADE_HISTORY: synthetic-trades-v1
+                POSITION_HISTORY: synthetic-positions-v1
+              adapterVersion: synthetic-adapter-v1
+              normalizerVersion: synthetic-normalizer-v1
+              canonicalSchemaVersion: synthetic-canonical-v1
+              implementationDigest: synthetic-digest-normalizer
+              versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+            reconstruction:
+              instrumentTermsVersionByInstrument:
+                BTCUSDT: synthetic-terms-v1
+              reconstructionPolicyVersion: synthetic-reconstruction-v1
+              reconciliationVersion: synthetic-reconciliation-v1
+              reviewUnitSchemaVersion: synthetic-review-unit-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-reconstruction
+              versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+            analytics:
+              metricDefinitionVersionsByMetricId:
+                ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+              findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+              analysisConfigVersion: synthetic-config-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-analytics
+              versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+            versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+          targetVersionSet:
+            normalizer:
+              sourceDialectVersionsByArtifactRole:
+                TRADE_HISTORY: synthetic-trades-v1
+                POSITION_HISTORY: synthetic-positions-v1
+              adapterVersion: synthetic-adapter-v1
+              normalizerVersion: synthetic-normalizer-v1
+              canonicalSchemaVersion: synthetic-canonical-v1
+              implementationDigest: synthetic-digest-normalizer
+              versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+            reconstruction:
+              instrumentTermsVersionByInstrument:
+                BTCUSDT: synthetic-terms-v1
+              reconstructionPolicyVersion: synthetic-reconstruction-v1
+              reconciliationVersion: synthetic-reconciliation-v1
+              reviewUnitSchemaVersion: synthetic-review-unit-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-reconstruction
+              versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+            analytics:
+              metricDefinitionVersionsByMetricId:
+                ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+              findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+              analysisConfigVersion: synthetic-config-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-analytics
+              versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+            versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+          inputAvailability: RAW_AND_CANONICAL
+          status: RUNNING
+          progressStage: RUNNING
+          lineageParentRevisionIds:
+          - '725400000000000010'
+          retryOfReprocessingRunId: null
+          requestedOutputs: LEDGER_AND_ANALYSIS
+          publishAsLatest: false
+          createdLedgerRevisionId: null
+          createdAnalysisRunId: null
+          differenceSummary: null
+          failure: null
+          createdAt: '2026-11-13T00:00:00Z'
+          startedAt: '2026-11-13T00:00:01Z'
+          updatedAt: '2026-11-13T00:00:02Z'
+          completedAt: null
+        - id: '725400000000000036'
+          tradingBookId: '725400000000000001'
+          sourceLedgerRevisionId: '725400000000000010'
+          sourceAnalysisRunId: null
+          reprocessingType: REPARSE_SOURCE
+          reasonCode: USER_REQUESTED
+          sourceVersionSet:
+            normalizer:
+              sourceDialectVersionsByArtifactRole:
+                TRADE_HISTORY: synthetic-trades-v1
+                POSITION_HISTORY: synthetic-positions-v1
+              adapterVersion: synthetic-adapter-v1
+              normalizerVersion: synthetic-normalizer-v1
+              canonicalSchemaVersion: synthetic-canonical-v1
+              implementationDigest: synthetic-digest-normalizer
+              versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+            reconstruction:
+              instrumentTermsVersionByInstrument:
+                BTCUSDT: synthetic-terms-v1
+              reconstructionPolicyVersion: synthetic-reconstruction-v1
+              reconciliationVersion: synthetic-reconciliation-v1
+              reviewUnitSchemaVersion: synthetic-review-unit-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-reconstruction
+              versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+            analytics:
+              metricDefinitionVersionsByMetricId:
+                ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+              findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+              analysisConfigVersion: synthetic-config-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-analytics
+              versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+            versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+          targetVersionSet:
+            normalizer:
+              sourceDialectVersionsByArtifactRole:
+                TRADE_HISTORY: synthetic-trades-v1
+                POSITION_HISTORY: synthetic-positions-v1
+              adapterVersion: synthetic-adapter-v1
+              normalizerVersion: synthetic-normalizer-v1
+              canonicalSchemaVersion: synthetic-canonical-v1
+              implementationDigest: synthetic-digest-normalizer
+              versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+            reconstruction:
+              instrumentTermsVersionByInstrument:
+                BTCUSDT: synthetic-terms-v1
+              reconstructionPolicyVersion: synthetic-reconstruction-v1
+              reconciliationVersion: synthetic-reconciliation-v1
+              reviewUnitSchemaVersion: synthetic-review-unit-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-reconstruction
+              versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+            analytics:
+              metricDefinitionVersionsByMetricId:
+                ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+              findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+              analysisConfigVersion: synthetic-config-v1
+              evidenceSchemaVersion: synthetic-evidence-v1
+              implementationDigest: synthetic-digest-analytics
+              versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+            versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+          inputAvailability: RAW_AND_CANONICAL
+          status: COMPLETED
+          progressStage: COMPLETED
+          lineageParentRevisionIds:
+          - '725400000000000010'
+          retryOfReprocessingRunId: null
+          requestedOutputs: LEDGER_AND_ANALYSIS
+          publishAsLatest: false
+          createdLedgerRevisionId: '725400000000000040'
+          createdAnalysisRunId: '725400000000000041'
+          differenceSummary:
+            sourceRevisionId: '725400000000000010'
+            targetRevisionId: '725400000000000040'
+            sourceAnalysisRunId: null
+            targetAnalysisRunId: '725400000000000041'
+            canonicalRecordCountDelta: 0
+            episodeCountDelta: 0
+            eligibleCountDelta: 0
+            excludedCountDelta: 0
+            exclusionReasonChanges: []
+            metricChanges: []
+            evidenceChanges: []
+            sourceVersionSet:
+              normalizer:
+                sourceDialectVersionsByArtifactRole:
+                  TRADE_HISTORY: synthetic-trades-v1
+                  POSITION_HISTORY: synthetic-positions-v1
+                adapterVersion: synthetic-adapter-v1
+                normalizerVersion: synthetic-normalizer-v1
+                canonicalSchemaVersion: synthetic-canonical-v1
+                implementationDigest: synthetic-digest-normalizer
+                versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+              reconstruction:
+                instrumentTermsVersionByInstrument:
+                  BTCUSDT: synthetic-terms-v1
+                reconstructionPolicyVersion: synthetic-reconstruction-v1
+                reconciliationVersion: synthetic-reconciliation-v1
+                reviewUnitSchemaVersion: synthetic-review-unit-v1
+                evidenceSchemaVersion: synthetic-evidence-v1
+                implementationDigest: synthetic-digest-reconstruction
+                versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+              analytics:
+                metricDefinitionVersionsByMetricId:
+                  ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                  INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                  WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+                findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+                analysisConfigVersion: synthetic-config-v1
+                evidenceSchemaVersion: synthetic-evidence-v1
+                implementationDigest: synthetic-digest-analytics
+                versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+              versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+            targetVersionSet:
+              normalizer:
+                sourceDialectVersionsByArtifactRole:
+                  TRADE_HISTORY: synthetic-trades-v1
+                  POSITION_HISTORY: synthetic-positions-v1
+                adapterVersion: synthetic-adapter-v1
+                normalizerVersion: synthetic-normalizer-v1
+                canonicalSchemaVersion: synthetic-canonical-v1
+                implementationDigest: synthetic-digest-normalizer
+                versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+              reconstruction:
+                instrumentTermsVersionByInstrument:
+                  BTCUSDT: synthetic-terms-v1
+                reconstructionPolicyVersion: synthetic-reconstruction-v1
+                reconciliationVersion: synthetic-reconciliation-v1
+                reviewUnitSchemaVersion: synthetic-review-unit-v1
+                evidenceSchemaVersion: synthetic-evidence-v1
+                implementationDigest: synthetic-digest-reconstruction
+                versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+              analytics:
+                metricDefinitionVersionsByMetricId:
+                  ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+                  INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+                  WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+                findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+                analysisConfigVersion: synthetic-config-v1
+                evidenceSchemaVersion: synthetic-evidence-v1
+                implementationDigest: synthetic-digest-analytics
+                versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+              versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+            outcomeChanged: false
+          failure: null
+          createdAt: '2026-11-13T00:00:00Z'
+          startedAt: '2026-11-13T00:00:01Z'
+          updatedAt: '2026-11-13T00:00:02Z'
+          completedAt: '2026-11-13T00:00:02Z'
+        page: 0
+        size: 20
+        total: 2
+    EmptyRunPage:
+      value:
+        items: []
+        page: 0
+        size: 20
+        total: 0
+    VersionRejectedRun:
+      summary: Synthetic confirmed WP02 version rejection. No child dispatch or execution.
+      value:
+        id: '725400000000000038'
+        tradingBookId: '725400000000000001'
+        sourceLedgerRevisionId: '725400000000000010'
+        sourceAnalysisRunId: null
+        reprocessingType: REPARSE_SOURCE
+        reasonCode: USER_REQUESTED
+        sourceVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '5555555555555555555555555555555555555555555555555555555555555555'
+        targetVersionSet:
+          normalizer:
+            sourceDialectVersionsByArtifactRole:
+              TRADE_HISTORY: synthetic-trades-v1
+              POSITION_HISTORY: synthetic-positions-v1
+            adapterVersion: synthetic-adapter-v1
+            normalizerVersion: synthetic-normalizer-v1
+            canonicalSchemaVersion: synthetic-canonical-v1
+            implementationDigest: synthetic-digest-normalizer
+            versionSetHash: '1111111111111111111111111111111111111111111111111111111111111111'
+          reconstruction:
+            instrumentTermsVersionByInstrument:
+              BTCUSDT: synthetic-terms-v1
+            reconstructionPolicyVersion: synthetic-reconstruction-v1
+            reconciliationVersion: synthetic-reconciliation-v1
+            reviewUnitSchemaVersion: synthetic-review-unit-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-reconstruction
+            versionSetHash: '2222222222222222222222222222222222222222222222222222222222222222'
+          analytics:
+            metricDefinitionVersionsByMetricId:
+              ENTRY_WITHIN_WINDOW_AFTER_LOSS: synthetic-metric-v1
+              INITIAL_EXPOSURE_CHANGE_AFTER_LOSS: synthetic-metric-v1
+              WIN_LOSS_HOLDING_DURATION_DIFFERENCE: synthetic-metric-v1
+            findingRuleSetVersion: TRADING_FINDING_RULES_DISABLED_V1
+            analysisConfigVersion: synthetic-config-v1
+            evidenceSchemaVersion: synthetic-evidence-v1
+            implementationDigest: synthetic-digest-analytics
+            versionSetHash: '3333333333333333333333333333333333333333333333333333333333333333'
+          versionSetHash: '4444444444444444444444444444444444444444444444444444444444444444'
+        inputAvailability: RAW_AND_CANONICAL
+        status: FAILED
+        progressStage: FAILED
+        lineageParentRevisionIds:
+        - '725400000000000010'
+        retryOfReprocessingRunId: null
+        requestedOutputs: LEDGER_AND_ANALYSIS
+        publishAsLatest: false
+        createdLedgerRevisionId: null
+        createdAnalysisRunId: null
+        differenceSummary: null
+        failure:
+          code: VERSION_UNAVAILABLE
+          message: 선택한 버전을 사용할 수 없습니다.
+          retryable: false
+        createdAt: '2026-11-13T00:00:00Z'
+        startedAt: null
+        updatedAt: '2026-11-13T00:00:02Z'
+        completedAt: '2026-11-13T00:00:02Z'
+security:
+- AccessCookieAuth: []

@@ -4,7 +4,8 @@
 새 path/operation/audience/scope literal은 검토용이며 route/issuer/권한을 활성화하지 않는다.
 [DTO 후보](TRADING_REVIEW_WORKFLOW_DTO_DRAFT.md)·[WP01/02](TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md)·
 [WP03/04](TRADING_REVIEW_REPROCESSING_IDENTITY_DRAFT.md)·[WR gate](TRADING_REVIEW_WORKFLOW_CONTRACT_ACCEPTANCE_DRAFT.md)를 함께 읽는다.
-이번은 의미/DTO·registry 문서 리뷰이며 새 OpenAPI YAML/fixture/checker는 다음 별도 단계다. 정확 schema 검증/생성 client 지원을 주장하지 않는다.
+최초 단계는 의미/DTO·registry 문서 리뷰다. 후속 [OpenAPI 후보](TRADING_REVIEW_REPROCESSING_OPENAPI_DRAFT.md)에
+public/internal YAML·완전한 synthetic 예제·정적 검사를 연결했다. route/issuer·생성 client 지원은 여전히 미검증이다.
 
 ## 기존 operation의 소유권
 
@@ -86,13 +87,13 @@ public Location을 제공한다면 브라우저용 versioned status URL이어야
 ## 후속 검증·전파
 
 이번 문서의 operation/field literal은 schema/issuer/SQL/route 구현 증거가 아니다. 기존 WR-DRAFT-01~14와 TR-ACC/Go 계획을 이어 사용한다.
-다음은 위 registry/DTO를 public/internal OpenAPI draft·정적 예제/위험 변이로 표현하는 단계다.
+후속 [public/internal OpenAPI 후보](TRADING_REVIEW_REPROCESSING_OPENAPI_DRAFT.md)에 위 registry/DTO의 schema·정적 예제/위험 변이를 표현했다.
 새 YAML을 추가하기 **전에** integration exact file 분류/gate·Core snapshot 의존을 준비한다. unclassified 파일로 preview가 실패하는 상태를 성공 처리하지 않는다.
 기존 contract 문서 snapshot은 Context merge 후 별도 전파한다. Go는 고정 source 링크를 사용하며 snapshot 체계 구축을 주장하지 않는다.
 정책 채택·실제 HTTP/JWT/authority·DB/동시성·child/private 수명·Analytics actual absence·단일 writer/운영 인계는 별도다.
 
 
-## 이번 문서 검사
+## HTTP/DTO 문서 단계 검사 (당시)
 
 변경 Markdown 7개·상대 링크 77개·anchor 1개·고정 source 경로 16개를 확인했다.
 기존 삭제 5개 registry의 public/internal method/path/operation 일치·JSON 예시 5개 문법/중복 key 검사,

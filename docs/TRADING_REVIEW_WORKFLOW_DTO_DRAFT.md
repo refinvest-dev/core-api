@@ -2,7 +2,8 @@
 
 상태: **ADR-079/WP01~04 미채택 문서 모델**, 2026-11-13. [HTTP registry](TRADING_REVIEW_WORKFLOW_HTTP_DRAFT.md)·
 [WP 접수](TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md)·[identity/child](TRADING_REVIEW_REPROCESSING_IDENTITY_DRAFT.md)를 구체화한다.
-현재 OpenAPI를 수정하지 않았고 아래 이름은 새 JSON/schema/enum을 활성화하지 않는다. JSON 블록은 명시한 **부분 projection 또는 synthetic 오류 예시**다.
+현재 active OpenAPI를 유지한다. 후속 [OpenAPI 후보](TRADING_REVIEW_REPROCESSING_OPENAPI_DRAFT.md)는 별도 DRAFT이며 wire를 활성화하지 않는다.
+아래 JSON 블록은 최초 문서의 **부분 projection 또는 synthetic 오류 예시**다. 완전한 schema 예제는 후속 YAML을 읽는다.
 완전한 request/실행/계산 fixture·schema 검증 성공으로 해석하지 않는다.
 
 ## RequestReprocessingV2Draft
@@ -108,6 +109,6 @@ backup due·safe failure/retryable·request/start/update/complete 시각을 현�
 ## 수용과 남은 결정
 
 기존 WR-DRAFT-01~14에 필수 selector/type/config·retry parent/null·원 error Run 연결·same-key/current Guard·trace/relay의 assertion을 연결한다.
-request/query/response의 구조 예제는 다음 OpenAPI draft에서 required/nullable/oneOf/refs·긍정/위험 변이로 검증한다.
+request/query/response의 후속 구조 예제는 [OpenAPI 후보](TRADING_REVIEW_REPROCESSING_OPENAPI_DRAFT.md)에서 required/nullable/oneOf/refs·긍정/위험 변이로 검사한다.
 JSON 문법 확인은 schema·JWT/authority·해시·DB/UNKNOWN·Compute child·consumer 호환성의 검증이 아니다.
 legacy outputs/default·request/receipt profile migration·정확 literal·운영 budget/수명·서비스 write 선형화는 WR-G01~08 조건으로 남긴다.

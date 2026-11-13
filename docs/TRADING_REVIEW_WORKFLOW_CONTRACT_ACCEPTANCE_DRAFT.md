@@ -123,3 +123,22 @@ ADR-071/073~078·삭제 control·Analytics 실제 부재 정책·private 수명 
 다음은 public/internal OpenAPI draft·정적 예제/위험 변이 검사다. integration의 exact 신규 파일 분류/gate를
 먼저 준비하고 Context preview·Core snapshot·Go 고정 연결 의존을 맞춘다. 이번은 새 YAML을 추가하지 않아
 기존 draft 분류를 변경하지 않으며 schema/JWT/authority/SQL/E2E 검증 성공을 주장하지 않는다.
+
+
+## OpenAPI 정적 후보 연결
+
+[Reprocessing OpenAPI 후보](TRADING_REVIEW_REPROCESSING_OPENAPI_DRAFT.md)에 public/internal 8개 operation·완전 synthetic 예제와
+정적 schema/위험 변이를 연결했다. 검사 수·명령은 해당 문서에 기록한다. 이 검사는 아래 기존 semantic 계획의 구조 일부만 대조한다.
+WR-DRAFT-01~14는 모두 미실행이며 ID·기존 TR-ACC/WUC/WFP 계획을 중복 생성하거나 완료로 변경하지 않는다.
+
+| 기존 gate | 정적으로 대조한 부분 | 계속 필요한 증거 |
+|---|---|---|
+| WR-G01/02 | type/outputs/config/target component·nullable·원 namespace | 정확 full binding/hash·legacy migration·WP02 commit/replay/UNKNOWN |
+| WR-G03~06 | private child 비노출 shape·완료 산출물 조합 | 실제 child profile·final Tx/CAS·수명/ACK·remote fence/actual absence |
+| WR-G07 | credential AND·audience/scope/caller 선언·CSRF·trace/cache·오류 Run 참조 제한 | JWT/issuer/current Member·Go owner/Guard·Member/commit 선형화·중계/consumer |
+| WR-G08 | integration 분류 선행·Context 정적 CI/impact 계획 | 새 Core snapshot/최신 sync·실제 수용·DB/ID/단일 writer/backup 인계 |
+
+admit 422는 접근 가능한 source의 확정 business rejection을 기록한 후보이며 Run 참조를 생략하는 fallback이 없다.
+삭제/현재 접근 차단의 일반 410과 확정 source 실패를 기록한 410을 구분한다. schema가 기록/권한의 사실을 증명하지는 않는다.
+canonical rebuild/Finding-only·private source·참조 VO 내부 확장 필드와 실제 decoder·생성 client의 required/nullable 차이는 consumer gate다.
+정적 PASS를 정책 채택으로 보지 않으며 다음은 이 소비자/legacy·receipt/profile·잔여 gate를 통합 검토한다.
