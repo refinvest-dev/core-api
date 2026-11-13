@@ -108,5 +108,7 @@
   기존 삭제 registry 재사용·재처리 profile/원 receipt/selector·retry/error Run 연결도 미채택 문서 모델이다.
   후속 [Reprocessing OpenAPI 후보](docs/TRADING_REVIEW_REPROCESSING_OPENAPI_DRAFT.md)의 public/internal YAML·정적 사례를 읽는다.
   synthetic schema 검사를 hash oracle·실제 HTTP/authority/consumer 지원·업무 구현 전환으로 해석하지 않는다.
+  [Consumer/legacy 리뷰](docs/TRADING_REVIEW_REPROCESSING_CONSUMER_REVIEW_DRAFT.md)의 source 관측·실제 데이터 미조사·
+  불명 pin/receipt·Web 중계·child별 projection 차이를 읽는다. 저장 데이터/legacy 의도를 추정해 자동 변환하지 않는다.
 - [WR-G01~08](docs/TRADING_REVIEW_WORKFLOW_CONTRACT_ACCEPTANCE_DRAFT.md)의 schema/consumer·legacy/hash·
   child/물리 Tx·수명/실제 부재·authority/운영 수용 전에는 후보를 활성화하지 않는다.

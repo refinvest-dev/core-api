@@ -1471,3 +1471,11 @@ issuer/authority 및 기존 WR gate를 검토한 뒤 다음 machine contract 단
 실제 decoder/client·권위/Member 선형화·SQL/UNKNOWN·child/private/actual absence·단일 writer/운영 수용 증거가 아니다.
 [Integration #61](https://github.com/refinvest-dev/integration/pull/61)의 exact mapping/gate가 선행 병합됐다.
 후속 schema 소비자/legacy/receipt/profile·기존 WR gate를 리뷰하며 업무 구현 전환은 별도로 확정한다.
+
+
+**Consumer/legacy 통합 리뷰 보완**: [WCR-R01~08](TRADING_REVIEW_REPROCESSING_CONSUMER_REVIEW_DRAFT.md)에
+선언된 재처리 API와 조사한 Core/Web/Go 소스의 구현 부재 관측, 기존 idempotency row의 한계·원 receipt/pin,
+Web 오류 필드/401/abort와 child별 Target/strict extra/지원 surface 차이를 고정 source로 연결했다.
+운영 데이터 부재나 legacy history를 추정하지 않으며 source pin 불명 요청을 fake Run/미기록 business422로 처리하지 않는다.
+부모 full binding과 child별 projection/hash 동등성·ownerId/ownerScope·원 receipt와 불명 source profile을 다음 검토 단위로 권장한다.
+이번은 Markdown/source 검토이며 schema/hash/vector·runtime·DB를 바꾸거나 WP/WR gate·정책을 채택하지 않는다.

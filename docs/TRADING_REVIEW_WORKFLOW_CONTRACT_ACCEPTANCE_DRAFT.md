@@ -142,3 +142,22 @@ admit 422는 접근 가능한 source의 확정 business rejection을 기록한 �
 삭제/현재 접근 차단의 일반 410과 확정 source 실패를 기록한 410을 구분한다. schema가 기록/권한의 사실을 증명하지는 않는다.
 canonical rebuild/Finding-only·private source·참조 VO 내부 확장 필드와 실제 decoder·생성 client의 required/nullable 차이는 consumer gate다.
 정적 PASS를 정책 채택으로 보지 않으며 다음은 이 소비자/legacy·receipt/profile·잔여 gate를 통합 검토한다.
+
+
+## Consumer/legacy 통합 리뷰 연결
+
+[WCR-R01~08](TRADING_REVIEW_REPROCESSING_CONSUMER_REVIEW_DRAFT.md)에 실제 소스 범위와 관측 한계·기존 row/receipt·
+불명 source pin·Web 오류/abort·parent/child projection·Compute 지원/actual absence·다음 검토 범위를 기록했다.
+리뷰 ID는 새 semantic 테스트/상태가 아니다. WR-DRAFT-01~14는 여전히 전부 미실행이다.
+
+| 기존 gate | 추가로 구체화한 판단 |
+|---|---|
+| WR-G01/02 | 공개 계약 선언과 실제 consumer를 분리. 없는 Reprocessing history 이관을 가정하지 않되 운영 inventory는 별도 확인. source pin 불명에는 미기록 business422/가짜 Run 금지 |
+| WR-G02/03 | parent full tuple/logical hash와 child Target/input/create key의 projection을 구분. ownerId/ownerScope·각 canonicalization·nullable/원 receipt는 정확 byte/이력으로 확인 |
+| WR-G03~06 | raw wire 재사용은 동등성 검증 뒤 판단. canonical/Finding/private source 지원·shared Analytics ACK와 실제 부재 gap을 혼동하지 않음 |
+| WR-G07 | 현재 Web의 오류 축약/401 refresh/abort·Core advice/오류 DTO와 후보 차이. issuer/current Member/Go Guard/commit 선형화는 실제 수용 대기 |
+| WR-G08 | Core 후보 snapshot/marker 일치와 main sync 성공을 구분. TR만 같은 DB 인계·단일 writer·명시 구현 전환/실제 운영 증거 필요 |
+
+다음은 identity/full binding·원 admission receipt·불명 source 처리 profile 상세화다.
+정확 owner/nullable/hash projection·namespace/alias/보관/복구·지원 legacy 범위를 먼저 검토하고 필요한 vector/채택 범위를 정한다.
+이번은 새 JSON schema·vector·DDL/SQL·HTTP/DB 수용이나 구현 전환이 아니다.
