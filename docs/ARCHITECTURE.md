@@ -210,6 +210,8 @@ Workflow: R2 staging → A2 staging → 동일 DB Tx로 R2/A2 + pointers + linea
 Workflow의 [접수·산출물 후보](TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md),
 [identity·child binding](TRADING_REVIEW_REPROCESSING_IDENTITY_DRAFT.md),
 [consumer·수용 gate](TRADING_REVIEW_WORKFLOW_CONTRACT_ACCEPTANCE_DRAFT.md)는 ADR-079 DRAFT다.
+[Workflow HTTP registry](TRADING_REVIEW_WORKFLOW_HTTP_DRAFT.md)·[DTO 후보](TRADING_REVIEW_WORKFLOW_DTO_DRAFT.md)는
+기존 삭제 소유 profile 재사용과 versioned 재처리/원 receipt/위임 경계를 문서화하며 새 OpenAPI/route를 추가하지 않는다.
 현재 API/Compute/hash를 바꾸거나 private 수명·Analytics 실제 부재 정책을 채택하지 않는다.
 - 외부 I/O는 DB Tx 밖, 두 모듈의 최종 공개는 동일 실제 Tx다. WithinTx 방식은 미확정이다.
 - 기존 grant/retention/version/hash/ACK 의미를 유지한다. Go가 결과를 독립 검증하고 오래된 generation의

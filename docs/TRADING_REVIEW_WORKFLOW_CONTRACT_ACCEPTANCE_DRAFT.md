@@ -104,3 +104,22 @@ ADR-071/073~078·삭제 control·Analytics 실제 부재 정책·private 수명 
 [compute-jobs]: https://github.com/refinvest-dev/compute-api/blob/113b0e20b6d660c55ac4a7f3eb00ad10eb9ac963/src/refinvest/persistence/postgres/trading_review_jobs.py
 [compute-dto]: https://github.com/refinvest-dev/compute-api/blob/113b0e20b6d660c55ac4a7f3eb00ad10eb9ac963/src/refinvest/api/schemas/trading_analytics_jobs.py
 [compute-input]: https://github.com/refinvest-dev/compute-api/blob/113b0e20b6d660c55ac4a7f3eb00ad10eb9ac963/src/refinvest/application/analytics_input.py
+
+
+## HTTP/DTO 문서 후보 연결
+
+[HTTP registry](TRADING_REVIEW_WORKFLOW_HTTP_DRAFT.md)·[DTO 후보](TRADING_REVIEW_WORKFLOW_DTO_DRAFT.md)에
+기존 삭제 4개/shared status 1개의 소유 profile·새 재처리 4개 후보와 versioned field/receipt를 구체화했다.
+기존 WR-DRAFT ID를 유지하고 다음 assertion을 해당 계획의 HTTP/consumer 검증으로 연결한다. 전부 미실행이다.
+
+| 기존 ID/gate | 추가로 확인할 경계 |
+|---|---|
+| WR-DRAFT-01/02/07·WR-G01/02 | 필수 requestedOutputs/type/config·publish/null·기존 namespace·legacy full binding/정확 hash projection |
+| WR-DRAFT-03~06·WR-G01/07 | durable failure commit과 동기 오류·승인된 opaque Run 연결·UNKNOWN/foreign 미노출·원 admission 의미와 현재 trace 구분 |
+| WR-DRAFT-08/09·WR-G01~03 | 새 key+명시 FAILED parent·누락/null/다른 binding·UNKNOWN/취소 자동 retry 거절 |
+| WR-DRAFT-10~14·WR-G03~06 | private child 비노출·지원 Compute profile·최종 공개/취소·고정 ACK·실제 부재·수명 gate 유지 |
+| WR-G07/08 | 기존 삭제 registry/profile 중복 없음·별도 status 위임·service AND 사용자/current authority·Core relay/CSRF/timeout/trace/consumer |
+
+다음은 public/internal OpenAPI draft·정적 예제/위험 변이 검사다. integration의 exact 신규 파일 분류/gate를
+먼저 준비하고 Context preview·Core snapshot·Go 고정 연결 의존을 맞춘다. 이번은 새 YAML을 추가하지 않아
+기존 draft 분류를 변경하지 않으며 schema/JWT/authority/SQL/E2E 검증 성공을 주장하지 않는다.

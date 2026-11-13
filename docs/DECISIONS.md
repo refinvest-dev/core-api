@@ -1455,3 +1455,10 @@ Workflow 자체 Aggregate/진행 상태/engine을 만들지 않고 Record/Analys
 **채택 전**: [consumer·수용·전파](TRADING_REVIEW_WORKFLOW_CONTRACT_ACCEPTANCE_DRAFT.md)의 WR-G01~08을 충족한다.
 14개 후보 수용 assertion은 미실행이다. stable private ID/FK·Ledger-only latest/공통 graph·결과 수명·Analytics 실제 부재·
 authority·단일 writer/DB 인계와 명시 구현 범위 전환은 별도 조건이다. 현재 OpenAPI/계산/업무 코드·DB/환경 설정 변경은 없다.
+
+
+**HTTP/DTO 문서 후보 보완**: [registry/중계](TRADING_REVIEW_WORKFLOW_HTTP_DRAFT.md)·
+[request/response](TRADING_REVIEW_WORKFLOW_DTO_DRAFT.md)에 기존 삭제 5개 operation 재사용·재처리 4개 registry 후보,
+명시 outputs/retry parent·recorded failure Run 연결·원 receipt/current trace·별도 reprocessing 위임을 구체화했다.
+이는 여전히 미채택이며 새 OpenAPI YAML·fixture/schema 검사·runtime은 추가하지 않았다. exact literal/legacy/consumer·
+issuer/authority 및 기존 WR gate를 검토한 뒤 다음 machine contract 단계로 옮긴다.

@@ -104,5 +104,8 @@
 - Workflow 재처리 계약은 [ADR-079/WP01~04](docs/TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md)와
   [identity·child](docs/TRADING_REVIEW_REPROCESSING_IDENTITY_DRAFT.md)의 미채택 후보를 확인한다.
   요청 산출물·동기 실패와 durable Run·replay/retry·accepted Session 보존은 current wire와 구분한다.
+  [Workflow HTTP](docs/TRADING_REVIEW_WORKFLOW_HTTP_DRAFT.md)·[DTO 후보](docs/TRADING_REVIEW_WORKFLOW_DTO_DRAFT.md)의
+  기존 삭제 registry 재사용·재처리 profile/원 receipt/selector·retry/error Run 연결도 미채택 문서 모델이다.
+  신규 YAML/fixture·정적 schema·실제 HTTP/authority/consumer 지원으로 해석하지 않는다.
 - [WR-G01~08](docs/TRADING_REVIEW_WORKFLOW_CONTRACT_ACCEPTANCE_DRAFT.md)의 schema/consumer·legacy/hash·
   child/물리 Tx·수명/실제 부재·authority/운영 수용 전에는 후보를 활성화하지 않는다.
