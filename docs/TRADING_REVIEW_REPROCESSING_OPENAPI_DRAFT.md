@@ -116,6 +116,7 @@ private R2/A2·Compute child/Finding·고정 ACK/수명·Analytics actual absenc
 새 후보는 Context 정적 CI/impact preview → Context merge → 최신 Core snapshot PR 검토/반영 → 최신 sync 검사를 따른다.
 Core/Compute/Web snapshot 일치 전에 E2E를 진행하지 않는다. Go는 이 후보의 고정 commit 링크로 연결하며 snapshot 도입을 주장하지 않는다.
 
-다음은 schema 소비자/legacy mapping·정확 receipt/오류/profile 채택 조건과 남은 WF/WR gate를 통합 리뷰하는 단계다.
+후속 [consumer/legacy 통합 리뷰](TRADING_REVIEW_REPROCESSING_CONSUMER_REVIEW_DRAFT.md)에 소스 관측·원 receipt/불명 pin·
+Web/Core 오류·child projection·잔여 WF/WR gate를 연결했다. 다음은 identity/full binding·원 receipt/profile 상세화다.
 현재 request→versioned request의 outputs/default/명시 retry 변환을 추측하지 않는다. WR-DRAFT ID·기존 TR-ACC/WUC/WFP 계획을 재사용하며
 정적 테스트 수를 업무 수용 완료 수로 올리지 않는다. 정책 채택·첫 구현 범위는 별도로 확정한다.

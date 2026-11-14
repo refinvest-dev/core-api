@@ -220,3 +220,11 @@ Workflow의 [접수·산출물 후보](TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md
   결과를 공개하지 않는다. Raw-only는 기존 Ledger/Analysis를 보존한다.
 - 상세 제품 의미는 Trading Review 정본, Go 폴더/계층은 Go 저장소 문서를 따른다.
 - Core 중단 기간 직접 Go 검증과 Core 중계 검증을 구분한다. 이관은 서비스 경계 gate로 확인한다.
+
+
+## Workflow consumer 검토 연결
+
+[재처리 consumer/legacy 통합 리뷰](TRADING_REVIEW_REPROCESSING_CONSUMER_REVIEW_DRAFT.md)는 현재 계약 선언과 실제
+Core/Web/Go 소스 범위, 기존 generic idempotency·receipt/불명 source pin·오류/abort·child별 wire/hash 차이를 구분한다.
+별도 Workflow Aggregate나 Compute 임의 확장을 도입하지 않으며 identity/full binding·원 receipt/profile이 다음 상세화 범위다.
+source 부재 관측·snapshot/정적 CI를 실제 운영 데이터 부재·정책 채택·업무 수용으로 해석하지 않는다.
