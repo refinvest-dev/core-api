@@ -128,3 +128,11 @@ reason 차이 수렴·원 request audit·retry chain은 미채택 검토 사항�
 다른 key의 수렴에도 key별 request audit/receipt를 남기고 원 Run/기존 mapping을 덮지 않는 안이다.
 HTTP body 전체 bytes·현재 failure/headers까지 불변으로 저장하거나 현재FAILED에서 원410/422를 추정하지 않는다.
 기존 오류 Run 연결 schema는 유지한다. 새 No-Run receipt·새422·조회 endpoint·HTTP 상태를 추가하지 않으며 ①~③은 미채택이다.
+
+
+## ④ No-Run 거절은 별도 versioned 계약 후보
+
+[④ 후보](TRADING_REVIEW_REPROCESSING_SOURCE_PIN_POLICY_DRAFT.md)는 정상 legacy pin 부족에 대한 Run 없는 영속 거절을 제안한다.
+현재 접수422의 RecordedFailure/Run 참조 필수 조건은 유지한다. 이를 Run ID 생략/null/0·일반 ErrorResponse fallback으로 바꾸지 않는다.
+새 variant의 code/required/nullable·profile·receipt 수명/consumer는 미정이며 이번 YAML/DTO/schema 예제에는 추가하지 않는다.
+pin이 확정된 raw 부재/compatibility 실패의 WP02 경로를 전부 No-Run으로 바꾸지 않는다. ①~④는 미채택이다.

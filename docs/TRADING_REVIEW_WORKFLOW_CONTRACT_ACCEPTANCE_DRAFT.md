@@ -187,3 +187,11 @@ cross-key의 exact source/outputs/publish·reason audit·FAILED parent chain/단
 명시 retry 부모 mapping 보존·commit/응답 유실/UNKNOWN·현재 Guard/삭제·TTL/원 profile 불명 사례를 기존 WR-G01/02/07/08·
 WR-DRAFT-01~14에 연결한다. 모두 semantic 미실행이며 새 test ID/실행 결과는 추가하지 않는다.
 기존 Core resource_id는 원 receipt 전체의 증거가 아니다. ④ 불명 pin·receipt retention/legacy·actual authority/SQL/운영 인계는 열린다.
+
+
+## 순차 source pin 수용 연결
+
+[④ 후보](TRADING_REVIEW_REPROCESSING_SOURCE_PIN_POLICY_DRAFT.md)의 원인 분류·source/type/profile별 지원 범위·versioned No-Run 거절·
+same-key 원 decision/UNKNOWN·복구 후 새 key·현재 Guard/삭제/TTL/legacy 사례를 기존 WR-G01/02/07/08·WR-DRAFT-01~14에 연결한다.
+현재422의 recorded Run 필수 조건·hash/vector는 유지한다. 새 거절 variant/code·receipt 수명/삭제·consumer·운영 증적 전에는 활성화하지 않는다.
+새 test ID/semantic 실행은 추가하지 않는다. 다음은 ①~④의 채택/보류/수정 결정표와 필요한 versioned 계약/전파 계획이다.

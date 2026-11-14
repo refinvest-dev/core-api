@@ -156,3 +156,11 @@ Reprocessing snapshot 누락으로 exit1이었다. snapshot 적용·새 E2E는 �
 이 새 문서도 Context merge 뒤 자동 snapshot PR의 최신 source SHA·변경 범위를 확인한다. 열린 PR이 최신 Context로 갱신될 수 있다.
 snapshot apply/merge·E2E를 대신 수행하지 않는다. E2E 전 sync, Web 포함 시 -IncludeWeb을 요구한다.
 이번은 Markdown/source 리뷰다. source inventory·본문/링크 검사는 schema consumer round-trip·hash vector·HTTP/JWT·DB/장애·운영 수용 검증이 아니다.
+
+
+## WCR-R03 후속 — 불명 pin의 versioned 거절 후보
+
+[④ source pin 후보](TRADING_REVIEW_REPROCESSING_SOURCE_PIN_POLICY_DRAFT.md)는 위 계약 공백을 source/type/profile별 지원 제한과
+versioned No-Run 영속 거절로 다루는 우선안을 제시한다. 현재422의 Run 참조를 빼는 fallback이 아니며 schema/code를 아직 정하지 않는다.
+정상 legacy 형식의 한계·일시 장애·저장 손상·원 receipt UNKNOWN을 구분하고 fake pin/원 source rewrite·무한503을 허용하지 않는다.
+복구 후 새 key의 정상 admission과 원 거절 replay·현재 Guard/수명/삭제·legacy/consumer gate는 별도로 검증해야 한다. ①~④는 미채택이다.
