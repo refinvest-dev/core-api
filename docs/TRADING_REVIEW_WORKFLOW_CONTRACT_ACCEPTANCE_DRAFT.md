@@ -179,3 +179,11 @@ WR-G02의 구체적인 후보이지 gate를 닫는 증거가 아니다. 일곱 �
 same-key의 publish omitted/true·source Analysis omitted/null과 forbidden null·reason/parent 변경을 구분하고,
 cross-key의 exact source/outputs/publish·reason audit·FAILED parent chain/단일 successor·profile/Guard·UNKNOWN을 검증해야 한다.
 새 semantic ID/실행 결과는 추가하지 않는다. ① 채택 권고 표도 여전히 미채택이며 byte/profile·실제 이력과 활성화는 별도다.
+
+
+## 순차 receipt 수용 연결
+
+[③ 후보](TRADING_REVIEW_REPROCESSING_RECEIPT_POLICY_DRAFT.md)의 원202/현재FAILED·기록410/422 replay·key별 수렴/audit·
+명시 retry 부모 mapping 보존·commit/응답 유실/UNKNOWN·현재 Guard/삭제·TTL/원 profile 불명 사례를 기존 WR-G01/02/07/08·
+WR-DRAFT-01~14에 연결한다. 모두 semantic 미실행이며 새 test ID/실행 결과는 추가하지 않는다.
+기존 Core resource_id는 원 receipt 전체의 증거가 아니다. ④ 불명 pin·receipt retention/legacy·actual authority/SQL/운영 인계는 열린다.

@@ -1494,3 +1494,10 @@ Web 오류 필드/401/abort와 child별 Target/strict extra/지원 surface 차�
 [② binding](TRADING_REVIEW_REPROCESSING_BINDING_POLICY_DRAFT.md)은 same-key request 의미와 cross-key execution 수렴을 나누고,
 reason/명시 retry parent는 요청/audit에 보존하되 실행 equality와 별도 권한/parent chain 검증을 제안한다.
 아직 미채택이며 ADR-079·기존 정본 식/schema/hash/vector/namespace·runtime은 유지한다. ③ receipt·④ source pin·구현은 후속이다.
+
+
+**순차 논의 ③ 후보**: [원 admission receipt](TRADING_REVIEW_REPROCESSING_RECEIPT_POLICY_DRAFT.md)는 최초 접수 decision·현재 Run·
+HTTP projection을 구분한다. 원202 뒤 실행FAILED를422로 바꾸지 않고, 기록410/422는 원 의미/Run을 유지하며 현재 Guard가 우선한다.
+다른 key의 수렴은 request별 binding/reason/시각·receipt를 구분하고 동일FAILED의 검증된 원 admission 종류 계승을 제안한다.
+원 Tx/commit 확인·UNKNOWN 원 fence 복구·최소24h와 logical mapping/삭제 보존 경계를 명시한다. 무기한 body/새TTL 보관은 채택하지 않는다.
+①~③·ADR-079는 미채택이다. schema/hash/vector/namespace·Compute/runtime을 수정하거나 No-Run/새422·구현 전환을 승인하지 않는다.

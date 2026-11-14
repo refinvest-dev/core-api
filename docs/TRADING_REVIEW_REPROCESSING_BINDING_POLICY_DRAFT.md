@@ -114,3 +114,11 @@ Record가 Analysis 내부 테이블/Domain을 참조하거나 Workflow가 자체
 reason 차이 수렴과 audit 보존, retry chain, profile 간 동등성은 명시 채택·실제 소비자/legacy 검증이 필요하다.
 ①/②의 정확 채택 범위를 확인한 뒤 ③ 원 admission receipt, 이어서 ④ source pin 불명 처리를 논의한다.
 현재 410/422와 FAILED Run 연결을 No-Run receipt·새422로 바꾸지 않는다. 업무 구현 전환도 별도다.
+
+
+## 순차 논의 ③ — request별 receipt
+
+[원 admission receipt 후보](TRADING_REVIEW_REPROCESSING_RECEIPT_POLICY_DRAFT.md)는 다른 key가 같은 Run에 수렴해도
+각 request의 binding/reason/접수 시각과 원 admission decision을 구분하도록 제안한다. 원 Run.reason·부모 key mapping을 변경하지 않는다.
+원202/현재FAILED·기록410/422·새 trace·현재 Guard·UNKNOWN/TTL 복구와 실패 Run 수렴의 원 종류 계승을 검토한다.
+①~③은 미채택이며 source pin 불명·No-Run/새422 거절은 ④의 후속이다.
