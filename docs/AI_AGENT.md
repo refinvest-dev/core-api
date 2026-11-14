@@ -116,9 +116,9 @@
   child/물리 Tx·수명/실제 부재·authority/운영 수용 전에는 후보를 활성화하지 않는다.
 
 
-## 재처리 순차 정책 통합 검토
+## 재처리 채택 정책과 후속 설계
 
-[①~④ 결정표](docs/TRADING_REVIEW_REPROCESSING_POLICY_DECISIONS_DRAFT.md)를 최신 검토 진입점으로 읽는다.
-owner/hash·request/execution binding·원 receipt·legacy pin 부족의 채택 권고/보완/보류와 원 source를 연결한다.
-No-Run의 request intent/facts·variant/receipt 수명·실패 수렴 의미는 함께 결정한다. ①~④는 아직 미채택이다.
-문서 merge/CI를 정책 동의·활성화·업무 구현 승인으로 해석하지 않으며 정확 계약/consumer·legacy·sync/실행 수용을 별도로 확인한다.
+[ADR-080 채택 정책](docs/TRADING_REVIEW_REPROCESSING_POLICY.md)을 최신 정본으로 읽는다. ①~④ 동작 원칙은2026-11-15 명시 채택됐다.
+정확 schema/code·request/receipt 비교·수명/삭제/key 재사용·profile/legacy 적용은 관련 구현 전에 문서 설계로 확정한다.
+물리 table/Port·함수/파일은 확정한 의미/Tx·의존 경계 안에서 상세 설계·구현 검증으로 구체화한다.
+채택 범위에 재승인을 요구하지 않는다. 과거 DRAFT의 미채택 표기는 이번 명시 채택을 취소하지 않으며 미결 상세·다른 ADR·업무 구현/활성화는 별도다.

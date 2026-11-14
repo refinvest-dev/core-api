@@ -1,5 +1,12 @@
 # 재처리 replay·retry·child 실행 identity 후보 (DRAFT)
 
+> **2026-11-15 채택 반영:** ①~④의 동작 원칙은 [채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md)·ADR-080을 따른다.
+> 아래는 채택 전 검토 기록과 미확정 상세다. 과거 미채택/권고 문구가 이번 명시 채택을 취소하지 않는다.
+> 정확 schema/code·receipt 수명/삭제·profile/legacy 적용은 관련 구현 전에 문서로 확정하며, 현재 wire/runtime은 유지한다.
+
+## 채택 전 검토 기록과 남은 상세
+
+
 상태: **ADR-079·WP03/04 미채택**. [접수/산출물](TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md)과 함께 검토한다.
 현재 Compute create/grant/result/ACK·hash bytes·ID를 변경하지 않는다. semantic equality와 새 wire 정의를 구분한다.
 

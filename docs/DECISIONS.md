@@ -1439,6 +1439,9 @@ typed wrapper/nullable classification·7role·membership/allocation/direct page�
 
 ## ADR-079 — Trading Review Workflow Reprocessing Contract Candidate (DRAFT)
 
+**후속 채택 범위(2026-11-15)**: ①~④ 동작 원칙은 ADR-080·[채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md)이 우선한다.
+아래는 그 전의 후보/검토 경과 및 아직 미확정인 상세다. ADR-079 전체·다른 DRAFT를 일괄 채택한 것은 아니다.
+
 **상태**: 검토 초안·미채택·runtime 미구현. ADR-072와 현재 public/Compute OpenAPI·hash/vector·상태/ACK를 유지한다.
 문서 merge/CI는 정책 채택·Go 업무 구현 전환이 아니다. ADR-071/073~078·삭제 control/private 수명도 승인하지 않는다.
 
@@ -1516,3 +1519,19 @@ owner/업무 필드·비교 목적·원 admission/요청별 audit·원인 분류
 신규 hash bytes/legacy 적용·reason 차이 수렴·동일FAILED 원 종류 계승·versioned No-Run은 각각 evidence/consumer·retention 조건이 필요하다.
 request intent와 검증 facts를 나눠 No-Run에 불명 실행 pin/logical key를 요구하지 않도록 보완한다. 정확 schema/비교 규칙은 후속이다.
 ①~④·ADR-079는 미채택이며 canonical wire/hash/vector·SQL/runtime은 유지한다. 결정→계약/예제→consumer/legacy→snapshot/sync→명시 구현/수용의 순서를 따른다.
+
+
+## ADR-080 — Trading Review Reprocessing Policy Adoption
+
+**상태**: 설계 정책 채택(2026-11-15). 사용자의 명시적인 권고안 채택 승인에 근거한다.
+정본은 [채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md), 범위/시점 요약은 [결정표](TRADING_REVIEW_REPROCESSING_POLICY_DECISIONS_DRAFT.md)다.
+
+- ① ownerId Member·일곱 field·신규 문자열/null/canonical bytes를 채택하되 원 legacy key/ID/hash·중복 방지는 보존한다.
+- ② same-key 원 요청/intent/facts와 cross-key execution·reason 감사/권한·명시 FAILED parent/chain/effect 검증을 구분한다.
+- ③ 원 admission 종류·현재 View/trace/Guard·key별 audit를 구분하고 동일FAILED 수렴은 검증된 원 접수 종류를 계승한다.
+- ④ 정상 legacy pin 부족은 versioned422·Run 없는 영속 거절로 설계한다. 현재422 Run ID 생략 fallback·fake pin·No-Run retry parent는 금지한다.
+
+정확 variant/code·request/receipt 비교·수명/삭제/key 재사용·profile/legacy 적용은 관련 업무 구현 전 문서 설계로 확정한다.
+업무 경계/Tx·잠금·오류/복구 의미를 먼저 정하고 물리 SQL/제약·Port·내부 함수/파일은 상세 설계와 구현 검증으로 구체화한다.
+ADR-079 전체·child/수명/다른 DRAFT·schema/code/TTL 수치·기존 bytes rewrite·업무 구현/활성화·운영 인계를 승인하지 않는다.
+현재 OpenAPI/hash 식/vector·SQL/runtime은 변경하지 않는다. 소유 계약 정합화·consumer/legacy·snapshot/sync·실제 수용은 별도다.

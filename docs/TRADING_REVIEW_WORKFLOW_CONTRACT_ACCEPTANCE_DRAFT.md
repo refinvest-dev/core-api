@@ -1,5 +1,9 @@
 # Workflow 계약 후보 consumer·수용·전파 (DRAFT)
 
+> 2026-11-15: ①~④ 동작 원칙은 [ADR-080 채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md)을 따른다.
+> 아래 DRAFT 수용 계획/과거 상태·WR/WF gate의 실제 실행은 별도이며 채택만으로 완료 처리하지 않는다.
+
+
 상태: **ADR-079·WP01~04 미채택**, 2026-11-12. [접수](TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md)·
 [identity/child](TRADING_REVIEW_REPROCESSING_IDENTITY_DRAFT.md)의 adoption gate다. 아래 계획은 전부 미실행이다.
 고정 source 읽기·Markdown 검사는 실제 HTTP/SQL·계산/장애/삭제 수용 증거가 아니다.
