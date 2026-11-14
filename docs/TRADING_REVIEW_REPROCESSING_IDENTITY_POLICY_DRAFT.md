@@ -1,5 +1,9 @@
 # Reprocessing identity/hash 정책 논의안 (DRAFT)
 
+현재 통합 권고는 [①~④ 결정표](TRADING_REVIEW_REPROCESSING_POLICY_DECISIONS_DRAFT.md)를 먼저 읽는다.
+개별 문서의 순차 후속 안내보다 통합 표의 채택/수정/보류 권고·적용 조건을 우선 확인하되, 모두 미채택 상태다.
+
+
 상태: **순차 논의 ①의 권장 후보·미채택**, 2026-11-14. [consumer 리뷰](TRADING_REVIEW_REPROCESSING_CONSUMER_REVIEW_DRAFT.md) 뒤의
 identity/hash 의미와 신규 profile 표현을 구체화한다. 일반적인 다음 작업 요청을 정책 동의로 간주하지 않는다.
 ADR-079/WP01~04·WR gate는 계속 DRAFT다. 이 문서는 기존 hash bytes·namespace·OpenAPI·Compute·schema/vector·runtime을 변경하지 않는다.

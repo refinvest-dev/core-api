@@ -1509,3 +1509,10 @@ HTTP projection을 구분한다. 원202 뒤 실행FAILED를422로 바꾸지 않�
 Run 없는 원 request/거절 evidence·현재 Guard·같은 key 원 decision/UNKNOWN 복구·복구 후 새 key와 receipt 수명/삭제 조건을 정리했다.
 정확 variant/code/schema·consumer/retention·복구/운영 수용은 미정이다. ①~④·ADR-079는 미채택이며 YAML/hash/vector/SQL/runtime을 변경하지 않는다.
 후속은 채택/보류/수정 범위의 통합 결정표와 versioned 계약/전파 계획이며 업무 구현 전환은 별도다.
+
+
+**순차 정책 통합 권고**: [①~④ 결정표](TRADING_REVIEW_REPROCESSING_POLICY_DECISIONS_DRAFT.md)에서 설계 채택 권고·조건부 보완·보류를 나눴다.
+owner/업무 필드·비교 목적·원 admission/요청별 audit·원인 분류는 설계 채택을 권고하되 아직 실제 채택으로 기록하지 않는다.
+신규 hash bytes/legacy 적용·reason 차이 수렴·동일FAILED 원 종류 계승·versioned No-Run은 각각 evidence/consumer·retention 조건이 필요하다.
+request intent와 검증 facts를 나눠 No-Run에 불명 실행 pin/logical key를 요구하지 않도록 보완한다. 정확 schema/비교 규칙은 후속이다.
+①~④·ADR-079는 미채택이며 canonical wire/hash/vector·SQL/runtime은 유지한다. 결정→계약/예제→consumer/legacy→snapshot/sync→명시 구현/수용의 순서를 따른다.
