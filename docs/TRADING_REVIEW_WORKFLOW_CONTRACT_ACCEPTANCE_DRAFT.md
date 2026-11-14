@@ -207,3 +207,11 @@ same-key 원 decision/UNKNOWN·복구 후 새 key·현재 Guard/삭제/TTL/legac
 No-Run의 request intent/facts·variant/receipt 수명·동일FAILED 수렴 의미는 함께 결정해야 한다. 원 source/profile·hash/receipt·현재 Guard를 보존한다.
 기존 WR/WF gate·WR-DRAFT-01~14·TR-ACC/WUC/WFP를 유지하며 새 test ID/실행 결과를 추가하지 않는다.
 실제 정책 결정→소유 계약/예제·vector→consumer/legacy→snapshot/sync→명시 구현/수용 순서이며 문서/CI가 채택/활성화 증거는 아니다.
+
+
+## Admission 상세/수명 선택 수용
+
+[상세안](TRADING_REVIEW_REPROCESSING_ADMISSION_CONTRACT_DRAFT.md)의 No-Run422/RecordedFailure code 분리·Run 참조·추가필드·
+다른 status/operation의 누출 금지와 원 descriptor/default·정상 legacy/기술오류 분류·원 decision/UNKNOWN을 기존 WR-DRAFT-01~14에 연결한다.
+새 schema 사례/거절 변이는 static transport 검증이며 semantic assertion·hash·HTTP/SQL/경합/Compute·E2E가 아니다.
+[수명안](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION_DRAFT.md)의 수치/Book 매핑·삭제/재사용은 명시 선택 대기이며 활성화 조건으로 남는다.

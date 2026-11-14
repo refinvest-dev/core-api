@@ -88,7 +88,9 @@ page total/목록의 실제 동일 snapshot은 DB/Reader 검증 대상이다. sc
 일반 ErrorResponseV2Draft는 code/message/traceId/retryable·기존 safe details만 허용하고 Run ID를 허용하지 않는다.
 접수 410의 확정 source 실패, 422의 확정 business rejection만 RecordedFailureV2Draft와
 `reprocessingRunId`를 허용한다. WP02 실패 Run·원 receipt/mapping의 **commit 확인 + 현재 owner 접근 승인**이 전제다.
-접수 422는 recorded failure 참조가 필수이며 business rejection을 미기록 오류로 바꾸는 fallback은 없다.
+접수422는 RecordedFailure와 No-Run 전용 branch를 code로 구분한다. RecordedFailure의 Run 참조 필수 조건은 유지한다.
+No-Run은 REPROCESSING_SOURCE_PIN_UNAVAILABLE/UnpinnedSourceRejectionV2Draft만 허용하며 영속 거절 commit·현재 접근 확인이 전제다.
+기록 실패 code에서 Run 참조를 빼는 fallback이나 일반 error 완화는 없다.
 이는 metadata/shape일 뿐 schema가 commit·소유권을 증명하지 않는다. malformed/foreign/auth/UNKNOWN·Query/취소 오류에는 Run ID가 없다.
 
 `ADMISSION_OUTCOME_UNCONFIRMED` 503은 같은 key/fence 복구 의미이며 ID를 추측하거나 새 Run을 허용하지 않는다.
@@ -104,7 +106,8 @@ TTL/skew/issuer rotation·Member 차단/commit 선형화·Worker 권위는 미�
 ## 실제 정적 검증과 미실행
 
 명령: `python -B scripts/verify-trading-review-reprocessing-draft.py`.
-8개 operation·152개 operation별 schema 예제 검증·177개 schema 사례·24개 거절 변이를 통과했다.
+초기 후보에서8개 operation·152개 operation별 schema 예제 검증·177개 schema 사례·24개 거절 변이를 통과했다.
+ADR-080 후속 No-Run branch의 새 결과는 아래 상세 계약 연결/로컬 검토 기록을 따른다.
 예제 검증 수는 공유 예제를 public/internal의 여러 응답에서 다시 검증한 횟수이며 서로 다른 실행 수가 아니다.
 Version/digest/hash는 명시적인 synthetic 값이다. 알려진 0/빈 차이도 synthetic 사실이며 unknown 값을 보정하는 서버 정책이 아니다.
 WP02 source/version 실패·private 진행·3종 완료/취소·원202 replay·빈 Page 등은 완전한 transport 예제다.
@@ -127,3 +130,18 @@ Core/Compute/Web snapshot 일치 전에 E2E를 진행하지 않는다. Go는 이
 Web/Core 오류·child projection·잔여 WF/WR gate를 연결했다. 다음은 identity/full binding·원 receipt/profile 상세화다.
 현재 request→versioned request의 outputs/default/명시 retry 변환을 추측하지 않는다. WR-DRAFT ID·기존 TR-ACC/WUC/WFP 계획을 재사용하며
 정적 테스트 수를 업무 수용 완료 수로 올리지 않는다. 정책 채택·첫 구현 범위는 별도로 확정한다.
+
+
+## ADR-080 후속 admission 계약
+
+[상세안](TRADING_REVIEW_REPROCESSING_ADMISSION_CONTRACT_DRAFT.md)은 admit422에 한정한 No-Run 전용 branch·4필드/code·
+원 request descriptor/facts·단계별 분류·same-key/현재 Guard/UNKNOWN을 연결한다. public/internal의 branch가 같은 의미다.
+기존 RecordedFailure code에서 Run ID 생략·No-Run에 Run/receipt ID 추가·다른 status/Query/cancel에서 No-Run을 허용하는 변이를 거절한다.
+수명은 [별도 선택 대기](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION_DRAFT.md)다. schema가30일/Book 수명·commit·원 source 부족을 증명하지 않는다.
+wire profile은 DRAFT/runtime false이며 ADR-080 원칙 채택과 구분한다. 새 operation/namespace·hash/Compute·active API는 변경하지 않는다.
+
+
+후속 실제 정적 결과: 8개 operation·154개 operation별 schema 예제 검증·275개 schema 사례·29개 거절 변이 통과.
+예제 횟수는 공유 예제의 public/internal 반복 검증을 포함하며 서로 다른 업무 실행 수가 아니다.
+검사기는 전체 resolved schema 내용으로 메타 검증을 bounded cache하며 원본 mutation과 다른 내용을 같은 cache key로 취급하지 않는다.
+이 결과는 수명 선택·source 분류·commit/권위·HTTP/SQL·새 semantic/E2E 수용 증거가 아니다.

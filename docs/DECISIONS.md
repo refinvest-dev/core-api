@@ -1535,3 +1535,10 @@ request intent와 검증 facts를 나눠 No-Run에 불명 실행 pin/logical key
 업무 경계/Tx·잠금·오류/복구 의미를 먼저 정하고 물리 SQL/제약·Port·내부 함수/파일은 상세 설계와 구현 검증으로 구체화한다.
 ADR-079 전체·child/수명/다른 DRAFT·schema/code/TTL 수치·기존 bytes rewrite·업무 구현/활성화·운영 인계를 승인하지 않는다.
 현재 OpenAPI/hash 식/vector·SQL/runtime은 변경하지 않는다. 소유 계약 정합화·consumer/legacy·snapshot/sync·실제 수용은 별도다.
+
+
+**ADR-080 구현 전 계약 후속(2026-11-15)**: [admission 상세안](TRADING_REVIEW_REPROCESSING_ADMISSION_CONTRACT_DRAFT.md)은
+원 request descriptor/검증 facts·known-key replay 우선·source 분류 순서와 admit422의 No-Run 전용 code/schema를 구체화했다.
+public/internal DRAFT에 REPROCESSING_SOURCE_PIN_UNAVAILABLE/UnpinnedSourceRejectionV2Draft를 추가하며 RecordedFailure code/Run 참조는 유지한다.
+이는 새 원칙 채택이 아닌 후속 wire 설계/정적 검사다. active wire·hash/vector·SQL/runtime을 변경하지 않는다.
+[Receipt 수명안](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION_DRAFT.md)의 상세30일/최소 매핑 Book 수명은 선택 대기이며 답변 부재를 승인으로 취급하지 않는다.
