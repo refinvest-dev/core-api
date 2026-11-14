@@ -143,3 +143,11 @@ HTTP body 전체 bytes·현재 failure/headers까지 불변으로 저장하거�
 현재 접수422의 RecordedFailure/Run 참조 필수 조건은 유지한다. 이를 Run ID 생략/null/0·일반 ErrorResponse fallback으로 바꾸지 않는다.
 새 variant의 code/required/nullable·profile·receipt 수명/consumer는 미정이며 이번 YAML/DTO/schema 예제에는 추가하지 않는다.
 pin이 확정된 raw 부재/compatibility 실패의 WP02 경로를 전부 No-Run으로 바꾸지 않는다. ①~④는 미채택이다.
+
+
+## 현재 admission 상세 설계 연결
+
+[Request/receipt 상세안](TRADING_REVIEW_REPROCESSING_ADMISSION_CONTRACT_DRAFT.md)이 ADR-080 후속의 최신 비교/응답 설계다.
+No-Run은 UnpinnedSourceRejectionV2Draft의 code/message/traceId/retryable(false)만 허용하고 REPROCESSING_SOURCE_PIN_UNAVAILABLE을 사용한다.
+Run/receipt ID·details는 없으며 RecordedFailure의 기존 code/Run 필수 조건과 code 집합을 나눈다. source/profile/commit 증명은 runtime gate다.
+원 intent·확인 facts·완전 실행 binding·원 decision을 구분하고 수명/삭제 수치는 별도 선택을 기다린다. 새 public request 필드나 binding hash는 추가하지 않는다.

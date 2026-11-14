@@ -244,3 +244,8 @@ profile metadata는 임의 root field/새 namespace가 아니며 기존 key/rece
 정확 schema/code·request/receipt 비교·수명/삭제/key 재사용·profile/legacy 적용은 관련 구현 전에 문서 설계로 확정한다.
 물리 table/Port·함수/파일은 확정한 의미/Tx·의존 경계 안에서 상세 설계·구현 검증으로 구체화한다.
 채택 범위에 재승인을 요구하지 않는다. 과거 DRAFT의 미채택 표기는 이번 명시 채택을 취소하지 않으며 미결 상세·다른 ADR·업무 구현/활성화는 별도다.
+
+
+ADR-080 후속 [request/receipt·No-Run 상세안](TRADING_REVIEW_REPROCESSING_ADMISSION_CONTRACT_DRAFT.md)은
+원 descriptor/facts·No-Run422 전용 code/schema와 기존 Run 참조 실패를 구분한다. [수명안](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION_DRAFT.md)의
+30일/Book 매핑 수치는 명시 선택 대기다. 기존 원칙 채택을 취소/재승인하지 않으며 수명/consumer·실제 수용 전 업무 구현/활성화로 확대하지 않는다.
