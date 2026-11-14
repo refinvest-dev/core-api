@@ -90,3 +90,11 @@ versioned 오류/문서화된 header 등 consumer 계약의 채택 조건이다.
 202에 FAILED Run을 반환하는 대안은 가능하지만 active API §8 변경·상태 표/Then/consumer 전환을 함께 승인해야 한다.
 
 실패 Run은 불변 audit이며 조회가 재실행을 유발하지 않는다. retry는 [WP03](TRADING_REVIEW_REPROCESSING_IDENTITY_DRAFT.md#wp03--replay와-explicit-retry)을 따른다.
+
+
+## 원 admission 의미 후속
+
+[③ receipt 논의안](TRADING_REVIEW_REPROCESSING_RECEIPT_POLICY_DRAFT.md)은 WP02/03의 원 접수 종류·현재 상태·key별 이력을 구체화한다.
+정상/기록 rejection의 같은 Tx·commit 확인 후 응답·UNKNOWN 원 fence 복구, mapping TTL 경과/삭제 시 비노출을 구분한다.
+다른 key의 동일FAILED 수렴에서 그 Run의 검증된 원 admission 종류를 계승하는 미채택 권장안을 포함한다.
+이 문서/①~③의 병합을 정책 채택·schema 변경·업무 구현·보관 예외 승인으로 해석하지 않는다.

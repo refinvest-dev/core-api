@@ -114,3 +114,13 @@
   기존 byte 호환성·정책 채택으로 보지 않는다. profile별로 중복 방지 경계를 나눠 legacy 충돌을 우회하지 않는다.
 - [WR-G01~08](docs/TRADING_REVIEW_WORKFLOW_CONTRACT_ACCEPTANCE_DRAFT.md)의 schema/consumer·legacy/hash·
   child/물리 Tx·수명/실제 부재·authority/운영 수용 전에는 후보를 활성화하지 않는다.
+
+
+후속 [② request/execution binding 후보](docs/TRADING_REVIEW_REPROCESSING_BINDING_POLICY_DRAFT.md)는 same-key 요청 비교와
+cross-key 실행 수렴·reason/audit·명시 retry parent 자격을 구분한다. [① 범위 보완](docs/TRADING_REVIEW_REPROCESSING_IDENTITY_POLICY_DRAFT.md)은
+Config 적용/default·기존 재처리 key 이력 유무를 명확히 한 채택 권고이며 여전히 미채택이다. 새 hash/schema/정책 활성화로 해석하지 않는다.
+
+
+후속 [③ 원 admission receipt 후보](docs/TRADING_REVIEW_REPROCESSING_RECEIPT_POLICY_DRAFT.md)는 최초 decision과 현재 Run/trace·
+key별 수렴 audit·기록410/422·UNKNOWN 원 fence·TTL/삭제 보존 경계를 구분한다. ①~③은 계속 미채택이다.
+후속은 정확 채택 범위 확인과 ④ 불명 source pin 거절/기록 논의이며 schema/hash·보관 예외·업무 구현 전환이 아니다.

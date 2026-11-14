@@ -171,3 +171,19 @@ WR-G02의 구체적인 후보이지 gate를 닫는 증거가 아니다. 일곱 �
 필요한 vector/consumer byte 일치·충돌/복구 수용을 기존 계획에 연결한다. 새 semantic test ID를 추가하지 않는다.
 ② binding에서 retry parent/요청 의도와 계산 동일성을 구분하고 ③ receipt·④ source pin 불명은 이후 논의한다.
 기존 OpenAPI의 schema/예제 CI·Markdown 검사는 이 새 recipe의 byte 호환성·정책 채택·업무 실행 증거가 아니다.
+
+
+## 순차 binding 수용 연결
+
+[② 후보](TRADING_REVIEW_REPROCESSING_BINDING_POLICY_DRAFT.md)의 검토 사례를 기존 WR-G02·WR-DRAFT-01~14에 연결한다.
+same-key의 publish omitted/true·source Analysis omitted/null과 forbidden null·reason/parent 변경을 구분하고,
+cross-key의 exact source/outputs/publish·reason audit·FAILED parent chain/단일 successor·profile/Guard·UNKNOWN을 검증해야 한다.
+새 semantic ID/실행 결과는 추가하지 않는다. ① 채택 권고 표도 여전히 미채택이며 byte/profile·실제 이력과 활성화는 별도다.
+
+
+## 순차 receipt 수용 연결
+
+[③ 후보](TRADING_REVIEW_REPROCESSING_RECEIPT_POLICY_DRAFT.md)의 원202/현재FAILED·기록410/422 replay·key별 수렴/audit·
+명시 retry 부모 mapping 보존·commit/응답 유실/UNKNOWN·현재 Guard/삭제·TTL/원 profile 불명 사례를 기존 WR-G01/02/07/08·
+WR-DRAFT-01~14에 연결한다. 모두 semantic 미실행이며 새 test ID/실행 결과는 추가하지 않는다.
+기존 Core resource_id는 원 receipt 전체의 증거가 아니다. ④ 불명 pin·receipt retention/legacy·actual authority/SQL/운영 인계는 열린다.
