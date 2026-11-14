@@ -1,7 +1,13 @@
 # Reprocessing request/execution binding 논의안 (DRAFT)
 
-현재 통합 권고는 [①~④ 결정표](TRADING_REVIEW_REPROCESSING_POLICY_DECISIONS_DRAFT.md)를 먼저 읽는다.
-개별 문서의 순차 후속 안내보다 통합 표의 채택/수정/보류 권고·적용 조건을 우선 확인하되, 모두 미채택 상태다.
+> **2026-11-15 채택 반영:** ①~④의 동작 원칙은 [채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md)·ADR-080을 따른다.
+> 아래는 채택 전 검토 기록과 미확정 상세다. 과거 미채택/권고 문구가 이번 명시 채택을 취소하지 않는다.
+> 정확 schema/code·receipt 수명/삭제·profile/legacy 적용은 관련 구현 전에 문서로 확정하며, 현재 wire/runtime은 유지한다.
+
+## 채택 전 검토 기록과 남은 상세
+
+
+기존 통합 결정표는 채택 정책으로 연결하는 현재 결정표로 갱신됐다.
 
 
 상태: **순차 논의 ②의 권장 후보·미채택**, 2026-11-14. [① identity/hash](TRADING_REVIEW_REPROCESSING_IDENTITY_POLICY_DRAFT.md)의

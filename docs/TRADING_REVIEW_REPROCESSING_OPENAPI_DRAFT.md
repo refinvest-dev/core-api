@@ -1,5 +1,12 @@
 # Reprocessing public/internal OpenAPI 후보
 
+> **2026-11-15 채택 반영:** ①~④의 동작 원칙은 [채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md)·ADR-080을 따른다.
+> 아래는 채택 전 검토 기록과 미확정 상세다. 과거 미채택/권고 문구가 이번 명시 채택을 취소하지 않는다.
+> 정확 schema/code·receipt 수명/삭제·profile/legacy 적용은 관련 구현 전에 문서로 확정하며, 현재 wire/runtime은 유지한다.
+
+## 채택 전 검토 기록과 남은 상세
+
+
 상태: **ADR-079/WP01~04 DRAFT·미채택**. [HTTP registry](TRADING_REVIEW_WORKFLOW_HTTP_DRAFT.md)와
 [DTO 후보](TRADING_REVIEW_WORKFLOW_DTO_DRAFT.md)를 기계가 검사할 수 있는 검토 자료로 표현한다.
 현재 `core-api.yaml`·Compute 계약·canonical hash/vector·업무 runtime·DB/운영 설정은 유지한다.

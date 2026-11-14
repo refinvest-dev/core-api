@@ -1,5 +1,12 @@
 # Workflow 재처리 접수·산출물 계약 후보 (DRAFT)
 
+> **2026-11-15 채택 반영:** ①~④의 동작 원칙은 [채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md)·ADR-080을 따른다.
+> 아래는 채택 전 검토 기록과 미확정 상세다. 과거 미채택/권고 문구가 이번 명시 채택을 취소하지 않는다.
+> 정확 schema/code·receipt 수명/삭제·profile/legacy 적용은 관련 구현 전에 문서로 확정하며, 현재 wire/runtime은 유지한다.
+
+## 채택 전 검토 기록과 남은 상세
+
+
 상태: **ADR-079 검토 초안·미채택·runtime 미구현**. Go Workflow WF-G01/02의 제품 계약 공백을 다룬다.
 문서 merge/CI는 정책 채택이나 구현 전환이 아니다. 현재 OpenAPI·hash/vector·상태/ACK는 유지한다.
 

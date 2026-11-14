@@ -1,5 +1,12 @@
 # Reprocessing consumer·legacy·receipt/profile 통합 리뷰 (DRAFT)
 
+> **2026-11-15 채택 반영:** ①~④의 동작 원칙은 [채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md)·ADR-080을 따른다.
+> 아래는 채택 전 검토 기록과 미확정 상세다. 과거 미채택/권고 문구가 이번 명시 채택을 취소하지 않는다.
+> 정확 schema/code·receipt 수명/삭제·profile/legacy 적용은 관련 구현 전에 문서로 확정하며, 현재 wire/runtime은 유지한다.
+
+## 채택 전 검토 기록과 남은 상세
+
+
 상태: **ADR-079/WP01~04 미채택**, 2026-11-14. [OpenAPI 후보](TRADING_REVIEW_REPROCESSING_OPENAPI_DRAFT.md) 뒤의
 소비자/기존 데이터 검토다. 제품 의미·wire·hash·DB를 변경하지 않으며 정책 채택이나 업무 구현 전환을 선언하지 않는다.
 [수용 gate](TRADING_REVIEW_WORKFLOW_CONTRACT_ACCEPTANCE_DRAFT.md)의 WR-G01~08·WR-DRAFT-01~14를 그대로 사용한다.
