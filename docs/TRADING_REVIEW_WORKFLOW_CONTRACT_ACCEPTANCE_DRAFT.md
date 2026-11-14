@@ -161,3 +161,13 @@ canonical rebuild/Finding-only·private source·참조 VO 내부 확장 필드�
 다음은 identity/full binding·원 admission receipt·불명 source 처리 profile 상세화다.
 정확 owner/nullable/hash projection·namespace/alias/보관/복구·지원 legacy 범위를 먼저 검토하고 필요한 vector/채택 범위를 정한다.
 이번은 새 JSON schema·vector·DDL/SQL·HTTP/DB 수용이나 구현 전환이 아니다.
+
+
+## 순차 identity/hash 논의 연결
+
+[① 논의안](TRADING_REVIEW_REPROCESSING_IDENTITY_POLICY_DRAFT.md)에 ownerId/ownerScope·신규 profile 표현과 기존 byte/key 보존 조건을 적었다.
+WR-G02의 구체적인 후보이지 gate를 닫는 증거가 아니다. 일곱 필드의 문자열/null/정렬 recipe를 서술했으며 실제 hash/vector는 만들지 않았다.
+원 key/profile·namespace/alias·성공 uniqueness와 supported source의 실제 이력을 확인하고 정확 채택 범위를 기록한 뒤
+필요한 vector/consumer byte 일치·충돌/복구 수용을 기존 계획에 연결한다. 새 semantic test ID를 추가하지 않는다.
+② binding에서 retry parent/요청 의도와 계산 동일성을 구분하고 ③ receipt·④ source pin 불명은 이후 논의한다.
+기존 OpenAPI의 schema/예제 CI·Markdown 검사는 이 새 recipe의 byte 호환성·정책 채택·업무 실행 증거가 아니다.

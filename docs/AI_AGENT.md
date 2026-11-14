@@ -110,5 +110,7 @@
   synthetic schema 검사를 hash oracle·실제 HTTP/authority/consumer 지원·업무 구현 전환으로 해석하지 않는다.
   [Consumer/legacy 리뷰](docs/TRADING_REVIEW_REPROCESSING_CONSUMER_REVIEW_DRAFT.md)의 source 관측·실제 데이터 미조사·
   불명 pin/receipt·Web 중계·child별 projection 차이를 읽는다. 저장 데이터/legacy 의도를 추정해 자동 변환하지 않는다.
+  후속 [① identity/hash 논의안](docs/TRADING_REVIEW_REPROCESSING_IDENTITY_POLICY_DRAFT.md)의 ownerId/ownerScope·신규 표현을
+  기존 byte 호환성·정책 채택으로 보지 않는다. profile별로 중복 방지 경계를 나눠 legacy 충돌을 우회하지 않는다.
 - [WR-G01~08](docs/TRADING_REVIEW_WORKFLOW_CONTRACT_ACCEPTANCE_DRAFT.md)의 schema/consumer·legacy/hash·
   child/물리 Tx·수명/실제 부재·authority/운영 수용 전에는 후보를 활성화하지 않는다.

@@ -228,3 +228,11 @@ Workflow의 [접수·산출물 후보](TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md
 Core/Web/Go 소스 범위, 기존 generic idempotency·receipt/불명 source pin·오류/abort·child별 wire/hash 차이를 구분한다.
 별도 Workflow Aggregate나 Compute 임의 확장을 도입하지 않으며 identity/full binding·원 receipt/profile이 다음 상세화 범위다.
 source 부재 관측·snapshot/정적 CI를 실제 운영 데이터 부재·정책 채택·업무 수용으로 해석하지 않는다.
+
+
+## Identity/hash 순차 정책 논의
+
+[① 논의안](TRADING_REVIEW_REPROCESSING_IDENTITY_POLICY_DRAFT.md)은 검증된 Member owner·ownerId 표기와 신규 profile의
+ID 문자열/명시 NULL·일곱 업무 필드·canonical bytes를 제안한다. ownerScope의 기존 byte 의미와 같다고 증명하지 않는다.
+profile metadata는 임의 root field/새 namespace가 아니며 기존 key/receipt·cross-profile dedup을 보존해야 한다.
+아직 미채택인 논의 문서로 hash 함수/vector·wire·runtime을 생성하지 않는다. ② binding·③ receipt·④ source pin은 후속이다.
