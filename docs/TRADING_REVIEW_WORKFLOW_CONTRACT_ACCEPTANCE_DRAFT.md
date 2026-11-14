@@ -195,3 +195,11 @@ WR-DRAFT-01~14에 연결한다. 모두 semantic 미실행이며 새 test ID/실�
 same-key 원 decision/UNKNOWN·복구 후 새 key·현재 Guard/삭제/TTL/legacy 사례를 기존 WR-G01/02/07/08·WR-DRAFT-01~14에 연결한다.
 현재422의 recorded Run 필수 조건·hash/vector는 유지한다. 새 거절 variant/code·receipt 수명/삭제·consumer·운영 증적 전에는 활성화하지 않는다.
 새 test ID/semantic 실행은 추가하지 않는다. 다음은 ①~④의 채택/보류/수정 결정표와 필요한 versioned 계약/전파 계획이다.
+
+
+## 순차 정책 통합 결정표
+
+[①~④ 결정표](TRADING_REVIEW_REPROCESSING_POLICY_DECISIONS_DRAFT.md)는 채택 권고·조건부 보완·보류와 적용 증적을 구분한다.
+No-Run의 request intent/facts·variant/receipt 수명·동일FAILED 수렴 의미는 함께 결정해야 한다. 원 source/profile·hash/receipt·현재 Guard를 보존한다.
+기존 WR/WF gate·WR-DRAFT-01~14·TR-ACC/WUC/WFP를 유지하며 새 test ID/실행 결과를 추가하지 않는다.
+실제 정책 결정→소유 계약/예제·vector→consumer/legacy→snapshot/sync→명시 구현/수용 순서이며 문서/CI가 채택/활성화 증거는 아니다.

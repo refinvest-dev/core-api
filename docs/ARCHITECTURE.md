@@ -238,16 +238,9 @@ profile metadata는 임의 root field/새 namespace가 아니며 기존 key/rece
 아직 미채택인 논의 문서로 hash 함수/vector·wire·runtime을 생성하지 않는다. ② binding·③ receipt·④ source pin은 후속이다.
 
 
-후속 [② request/execution binding 후보](TRADING_REVIEW_REPROCESSING_BINDING_POLICY_DRAFT.md)는 same-key 요청 비교와
-cross-key 실행 수렴·reason/audit·명시 retry parent 자격을 구분한다. [① 범위 보완](TRADING_REVIEW_REPROCESSING_IDENTITY_POLICY_DRAFT.md)은
-Config 적용/default·기존 재처리 key 이력 유무를 명확히 한 채택 권고이며 여전히 미채택이다. 새 hash/schema/정책 활성화로 해석하지 않는다.
+## 재처리 순차 정책 통합 검토
 
-
-후속 [③ 원 admission receipt 후보](TRADING_REVIEW_REPROCESSING_RECEIPT_POLICY_DRAFT.md)는 최초 decision과 현재 Run/trace·
-key별 수렴 audit·기록410/422·UNKNOWN 원 fence·TTL/삭제 보존 경계를 구분한다. ①~③은 계속 미채택이다.
-후속은 정확 채택 범위 확인과 ④ 불명 source pin 거절/기록 논의이며 schema/hash·보관 예외·업무 구현 전환이 아니다.
-
-
-후속 [④ 정상 legacy source pin 후보](TRADING_REVIEW_REPROCESSING_SOURCE_PIN_POLICY_DRAFT.md)는 기술 장애/손상·원 receipt 불명과
-정상 형식의 한계를 구분한다. 지원 source 제한·versioned No-Run 거절은 미채택 권장안이며 현재422/Run·hash/schema를 수정하지 않는다.
-①~④의 통합 채택/보류/수정 결정과 variant/consumer·수명/삭제·실행 증적·업무 구현 전환은 별도다.
+[①~④ 결정표](TRADING_REVIEW_REPROCESSING_POLICY_DECISIONS_DRAFT.md)를 최신 검토 진입점으로 읽는다.
+owner/hash·request/execution binding·원 receipt·legacy pin 부족의 채택 권고/보완/보류와 원 source를 연결한다.
+No-Run의 request intent/facts·variant/receipt 수명·실패 수렴 의미는 함께 결정한다. ①~④는 아직 미채택이다.
+문서 merge/CI를 정책 동의·활성화·업무 구현 승인으로 해석하지 않으며 정확 계약/consumer·legacy·sync/실행 수용을 별도로 확인한다.

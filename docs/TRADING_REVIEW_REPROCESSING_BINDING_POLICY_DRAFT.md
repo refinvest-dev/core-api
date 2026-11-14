@@ -1,5 +1,9 @@
 # Reprocessing request/execution binding 논의안 (DRAFT)
 
+현재 통합 권고는 [①~④ 결정표](TRADING_REVIEW_REPROCESSING_POLICY_DECISIONS_DRAFT.md)를 먼저 읽는다.
+개별 문서의 순차 후속 안내보다 통합 표의 채택/수정/보류 권고·적용 조건을 우선 확인하되, 모두 미채택 상태다.
+
+
 상태: **순차 논의 ②의 권장 후보·미채택**, 2026-11-14. [① identity/hash](TRADING_REVIEW_REPROCESSING_IDENTITY_POLICY_DRAFT.md)의
 채택 권고 범위를 전제로 검토하되 ①의 명시 채택·byte 호환성·구현 승인을 대신하지 않는다.
 ADR-079/WP01~04는 DRAFT다. 현재 wire·hash/vector·상태·Compute·DB/runtime을 변경하지 않는다.
