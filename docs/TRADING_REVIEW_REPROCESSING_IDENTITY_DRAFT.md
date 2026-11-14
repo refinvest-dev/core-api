@@ -96,3 +96,11 @@ prepare는 PERSISTED가 아니다. ACK는 commit 뒤 전송하며 실패로 재�
 [ADR-073 결과 수명](TRADING_REPROCESSING_RESULT_LIFECYCLE_DRAFT.md)은 여전히 미채택이다.
 새 custody/무기한 private 보관/TTL 연장은 허용하지 않는다. Analytics 실제 부재는
 [Normalization 전용 삭제](TRADING_RUNTIME_DELETION.md)로 증명할 수 없으며 WF-G05/06이 열린다.
+
+
+## 순차 논의 ② — full binding의 비교 목적
+
+[Request/execution binding 후보](TRADING_REVIEW_REPROCESSING_BINDING_POLICY_DRAFT.md)는 위 full binding을
+원 request의 비교와 다른 key의 실행 수렴/명시 retry 자격으로 나눈다. reason·retry parent는 원 request/audit에서 보존하며,
+execution equality에서는 제외하고 권한·exact FAILED parent/chain·effect 해소는 별도 필수 검증하는 권장안이다.
+위 '같은 full binding' 표현을 모든 필드의 일괄 동일 비교로 구현하지 않는다. ①/② 모두 명시 채택·byte/consumer 검증은 별도다.

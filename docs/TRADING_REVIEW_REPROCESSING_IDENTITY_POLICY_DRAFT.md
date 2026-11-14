@@ -47,7 +47,7 @@ Versioning의 업무 필드 범위는 유지하면서 owner 표기·scalar/nulla
 | sourceRevisionContentHash | 정본이 해당 source 내용 identity로 정한 검증된 lowercase SHA-256. raw artifact/inputSetHash로 대체하지 않음 |
 | sourceAnalysisResultHash | 허용된 요청에 source Analysis가 명시됐으면 해당 검증 결과 hash, 지정되지 않았으면 JSON null |
 | targetVersionSetHash | 부모 요청에 pin한 전체 Target의 정확 hash. Normalization/Analytics child hash를 복사하지 않음 |
-| analysisConfigHash | 해당 입력의 완전한 Config를 정본 규칙으로 고정한 hash, config가 없으면 JSON null |
+| analysisConfigHash | Config가 적용되면 완전한 resolved Config의 정본 hash, 적용되지 않을 때만 JSON null. 허용된 default도 고정하며 생략을 없음으로 추정하지 않음 |
 | reprocessingType | 현재 다섯 type 중 정확한 값. enum을 늘리거나 unsupported Compute를 허용하지 않음 |
 
 두 optional hash key도 항상 존재하고 값으로 null을 사용한다는 안이다. 미확인 hash를 null/0/빈 문자열로 보정하는 규칙은 아니다.
@@ -100,7 +100,9 @@ profile은 사용한 field/scalar/null/정렬 recipe를 식별할 metadata로 �
 
 숫자→문자열이나 생략→null을 바꾸면 같은 계산이 다른 digest를 가질 수 있다. 따라서 profile별 unique 공간을 나누고
 새 계산을 무조건 시작하는 것은 허용하지 않는다. 기존 logical 성공/active·원 public mapping과의 관계를 확인해야 한다.
-검증된 byte/semantic 동등성에 한해서 명시 alias/이관 경계를 설계하고, 동등성을 증명할 수 없는 범위는 새 profile 활성화를 보류한다.
+기존 재처리 key 이력이 실제로 있다면 검증된 byte/semantic 동등성에 한해서 명시 alias/이관 경계를 설계한다.
+이력이 없음을 확인한 범위는 최초 규칙으로 시작할 수 있으며 불필요한 alias/이관 체계를 만들지 않는다.
+이력/동등성을 확인할 수 없는 범위는 새 profile 활성화를 보류한다. 기존 Revision/Analysis/Compute hash 보존은 별도 필수다.
 같은 digest라는 이유만으로 의미가 불명인 다른 profile을 동일시하지도 않는다.
 
 조사한 source에서 Reprocessing 구현이 없었던 범위와 실제 DB/외부 consumer 부재는 다르다.
@@ -123,3 +125,21 @@ profile literal/보관·alias/이관과 구현/consumer 증거는 여전히 확�
 이름만 정한 새 hash 함수·package·schema/vector·golden digest를 만들지 않는다. recipe가 채택되고 legacy/child 경계가 정해진 뒤
 필요한 positive/negative vector와 Go/다른 소비자 byte 일치·원 key 보존/충돌·현재 Guard 수용을 기존 WR-G02/WR-DRAFT에 연결한다.
 WR-DRAFT-01~14·새 HTTP/SQL/동시성/UNKNOWN/Compute/운영 수용은 미실행이며 이번 문서 merge/CI로 완료 처리하지 않는다.
+
+
+## ① 채택 권고 범위와 적용 조건
+
+다시 검토한 권장안은 의미/신규 표현을 설계 정책으로 채택하고 실제 활성화는 증적 뒤 진행하는 것이다.
+이 표는 **채택 제안의 범위**이며 일반적인 다음 작업 요청이나 문서 merge를 명시 동의로 바꾸지 않는다. 현재 상태는 계속 미채택이다.
+
+| 구분 | 권고 범위 |
+|---|---|
+| 설계로 채택 제안 | 검증 Member ownerId·일곱 업무 필드·신규 ID 문자열/명시 null·canonical bytes·원 key/receipt 보존·중복 방지 |
+| 표현의 한계 | hash root 표현을 정하는 안이며 전체 API/Go typed ID를 문자열로 바꾸는 결정이 아님 |
+| Config 명확화 | 적용되는 Config는 허용된 default까지 고정한 hash. 요청 생략을 null로 바꾸지 않음. versioned Analysis 포함 후보는 완전 Config 필수 |
+| 적용 전 확인 | 기존 재처리 logical key/원 bytes의 실제 이력·consumer 일치·golden vector·기존 active/success/namespace 관계 |
+| 이력이 없는 범위 | 확인 후 최초 규칙 적용 가능. 기존 Revision/Compute의 hash가 있다는 사실만으로 재처리 key alias가 필요하다고 보지 않음 |
+| 이번에 미결 | profile literal/보관·필요시 alias, ② binding·③ 원 receipt·④ source pin·첫 업무 구현 범위 |
+
+후속 [② request/execution binding](TRADING_REVIEW_REPROCESSING_BINDING_POLICY_DRAFT.md)은 같은 public key의 요청 비교와
+다른 key의 실행 수렴·retry 자격 비교를 나눈 미채택 후보다. 같은 logical hash만으로 모든 요청을 동일시하지 않는다.

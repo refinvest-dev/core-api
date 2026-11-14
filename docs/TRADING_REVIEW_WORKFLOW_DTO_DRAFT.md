@@ -112,3 +112,11 @@ backup due·safe failure/retryable·request/start/update/complete 시각을 현�
 request/query/response의 후속 구조 예제는 [OpenAPI 후보](TRADING_REVIEW_REPROCESSING_OPENAPI_DRAFT.md)에서 required/nullable/oneOf/refs·긍정/위험 변이로 검사한다.
 JSON 문법 확인은 schema·JWT/authority·해시·DB/UNKNOWN·Compute child·consumer 호환성의 검증이 아니다.
 legacy outputs/default·request/receipt profile migration·정확 literal·운영 budget/수명·서비스 write 선형화는 WR-G01~08 조건으로 남긴다.
+
+
+## 순차 binding 논의 연결
+
+[② 후보](TRADING_REVIEW_REPROCESSING_BINDING_POLICY_DRAFT.md)는 이 문서의 omitted/null/default 의미를 원 profile에서 고정하고,
+같은 key의 reason/parent 변경과 다른 key의 execution 수렴을 구분한다. 새 schema·binding hash를 추가하지 않는다.
+Analysis 포함 후보의 Config 생략은 default로 보정하지 않는다. 기존 profile의 합법적인 default는 원 resolved pin이 필요하다.
+reason 차이 수렴·원 request audit·retry chain은 미채택 검토 사항이며 error receipt/code는 ③에서 논의한다.

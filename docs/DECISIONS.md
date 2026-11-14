@@ -1487,3 +1487,10 @@ Web 오류 필드/401/abort와 child별 Target/strict extra/지원 surface 차�
 명시 동의/byte 호환성 증거가 없는 미채택 후보이며 기존 Versioning/Persistence·key/hash/vector를 수정하지 않는다.
 새 profile이 기존 성공/active·public namespace 충돌을 우회하지 못하게 하고 검증된 alias/이관 전 활성화하지 않는다.
 ② request/execution binding·③ 원 receipt·④ source pin 불명은 별도 순차 논의다. Run 없는 거절/새422나 첫 구현 범위도 채택하지 않는다.
+
+
+**순차 논의 ① 범위 보완·② 후보**: [①](TRADING_REVIEW_REPROCESSING_IDENTITY_POLICY_DRAFT.md)의 채택 권고/활성화 조건을
+분리했다. Config 적용 시 resolved hash·실제 재처리 key 이력 유무와 기존 Compute/Revision hash 보존을 구분한다.
+[② binding](TRADING_REVIEW_REPROCESSING_BINDING_POLICY_DRAFT.md)은 same-key request 의미와 cross-key execution 수렴을 나누고,
+reason/명시 retry parent는 요청/audit에 보존하되 실행 equality와 별도 권한/parent chain 검증을 제안한다.
+아직 미채택이며 ADR-079·기존 정본 식/schema/hash/vector/namespace·runtime은 유지한다. ③ receipt·④ source pin·구현은 후속이다.

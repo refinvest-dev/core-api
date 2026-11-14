@@ -236,3 +236,8 @@ source 부재 관측·snapshot/정적 CI를 실제 운영 데이터 부재·정�
 ID 문자열/명시 NULL·일곱 업무 필드·canonical bytes를 제안한다. ownerScope의 기존 byte 의미와 같다고 증명하지 않는다.
 profile metadata는 임의 root field/새 namespace가 아니며 기존 key/receipt·cross-profile dedup을 보존해야 한다.
 아직 미채택인 논의 문서로 hash 함수/vector·wire·runtime을 생성하지 않는다. ② binding·③ receipt·④ source pin은 후속이다.
+
+
+후속 [② request/execution binding 후보](TRADING_REVIEW_REPROCESSING_BINDING_POLICY_DRAFT.md)는 same-key 요청 비교와
+cross-key 실행 수렴·reason/audit·명시 retry parent 자격을 구분한다. [① 범위 보완](TRADING_REVIEW_REPROCESSING_IDENTITY_POLICY_DRAFT.md)은
+Config 적용/default·기존 재처리 key 이력 유무를 명확히 한 채택 권고이며 여전히 미채택이다. 새 hash/schema/정책 활성화로 해석하지 않는다.
