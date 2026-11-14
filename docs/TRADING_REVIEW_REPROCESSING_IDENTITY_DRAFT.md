@@ -3,6 +3,9 @@
 상태: **ADR-079·WP03/04 미채택**. [접수/산출물](TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md)과 함께 검토한다.
 현재 Compute create/grant/result/ACK·hash bytes·ID를 변경하지 않는다. semantic equality와 새 wire 정의를 구분한다.
 
+후속 [순차 논의 ① identity/hash](TRADING_REVIEW_REPROCESSING_IDENTITY_POLICY_DRAFT.md)는 Member owner/ownerId·신규 문자열/null·
+profile/legacy 보존의 구체적 권장 후보다. 아래 기존 의미를 대체하거나 숫자/생략과의 byte 동등성·WR-G02 완료를 주장하지 않는다.
+
 ## WP03 — replay와 explicit retry
 
 | identity | 소유/의미 | 보존할 값 |

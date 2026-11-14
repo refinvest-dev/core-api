@@ -1479,3 +1479,11 @@ Web 오류 필드/401/abort와 child별 Target/strict extra/지원 surface 차�
 운영 데이터 부재나 legacy history를 추정하지 않으며 source pin 불명 요청을 fake Run/미기록 business422로 처리하지 않는다.
 부모 full binding과 child별 projection/hash 동등성·ownerId/ownerScope·원 receipt와 불명 source profile을 다음 검토 단위로 권장한다.
 이번은 Markdown/source 검토이며 schema/hash/vector·runtime·DB를 바꾸거나 WP/WR gate·정책을 채택하지 않는다.
+
+
+**순차 정책 논의 ①**: [Identity/hash 논의안](TRADING_REVIEW_REPROCESSING_IDENTITY_POLICY_DRAFT.md)에
+검증 Member를 ownerId로 표현하고 ownerScope는 내부 개념으로 두는 우선안, 신규 profile의 ID 10진 문자열·명시 null·
+일곱 업무 필드/canonical bytes·profile을 root 밖 metadata로 식별하는 안을 구체화했다.
+명시 동의/byte 호환성 증거가 없는 미채택 후보이며 기존 Versioning/Persistence·key/hash/vector를 수정하지 않는다.
+새 profile이 기존 성공/active·public namespace 충돌을 우회하지 못하게 하고 검증된 alias/이관 전 활성화하지 않는다.
+② request/execution binding·③ 원 receipt·④ source pin 불명은 별도 순차 논의다. Run 없는 거절/새422나 첫 구현 범위도 채택하지 않는다.
