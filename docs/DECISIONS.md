@@ -1501,3 +1501,11 @@ HTTP projection을 구분한다. 원202 뒤 실행FAILED를422로 바꾸지 않�
 다른 key의 수렴은 request별 binding/reason/시각·receipt를 구분하고 동일FAILED의 검증된 원 admission 종류 계승을 제안한다.
 원 Tx/commit 확인·UNKNOWN 원 fence 복구·최소24h와 logical mapping/삭제 보존 경계를 명시한다. 무기한 body/새TTL 보관은 채택하지 않는다.
 ①~③·ADR-079는 미채택이다. schema/hash/vector/namespace·Compute/runtime을 수정하거나 No-Run/새422·구현 전환을 승인하지 않는다.
+
+
+**순차 논의 ④ 후보**: [정상 legacy source pin 부족](TRADING_REVIEW_REPROCESSING_SOURCE_PIN_POLICY_DRAFT.md)을
+일시 장애·저장 손상·원 receipt/commit UNKNOWN과 구분했다. 지원 source 제한과 별도 versioned No-Run 영속 거절을 우선 제안한다.
+현재422의 recorded FAILED Run 참조를 생략하거나 fake pin/logical key·최신 default·불변 source rewrite·영구503으로 우회하지 않는다.
+Run 없는 원 request/거절 evidence·현재 Guard·같은 key 원 decision/UNKNOWN 복구·복구 후 새 key와 receipt 수명/삭제 조건을 정리했다.
+정확 variant/code/schema·consumer/retention·복구/운영 수용은 미정이다. ①~④·ADR-079는 미채택이며 YAML/hash/vector/SQL/runtime을 변경하지 않는다.
+후속은 채택/보류/수정 범위의 통합 결정표와 versioned 계약/전파 계획이며 업무 구현 전환은 별도다.

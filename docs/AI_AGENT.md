@@ -124,3 +124,8 @@ Config 적용/default·기존 재처리 key 이력 유무를 명확히 한 채�
 후속 [③ 원 admission receipt 후보](docs/TRADING_REVIEW_REPROCESSING_RECEIPT_POLICY_DRAFT.md)는 최초 decision과 현재 Run/trace·
 key별 수렴 audit·기록410/422·UNKNOWN 원 fence·TTL/삭제 보존 경계를 구분한다. ①~③은 계속 미채택이다.
 후속은 정확 채택 범위 확인과 ④ 불명 source pin 거절/기록 논의이며 schema/hash·보관 예외·업무 구현 전환이 아니다.
+
+
+후속 [④ 정상 legacy source pin 후보](docs/TRADING_REVIEW_REPROCESSING_SOURCE_PIN_POLICY_DRAFT.md)는 기술 장애/손상·원 receipt 불명과
+정상 형식의 한계를 구분한다. 지원 source 제한·versioned No-Run 거절은 미채택 권장안이며 현재422/Run·hash/schema를 수정하지 않는다.
+①~④의 통합 채택/보류/수정 결정과 variant/consumer·수명/삭제·실행 증적·업무 구현 전환은 별도다.

@@ -122,3 +122,11 @@ receipt·audit의 구체 보관 범위/삭제 후 최소 marker·멤버/Book pur
 
 새 schema·error literal·receipt digest/vector·SQL/HTTP/Worker 구현이나 semantic 실행 증거는 추가하지 않았다.
 ①~③의 정확 채택 범위를 확인하고 다음은 ④ 정상 legacy source의 pin 불명 처리와 안전한 거절/기록 계약을 논의한다.
+
+
+## 후속 ④ 정상 legacy source pin 부족
+
+[④ 후보](TRADING_REVIEW_REPROCESSING_SOURCE_PIN_POLICY_DRAFT.md)는 정상 source의 필요한 pin 부족과 기술 장애/손상·원 receipt 불명을 분리한다.
+지원 source 제한과 versioned No-Run 영속 거절을 우선 검토하되 현재422·Run 모델을 바꾸지 않는다.
+이 경우의 request binding/거절 evidence는 실행 가능한 logical key/pin이 아니며, Run 없는 receipt의 수명/삭제는 별도 조건이다.
+원202/기록실패·UNKNOWN을 새 No-Run 거절에 재결속하지 않는다. ①~④는 미채택이며 정확 variant/code·consumer·retention은 후속이다.
