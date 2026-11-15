@@ -47,7 +47,7 @@ schema 구현 시 closed 하위 object를 해당 profile에서 정의한다. 불
 | JSON request body |1,048,576 bytes, 수신 JSON octet 기준 | 초과413, business receipt/Run 생성 없음 |
 | JSON nesting | root object를 depth1로 셌을 때16 | 초과400 |
 | resource ID 문자열 |256 UTF-8 bytes | 초과400. opaque legacy ID를 숫자로 강제 변환하지 않음 |
-| version ID·implementationDigest·동적 instrument key | 각256 UTF-8 bytes | 초과400. exact 값 trim/case-fold 금지 |
+| version ID·implementationDigest·동적 instrument key | 각256 UTF-8 bytes 후보. VersionIdentifier는 기존 maxLength200도 동시 적용 | 초과400 후보. 기존 문자 한도 완화·exact 값 trim/case-fold 금지 |
 | reviewTimezone |128 UTF-8 bytes | 초과400. 유효 IANA/버전 검증은 별도 |
 | instrumentTermsVersionByInstrument | 최대4096 entries | 초과400. body 상한도 동시에 적용 |
 | MetricMinimums/FindingMinimums의 integer |1~2,147,483,647 | 범위 밖400. 실제 정책상 허용 최소/Config 의미 검증 별도 |
@@ -79,3 +79,10 @@ body는 정확 octet 수를 검증하고 Content-Length만 신뢰하지 않는�
 기존 WR/WF/WUC/WFP/TR-ACC를 재사용한다. 새 public Scenario ID/Run 상태를 만들지 않는다.
 현재는 후보 문서만 작성했다. OpenAPI/hash/vector/DB/runtime 변경·새 codec/SQL·실제 inventory/semantic/HTTP/부하/E2E 실행은 없다.
 권고 수치/closed nested/시각 비교는 미채택이다. ADR-080/081의 확정 사항과 혼동하거나 후보 merge/CI를 정책 채택으로 해석하지 않는다.
+
+## 요청 예산 조합 검토 후속
+
+[실측 구조/byte 검토](TRADING_REVIEW_REPROCESSING_REQUEST_BUDGET_REVIEW_DRAFT.md)에 기존8개 예제·큰 terms payload2개·본문/깊이 경계를 기록했다.
+terms4096/key·value256bytes 후보를 만족해도 전체1MiB를 넘을 수 있다. 모든 필드 최대 조합 허용 보장이 아니라 독립 상한의 교집합으로 검토한다.
+VersionIdentifier의 기존200자와 byte 후보를 구분한다. int32는 저장 타입 때문에 별도 제품 제한을 두지 않는 방향을 권고하되 현재 정책은 미채택이다.
+새 수치/형식/400/413을 서버에 적용하거나 hash/legacy를 바꾸지 않았다.

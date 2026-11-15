@@ -1570,3 +1570,9 @@ ADR-080/081의 확정 namespace/receipt/수명을 유지하고 shared schema·�
 상태는 계속 **DRAFT·미채택**이다. [리뷰](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_REVIEW_DRAFT.md)는 실제 hash/DTO 관측에 따라 원 동일 시점 표기 동등화 권고를 수정한다.
 구조/무손실/오류 분리 원칙은 채택 권고, 신규 시각은 UTC Z·0 fraction 생략/비영6자리 고정 입력으로 수정 권고하며1MiB 등 정확 수치와 int32 상한은 채택 보류를 권고한다.
 기존 hash/vector/legacy·ADR-080/081을 유지하고, 후보 문서 merge/기술 관측을 채택·업무 구현/활성화로 보지 않는다.
+
+### ADR-082 요청 예산 검토 후속(2026-11-16)
+
+상태는 **DRAFT·미채택**으로 유지한다. [조합/경계 검토](TRADING_REVIEW_REPROCESSING_REQUEST_BUDGET_REVIEW_DRAFT.md)에 synthetic request/schema·JSON byte/depth 관측을 기록했다.
+기존 VersionIdentifier200자와 byte 후보는 함께 적용하고 terms4096·길이 상한·body1MiB는 교집합으로 검토한다. 수치는 아직 확정하지 않는다.
+저장 타입만을 이유로 int32 제품 상한을 추가하지 않는 방향을 권고한다. 명시 채택 결정 전 policy/schema/runtime 상태를 바꾸지 않는다.

@@ -144,3 +144,9 @@ Go 저장 구현에서 추가 값을 버리거나 새 상한/400/413을 먼저 �
 [채택 범위 검토](docs/TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_REVIEW_DRAFT.md)를 후보와 함께 읽는다.
 현재 Config hash/DTO는 같은 instant 표기까지 동일하게 보존하지 않는다. 신규 canonical 입력 표기 수정 권고와 수치 보류를 확인하고 Go에서 자동 정규화/int32 제한을 먼저 적용하지 않는다.
 ADR-082는 미채택이다. ADR-080/081과 legacy hash/key·원 receipt를 유지하며 source/국소 관측·실제 업무/운영 수용을 구분한다.
+
+## ADR-082 요청 예산 검토
+
+[예산 조합/경계](docs/TRADING_REVIEW_REPROCESSING_REQUEST_BUDGET_REVIEW_DRAFT.md)를 읽는다.
+VersionIdentifier200자·UTF8 bytes·map 개수·wire body 예산은 서로 다르며 모두 충족해야 한다. synthetic schema/byte 관측을 실제 HTTP/운영 수용으로 보지 않는다.
+정책 채택은 명시 결정 대기이고 정확 수치는 후보다. 현재 schema/hash/legacy·ADR-080/081을 유지한다.
