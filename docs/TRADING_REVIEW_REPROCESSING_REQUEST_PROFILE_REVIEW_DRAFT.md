@@ -87,3 +87,9 @@ result timestamp 직렬화 규칙을 Config 입력 문자열에 일괄 적용하
 먼저 위 채택/수정/보류 범위를 결정한다. 그 뒤 versioned profile 식별·local closed schema·canonical 입력 vectors·registry/consumer를 일관되게 설계한다.
 수치·운영 inventory 및 정확 Run/control FK·권한/DB history는 별도 gate다. DB lock 기술 실험은 채택과 독립적으로 계획할 수 있으나 업무/운영 활성화 증거는 아니다.
 현재 새 YAML/code/DB·새 golden fixture·HTTP/SQL/경합/복원/부하/E2E는 추가·실행하지 않았다. local hash/DTO 관측을 그 수용 성공으로 확대하지 않는다.
+
+## 논의 정리·요청 예산 후속
+
+[요청 예산 검토](TRADING_REVIEW_REPROCESSING_REQUEST_BUDGET_REVIEW_DRAFT.md)는 기존200자 제한·UTF8 bytes·terms/body/depth 후보의 조합을 실제 synthetic 측정으로 보완한다.
+int32에 대해서는 단순 수치 보류를 넘어 **저장 타입 때문에 별도 제품 상한을 도입하지 않는 방향**을 권고한다. 기존 JSON/hash 안전 범위·양수 조건은 유지한다.
+구조/검증 원칙·수정 시각 입력의 채택 여부는 명시 결정 대기이며, 정확 크기 수치는 여전히 후보다. 측정/문서 merge를 채택으로 해석하지 않는다.
