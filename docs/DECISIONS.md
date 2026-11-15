@@ -1556,3 +1556,11 @@ public/internal DRAFT에 REPROCESSING_SOURCE_PIN_UNAVAILABLE/UnpinnedSourceRejec
 단순 replay/조회/일반retry로 clock을 연장하거나 miss/expiry만으로 live/UNKNOWN을 해제하지 않는다. 기존 삭제/backup restore control을 따른다.
 기간/역할/삭제/key 차단은 확정이므로 재승인하지 않는다. 최소 자료/보안 표현·physical Store/전환/CAS·실제 cleanup/부재/경합/restore·운영 활성화는 별도 검증한다.
 API schema/hash/vector·SQL/TTL/cleanup·업무 서버는 이번에 변경하지 않았다. ADR-080과 타 미결 정책/업무 구현 범위는 별도다.
+
+## ADR-082 — Reprocessing Request Validation Profile
+
+**상태: DRAFT·미채택(2026-11-15).** 정본 후보는 [request 검증·동등성·상한](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_DRAFT.md)이다.
+중첩 추가 필드 허용·시각 동등성·정확 요청 예산을 재처리 전용 versioned profile에서 정리하는 권고다.
+closed nested·UTC microsecond 비교·1MiB/depth16 등 수치·400/413 적용은 아직 결정/활성화하지 않았다.
+ADR-080/081의 확정 namespace/receipt/수명을 유지하고 shared schema·기존 hash/legacy를 자동 rewrite하지 않는다.
+채택 전 producer/consumer·profile/version·inventory/hash/실제 수용이 필요하며 문서 merge/CI는 채택 증거가 아니다.
