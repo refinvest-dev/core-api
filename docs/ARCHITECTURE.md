@@ -260,3 +260,9 @@ ADR-080 후속 [request/receipt·No-Run 상세안](TRADING_REVIEW_REPROCESSING_A
 [ADR-082 후보](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_DRAFT.md)는 nested 허용·시각 비교·byte/depth/cardinality 예산을 정리한다.
 재처리 전용 versioned 계약의 권고이며 **미채택**이다. 현재 OpenAPI/공유 schema·runtime·ADR-080/081의 확정 원칙/기간은 유지한다.
 Go 저장 구현에서 추가 값을 버리거나 새 상한/400/413을 먼저 적용하지 않는다. profile/consumer·hash/inventory·실제 bounded 수용을 먼저 확인한다.
+
+## ADR-082 채택 전 source 리뷰
+
+[채택 범위 검토](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_REVIEW_DRAFT.md)를 후보와 함께 읽는다.
+현재 Config hash/DTO는 같은 instant 표기까지 동일하게 보존하지 않는다. 신규 canonical 입력 표기 수정 권고와 수치 보류를 확인하고 Go에서 자동 정규화/int32 제한을 먼저 적용하지 않는다.
+ADR-082는 미채택이다. ADR-080/081과 legacy hash/key·원 receipt를 유지하며 source/국소 관측·실제 업무/운영 수용을 구분한다.

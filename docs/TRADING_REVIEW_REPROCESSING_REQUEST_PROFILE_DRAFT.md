@@ -27,26 +27,16 @@ Go가 현재 허용 nested 값을 버리거나 shared schema만을 근거로 새
 legacy/기존 profile의 원 descriptor는 lossless하게 보존한다. 새 closed profile을 과거 원장 decoding·replay에 소급 적용하거나 값을 삭제하지 않는다.
 schema 구현 시 closed 하위 object를 해당 profile에서 정의한다. 불완전한 allOf/additionalProperties 조합으로 기존 필수 속성까지 거절하지 않도록 resolved-schema 사례를 검증한다.
 
-## 권고2 — 시각은 정확한 UTC microsecond 시점으로 비교
+## 수정 권고2 — 신규 profile의 canonical 시각 입력
 
-AnalysisPeriod의 두 시각에 대해 새 profile의 후보는 다음과 같다.
+**2026-11-16 검토 수정:** [채택 범위 검토](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_REVIEW_DRAFT.md)의 실제 hash/DTO 관측이 종전의 동일 시점 표기 동등화 권고보다 우선한다.
+현재 Config hash는 시각 문자열을 보존하고 DTO는 소수초 표기를 바꿀 수 있다. offset/소수초 표기를 바꾼 동일 instant를 곧바로 같은 Config hash/execution으로 판정하지 않는다.
 
-- 명시 offset이 있는 RFC3339(T/Z 대문자 또는 숫자 offset), 유효 year0001~9999, 소수초0~6자리를 허용한다. leap second·알 수 없는 offset `-00:00`은 허용하지 않는다.
-- canonical 비교는 동일 UTC microsecond 시점이다. offset/소수초 표기가 달라도 시점이 같으면 동등하다. 소수초7자리 이상은400 후보이며 truncate/round하지 않는다.
-- startInclusive < endExclusive와 완전 Config 등 업무 의미의 검증/기존422 분류는 별개다. 이 문서가 새 계산 허용 기간/최대 span을 도입하지 않는다.
-- 원 profile이 이미 정한 canonical Config hash를 사용한다. 새 시각 비교 후보로 legacy hash bytes/기존 Compute canonical serialization을 재계산하지 않는다.
-
-동등/비동등 예시(semantic 계획이며 실행한 vector가 아님):
-
-| 입력1 / 입력2 | 후보 판정 |
-|---|---|
-|2026-01-01T00:00:00Z /2026-01-01T09:00:00+09:00 | 동일 시점 |
-|2026-01-01T00:00:00.1Z /2026-01-01T00:00:00.100000Z | 동일 시점 |
-|2026-01-01T00:00:00.000001Z /2026-01-01T00:00:00Z | 다른 시점 |
-|2026-01-01T00:00:00.0000001Z / offset 없는 시각 | 각각 새 profile 형식 거절 |
-
-이 profile을 채택하려면 canonical Config/생산자 hash와 위 허용 시각/비교가 일치하는지 먼저 검증한다. 불일치를 Go 정규화만으로 숨기지 않는다.
-sourceAnalysis omitted/null·publish omitted/true·retry null 거절·미사용 Target component presence는 ADR-080/admission 계약을 유지한다.
+신규 versioned profile의 수정 권고는 **UTC Z, 소수초0이면 생략·비영이면 정확6자리**라는 protocol 입력 표기를 고정하는 것이다.
+`.000000Z`·짧은 fraction·offset 등을 서버가 자동 보정하지 않고, 이 profile을 채택할 때만 형식 거절400으로 설계한다. 기존 profile/legacy에는 소급 적용하지 않는다.
+기존 fixture/hash/Compute identity는 재작성하지 않는다. 규칙은 library 기본 출력이 아니라 소유 계약으로 명시하고 producer/DTO/hash·inputIdentity/fingerprint 왕복을 검증한다.
+시각 유효성/정밀도·start < end·업무 Config 오류와 원 receipt 종류도 분리한다. 정확 반례·표기/범위 조건은 검토 문서에 있다.
+**아직 미채택이며 새 schema/runtime에 적용하지 않았다.**
 
 ## 권고3 — bounded request의 수치 후보
 
