@@ -77,3 +77,11 @@ ADR-079의 child 실행/profile·private 수명, ADR-073·AP/LP 등 별도 미�
 기존 WR/WF gate·WR-DRAFT-01~14·TR-ACC/WUC/WFP는 별도로 남으며 새 semantic ID/실행 결과를 만들지 않는다.
 다음 작업은 **request intent/facts·원 receipt/수렴·No-Run variant/code/수명/삭제를 문서 설계에서 확정**한 뒤 필요한 schema/vector·consumer/legacy·전파를 준비하는 것이다.
 Context exact commit CI/impact→merge→최신 snapshot/marker→sync를 따르고 Web 포함 E2E 전에는 integration `-IncludeWeb` 검사가 선행한다.
+
+
+## 구현 전 상세 계약 후속
+
+[Request/receipt·No-Run 상세안](TRADING_REVIEW_REPROCESSING_ADMISSION_CONTRACT_DRAFT.md)은 원 descriptor/검증 facts·admission 순서와
+versioned422의 REPROCESSING_SOURCE_PIN_UNAVAILABLE/UnpinnedSourceRejectionV2Draft를 구체화한다. active wire/runtime은 유지한다.
+[확정 수명 정책](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)·ADR-081은 최소 원장 Book 수명·진단30일·삭제 후 최소 차단180일을 명시 확정했다.
+수명/삭제/key 차단 원칙에 재승인을 요구하지 않는다. 관련 구현/활성화 전 최소 자료/전환·consumer·실제 수용을 완료한다.

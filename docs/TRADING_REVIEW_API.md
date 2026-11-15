@@ -166,6 +166,12 @@ transport replay record의 최소 보관은 24시간이다. 그 뒤에도 upload
 analysis/reprocessing은 logical key와 successful deterministic result unique constraint, deletion은 180일 deletion
 ledger로 중복 생성을 막는다. Aggregate가 더 오래 남는 동안 logical mapping도 함께 남긴다.
 
+재처리 admission receipt에는 [ADR-081 수명 정책](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)을 적용한다.
+최소 원장은 Book 수명, 상세 진단은 최초decision+P30D, 관련 scope 삭제 후 최소 key 차단은 기존 삭제 control 완료/복구+P180D다.
+현재 Guard/삭제가 우선하며 차단 정보는 정상 receipt replay에 쓰지 않는다. owner+operation namespace를 유지하고 유효한 retired key의 다른 Book 재사용도 conflict다.
+정당한 차단 만료 뒤에는 과거 key 보장 범위 밖이다. 클라이언트는 새 요청마다 새 key를 사용하며 단순 miss/expiry를 미접수/UNKNOWN 해소로 보지 않는다.
+다른 public command의 기존 보관 규칙을 일괄 변경하지 않으며 새로운 public endpoint/응답 field는 추가하지 않는다.
+
 ### 4.3 Decimal, ratio, duration과 time
 
 - 금융 Decimal은 JSON number가 아니라 `DecimalString`을 사용한다. 문법은

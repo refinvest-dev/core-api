@@ -697,7 +697,7 @@ components:
                 reprocessingRunId: '725400000000000033'
       x-recorded-failure-link: confirmed-commit-and-current-owner-access-only
     Admit422:
-      description: Proposed safe error; no driver, raw payload or storage locator.
+      description: 'Versioned admission rejection: recorded FAILED Run or committed normal-legacy pin-gap decision without Run; current access required.'
       headers:
         Cache-Control:
           schema:
@@ -712,22 +712,32 @@ components:
       content:
         application/json:
           schema:
-            allOf:
-            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/RecordedFailureV2Draft
-            - properties:
-                code:
-                  enum:
-                  - VERSION_UNAVAILABLE
-                  - VERSION_INCOMPATIBLE
-                  - TARGET_VERSION_RETIRED
-                  - REPROCESSING_NOT_SUPPORTED
-                  - CANONICAL_SCHEMA_INCOMPATIBLE
-                  - INSTRUMENT_TERMS_UNAVAILABLE
-                  - ANALYTICS_INPUT_UNAVAILABLE
-                  - INVALID_ANALYSIS_CONFIG
-                retryable:
-                  enum:
-                  - false
+            oneOf:
+            - allOf:
+              - $ref: trading-review-reprocessing-public.yaml#/components/schemas/RecordedFailureV2Draft
+              - properties:
+                  code:
+                    enum:
+                    - VERSION_UNAVAILABLE
+                    - VERSION_INCOMPATIBLE
+                    - TARGET_VERSION_RETIRED
+                    - REPROCESSING_NOT_SUPPORTED
+                    - CANONICAL_SCHEMA_INCOMPATIBLE
+                    - INSTRUMENT_TERMS_UNAVAILABLE
+                    - ANALYTICS_INPUT_UNAVAILABLE
+                    - INVALID_ANALYSIS_CONFIG
+                  retryable:
+                    enum:
+                    - false
+            - allOf:
+              - $ref: trading-review-reprocessing-public.yaml#/components/schemas/UnpinnedSourceRejectionV2Draft
+              - properties:
+                  code:
+                    enum:
+                    - REPROCESSING_SOURCE_PIN_UNAVAILABLE
+                  retryable:
+                    enum:
+                    - false
           examples:
             RecordedFailure:
               summary: Only after confirmed WP02 commit and current authorized access; not proven by schema.
@@ -737,7 +747,15 @@ components:
                 traceId: synthetic-current-request-trace
                 retryable: false
                 reprocessingRunId: '725400000000000038'
+            NoRunRejection:
+              summary: Synthetic committed normal-legacy pin gap; no Run/Dispatch. Schema does not prove source facts, commit or authority.
+              value:
+                code: REPROCESSING_SOURCE_PIN_UNAVAILABLE
+                message: 이 거래 기록의 재처리 입력 근거를 확인할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
       x-recorded-failure-link: confirmed-commit-and-current-owner-access-only
+      x-no-run-rejection: confirmed-commit-normal-legacy-pin-gap-current-access-only
     Admit503:
       description: Proposed safe error; no driver, raw payload or storage locator.
       headers:
@@ -788,3 +806,5 @@ x-operation-registry: method + route + reprocessing audience + exact scope + aut
 security:
 - ServiceCredential: []
   UserDelegation: []
+
+x-adopted-policy: ADR-080-principles; wire remains draft

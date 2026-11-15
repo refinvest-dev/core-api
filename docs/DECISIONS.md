@@ -1535,3 +1535,24 @@ request intent와 검증 facts를 나눠 No-Run에 불명 실행 pin/logical key
 업무 경계/Tx·잠금·오류/복구 의미를 먼저 정하고 물리 SQL/제약·Port·내부 함수/파일은 상세 설계와 구현 검증으로 구체화한다.
 ADR-079 전체·child/수명/다른 DRAFT·schema/code/TTL 수치·기존 bytes rewrite·업무 구현/활성화·운영 인계를 승인하지 않는다.
 현재 OpenAPI/hash 식/vector·SQL/runtime은 변경하지 않는다. 소유 계약 정합화·consumer/legacy·snapshot/sync·실제 수용은 별도다.
+
+
+**ADR-080 구현 전 계약 후속(2026-11-15)**: [admission 상세안](TRADING_REVIEW_REPROCESSING_ADMISSION_CONTRACT_DRAFT.md)은
+원 request descriptor/검증 facts·known-key replay 우선·source 분류 순서와 admit422의 No-Run 전용 code/schema를 구체화했다.
+public/internal DRAFT에 REPROCESSING_SOURCE_PIN_UNAVAILABLE/UnpinnedSourceRejectionV2Draft를 추가하며 RecordedFailure code/Run 참조는 유지한다.
+이는 새 원칙 채택이 아닌 후속 wire 설계/정적 검사다. active wire·hash/vector·SQL/runtime을 변경하지 않는다.
+[Receipt 수명안](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION_DRAFT.md)의 상세30일/최소 매핑 Book 수명은 선택 대기이며 답변 부재를 승인으로 취급하지 않는다.
+
+
+## ADR-081 — Trading Review Reprocessing Receipt Retention
+
+**상태**: 정책 확정(2026-11-15). 사용자의 명시 승인에 근거한다. [수명·삭제 정본](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)이 우선한다.
+재처리 정상 admission·기록 실패·No-Run receipt의 최소 원장은 Book 수명, 추가 진단은 최초decision+P30D, 삭제 후 최소 차단 정보는 기존 삭제 control 완료/복구+P180D로 보존한다.
+관련 source/Book/Account/Member 명시 삭제가 우선한다. raw-only는 retained Ledger/Analysis/Book 원장을 일괄 무효화하지 않는다.
+차단 정보는 namespace/key 재사용 방지·삭제/restore control만을 위한 최소 자료이며 원 receipt/금융 payload·진단의180일 추가 보관이 아니다.
+원장 purge와 차단 사이에 예약 공백을 만들지 않는다. owner+operation namespace를 유지하며 유효한 기존 key의 다른 Book 재사용도 막는다.
+현재 target 접근 거절은 기존 비노출/삭제 의미가 우선하고 허용된 target의 retired key는 기존 conflict다. 표식으로 정상 replay를 제공하지 않는다.
+삭제 미완료/FAILED는 완료/복구 전 차단을 만료시키지 않는다. 정당한180일 만료 뒤는 과거 key 보장 밖이며 클라이언트는 새 요청마다 새 key를 쓴다.
+단순 replay/조회/일반retry로 clock을 연장하거나 miss/expiry만으로 live/UNKNOWN을 해제하지 않는다. 기존 삭제/backup restore control을 따른다.
+기간/역할/삭제/key 차단은 확정이므로 재승인하지 않는다. 최소 자료/보안 표현·physical Store/전환/CAS·실제 cleanup/부재/경합/restore·운영 활성화는 별도 검증한다.
+API schema/hash/vector·SQL/TTL/cleanup·업무 서버는 이번에 변경하지 않았다. ADR-080과 타 미결 정책/업무 구현 범위는 별도다.

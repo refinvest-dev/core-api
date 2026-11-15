@@ -89,6 +89,9 @@ hash도 동일 파일의 재등장을 연결할 수 있어 `OPERATIONAL_METADATA
 | Operational Log | 중앙 log store | allowlisted metadata만; operational | 상태·성능·장애 진단 | 전송·저장 | event time `+ P30D` | 자동 TTL | 별도 backup 금지 | 아니오 | 금지 |
 | Audit Event | append-only audit store | actor, scope ID, action; operational | 접근·정책·삭제 증거 | 전송·저장 | event time `+ P180D` | TTL purge; financial payload 금지 | 예, backup copy는 최대 `P30D` | 일반 조회 아님; 삭제 상태는 별도 노출 | 금지 |
 | Deletion Request/ledger | primary control table + restore control plane | opaque scope ID, generation, 상태; operational | idempotency, restore suppression | 전송·저장 | 완료/복구 `+ P180D`; failed는 복구 전 만료 금지 | audit TTL 후 purge | restore control copy 예 | request 상태 예 | 금지 |
+| Reprocessing receipt 최소 원장 | Go/Postgres | namespace·원 descriptor/decision·reason/감사·필수 근거; 원 분류 상속 | 같은 요청/상이 요청 판정·원 접수 재현 | 전송·저장, 최소 자료/접근 통제 | Book lifecycle | 관련 source/Book/account/member 명시 삭제 우선; 차단 정보로 예약 공백 없이 전환 | 예, 기존 restore control | 현재 owner/Guard 승인 시 원 admission projection | 금지 |
+| Reprocessing receipt 상세 진단 | Go protected store | 제한 source/profile 추가 진단; raw/credential/locator 제외 | 운영 조사 | 전송·저장, allowlist | 최초 decision+P30D; replay 연장 금지 | TTL cleanup/명시 삭제·실제 부재 검증 | 기존 backup 최대P30D·복원 후 만료/삭제 적용 | 일반 inline 공개 아님 | 금지 |
+| Reprocessing 삭제 후 최소 key 차단 | Go deletion/restore control | 최소 namespace/key 참조·삭제 scope/control·expiry; 금융 payload 없음 | 기존 key 재사용 차단·restore suppression | 전송·저장, control 전용 | 삭제 control 완료/복구+P180D; 미완료/FAILED는 완료/복구 전 만료 금지 | 정당한 control expiry/cleanup·복원 검증; 원 receipt 재현용 아님 | restore control 정책, backup snapshot 최대P30D | 정상 receipt 조회 아님 | 금지 |
 | Backup Copy | 격리된 backup vault | 포함 원본 분류 상속 | 재해 복구 | 전송·저장, 별도 key | snapshot 생성 후 최대 `P30D` | rolling expiry; tombstone replay 전 restore 차단 | 자기 자신 | 아니오 | 금지 |
 
 Raw object는 application backup과 object version history에서 제외한다. provider의 복제본·삭제 지연은 object
@@ -520,3 +523,12 @@ queue retry 횟수, exponential backoff 간격, alert threshold와 storage adapt
 - ADR-062에서 확정한 versioning/reprocessing 계약의 persistence/OpenAPI/worker 구현
 - persistence schema, OpenAPI, deletion worker와 provider/KMS 선택
 - AI 도입 시 별도 data-boundary/consent ADR
+
+
+## ADR-081 재처리 receipt 수명 확정
+
+[정본](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)은 최소 원장 Book 수명·상세 진단 최초decision+P30D·삭제 후 최소 key 차단 control 완료/복구+P180D를 확정한다.
+이는 재처리 admission에 한정하며 다른 log/Audit·명령의 수명을 일괄 변경하지 않는다. 정상/기록 실패/No-Run에 필요한 의미·증거를 각 역할로 보존한다.
+관련 명시 삭제가 우선이고 raw-only의 retained Ledger/Analysis 보존은 유지한다. 원장·진단을 지운 뒤 key 예약이 잠시 풀리는 전환을 금지한다.
+최소 차단은 금융 payload/Config·원 response/진단을180일 추가 보관하는 예외가 아니다. 실제 자료 표현·부모 purge 후 lookup·bounded 전환/clock·경합/복원은 구현 전 검증한다.
+새 수명 적용 profile/이력 이관은 명시하며 원 import/Run의 pinned policy·key/ID/hash를 자동 rewrite하지 않는다. 현재 TTL/cleanup·schema/runtime은 변경하지 않았다.
