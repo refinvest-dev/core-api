@@ -105,3 +105,9 @@ Go는 typed descriptor·확인 facts·decision을 분리하고, 불완전 No-Run
 현재 target이 삭제/foreign이면 기존 비노출/삭제 응답이 우선하며, 허용된 target에 retired key를 쓴 경우 기존 conflict 의미를 사용한다.
 차단 정보로 원 receipt를 replay/조회하지 않는다. clock/정당한 만료 뒤에는 과거 key 보장 범위 밖이고 클라이언트는 새 요청마다 새 key를 쓴다.
 기간 만료·SELECT miss만으로 live/UNKNOWN을 해제하거나 새 effect를 허용하지 않는다. 실제 삭제/복구 control·원 fence를 따른다.
+
+## 후속 request profile 후보 — ADR-082 DRAFT
+
+[검증·동등성·상한 후보](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_DRAFT.md)는 현재 nested 허용/시각 비교/크기 공백의 권고안을 다룬다.
+재처리 전용 versioned closed nested·UTC microsecond 비교·byte/depth/cardinality 수치와400/413의 후보이며 **미채택**이다.
+기존 active/shared schema·현재 DRAFT YAML/receipt/code·ADR-080/081은 유지한다. 새 profile/consumer·hash/inventory·실제 bounded 수용을 확인하기 전 서버에 적용하지 않는다.

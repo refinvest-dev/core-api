@@ -132,3 +132,9 @@ ADR-080 후속 [request/receipt·No-Run 상세안](docs/TRADING_REVIEW_REPROCESS
 **현재 수명 상태(2026-11-15)**: [ADR-081 정본](docs/TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)은
 최소 원장 Book 수명·진단30일·삭제 후 최소 차단180일을 명시 확정했다. 과거 선택 대기 문구로 재승인을 요구하지 않는다.
 관련 명시 삭제/현재 Guard·예약 공백 없는 전환·owner+operation key 차단을 유지하고 실제 저장/보안·clock/cleanup·경합/복원·업무 구현/활성화는 별도다.
+
+## 재처리 request profile 검토 후보
+
+[ADR-082 후보](docs/TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_DRAFT.md)는 nested 허용·시각 비교·byte/depth/cardinality 예산을 정리한다.
+재처리 전용 versioned 계약의 권고이며 **미채택**이다. 현재 OpenAPI/공유 schema·runtime·ADR-080/081의 확정 원칙/기간은 유지한다.
+Go 저장 구현에서 추가 값을 버리거나 새 상한/400/413을 먼저 적용하지 않는다. profile/consumer·hash/inventory·실제 bounded 수용을 먼저 확인한다.
