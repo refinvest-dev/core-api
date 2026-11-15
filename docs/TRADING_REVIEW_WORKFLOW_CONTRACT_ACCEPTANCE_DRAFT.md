@@ -1,5 +1,9 @@
 # Workflow 계약 후보 consumer·수용·전파 (DRAFT)
 
+> **2026-11-15 수명 확정:** [ADR-081 정책](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)은 최소 원장 Book 수명·진단30일·삭제 후 최소 차단180일을 확정했다.
+> 아래 과거 선택 대기/미결 수치 표기는 현재 승인을 취소하지 않는다. 실제 자료/전환·clock/CAS·cleanup/삭제/복원·consumer 수용과 업무 구현/활성화는 별도다.
+
+
 > 2026-11-15: ①~④ 동작 원칙은 [ADR-080 채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md)을 따른다.
 > 아래 DRAFT 수용 계획/과거 상태·WR/WF gate의 실제 실행은 별도이며 채택만으로 완료 처리하지 않는다.
 
@@ -215,3 +219,9 @@ No-Run의 request intent/facts·variant/receipt 수명·동일FAILED 수렴 의�
 다른 status/operation의 누출 금지와 원 descriptor/default·정상 legacy/기술오류 분류·원 decision/UNKNOWN을 기존 WR-DRAFT-01~14에 연결한다.
 새 schema 사례/거절 변이는 static transport 검증이며 semantic assertion·hash·HTTP/SQL/경합/Compute·E2E가 아니다.
 [수명안](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION_DRAFT.md)의 수치/Book 매핑·삭제/재사용은 명시 선택 대기이며 활성화 조건으로 남는다.
+
+
+## ADR-081 수용 연결
+
+기존 WR/WF/TR-ACC/WUC/WFP에 최초decision+30일/replay 비연장·필수 원장 유지·명시 삭제 우선·예약 공백 없는 전환·다른 Book의 retired key·180일 경계·FAILED 삭제·backup restore/late write를 연결한다.
+No-Run은 Run count에 합산하지 않는다. 기존 수용 ID를 재사용하며 새 semantic 실행 결과를 추가하지 않는다. 확정 정책과 실제 검증을 구분한다.

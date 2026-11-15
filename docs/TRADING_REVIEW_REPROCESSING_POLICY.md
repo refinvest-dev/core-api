@@ -83,5 +83,5 @@ Context exact commit CI/impact→merge→최신 snapshot/marker→sync를 따르
 
 [Request/receipt·No-Run 상세안](TRADING_REVIEW_REPROCESSING_ADMISSION_CONTRACT_DRAFT.md)은 원 descriptor/검증 facts·admission 순서와
 versioned422의 REPROCESSING_SOURCE_PIN_UNAVAILABLE/UnpinnedSourceRejectionV2Draft를 구체화한다. active wire/runtime은 유지한다.
-[수명안](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION_DRAFT.md)은 상세30일+최소 매핑 Book 수명을 권장하되 명시 선택 대기다.
-채택된 원칙을 다시 승인받지 않으며 수명 수치/보존 방식은 별도 선택 전 확정으로 표시하지 않는다. 관련 구현/활성화 전에 남은 계약/consumer·수명·실제 수용을 완료한다.
+[확정 수명 정책](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)·ADR-081은 최소 원장 Book 수명·진단30일·삭제 후 최소 차단180일을 명시 확정했다.
+수명/삭제/key 차단 원칙에 재승인을 요구하지 않는다. 관련 구현/활성화 전 최소 자료/전환·consumer·실제 수용을 완료한다.

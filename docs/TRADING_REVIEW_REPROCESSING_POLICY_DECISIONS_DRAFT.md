@@ -1,5 +1,9 @@
 # Reprocessing 정책 채택 결정표
 
+> **2026-11-15 수명 확정:** [ADR-081 정책](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)은 최소 원장 Book 수명·진단30일·삭제 후 최소 차단180일을 확정했다.
+> 아래 과거 선택 대기/미결 수치 표기는 현재 승인을 취소하지 않는다. 실제 자료/전환·clock/CAS·cleanup/삭제/복원·consumer 수용과 업무 구현/활성화는 별도다.
+
+
 상태: **①~④ 동작 원칙 채택**, 2026-11-15. 사용자의 명시 승인으로 [채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md)·
 [ADR-080](DECISIONS.md#adr-080--trading-review-reprocessing-policy-adoption)을 기록했다. 이 파일의 DRAFT 경로는 기존 링크 호환을 위해 유지한다.
 기존 권고/미채택 표는 채택 전 Git 이력에 남는다. 현재 규칙과 적용 한계는 채택 정책이 정본이다.

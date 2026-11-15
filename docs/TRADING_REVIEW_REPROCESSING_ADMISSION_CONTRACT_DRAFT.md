@@ -2,7 +2,7 @@
 
 상태: **ADR-080 채택 원칙의 구현 전 계약 설계**, 2026-11-15. 원칙을 다시 승인받는 문서가 아니다.
 wire는 별도 public/internal DRAFT profile이며 runtime은 비활성이다. 기존 active API·logical hash/Compute·Run 상태·DB는 변경하지 않는다.
-수명 수치의 선택은 [receipt 수명안](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION_DRAFT.md)에 별도로 기록하며 미선택안을 채택으로 취급하지 않는다.
+수명·삭제·key 차단은 [ADR-081 확정 정책](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)을 따른다. 최소 원장 Book 수명·진단30일·삭제 후 최소 차단180일이다.
 
 ## 기준과 범위
 
@@ -89,10 +89,19 @@ raw-only는 retained Ledger/Analysis와 Book의 원 mapping을 일괄 무효화�
 
 ## 수명/consumer와 구현 전 조건
 
-수명 수치는 [별도 수명안](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION_DRAFT.md)의 명시 선택을 기다린다. 30일/Book 수명 수치를 이번 schema가 승인하지 않는다.
+수명 수치는 [ADR-081](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)에서 명시 확정됐다. 이 schema에 TTL/expiry field를 새로 노출하지 않는다.
 원 descriptor/decision을 보존할 근거 없이 key miss를 미접수로 단정하지 않는다. No-Run을 Run 수명 규칙·Audit180일에 자동 편입하지 않는다.
 Core relay는422 branch·code/현재 trace·retryable을 보존하고 No-Run ID를 추측하지 않는다. Web은 원 key replay와 새 요청 의도를 구분하고 abort를 durable cancel로 표시하지 않는다.
 Go는 typed descriptor·확인 facts·decision을 분리하고, 불완전 No-Run evidence를 실행 함수/Domain Restore에 전달하지 않는다.
 정확 descriptor 저장/retention·부족 evidence/source profile·legacy pin/receipt·Core/Web decoder·SQL/권위/UNKNOWN·삭제/운영 수용 전 runtime 활성화는 하지 않는다.
 
 기존 WR-DRAFT-01~14·WR/WF/WUC/WFP를 재사용한다. 새 schema 예제/거절 변이는 정적 transport 검사이며 source 분류/commit·업무 semantic assertions·hash·HTTP/SQL/Compute·E2E는 미실행이다.
+
+
+## Receipt 삭제 후 key 차단
+
+현재 receipt 접근은 삭제 Guard가 우선한다. 원장/진단 purge와 최소 차단 정보 사이에 namespace 예약 공백을 만들지 않는다.
+차단 정보가 유효한 동안 같은 owner+operation의 기존 key를 다른 Book에 쓰는 것도 conflict다. Book을 namespace에 추가하지 않는다.
+현재 target이 삭제/foreign이면 기존 비노출/삭제 응답이 우선하며, 허용된 target에 retired key를 쓴 경우 기존 conflict 의미를 사용한다.
+차단 정보로 원 receipt를 replay/조회하지 않는다. clock/정당한 만료 뒤에는 과거 key 보장 범위 밖이고 클라이언트는 새 요청마다 새 key를 쓴다.
+기간 만료·SELECT miss만으로 live/UNKNOWN을 해제하거나 새 effect를 허용하지 않는다. 실제 삭제/복구 control·원 fence를 따른다.

@@ -1,5 +1,9 @@
 # Workflow request/response·receipt DTO 권장 후보
 
+> **2026-11-15 수명 확정:** [ADR-081 정책](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)은 최소 원장 Book 수명·진단30일·삭제 후 최소 차단180일을 확정했다.
+> 아래 과거 선택 대기/미결 수치 표기는 현재 승인을 취소하지 않는다. 실제 자료/전환·clock/CAS·cleanup/삭제/복원·consumer 수용과 업무 구현/활성화는 별도다.
+
+
 > **2026-11-15 채택 반영:** ①~④의 동작 원칙은 [채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md)·ADR-080을 따른다.
 > 아래는 채택 전 검토 기록과 미확정 상세다. 과거 미채택/권고 문구가 이번 명시 채택을 취소하지 않는다.
 > 정확 schema/code·receipt 수명/삭제·profile/legacy 적용은 관련 구현 전에 문서로 확정하며, 현재 wire/runtime은 유지한다.
