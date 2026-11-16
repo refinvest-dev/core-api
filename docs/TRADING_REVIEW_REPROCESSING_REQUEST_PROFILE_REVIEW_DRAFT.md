@@ -1,5 +1,9 @@
 # ADR-082 채택 범위 검토·수정 권고
 
+> **후속 채택(2026-11-16):** [ADR-082 확정 정책](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE.md)이 현재 기준이다.
+> 아래 미채택·권고·수치 보류/int32 후보는 검토 당시 기록이다. 원 관측/고정 source는 보존하며 현재 정책을 덮어쓰지 않는다.
+> 신규 profile 원칙·상한·압축 미지원/400·413·415는 채택됐고, 정확 wire/consumer·실제 검증/활성화는 별도다.
+
 상태: **채택 전 검토안**, 2026-11-16. 사용자의 다음 작업 요청에 따라 후보와 실제 source를 대조했다.
 이 문서/PR merge는 정책 채택이 아니다. ADR-082는 DRAFT이고 ADR-080/081의 확정 namespace·원 receipt/No-Run·보존 기간은 유지한다.
 [후보](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_DRAFT.md)·[admission 계약](TRADING_REVIEW_REPROCESSING_ADMISSION_CONTRACT_DRAFT.md)을 함께 읽는다.
