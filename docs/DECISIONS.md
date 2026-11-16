@@ -1559,20 +1559,28 @@ API schema/hash/vector·SQL/TTL/cleanup·업무 서버는 이번에 변경하지
 
 ## ADR-082 — Reprocessing Request Validation Profile
 
-**상태: DRAFT·미채택(2026-11-15).** 정본 후보는 [request 검증·동등성·상한](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_DRAFT.md)이다.
-중첩 추가 필드 허용·시각 동등성·정확 요청 예산을 재처리 전용 versioned profile에서 정리하는 권고다.
-closed nested·UTC microsecond 비교·1MiB/depth16 등 수치·400/413 적용은 아직 결정/활성화하지 않았다.
-ADR-080/081의 확정 namespace/receipt/수명을 유지하고 shared schema·기존 hash/legacy를 자동 rewrite하지 않는다.
-채택 전 producer/consumer·profile/version·inventory/hash/실제 수용이 필요하며 문서 merge/CI는 채택 증거가 아니다.
+**상태: 채택(2026-11-16), 신규 재처리 profile 전용·실제 적용 전 검증 조건 있음.** 사용자의 재검토 후 진행 승인에 따라
+[요청 검증 정본](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE.md)을 확정한다. 문서 merge/CI를 채택 근거로 삼은 것이 아니다.
+
+- 새 versioned profile의 closed nested·명시 동적 map·strict/무손실/presence·자동 보정 금지를 채택한다.
+- Config 입력은 UTC 대문자 T/Z, 소수초0 생략/비영6자리다. 동일 instant의 다른 문자열을 서버가 자동 동등화하지 않는다.
+- 초기 상한은 body1,048,576bytes·container depth16·resource/version/digest/동적 key256UTF8 bytes·zone128bytes·terms4096개다.
+  VersionIdentifier 기존200자·각 ID/hash/key 형식과 함께 교집합으로 적용하며 모든 최대값 조합을 보장하지 않는다.
+- 저장 타입만을 이유로 int32 제품 상한을 추가하지 않는다. 기존 양수·JSON/hash 안전 정수 범위는 유지한다.
+- Content-Encoding은 생략/identity만 허용하고 미지원 encoding415·본문 초과413·형식/필드/깊이/개수 오류400을 구분한다.
+  이 거절로 새 Run/admission receipt를 만들지 않으며 기존 business410/422·RecordedFailure/No-Run 의미를 유지한다.
+- ADR-080/081·shared/legacy/원 key/receipt·기존 ID/hash/vector는 유지한다. profile은 namespace 분할이나 저장/인증 profile의 대체가 아니다.
+
+정확 wire profile/closed schema·safe code/trace/cache/오류 우선순위·caller inventory/consumer·DTO/hash 왕복·bounded ingress/HTTP 수용을 구현/활성화 전에 닫는다.
+상한은 신규 계약 정책이며 성능/운영 수용 실측 결과가 아니다. 현재 OpenAPI/runtime/SQL·migration·업무 구현/운영 활성화는 바꾸지 않았다.
+채택 원칙/수치의 재승인을 요구하지 않는다. 다른 ADR 후보·child/private/삭제 control·DB/운영 인계는 별도다.
 
 ### ADR-082 채택 범위 검토 후속(2026-11-16)
 
-상태는 계속 **DRAFT·미채택**이다. [리뷰](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_REVIEW_DRAFT.md)는 실제 hash/DTO 관측에 따라 원 동일 시점 표기 동등화 권고를 수정한다.
-구조/무손실/오류 분리 원칙은 채택 권고, 신규 시각은 UTC Z·0 fraction 생략/비영6자리 고정 입력으로 수정 권고하며1MiB 등 정확 수치와 int32 상한은 채택 보류를 권고한다.
-기존 hash/vector/legacy·ADR-080/081을 유지하고, 후보 문서 merge/기술 관측을 채택·업무 구현/활성화로 보지 않는다.
+[hash/DTO 리뷰](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_REVIEW_DRAFT.md)는 채택 전 관측 기록이다.
+원 동일 instant 자동 동등화 대신 신규 canonical 입력을 채택했다. 과거 미채택/수치 보류 표기는 현재 채택 결정을 취소하지 않는다.
 
 ### ADR-082 요청 예산 검토 후속(2026-11-16)
 
-상태는 **DRAFT·미채택**으로 유지한다. [조합/경계 검토](TRADING_REVIEW_REPROCESSING_REQUEST_BUDGET_REVIEW_DRAFT.md)에 synthetic request/schema·JSON byte/depth 관측을 기록했다.
-기존 VersionIdentifier200자와 byte 후보는 함께 적용하고 terms4096·길이 상한·body1MiB는 교집합으로 검토한다. 수치는 아직 확정하지 않는다.
-저장 타입만을 이유로 int32 제품 상한을 추가하지 않는 방향을 권고한다. 명시 채택 결정 전 policy/schema/runtime 상태를 바꾸지 않는다.
+[조합/경계 검토](TRADING_REVIEW_REPROCESSING_REQUEST_BUDGET_REVIEW_DRAFT.md)는 synthetic 구조/byte 측정이다.
+기존200자·UTF8 bytes·terms/body/depth 교집합을 정책에 반영했다. caller/HTTP/메모리·semantic 수용을 실행한 증거는 아니다.

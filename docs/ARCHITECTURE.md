@@ -257,18 +257,18 @@ ADR-080 후속 [request/receipt·No-Run 상세안](TRADING_REVIEW_REPROCESSING_A
 
 ## 재처리 request profile 검토 후보
 
-[ADR-082 후보](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_DRAFT.md)는 nested 허용·시각 비교·byte/depth/cardinality 예산을 정리한다.
-재처리 전용 versioned 계약의 권고이며 **미채택**이다. 현재 OpenAPI/공유 schema·runtime·ADR-080/081의 확정 원칙/기간은 유지한다.
-Go 저장 구현에서 추가 값을 버리거나 새 상한/400/413을 먼저 적용하지 않는다. profile/consumer·hash/inventory·실제 bounded 수용을 먼저 확인한다.
+[ADR-082 정본](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE.md)은2026-11-16 재검토 후 명시 채택됐다. 신규 재처리 전용 versioned profile의 구조·시각·상한·압축/오류 정책을 따른다.
+기존 profile/shared/legacy·ADR-080/081·원 hash/key/receipt는 유지한다. 현재 API에 적용한 것은 아니며 정확 wire/registry·consumer·실제 수용은 구현/활성화 전에 확정한다.
+과거 후보/검토 문구로 채택 원칙·수치의 재승인을 요구하지 않는다.
 
 ## ADR-082 채택 전 source 리뷰
 
-[채택 범위 검토](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_REVIEW_DRAFT.md)를 후보와 함께 읽는다.
-현재 Config hash/DTO는 같은 instant 표기까지 동일하게 보존하지 않는다. 신규 canonical 입력 표기 수정 권고와 수치 보류를 확인하고 Go에서 자동 정규화/int32 제한을 먼저 적용하지 않는다.
-ADR-082는 미채택이다. ADR-080/081과 legacy hash/key·원 receipt를 유지하며 source/국소 관측·실제 업무/운영 수용을 구분한다.
+[과거 리뷰](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_REVIEW_DRAFT.md)는 hash/DTO 관측 기록이다.
+현재 규칙은 [정본](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE.md)의 UTC Z·0 fraction 생략/비영6자리 입력이며 원 Config/hash의 자동 정규화·storage-driven int32 제한은 허용하지 않는다.
+실제 producer/DTO/hash·inputIdentity/fingerprint 왕복과 HTTP/업무 수용은 별도 검증한다.
 
 ## ADR-082 요청 예산 검토
 
-[예산 조합/경계](TRADING_REVIEW_REPROCESSING_REQUEST_BUDGET_REVIEW_DRAFT.md)를 읽는다.
-VersionIdentifier200자·UTF8 bytes·map 개수·wire body 예산은 서로 다르며 모두 충족해야 한다. synthetic schema/byte 관측을 실제 HTTP/운영 수용으로 보지 않는다.
-정책 채택은 명시 결정 대기이고 정확 수치는 후보다. 현재 schema/hash/legacy·ADR-080/081을 유지한다.
+[예산 관측](TRADING_REVIEW_REPROCESSING_REQUEST_BUDGET_REVIEW_DRAFT.md)의 기존200자·UTF8 bytes·map 개수·wire body/depth 차이를 유지한다.
+신규 profile 상한은 채택됐고 모두 동시에 적용한다. Content-Encoding 생략/identity만 허용하며400/413/415와 business receipt를 구분한다.
+synthetic 구조/byte 측정을 실제 caller/HTTP/메모리·업무/운영 수용으로 해석하지 않는다.

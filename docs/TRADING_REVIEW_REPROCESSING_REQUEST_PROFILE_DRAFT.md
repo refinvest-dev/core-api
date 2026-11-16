@@ -1,5 +1,9 @@
 # Reprocessing request 검증·동등성·크기 profile 후보
 
+> **후속 채택(2026-11-16):** [ADR-082 확정 정책](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE.md)이 현재 기준이다.
+> 아래 미채택·권고·수치 보류/int32 후보는 검토 당시 기록이다. 원 관측/고정 source는 보존하며 현재 정책을 덮어쓰지 않는다.
+> 신규 profile 원칙·상한·압축 미지원/400·413·415는 채택됐고, 정확 wire/consumer·실제 검증/활성화는 별도다.
+
 상태: **ADR-082 DRAFT·미채택**, 2026-11-15. ADR-080/081의 확정 namespace·원 receipt·No-Run·보존 기간은 유지한다.
 이 문서는 남은 nested extension·시각 동등성·정확 상한에 대한 **권고 후보**다. 숫자/거절·정규화는 아직 현재 API/YAML·Go runtime에 적용하지 않는다.
 [admission 상세 계약](TRADING_REVIEW_REPROCESSING_ADMISSION_CONTRACT_DRAFT.md)·[수명 정본](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)과 함께 읽는다.

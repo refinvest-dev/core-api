@@ -1,5 +1,9 @@
 # ADR-082 요청 예산 조합·경계 검토
 
+> **후속 채택(2026-11-16):** [ADR-082 확정 정책](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE.md)이 현재 기준이다.
+> 아래 미채택·권고·수치 보류/int32 후보는 검토 당시 기록이다. 원 관측/고정 source는 보존하며 현재 정책을 덮어쓰지 않는다.
+> 신규 profile 원칙·상한·압축 미지원/400·413·415는 채택됐고, 정확 wire/consumer·실제 검증/활성화는 별도다.
+
 상태: **DRAFT·미채택 수치 검토**, 2026-11-16. [정책 후보](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_DRAFT.md)·
 [채택 범위 리뷰](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_REVIEW_DRAFT.md)에 후속 구조 측정과 결정표를 연결한다.
 이번 측정은 수치를 승인/활성화한 것이 아니다. ADR-080/081은 유지하고 ADR-082 채택 여부는 명시 결정 전까지 미채택으로 둔다.
