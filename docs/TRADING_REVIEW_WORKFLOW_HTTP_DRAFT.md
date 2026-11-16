@@ -1,5 +1,8 @@
 # Workflow HTTP 경계·operation registry 후보
 
+> **2026-11-16 wire 후속 설계:** [고정 profile·오류·원문 중계 계약](TRADING_REVIEW_REPROCESSING_WIRE_CONTRACT.md)이 해당 상세의 현재 기준이다.
+> 아래는 고정 source/과거 조사·미결 업무 범위를 포함한다. 신규 Request* schema/registry 설계 확정과 실제 runtime/consumer 수용은 구분한다.
+
 상태: **ADR-079/WP01~04의 미채택 문서 후보**, 2026-11-13. 현재 public/Compute OpenAPI·hash/vector·업무 runtime은 변경하지 않는다.
 새 path/operation/audience/scope literal은 검토용이며 route/issuer/권한을 활성화하지 않는다.
 [DTO 후보](TRADING_REVIEW_WORKFLOW_DTO_DRAFT.md)·[WP01/02](TRADING_REVIEW_WORKFLOW_CONTRACT_DRAFT.md)·

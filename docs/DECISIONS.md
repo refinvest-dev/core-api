@@ -1584,3 +1584,12 @@ API schema/hash/vector·SQL/TTL/cleanup·업무 서버는 이번에 변경하지
 
 [조합/경계 검토](TRADING_REVIEW_REPROCESSING_REQUEST_BUDGET_REVIEW_DRAFT.md)는 synthetic 구조/byte 측정이다.
 기존200자·UTF8 bytes·terms/body/depth 교집합을 정책에 반영했다. caller/HTTP/메모리·semantic 수용을 실행한 증거는 아니다.
+
+### ADR-082 후속 wire·consumer 상세 설계(2026-11-16)
+
+[wire 상세 계약](TRADING_REVIEW_REPROCESSING_WIRE_CONTRACT.md)에 endpoint 고정 `trading-reprocessing-admission-v1`·오류 registry·Core bounded 원문 중계를 확정했다.
+별도 client profile selector·새 namespace/hash field는 없다. 신규 closed/byte/시각 schema는 접수 전용이며 과거 read/receipt에는 소급하지 않는다.
+400/413/415는 신규 형식/자원 거절,502/504는 public relay 오류다. retryable은 동일 요청 자동 재시도 권고이며 접수/rollback·새 key 허가가 아니다.
+기존 public/internal DRAFT YAML·정적 checker와 [consumer 수용 계획](TRADING_REVIEW_REPROCESSING_CONSUMER_ACCEPTANCE.md)에 연결했다.
+정확 request-wire 설계는 더 이상 선택 대기가 아니지만 실제 사용/legacy inventory·route/consumer·HTTP/decoder/메모리·hash/Compute/SQL·운영 수용은 남아 있다.
+현재 shared/active API·업무 코드/SQL은 변경하지 않았고 ADR-079 전체·위임/Member 선형화·child/private/삭제 control 후보를 채택하지 않았다.
