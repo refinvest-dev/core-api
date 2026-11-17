@@ -1781,6 +1781,11 @@ Scenario reference에서 group prefix `TR-ACC-`는 생략했다. 모든 `TR-I01`
 13. harness는 각 `Given/When/Then`, state/artifact count, outcome/failure/idempotency/evidence를 별도 assertion으로
     옮길 수 있다.
 
+## Book metadata 정책 후속 수용
+
+[ADR-083 수용 계획](TRADING_REVIEW_BOOK_METADATA_POLICY.md#수용-계획과-활성화-조건)은 ACTIVE/ARCHIVED parent×Book의 Get/List 동일성·삭제/foreign 차단·생성/replay 보존을 후속 구현에서 검증한다.
+기존 Scenario ID/Then을 재명명하거나 기존 110개 실행 증적으로 확대하지 않는다. TR-I01/15와 TR-ACC-AUTH-002의 숨김 원칙을 추적하며 새 read matrix의 실제 수용은 아직 미실행이다.
+
 ## 8. Out of Scope
 
 OpenAPI path/payload/status, persistence schema, application/Integration code, CSV fixture 작성, Metric 계산식 변경,

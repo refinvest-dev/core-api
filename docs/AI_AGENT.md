@@ -1,5 +1,7 @@
 # AI_AGENT.md — 에이전트 작업 워크플로우
 
+> **Book metadata 정책:** [ADR-083](docs/TRADING_REVIEW_BOOK_METADATA_POLICY.md)은 ARCHIVED parent/Book의 GetBook/ListBooks metadata 조회만 채택했다. 생성·replay·삭제·grant 및 ADR-074/075 전체로 확대하지 않는다. 실제 구현/consumer·HTTP·운영 수용은 별도다.
+
 > Trading Review는 ADR-072와 [서비스 경계](docs/TRADING_REVIEW_SERVICE_BOUNDARY.md)를 먼저 읽는다.
 > 새 Go 구현 규칙은 Go 저장소 AGENTS.md/ARCHITECTURE.md를 따른다.
 

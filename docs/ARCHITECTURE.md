@@ -1,5 +1,7 @@
 # ARCHITECTURE.md — 시스템 아키텍처
 
+> **Book metadata 정책:** [ADR-083](TRADING_REVIEW_BOOK_METADATA_POLICY.md)은 ARCHIVED parent/Book의 GetBook/ListBooks metadata 조회만 채택했다. 생성·replay·삭제·grant 및 ADR-074/075 전체로 확대하지 않는다. 실제 구현/consumer·HTTP·운영 수용은 별도다.
+
 > 이 문서는 ADR-072의 목표 서비스 구성을 정의한다. 현재 구현의 이전 완료 여부는
 > [서비스 경계의 gate](TRADING_REVIEW_SERVICE_BOUNDARY.md#이관과-완료-gate)와 실제 증적으로 확인한다.
 

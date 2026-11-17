@@ -1304,7 +1304,7 @@ metadata GET은 허용하는 안을 검토한다. 두 내부 GET path와 기존 
 [OpenAPI 초안](../openapi/drafts/trading-review-owner-query.yaml)을 따른다. Member authority protocol,
 TLS/credential/key rotation·철회, archive/public mapping, 실제 인계 DB history/baseline 및 HTTP 검증은
 남아 있다. 60초 TTL/5초 skew 등 수치는 리뷰 제안이며 운영값이 아니다. Go의 현재 archive 거절을
-이 초안만으로 해제하지 않는다. ADR-071/073의 다른 초안도 승인하지 않는다.
+이 초안만으로 해제하지 않는다. 후속 [ADR-083의 Book metadata 정책](TRADING_REVIEW_BOOK_METADATA_POLICY.md)은 GetBook/ListBooks만 별도로 채택했으며 이 ADR의 인증/profile 전체를 채택하지 않는다. ADR-071/073의 다른 초안도 승인하지 않는다.
 
 Determinism 영향 없음. Point-in-Time 영향 없음. 초안 채택·구현·전파·검증 완료 전 route를 활성화하지 않는다.
 
@@ -1328,6 +1328,7 @@ read/create/delete 권한, 멱등 namespace·replay, archive/nullable/error 의�
 서비스 credential AND 사용자 위임·별도 account-book audience·operation scope/registry·현재 authority/owner/Guard를
 요구하는 방향이다. 기존 read-only audience를 write에 허용하지 않는다. 삭제 status는 Root ACTIVE가 아닌
 검증된 request owner control 조회이며 DELETE replay도 delete 권한을 요구한다.
+Book metadata GetBook/ListBooks는 후속 [ADR-083](TRADING_REVIEW_BOOK_METADATA_POLICY.md)으로 좁게 채택했다. 생성 replay·삭제·P02~04와 ADR-075 전체는 여전히 후보이며,
 Book displayName optional additive, known-none pointer null/미조회 생략, archive metadata/정당한 삭제 허용·
 신규 Book 생성 차단은 초안에서만 표현한다. 정본 schema/handler를 바꾸거나 새 Archive API를 도입하지 않는다.
 
@@ -1593,3 +1594,19 @@ API schema/hash/vector·SQL/TTL/cleanup·업무 서버는 이번에 변경하지
 기존 public/internal DRAFT YAML·정적 checker와 [consumer 수용 계획](TRADING_REVIEW_REPROCESSING_CONSUMER_ACCEPTANCE.md)에 연결했다.
 정확 request-wire 설계는 더 이상 선택 대기가 아니지만 실제 사용/legacy inventory·route/consumer·HTTP/decoder/메모리·hash/Compute/SQL·운영 수용은 남아 있다.
 현재 shared/active API·업무 코드/SQL은 변경하지 않았고 ADR-079 전체·위임/Member 선형화·child/private/삭제 control 후보를 채택하지 않았다.
+
+
+## ADR-083 — Trading Review Book Metadata Reads for Archived Scopes
+
+**상태: 채택(2026-11-17), GetBook·ListBooks metadata 한정.** 사용자와 좁은 권고안을 논의한 뒤 진행 지시에 따라
+[Book metadata 정본](TRADING_REVIEW_BOOK_METADATA_POLICY.md)을 확정한다. 문서 merge/CI를 채택 근거로 삼지 않는다.
+
+검증된 owner·유효 Account→Book 관계와 현재 삭제 Guard 아래 ACTIVE/ARCHIVED parent/Book의 metadata Get/List를 허용한다.
+삭제 parent는 거절하고 삭제 Book은 단건 차단·목록/total 제외다. parent 오류와 정상 빈 page를 구분하며 가시성/count의 snapshot 일관성을 검증한다.
+ARCHIVED metadata 허용을 grant·결과/Artifact 접근·Import/Compute/재처리 권한으로 재사용하지 않는다.
+
+신규 CreateBook·생성 replay는 현재 ACTIVE 요구를 유지한다. metadata 조회는 가능해도 같은 Book의 과거 생성 replay는 거절될 수 있으며 후속 consumer 검토에 명시한다.
+삭제/control/status·Archive API·P02~04·ADR-074/075 전체는 채택하지 않는다. 기존 key/ID/hash/vector·공개 필드/nullable·서비스 경계를 유지한다.
+
+Core GetBook/ListBooks·Go archive 보류의 기존 차이를 정본에 기록했다. 후속 metadata Guard/목록 구현·생성 회귀·실제 authority/HTTP/consumer·DB/운영 수용은 별도다.
+이번에는 runtime·OpenAPI/schema·SQL/migration·운영 경로를 변경하지 않았다. 결정한 metadata 범위를 과거 DRAFT 문구 때문에 다시 승인받지 않는다.
