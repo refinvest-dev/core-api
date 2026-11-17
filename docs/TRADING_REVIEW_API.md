@@ -204,6 +204,8 @@ domain 성공이 아니다. 이후 terminal rejection/failure는 session/run sta
 `declaredPositionMode=ONE_WAY`와 optional exact `dataPolicyVersion`을 받는다. 생략하면 Go가 admission 시
 현재 immutable policy ID를 resolve해 session에 저장한다. mutable `latest` 문자열은 저장하지 않는다.
 
+[ADR-084 Create 정책](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)에 따라 신규는 승인된 policy/exact VersionSet을 고정하고, known replay는 원 policy/mapping으로 비교한다. 신규·replay 모두 ACTIVE Account/Book과 현재 owner/삭제 Guard를 요구한다. 진전 상태·raw-only replay는 새 실행이 아니며 archive 거절/기존 오류 호환을 유지한다. clientRequestReference는 optional nullable·유효 Unicode scalar 최대 100개다. 잘못된 UTF-8/단독 surrogate를 대체해 수용하지 않고 원 문자열의 fingerprint A를 보존한다. 후속 Validate target/profile 전체·HTTP/consumer 구현은 별도다.
+
 Import status는 다음을 함께 반환한다.
 
 - `RECEIVED | VALIDATING | ACCEPTED | REJECTED | PROCESSING_FAILED`
@@ -721,7 +723,7 @@ object cleanup latency를 Integration에서 측정한다. 측정 결과만으로
 
 ## Import 계약 정합성 리뷰 초안
 
-[ADR-076 후보](TRADING_REVIEW_IMPORT_CONTRACT_DRAFT.md)는 filename·VersionSet 선택·request replay와
+[ADR-084](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)은 Create 한정 정책을 채택했다. 나머지 [ADR-076 후보](TRADING_REVIEW_IMPORT_CONTRACT_DRAFT.md)는 filename·후속 VersionSet 선택·request replay와
 [응답/오류](TRADING_REVIEW_IMPORT_RESPONSE_DRAFT.md)의 정합성 검토안이다. **미채택**이며 이 문서의
 기존 설명이나 현재 OpenAPI를 자동 대체하지 않는다. 충돌/누락과 실제 consumer·미실행 수용 계획을 함께
 기록했으며 후속 정책/schema·snapshot·구현 범위를 확정하기 전 신규 동작을 활성화하지 않는다.

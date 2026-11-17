@@ -1,5 +1,7 @@
 # Import 계약 후보 consumer·수용·전파 계획 (DRAFT)
 
+**Create 한정 최신 결정:** [ADR-084](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)이 Create pin·A/replay·Unicode scalar 100·ACTIVE parent와 Tx 보장을 채택했다. 이 문서의 포괄적인 미채택 표기는 그 결정을 취소하지 않는다. Validate/Retry/Upload·내부 HTTP/profile·응답 등 나머지 후보는 DRAFT이며 실제 runtime/consumer 수용은 별도다.
+
 상태: **ADR-076 미채택 리뷰/미실행 계획**. [정책 후보](TRADING_REVIEW_IMPORT_CONTRACT_DRAFT.md),
 [identity/replay](TRADING_REVIEW_IMPORT_REPLAY_DRAFT.md), [response/error](TRADING_REVIEW_IMPORT_RESPONSE_DRAFT.md)를 함께 읽는다.
 아래 source 관측·정적 문서 검증과 실제 runtime/DB/HTTP 수용을 구분한다.

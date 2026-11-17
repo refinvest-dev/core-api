@@ -1347,6 +1347,9 @@ Determinism 영향 없음. Point-in-Time 영향 없음. 계산·version/hash·AC
 
 ## ADR-076 — Trading Review Import Contract Consistency Candidate (DRAFT)
 
+후속 [ADR-084](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)은 Create pin·A fingerprint/replay·scalar 길이·ACTIVE parent·Tx 보장만 좁게 채택했다. 아래 ADR-076 전체와 나머지 IC 후보는 계속 DRAFT다.
+
+
 **상태**: 검토 초안·미채택·runtime 미구현. 기존 public/Compute OpenAPI·계산/상태/hash/ACK와
 ADR-072는 유지한다. ADR-071/073/074/075의 별도 초안도 승인하지 않는다.
 
@@ -1610,3 +1613,24 @@ ARCHIVED metadata 허용을 grant·결과/Artifact 접근·Import/Compute/재처
 
 Core GetBook/ListBooks·Go archive 보류의 기존 차이를 정본에 기록했다. 후속 metadata Guard/목록 구현·생성 회귀·실제 authority/HTTP/consumer·DB/운영 수용은 별도다.
 이번에는 runtime·OpenAPI/schema·SQL/migration·운영 경로를 변경하지 않았다. 결정한 metadata 범위를 과거 DRAFT 문구 때문에 다시 승인받지 않는다.
+
+
+## ADR-084 — Trading Review ImportSession Creation and Replay
+
+**상태: 채택(2026-11-17), CreateImportSession 한정.** 사용자와 권고안을 논의하고 재검토 후 반영 요청에 따라
+[Create 정책 정본](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)을 확정했다. PR merge·CI가 채택 근거는 아니다.
+
+신규는 승인된 immutable policy/exact VersionSet을 일관된 snapshot에서 선택해 Session에 고정한다.
+같은 key replay는 현재 권위/owner/parent·삭제 Guard와 원 policy/mapping으로 비교하며 새 current·신규 실행 지원 때문에 재접수하지 않는다.
+기존 owner+operation+key namespace와 A fingerprint·null/empty reference 동등성·원 bytes를 유지한다.
+reference는 유효한 Unicode scalar 최대 100개이며 잘못된 UTF-8/단독 surrogate를 대체해 수용하지 않는다.
+기존 UTF-16 길이와의 허용 범위 차이·실제 decoder/중계/consumer 수용을 명시했다.
+
+신규·replay 모두 ACTIVE Account/Book 요구를 유지한다. terminal/진행 상태의 원 Session replay와 raw-only를 신규 실행/전체 삭제로 해석하지 않는다.
+Archive 거절은 기존 Create 오류 호환을 유지하고 실제 삭제 상태/부작용을 만들지 않는다. ADR-083 metadata 허용을 확장하지 않는다.
+pin provider는 작게 시작하되 외부 I/O는 Tx 밖, Insert+Complete는 같은 실제 Tx, namespace fence/현재 Guard/UNKNOWN 복구를 보장한다.
+구체 carrier/Store/SQL·전체 writer·legacy/운영 증적은 Go 상세 구현/검증 대상이다.
+
+**대체 범위:** ADR-076 IC-P02의 Create pin·IC-P03의 Create A/replay 부분과 source의 UTF-16 길이 검사에 대한 좁은 정책이다.
+Validate/Retry/Upload·내부 인증/HTTP·응답 후보·ADR-076 전체는 채택하지 않는다. 공개 필드/namespace/hash 입력을 추가하지 않는다.
+현재 schema에는 정책/reference의 설명만 보완하며 runtime·DDL·consumer/운영 인계·업무 수용은 별도다.

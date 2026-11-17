@@ -1,5 +1,7 @@
 # TRADING_REVIEW_PERSISTENCE.md — Trading Review Logical Persistence Contract
 
+[ADR-084 Create 정책](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)의 신규 immutable pin·원 mapping/replay·Insert+Complete 동일 Tx를 따른다. 이는 특정 carrier/SQL/legacy 설치·전체 writer 검증이나 Validate/Retry 전체 채택이 아니다.
+
 
 [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)와 ADR-072에 따라 Trading Review 저장 소유자는 Go다.
 

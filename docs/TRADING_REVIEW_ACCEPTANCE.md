@@ -99,8 +99,11 @@ Acceptance orchestration이 정본 failure taxonomy에 추가로 사용하는 sa
 
 ## 2. Idempotency Contract
 
+Create의 원 pin/replay·scalar 길이·ACTIVE parent·raw-only/terminal 경계는 [ADR-084 정본](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)을 따른다. 해당 정책의 실제 수용 표는 미실행이며 기존 TR-ACC-IMPORT-001/004/007 전체가 완료된 것으로 표시하지 않는다.
+
 | Command | Logical key input | 진행 중 중복 | 성공 후 중복 | 실패 후 retry | 불일치 payload |
 |---|---|---|---|---|---|
+| `CreateTradingImportSession` | owner+operation+key와 원 Book/timezone/mode/resolved policy/reference의 A payload | 원 Session 반환 | 현재 Guard 아래 원 Session 반환 | 원 key 복구; 새 실행 없음 | 현재 Guard 뒤 `REJECT_CONFLICT` |
 | `UploadTradingImportArtifact` | owner, session, role, raw SHA-256 | `RETURN_EXISTING` | `RETURN_EXISTING` | 저장 실패는 `CREATE_NEW_ATTEMPT` | 같은 key/role에 다른 hash는 `REJECT_CONFLICT` |
 | `ValidateTradingImportSession` | owner, session, 두 role/hash, normalization/reconstruction VersionSet, data policy, generation | `RETURN_EXISTING` | terminal이면 `NO_OP` | `VALIDATING` 내부 compute attempt만 `CREATE_NEW_ATTEMPT`; `PROCESSING_FAILED`는 별도 retry command | `REJECT_CONFLICT` |
 | `RetryTradingImportSession` | owner, session, original inputSetHash/VersionSet, generation | 기존 active Run 반환 | 성공 Revision 반환 | `PROCESSING_FAILED`와 active raw면 새 Run/attempt, 같은 logical fingerprint | `REJECT_CONFLICT` |

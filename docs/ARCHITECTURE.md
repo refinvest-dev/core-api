@@ -1,5 +1,7 @@
 # ARCHITECTURE.md — 시스템 아키텍처
 
+> **Import 생성 정책:** [ADR-084](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)는 Create 한정 pin/원 replay·scalar 100·ACTIVE parent·동일 Tx 보장을 채택했다. ADR-076 전체·Validate/Retry·HTTP/운영 구현은 별도다.
+
 > **Book metadata 정책:** [ADR-083](TRADING_REVIEW_BOOK_METADATA_POLICY.md)은 ARCHIVED parent/Book의 GetBook/ListBooks metadata 조회만 채택했다. 생성·replay·삭제·grant 및 ADR-074/075 전체로 확대하지 않는다. 실제 구현/consumer·HTTP·운영 수용은 별도다.
 
 > 이 문서는 ADR-072의 목표 서비스 구성을 정의한다. 현재 구현의 이전 완료 여부는
