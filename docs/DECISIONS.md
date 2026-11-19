@@ -1631,6 +1631,10 @@ Archive 거절은 기존 Create 오류 호환을 유지하고 실제 삭제 상�
 pin provider는 작게 시작하되 외부 I/O는 Tx 밖, Insert+Complete는 같은 실제 Tx, namespace fence/현재 Guard/UNKNOWN 복구를 보장한다.
 구체 carrier/Store/SQL·전체 writer·legacy/운영 증적은 Go 상세 구현/검증 대상이다.
 
+2026-11-19 후속 보완은 승인 근거의 구조/identity/지원 조합을 구분하고, 신규 선택 snapshot·실행 시 지원 확인·운영 차단을 분리했다.
+현재 decoder 미지원과 실제 legacy 손상을 구분하며 명시 decoder/원 identity 보존·근거 없는 자동 보정 금지를 확정했다.
+manifest 공급/조립의 물리 방법은 Go 기술 결정이며 파일 형식·실제 registry/DB/consumer 수용 완료를 뜻하지 않는다.
+
 **대체 범위:** ADR-076 IC-P02의 Create pin·IC-P03의 Create A/replay 부분과 source의 UTF-16 길이 검사에 대한 좁은 정책이다.
 Validate/Retry/Upload·내부 인증/HTTP·응답 후보·ADR-076 전체는 채택하지 않는다. 공개 필드/namespace/hash 입력을 추가하지 않는다.
 현재 schema에는 정책/reference의 설명만 보완하며 runtime·DDL·consumer/운영 인계·업무 수용은 별도다.

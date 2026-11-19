@@ -124,6 +124,48 @@ provider는 승인된 정책/VersionSet 조합을 일관된 snapshot으로 반�
 exact 필수 값·계산/결과 pin의 정본 의미를 검증하고 mutable latest·가까운 버전 fallback·legacy default 보정을 하지 않는다.
 서로 다른 current 읽기를 섞어 승인되지 않은 조합을 만들지 않는다. 현재 label·실제 실행 지원·운영 cutover는 서로 다른 판정이다.
 
+### 승인 근거와 신규 선택
+
+2026-11-19 후속 재검토에서 아래 Create 한정 해석을 확정했다. 공급 파일/조립의 기술 선택은 Go가 소유하며 새로운 공개 registry API를 정의하지 않는다.
+
+승인은 다음 세 검증을 구분한다.
+
+| 검증 | 필요한 근거 |
+|---|---|
+| 구조 | 필수 exact 값·metadata schema·중복/미지원 값·기존 저장 제약 |
+| identity | 해당 pin 종류의 정본 hash projection/canonical codec과 고정 vector로 계산한 hash 일치 |
+| 지원 조합 | 정책·Normalizer/Reconstruction·해당하는 Analytics·implementation digest 조합과 producer/consumer의 명시 지원 근거 |
+
+hash 문자열 형태나 DTO의 생성 가능성은 identity/지원 승인이 아니다. 파일 자체의 checksum도 내부 VersionSet hash를 대신하지 않는다.
+Go는 신규 pin의 승인 조합을 선택·고정하고, Compute는 실행 시 자신의 exact 구현 지원을 검증한다.
+[Versioning](TRADING_VERSIONING.md#3-version-registry와-availability)의 availability와 compatibility 의미를 유지하며
+Core라는 기존 문구의 Trading Review 업무 책임은 [서비스 경계](TRADING_REVIEW_SERVICE_BOUNDARY.md)에 따라 Go로 인계한다.
+
+신규 Create는 배포에서 검증한 불변 승인 snapshot을 사용할 수 있으며 매 요청의 Compute 실시간 조회를 요구하지 않는다.
+이 근거는 admission 선택 시점의 승인/지원 조합이다. Compute의 현재 생존·미래 실행 성공이나 긴급 차단의 즉시 전파를 보장하지 않는다.
+실제 실행 가능성은 후속 Validate admission에서 다시 확인한다. 이미 명시된 차단/cutover gate는 별도로 준수하며 정적 snapshot을 이유로 우회하지 않는다.
+current 교체만으로 이미 선택한 exact pin을 바꾸지 않는다. Validate target/Retry의 미채택 상세를 이번 보완으로 확정하지 않는다.
+
+### 기존 pin의 decode와 손상 구분
+
+원 receipt 복구는 신규 승인 profile 목록·current provider 가용성과 분리한다. 기존 pin의 구조/identity 검증은 적용되는 저장 형식의 근거로 수행한다.
+신규 지원 종료와 현재 decoder의 미지원, 실제 저장 손상을 구분한다.
+
+| 기존 값/상태 | Create known replay 처리 |
+|---|---|
+| 지원하는 정상 저장 형식·원 binding | 현재 권위/parent/삭제 Guard와 원 policy/mapping으로 복구 |
+| 신규 선택/실행 지원이 종료됐지만 원 값은 정상 | 원 receipt 복구 허용. 새 실행 가능성을 부여하지 않음 |
+| 현재 decoder가 읽지 못하는 과거 형식 | 손상으로 단정하지 않음. 실제 producer/schema/hash 근거 확인 전 안전한 저장/의존성 오류로 중단 |
+| 과거에 정상 지원한 형식임이 확인됨 | 그 형식의 명시 decoder·고정 vector로 원 의미/identity를 검증한 뒤 복구. current를 default로 채우지 않음 |
+| 해당 형식에서 검증된 hash 불일치·필수 pin 누락·owner/Book binding 손상 | 안전한 저장 정합성/의존성 오류로 중단. 자동 재생성/보정 없음 |
+| NULL resource·원 mapping이 모호한 legacy | 원 증거 확인 전 중단. 새 key/current/ID로 복구했다고 표시하지 않음 |
+
+정본 codec/projection 자체가 불명확한 값을 임의 JSON 직렬화로 재계산해 hash 불일치라 판정하지 않는다.
+호환 decoder는 필요한 해석 경계에만 둔다. raw JSON·기존 ID·hash·request fingerprint/mapping을 재작성하거나 알 수 없는 의미 필드를 조용히 버리지 않는다.
+decoder 추가가 계산 입력 migration/실행 지원을 뜻하지 않는다. legacy 수용 범위는 실제 저장 inventory와 형식별 고정 vector로 입증하며 이 문서만으로 기존 DB가 호환된다고 주장하지 않는다.
+
+### transaction 경계
+
 논리적 실행 순서는 인증/입력 → Tx 밖 신규 후보 준비(필요할 때) → request namespace fence → parent/current Guard → payload/replay 판단 → Insert+Complete → commit 뒤 Result다.
 Go의 구체 Tx-bound capability·carrier·row/암묵 FK/unique 잠금·SQL/index는 Go가 소유하고 Store 구현 전에 후보 순서를 정해 실제 경합으로 검증한다.
 외부 I/O·ID 발급은 business Tx 밖이며 Session Insert와 Complete는 같은 실제 Tx다. 기존 Tx에 참여할 때 독립 commit/pool fallback이 없다.
