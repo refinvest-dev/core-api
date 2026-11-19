@@ -99,8 +99,11 @@ Acceptance orchestration이 정본 failure taxonomy에 추가로 사용하는 sa
 
 ## 2. Idempotency Contract
 
+Create의 원 pin/replay·scalar 길이·ACTIVE parent·raw-only/terminal 경계는 [ADR-084 정본](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)을 따른다. 해당 정책의 실제 수용 표는 미실행이며 기존 TR-ACC-IMPORT-001/004/007 전체가 완료된 것으로 표시하지 않는다.
+
 | Command | Logical key input | 진행 중 중복 | 성공 후 중복 | 실패 후 retry | 불일치 payload |
 |---|---|---|---|---|---|
+| `CreateTradingImportSession` | owner+operation+key와 원 Book/timezone/mode/resolved policy/reference의 A payload | 원 Session 반환 | 현재 Guard 아래 원 Session 반환 | 원 key 복구; 새 실행 없음 | 현재 Guard 뒤 `REJECT_CONFLICT` |
 | `UploadTradingImportArtifact` | owner, session, role, raw SHA-256 | `RETURN_EXISTING` | `RETURN_EXISTING` | 저장 실패는 `CREATE_NEW_ATTEMPT` | 같은 key/role에 다른 hash는 `REJECT_CONFLICT` |
 | `ValidateTradingImportSession` | owner, session, 두 role/hash, normalization/reconstruction VersionSet, data policy, generation | `RETURN_EXISTING` | terminal이면 `NO_OP` | `VALIDATING` 내부 compute attempt만 `CREATE_NEW_ATTEMPT`; `PROCESSING_FAILED`는 별도 retry command | `REJECT_CONFLICT` |
 | `RetryTradingImportSession` | owner, session, original inputSetHash/VersionSet, generation | 기존 active Run 반환 | 성공 Revision 반환 | `PROCESSING_FAILED`와 active raw면 새 Run/attempt, 같은 logical fingerprint | `REJECT_CONFLICT` |
@@ -1780,6 +1783,11 @@ Scenario reference에서 group prefix `TR-ACC-`는 생략했다. 모든 `TR-I01`
 12. 각 scenario의 fixture 상태와 `Applied Invariants`가 위 블록과 matrix에 명시돼 있다.
 13. harness는 각 `Given/When/Then`, state/artifact count, outcome/failure/idempotency/evidence를 별도 assertion으로
     옮길 수 있다.
+
+## Book metadata 정책 후속 수용
+
+[ADR-083 수용 계획](TRADING_REVIEW_BOOK_METADATA_POLICY.md#수용-계획과-활성화-조건)은 ACTIVE/ARCHIVED parent×Book의 Get/List 동일성·삭제/foreign 차단·생성/replay 보존을 후속 구현에서 검증한다.
+기존 Scenario ID/Then을 재명명하거나 기존 110개 실행 증적으로 확대하지 않는다. TR-I01/15와 TR-ACC-AUTH-002의 숨김 원칙을 추적하며 새 read matrix의 실제 수용은 아직 미실행이다.
 
 ## 8. Out of Scope
 

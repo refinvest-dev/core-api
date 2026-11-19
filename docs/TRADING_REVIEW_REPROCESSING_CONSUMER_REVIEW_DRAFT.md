@@ -1,5 +1,8 @@
 # Reprocessing consumer·legacy·receipt/profile 통합 리뷰 (DRAFT)
 
+> **2026-11-16 wire 후속 설계:** [고정 profile·오류·원문 중계 계약](TRADING_REVIEW_REPROCESSING_WIRE_CONTRACT.md)이 해당 상세의 현재 기준이다.
+> 아래는 고정 source/과거 조사·미결 업무 범위를 포함한다. 신규 Request* schema/registry 설계 확정과 실제 runtime/consumer 수용은 구분한다.
+
 > **2026-11-15 채택 반영:** ①~④의 동작 원칙은 [채택 정책](TRADING_REVIEW_REPROCESSING_POLICY.md)·ADR-080을 따른다.
 > 아래는 채택 전 검토 기록과 미확정 상세다. 과거 미채택/권고 문구가 이번 명시 채택을 취소하지 않는다.
 > 정확 schema/code·receipt 수명/삭제·profile/legacy 적용은 관련 구현 전에 문서로 확정하며, 현재 wire/runtime은 유지한다.

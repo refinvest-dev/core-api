@@ -10,7 +10,7 @@
 
 - 신규 **재처리 전용 versioned request profile**에 적용한다. public 진입과 Core/Gateway→Go 중계는 같은 요청 의미/제한을 보존한다.
 - shared Analysis/Compute schema·기존 profile·legacy·저장된 원 descriptor/receipt를 일괄 축소하거나 재작성하지 않는다.
-- 정확 wire profile 식별/선택·기존 V2 DRAFT와의 구분은 OpenAPI/consumer 설계에서 구현 전에 확정한다. 이번 결정으로 header/path/enum literal을 새로 활성화하지 않는다.
+- [wire 상세 계약](TRADING_REVIEW_REPROCESSING_WIRE_CONTRACT.md)에서 method+route→`trading-reprocessing-admission-v1` 매핑·request-local schema·오류 registry·Core 중계를 설계 확정했다. 현재 V2/internal V1 후보는 runtime 비활성이고 실제 consumer/배포 inventory·수용 전 활성화하지 않는다.
 - request profile은 저장 codec·crypto epoch·서비스 인증/위임 profile과 다르다. profile/Book/중계 경로를 owner+operation+key namespace의 새 분할로 쓰지 않는다.
 - 기존 ID·source pin·logical key·Config hash·Compute inputIdentity/fingerprint·golden vector는 보존한다. old profile을 새 규칙으로 decode/replay하거나 같은 instant만으로 execution을 자동 수렴시키지 않는다.
 
@@ -86,7 +86,7 @@ HTTP transfer framing과 Content-Encoding을 혼동하지 않는다. 향후 압�
 
 기존 service/Member 인증·현재 authority/Guard·비노출 오류 우선권을 우회하지 않는다. 오류 body에 과거 key/scope/receipt 존재를 노출하지 않는다.
 상한 감지 시 admission 전에 거절하고, 413을 확인하려고 이미 잘못된 본문을 무제한 drain하지 않는다.
-여러 오류가 함께 있는 경우의 정확 우선순위는 제한된 읽기/보안 pipeline과 함께 registry·consumer 설계에서 구현 전에 고정한다.
+복합 오류의 단계/조기 중단·media/encoding 우선순위와 현재 권위/receipt 순서는 [wire 계약](TRADING_REVIEW_REPROCESSING_WIRE_CONTRACT.md)으로 고정했다. 공통 transport 보호와 실제 runtime 수용은 구분한다.
 기존 receipt/key가 있으면 그대로 보존한다. 이번 400/413/415나 네트워크 실패를 이전 시도의 rollback/미접수·key 해제 증거로 해석하지 않는다.
 현재 승인된 replay는 원 profile/decision과 현재 authority/Guard를 사용한다. 새 입력 제한으로 원 receipt 종류/결속을 바꾸지 않는다.
 
@@ -94,13 +94,13 @@ HTTP transfer framing과 Content-Encoding을 혼동하지 않는다. 향후 압�
 
 | 경계 | 구현/활성화 전에 닫을 조건 |
 |---|---|
-| wire/API 계약 | profile 식별/선택·기존 DRAFT와 전환, local closed schema, byte/depth 단위, 400/413/415 safe code·headers/cache·현재 trace·복합 오류 우선순위 |
+| wire/API 계약 | [wire 상세](TRADING_REVIEW_REPROCESSING_WIRE_CONTRACT.md)의 profile/closed Request*·code·cache/trace·오류 순서·원문 중계 설계는 확정. DRAFT YAML/정적 경계를 넘어 실제 route/consumer·legacy 전환/수용 증거 필요 |
 | caller/legacy | 실제 ID/version/terms·extension·Config 표기 inventory와 caller 생성 body 확인. 필요한 정상 요청이 제한을 넘으면 활성화를 중단하고 명시 계약 변경으로 해결 |
 | consumer | Core/Gateway relay가 요청 의미·원 key·status/code/trace를 유지하고 Web이 새 오류를 해석. 압축과 mixed profile 전환/중단 경로 검증 |
 | hash/Compute | producer/DTO/hash·원 Config/inputIdentity/fingerprint 왕복과 canonical 입력 반례. 기존 hash/vector를 재작성하지 않음 |
 | bounded ingress | 실제 수신/파싱의 byte/depth/entry·UTF-8/중복/정수/정밀도·취소/메모리·HTTP 경계와 same-key/원 receipt/삭제/UNKNOWN 수용 |
 
-새 schema·runtime·SQL·migration·Worker/업무 구현·consumer snapshot 적용은 이번 정책 문서 변경에 포함하지 않았다.
+최초 정책 채택에서 schema/runtime은 변경하지 않았다. 후속 wire 설계에서 DRAFT YAML의 접수 전용 schema/오류와 정적 checker를 갱신했으나 shared/active API·runtime·SQL/migration·Worker/업무 구현·consumer snapshot 적용은 없다.
 실제 업무 수용/부하/E2E·운영 단일 writer/DB history·복구 인계 완료도 주장하지 않는다. 위 구현 전 조건은 정책 미채택을 의미하지 않으며 동일 원칙/수치의 재승인을 요구하지 않는다.
 
 ## 결정 근거와 과거 후보

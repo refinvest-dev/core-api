@@ -1,5 +1,7 @@
 # Import request identity·replay 정합성 (DRAFT)
 
+**Create 한정 최신 결정:** [ADR-084](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)이 Create pin·A/replay·Unicode scalar 100·ACTIVE parent와 Tx 보장을 채택했다. 이 문서의 포괄적인 미채택 표기는 그 결정을 취소하지 않는다. Validate/Retry/Upload·내부 HTTP/profile·응답 등 나머지 후보는 DRAFT이며 실제 runtime/consumer 수용은 별도다.
+
 상태: **ADR-076/IC-P03 미채택 후보**. [전체 리뷰](TRADING_REVIEW_IMPORT_CONTRACT_DRAFT.md)를 먼저 읽는다.
 기존 request fingerprint를 계산 input/result hash와 구분하며 아래는 고정 source 관측과 우선 권장안이다.
 

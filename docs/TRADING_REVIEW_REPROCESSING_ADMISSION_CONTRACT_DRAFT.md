@@ -108,6 +108,7 @@ Go는 typed descriptor·확인 facts·decision을 분리하고, 불완전 No-Run
 
 ## 후속 request profile 후보 — ADR-082 DRAFT
 
-[검증·동등성·상한 후보](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE_DRAFT.md)는 현재 nested 허용/시각 비교/크기 공백의 권고안을 다룬다.
-재처리 전용 versioned closed nested·UTC microsecond 비교·byte/depth/cardinality 수치와400/413의 후보이며 **미채택**이다.
-기존 active/shared schema·현재 DRAFT YAML/receipt/code·ADR-080/081은 유지한다. 새 profile/consumer·hash/inventory·실제 bounded 수용을 확인하기 전 서버에 적용하지 않는다.
+이 heading은 기존 anchor를 보존한다. 현재는 [ADR-082 채택 정본](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE.md)과
+[wire 상세 계약](TRADING_REVIEW_REPROCESSING_WIRE_CONTRACT.md)을 따른다. 과거 미채택/UTC 자동 비교/int32 후보 표기는 현재 규칙이 아니다.
+접수 전용 Request* schema·고정 profile·400/413/415 및 public relay502/504·Core 원문 중계는 설계 확정됐고 DRAFT YAML/정적 checker에 표현했다.
+ADR-080/081·현재 shared/active API·원 receipt/legacy/hash는 유지하며 실제 HTTP/consumer·bounded ingress·hash/Compute/SQL 수용과 운영 활성화는 별도다.

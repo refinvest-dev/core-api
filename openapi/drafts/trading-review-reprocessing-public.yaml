@@ -2,11 +2,12 @@ openapi: 3.0.3
 info:
   title: Trading Reprocessing public HTTP API (DRAFT)
   version: 0.1.0-draft
-  description: ADR-079/WP01~04 unadopted candidate. Existing active API/Compute/hash vectors unchanged.
+  description: ADR-080/081/082 adopted scopes and fixed request wire design; remaining Workflow contracts are draft.
+    Runtime disabled; shared API/Compute/hash vectors unchanged.
 x-contract-status: draft
 x-policy-status: proposed
 x-runtime-enabled: false
-x-error-code-status: proposed-not-current-registry
+x-error-code-status: request-wire-design-fixed; active registry unchanged
 x-example-evidence: synthetic transport/schema examples; no hash oracle, execution support or runtime acceptance
 x-logical-hash-projection: unchanged; outputs/publish/retry are full binding, not added to the existing logical
   SHA root
@@ -27,7 +28,7 @@ paths:
         in: path
         required: true
         schema:
-          $ref: '#/components/schemas/OpaqueId'
+          $ref: '#/components/schemas/RequestOpaqueId'
       - $ref: ../core-api.yaml#/components/parameters/PublicIdempotencyKey
       - $ref: ../core-api.yaml#/components/parameters/CsrfToken
       - name: traceparent
@@ -61,6 +62,14 @@ paths:
           $ref: '#/components/responses/Error500'
         '503':
           $ref: '#/components/responses/Admit503'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
+        '502':
+          $ref: '#/components/responses/Error502'
+        '504':
+          $ref: '#/components/responses/Error504'
       x-idempotency-namespace: requestTradingReprocessing
       requestBody:
         required: true
@@ -89,6 +98,26 @@ paths:
                 $ref: '#/components/examples/RetryRequest'
               OmittedPublishAndNullOptionalSource:
                 $ref: '#/components/examples/OmittedPublishAndNullOptionalSource'
+      x-request-profile: trading-reprocessing-admission-v1
+      x-request-budget:
+        bodyBytes: 1048576
+        containerDepth: 16
+        resourceIdUtf8Bytes: 256
+        versionDigestInstrumentUtf8Bytes: 256
+        versionIdentifierCharacters: 200
+        reviewTimezoneUtf8Bytes: 128
+        instrumentTermsEntries: 4096
+        integerMaximum: 9007199254740991
+      x-request-content-encoding:
+      - identity
+      x-request-encoding-omission: identity
+      x-validation-order:
+      - authentication
+      - path-key-query
+      - media-encoding
+      - bounded-json
+      - current-ownership-guard
+      - receipt-or-admission
     get:
       operationId: listTradingReprocessingRunsV2Draft
       x-access-mode: owner-current-guard
@@ -147,6 +176,10 @@ paths:
           $ref: '#/components/responses/Error500'
         '503':
           $ref: '#/components/responses/Error503'
+        '502':
+          $ref: '#/components/responses/Error502'
+        '504':
+          $ref: '#/components/responses/Error504'
   /trading-review/v2/trading-reprocessing-runs/{reprocessingRunId}:
     get:
       operationId: getTradingReprocessingRunV2Draft
@@ -191,6 +224,10 @@ paths:
           $ref: '#/components/responses/Error500'
         '503':
           $ref: '#/components/responses/Error503'
+        '502':
+          $ref: '#/components/responses/Error502'
+        '504':
+          $ref: '#/components/responses/Error504'
   /trading-review/v2/trading-reprocessing-runs/{reprocessingRunId}/cancellation:
     post:
       operationId: cancelTradingReprocessingV2Draft
@@ -237,6 +274,10 @@ paths:
           $ref: '#/components/responses/Error500'
         '503':
           $ref: '#/components/responses/Error503'
+        '502':
+          $ref: '#/components/responses/Error502'
+        '504':
+          $ref: '#/components/responses/Error504'
       x-idempotency-namespace: cancelTradingReprocessing
       x-request-body: forbidden
 components:
@@ -610,6 +651,11 @@ components:
             type: string
             enum:
             - Cookie
+        Retry-After:
+          description: Optional bounded retry hint; same key/request only, never a new Run/deadline.
+          schema:
+            type: string
+            pattern: ^[0-9]+$
       content:
         application/json:
           schema:
@@ -681,7 +727,8 @@ components:
                 reprocessingRunId: '725400000000000033'
       x-recorded-failure-link: confirmed-commit-and-current-owner-access-only
     Admit422:
-      description: 'Versioned admission rejection: recorded FAILED Run or committed normal-legacy pin-gap decision without Run; current access required.'
+      description: 'Versioned admission rejection: recorded FAILED Run or committed normal-legacy pin-gap decision
+        without Run; current access required.'
       headers:
         Cache-Control:
           schema:
@@ -732,7 +779,8 @@ components:
                 retryable: false
                 reprocessingRunId: '725400000000000038'
             NoRunRejection:
-              summary: Synthetic committed normal-legacy pin gap; no Run/Dispatch. Schema does not prove source facts, commit or authority.
+              summary: Synthetic committed normal-legacy pin gap; no Run/Dispatch. Schema does not prove source
+                facts, commit or authority.
               value:
                 code: REPROCESSING_SOURCE_PIN_UNAVAILABLE
                 message: 이 거래 기록의 재처리 입력 근거를 확인할 수 없습니다.
@@ -753,6 +801,11 @@ components:
             type: string
             enum:
             - Cookie
+        Retry-After:
+          description: Optional bounded retry hint; same key/request only, never a new Run/deadline.
+          schema:
+            type: string
+            pattern: ^[0-9]+$
       content:
         application/json:
           schema:
@@ -770,6 +823,146 @@ components:
             GenericError:
               value:
                 code: ADMISSION_OUTCOME_UNCONFIRMED
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: true
+    Error413:
+      description: Fixed request/relay error design; no Run reference or admission/rollback proof.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - REQUEST_BODY_TOO_LARGE
+                retryable:
+                  enum:
+                  - false
+          examples:
+            Case1:
+              value:
+                code: REQUEST_BODY_TOO_LARGE
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error415:
+      description: Fixed request/relay error design; no Run reference or admission/rollback proof.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - UNSUPPORTED_CONTENT_ENCODING
+                  - UNSUPPORTED_MEDIA_TYPE
+                retryable:
+                  enum:
+                  - false
+          examples:
+            Case1:
+              value:
+                code: UNSUPPORTED_CONTENT_ENCODING
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+            Case2:
+              value:
+                code: UNSUPPORTED_MEDIA_TYPE
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error502:
+      description: Fixed request/relay error design; no Run reference or admission/rollback proof.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - UPSTREAM_RESPONSE_INVALID
+                retryable:
+                  enum:
+                  - false
+          examples:
+            Case1:
+              value:
+                code: UPSTREAM_RESPONSE_INVALID
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error504:
+      description: Fixed request/relay error design; no Run reference or admission/rollback proof.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Cookie
+        Retry-After:
+          description: Optional bounded retry hint; same key/request only, never a new Run/deadline.
+          schema:
+            type: string
+            pattern: ^[0-9]+$
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorResponseV2Draft'
+            - properties:
+                code:
+                  enum:
+                  - UPSTREAM_TIMEOUT
+                retryable:
+                  enum:
+                  - true
+          examples:
+            Case1:
+              value:
+                code: UPSTREAM_TIMEOUT
                 message: 요청을 처리할 수 없습니다.
                 traceId: synthetic-current-request-trace
                 retryable: true
@@ -827,26 +1020,27 @@ components:
       - reasonCode
       properties:
         sourceLedgerRevisionId:
-          $ref: '#/components/schemas/OpaqueId'
+          $ref: '#/components/schemas/RequestOpaqueId'
         sourceAnalysisRunId:
           type: string
           minLength: 1
           nullable: true
+          x-max-utf8-bytes: 256
         reprocessingType:
           $ref: ../core-api.yaml#/components/schemas/ReprocessingType
         targetVersionSet:
-          $ref: '#/components/schemas/Target'
+          $ref: '#/components/schemas/RequestTarget'
         requestedOutputs:
           $ref: '#/components/schemas/RequestedOutputs'
         reasonCode:
           $ref: '#/components/schemas/ReasonCode'
         analysisConfig:
-          $ref: ../core-api.yaml#/components/schemas/AnalysisConfig
+          $ref: '#/components/schemas/RequestAnalysisConfig'
         publishAsLatest:
           type: boolean
           default: true
         retryOfReprocessingRunId:
-          $ref: '#/components/schemas/OpaqueId'
+          $ref: '#/components/schemas/RequestOpaqueId'
       oneOf:
       - properties:
           reprocessingType:
@@ -862,9 +1056,9 @@ components:
             - reconstruction
             properties:
               normalizer:
-                $ref: ../core-api.yaml#/components/schemas/NormalizerVersionSet
+                $ref: '#/components/schemas/RequestNormalizerVersionSet'
               reconstruction:
-                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+                $ref: '#/components/schemas/RequestReconstructionVersionSet'
         not:
           required:
           - analysisConfig
@@ -883,11 +1077,11 @@ components:
             - analytics
             properties:
               normalizer:
-                $ref: ../core-api.yaml#/components/schemas/NormalizerVersionSet
+                $ref: '#/components/schemas/RequestNormalizerVersionSet'
               reconstruction:
-                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+                $ref: '#/components/schemas/RequestReconstructionVersionSet'
               analytics:
-                $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+                $ref: '#/components/schemas/RequestAnalyticsVersionSet'
         required:
         - analysisConfig
       - properties:
@@ -903,7 +1097,7 @@ components:
             - reconstruction
             properties:
               reconstruction:
-                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+                $ref: '#/components/schemas/RequestReconstructionVersionSet'
         not:
           required:
           - analysisConfig
@@ -921,9 +1115,9 @@ components:
             - analytics
             properties:
               reconstruction:
-                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+                $ref: '#/components/schemas/RequestReconstructionVersionSet'
               analytics:
-                $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+                $ref: '#/components/schemas/RequestAnalyticsVersionSet'
         required:
         - analysisConfig
       - properties:
@@ -939,7 +1133,7 @@ components:
             - reconstruction
             properties:
               reconstruction:
-                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+                $ref: '#/components/schemas/RequestReconstructionVersionSet'
         not:
           required:
           - analysisConfig
@@ -957,9 +1151,9 @@ components:
             - analytics
             properties:
               reconstruction:
-                $ref: ../core-api.yaml#/components/schemas/ReconstructionVersionSet
+                $ref: '#/components/schemas/RequestReconstructionVersionSet'
               analytics:
-                $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+                $ref: '#/components/schemas/RequestAnalyticsVersionSet'
         required:
         - analysisConfig
       - properties:
@@ -975,7 +1169,7 @@ components:
             - analytics
             properties:
               analytics:
-                $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+                $ref: '#/components/schemas/RequestAnalyticsVersionSet'
         required:
         - analysisConfig
       - properties:
@@ -991,9 +1185,11 @@ components:
             - analytics
             properties:
               analytics:
-                $ref: ../core-api.yaml#/components/schemas/AnalyticsVersionSet
+                $ref: '#/components/schemas/RequestAnalyticsVersionSet'
         required:
         - analysisConfig
+      x-request-profile: trading-reprocessing-admission-v1
+      x-max-container-depth: 16
     SafeFailure:
       type: object
       additionalProperties: false
@@ -1305,7 +1501,7 @@ components:
         details:
           type: array
           items:
-            $ref: ../core-api.yaml#/components/schemas/ErrorDetail
+            $ref: '#/components/schemas/RequestErrorDetail'
           description: raw source value/identifier/storage locator를 포함하지 않는 allowlisted detail.
       additionalProperties: false
     RecordedFailureV2Draft:
@@ -1329,7 +1525,7 @@ components:
         details:
           type: array
           items:
-            $ref: ../core-api.yaml#/components/schemas/ErrorDetail
+            $ref: '#/components/schemas/RequestErrorDetail'
           description: raw source value/identifier/storage locator를 포함하지 않는 allowlisted detail.
         reprocessingRunId:
           $ref: '#/components/schemas/OpaqueId'
@@ -1358,7 +1554,8 @@ components:
           enum:
           - false
       additionalProperties: false
-      description: ADR-080 normal legacy source pin gap only; durable request decision without Run. Retention selection is a separate gate.
+      description: ADR-080 normal legacy source pin gap only; durable request decision without Run. Retention selection
+        is a separate gate.
     Difference:
       type: object
       required:
@@ -1416,6 +1613,290 @@ components:
         outcomeChanged:
           type: boolean
       additionalProperties: false
+    RequestNormalizerVersionSet:
+      type: object
+      additionalProperties: false
+      required:
+      - sourceDialectVersionsByArtifactRole
+      - adapterVersion
+      - normalizerVersion
+      - canonicalSchemaVersion
+      - implementationDigest
+      - versionSetHash
+      properties:
+        sourceDialectVersionsByArtifactRole:
+          type: object
+          required:
+          - TRADE_HISTORY
+          - POSITION_HISTORY
+          additionalProperties: false
+          properties:
+            TRADE_HISTORY:
+              $ref: '#/components/schemas/RequestVersionIdentifier'
+            POSITION_HISTORY:
+              $ref: '#/components/schemas/RequestVersionIdentifier'
+        adapterVersion:
+          $ref: '#/components/schemas/RequestVersionIdentifier'
+        normalizerVersion:
+          $ref: '#/components/schemas/RequestVersionIdentifier'
+        canonicalSchemaVersion:
+          $ref: '#/components/schemas/RequestVersionIdentifier'
+        implementationDigest:
+          type: string
+          x-max-utf8-bytes: 256
+        versionSetHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+    RequestReconstructionVersionSet:
+      type: object
+      additionalProperties: false
+      required:
+      - instrumentTermsVersionByInstrument
+      - reconstructionPolicyVersion
+      - reconciliationVersion
+      - reviewUnitSchemaVersion
+      - evidenceSchemaVersion
+      - implementationDigest
+      - versionSetHash
+      properties:
+        instrumentTermsVersionByInstrument:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/RequestVersionIdentifier'
+          maxProperties: 4096
+          x-property-max-utf8-bytes: 256
+        reconstructionPolicyVersion:
+          $ref: '#/components/schemas/RequestVersionIdentifier'
+        reconciliationVersion:
+          $ref: '#/components/schemas/RequestVersionIdentifier'
+        reviewUnitSchemaVersion:
+          $ref: '#/components/schemas/RequestVersionIdentifier'
+        evidenceSchemaVersion:
+          $ref: '#/components/schemas/RequestVersionIdentifier'
+        implementationDigest:
+          type: string
+          x-max-utf8-bytes: 256
+        versionSetHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+    RequestAnalyticsVersionSet:
+      type: object
+      required:
+      - metricDefinitionVersionsByMetricId
+      - findingRuleSetVersion
+      - analysisConfigVersion
+      - evidenceSchemaVersion
+      - implementationDigest
+      - versionSetHash
+      properties:
+        metricDefinitionVersionsByMetricId:
+          type: object
+          required:
+          - ENTRY_WITHIN_WINDOW_AFTER_LOSS
+          - INITIAL_EXPOSURE_CHANGE_AFTER_LOSS
+          - WIN_LOSS_HOLDING_DURATION_DIFFERENCE
+          properties:
+            ENTRY_WITHIN_WINDOW_AFTER_LOSS:
+              $ref: '#/components/schemas/RequestVersionIdentifier'
+            INITIAL_EXPOSURE_CHANGE_AFTER_LOSS:
+              $ref: '#/components/schemas/RequestVersionIdentifier'
+            WIN_LOSS_HOLDING_DURATION_DIFFERENCE:
+              $ref: '#/components/schemas/RequestVersionIdentifier'
+          additionalProperties: false
+        findingRuleSetVersion:
+          $ref: '#/components/schemas/RequestVersionIdentifier'
+        analysisConfigVersion:
+          $ref: '#/components/schemas/RequestVersionIdentifier'
+        evidenceSchemaVersion:
+          $ref: '#/components/schemas/RequestVersionIdentifier'
+        implementationDigest:
+          type: string
+          x-max-utf8-bytes: 256
+        versionSetHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+      additionalProperties: false
+    RequestAnalysisConfig:
+      type: object
+      required:
+      - schemaVersion
+      - analysisPeriod
+      - reviewTimezone
+      - timezoneDatabaseVersion
+      - outcomeBasis
+      - fundingTreatment
+      - eligibleReviewUnitPolicy
+      - reversalTreatment
+      - reentryWindow
+      - baselinePolicy
+      - metricMinimums
+      - findingMinimums
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          enum:
+          - 1
+          x-json-integer-token: true
+        analysisPeriod:
+          $ref: '#/components/schemas/RequestAnalysisPeriod'
+        reviewTimezone:
+          type: string
+          x-max-utf8-bytes: 128
+        timezoneDatabaseVersion:
+          $ref: '#/components/schemas/RequestVersionIdentifier'
+        outcomeBasis:
+          type: string
+          enum:
+          - NET_TRADING_PNL
+        fundingTreatment:
+          type: string
+          enum:
+          - EXCLUDED
+        eligibleReviewUnitPolicy:
+          type: string
+          enum:
+          - COMPLETE_AND_RECONCILED_ONLY
+        reversalTreatment:
+          type: string
+          enum:
+          - SEPARATE
+        reentryWindow:
+          type: string
+          enum:
+          - PT30M
+        baselinePolicy:
+          type: string
+          enum:
+          - PRIOR_PERIOD_SAME_INSTRUMENT_DIRECTION
+        metricMinimums:
+          $ref: '#/components/schemas/RequestMetricMinimums'
+        findingMinimums:
+          $ref: '#/components/schemas/RequestFindingMinimums'
+    RequestAnalysisPeriod:
+      type: object
+      required:
+      - startInclusive
+      - endExclusive
+      properties:
+        startInclusive:
+          type: string
+          format: date-time
+          pattern: ^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.(?!000000)[0-9]{6})?Z$
+          x-canonical-utc-microsecond: true
+        endExclusive:
+          type: string
+          format: date-time
+          pattern: ^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.(?!000000)[0-9]{6})?Z$
+          x-canonical-utc-microsecond: true
+      additionalProperties: false
+    RequestMetricMinimums:
+      type: object
+      required:
+      - reentryEligibleLosses
+      - exposurePairs
+      - priorBaselineEpisodes
+      - holdingWins
+      - holdingLosses
+      properties:
+        reentryEligibleLosses:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          x-json-integer-token: true
+        exposurePairs:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          x-json-integer-token: true
+        priorBaselineEpisodes:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          x-json-integer-token: true
+        holdingWins:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          x-json-integer-token: true
+        holdingLosses:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          x-json-integer-token: true
+      additionalProperties: false
+    RequestFindingMinimums:
+      type: object
+      required:
+      - reentryEligibleLosses
+      - exposurePairs
+      - holdingWins
+      - holdingLosses
+      properties:
+        reentryEligibleLosses:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          x-json-integer-token: true
+        exposurePairs:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          x-json-integer-token: true
+        holdingWins:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          x-json-integer-token: true
+        holdingLosses:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          x-json-integer-token: true
+      additionalProperties: false
+    RequestVersionIdentifier:
+      type: string
+      minLength: 1
+      maxLength: 200
+      description: immutable exact version ID. `latest` 같은 mutable alias는 저장 응답에 나타나지 않는다.
+      x-max-utf8-bytes: 256
+    RequestOpaqueId:
+      type: string
+      minLength: 1
+      x-max-utf8-bytes: 256
+      description: Admission input only; original ID grammar/ownership still applies. Historical read IDs are not
+        capped here.
+    RequestTarget:
+      type: object
+      required:
+      - versionSetHash
+      properties:
+        normalizer:
+          oneOf:
+          - $ref: '#/components/schemas/RequestNormalizerVersionSet'
+          - $ref: '#/components/schemas/NullOnly'
+        reconstruction:
+          oneOf:
+          - $ref: '#/components/schemas/RequestReconstructionVersionSet'
+          - $ref: '#/components/schemas/NullOnly'
+        analytics:
+          oneOf:
+          - $ref: '#/components/schemas/RequestAnalyticsVersionSet'
+          - $ref: '#/components/schemas/NullOnly'
+        versionSetHash:
+          $ref: ../core-api.yaml#/components/schemas/Sha256
+      additionalProperties: false
+    RequestErrorDetail:
+      type: object
+      required:
+      - field
+      - reason
+      additionalProperties: false
+      properties:
+        field:
+          type: string
+          minLength: 1
+        reason:
+          type: string
+          minLength: 1
+      x-safe-paths: allowlisted static schema paths only; no dynamic instrument keys or raw values
   examples:
     REPARSE_SOURCE_LEDGER_ONLY:
       summary: Complete synthetic request; execution support and hashes are unverified.
@@ -3179,5 +3660,11 @@ components:
         completedAt: '2026-11-13T00:00:02Z'
 security:
 - AccessCookieAuth: []
-
-x-adopted-policy: ADR-080-principles; wire remains draft
+x-adopted-policy: ADR-080-principles; ADR-081-retention; ADR-082-request-profile; remaining workflow wire stays
+  draft
+x-request-wire-contract: docs/TRADING_REVIEW_REPROCESSING_WIRE_CONTRACT.md; runtime acceptance pending
+x-relay-request-body: bounded original JSON bytes; no DTO reserialization, decompression or hidden POST retry
+x-retryable-semantics: same-request automatic retry guidance; never admission/rollback proof or permission for a
+  new key
+x-relay-error-mapping: internal service/delegation rejection -> public 500 INTERNAL_ERROR; preserve current-user
+  business denial

@@ -2,11 +2,12 @@ openapi: 3.0.3
 info:
   title: Trading Reprocessing internal HTTP API (DRAFT)
   version: 0.1.0-draft
-  description: ADR-079/WP01~04 unadopted candidate. Existing active API/Compute/hash vectors unchanged.
+  description: ADR-080/081/082 adopted scopes and fixed request wire design; remaining Workflow contracts are draft.
+    Runtime disabled; shared API/Compute/hash vectors unchanged.
 x-contract-status: draft
 x-policy-status: proposed
 x-runtime-enabled: false
-x-error-code-status: proposed-not-current-registry
+x-error-code-status: request-wire-design-fixed; active registry unchanged
 x-example-evidence: synthetic transport/schema examples; no hash oracle, execution support or runtime acceptance
 x-logical-hash-projection: unchanged; outputs/publish/retry are full binding, not added to the existing logical
   SHA root
@@ -27,7 +28,7 @@ paths:
         in: path
         required: true
         schema:
-          $ref: trading-review-reprocessing-public.yaml#/components/schemas/OpaqueId
+          $ref: trading-review-reprocessing-public.yaml#/components/schemas/RequestOpaqueId
       - $ref: ../core-api.yaml#/components/parameters/PublicIdempotencyKey
       - name: traceparent
         in: header
@@ -60,6 +61,10 @@ paths:
           $ref: '#/components/responses/Error500'
         '503':
           $ref: '#/components/responses/Admit503'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '415':
+          $ref: '#/components/responses/Error415'
       x-required-user-scope: trading-review:reprocessing:admit
       x-public-operation-id: requestTradingReprocessingV2Draft
       x-public-path: /trading-review/v2/trading-books/{tradingBookId}/reprocessing-runs
@@ -91,6 +96,26 @@ paths:
                 $ref: trading-review-reprocessing-public.yaml#/components/examples/RetryRequest
               OmittedPublishAndNullOptionalSource:
                 $ref: trading-review-reprocessing-public.yaml#/components/examples/OmittedPublishAndNullOptionalSource
+      x-request-profile: trading-reprocessing-admission-v1
+      x-request-budget:
+        bodyBytes: 1048576
+        containerDepth: 16
+        resourceIdUtf8Bytes: 256
+        versionDigestInstrumentUtf8Bytes: 256
+        versionIdentifierCharacters: 200
+        reviewTimezoneUtf8Bytes: 128
+        instrumentTermsEntries: 4096
+        integerMaximum: 9007199254740991
+      x-request-content-encoding:
+      - identity
+      x-request-encoding-omission: identity
+      x-validation-order:
+      - authentication
+      - path-key-query
+      - media-encoding
+      - bounded-json
+      - current-ownership-guard
+      - receipt-or-admission
     get:
       operationId: listOwnerTradingReprocessingRuns
       x-access-mode: owner-current-guard
@@ -626,6 +651,11 @@ components:
             type: string
             enum:
             - Authorization, X-RefInvest-User-Delegation
+        Retry-After:
+          description: Optional bounded retry hint; same key/request only, never a new Run/deadline.
+          schema:
+            type: string
+            pattern: ^[0-9]+$
       content:
         application/json:
           schema:
@@ -697,7 +727,8 @@ components:
                 reprocessingRunId: '725400000000000033'
       x-recorded-failure-link: confirmed-commit-and-current-owner-access-only
     Admit422:
-      description: 'Versioned admission rejection: recorded FAILED Run or committed normal-legacy pin-gap decision without Run; current access required.'
+      description: 'Versioned admission rejection: recorded FAILED Run or committed normal-legacy pin-gap decision
+        without Run; current access required.'
       headers:
         Cache-Control:
           schema:
@@ -748,7 +779,8 @@ components:
                 retryable: false
                 reprocessingRunId: '725400000000000038'
             NoRunRejection:
-              summary: Synthetic committed normal-legacy pin gap; no Run/Dispatch. Schema does not prove source facts, commit or authority.
+              summary: Synthetic committed normal-legacy pin gap; no Run/Dispatch. Schema does not prove source
+                facts, commit or authority.
               value:
                 code: REPROCESSING_SOURCE_PIN_UNAVAILABLE
                 message: 이 거래 기록의 재처리 입력 근거를 확인할 수 없습니다.
@@ -769,6 +801,11 @@ components:
             type: string
             enum:
             - Authorization, X-RefInvest-User-Delegation
+        Retry-After:
+          description: Optional bounded retry hint; same key/request only, never a new Run/deadline.
+          schema:
+            type: string
+            pattern: ^[0-9]+$
       content:
         application/json:
           schema:
@@ -789,6 +826,77 @@ components:
                 message: 요청을 처리할 수 없습니다.
                 traceId: synthetic-current-request-trace
                 retryable: true
+    Error413:
+      description: Fixed request/relay error design; no Run reference or admission/rollback proof.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - REQUEST_BODY_TOO_LARGE
+                retryable:
+                  enum:
+                  - false
+          examples:
+            Case1:
+              value:
+                code: REQUEST_BODY_TOO_LARGE
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+    Error415:
+      description: Fixed request/relay error design; no Run reference or admission/rollback proof.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+            - no-store
+        Vary:
+          schema:
+            type: string
+            enum:
+            - Authorization, X-RefInvest-User-Delegation
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: trading-review-reprocessing-public.yaml#/components/schemas/ErrorResponseV2Draft
+            - properties:
+                code:
+                  enum:
+                  - UNSUPPORTED_CONTENT_ENCODING
+                  - UNSUPPORTED_MEDIA_TYPE
+                retryable:
+                  enum:
+                  - false
+          examples:
+            Case1:
+              value:
+                code: UNSUPPORTED_CONTENT_ENCODING
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
+            Case2:
+              value:
+                code: UNSUPPORTED_MEDIA_TYPE
+                message: 요청을 처리할 수 없습니다.
+                traceId: synthetic-current-request-trace
+                retryable: false
 x-tls-required: true
 x-member-state-gate: required-before-resource-lookup
 x-member-write-linearization: unresolved-review-gate
@@ -806,5 +914,9 @@ x-operation-registry: method + route + reprocessing audience + exact scope + aut
 security:
 - ServiceCredential: []
   UserDelegation: []
-
-x-adopted-policy: ADR-080-principles; wire remains draft
+x-adopted-policy: ADR-080-principles; ADR-081-retention; ADR-082-request-profile; remaining workflow wire stays
+  draft
+x-request-wire-contract: docs/TRADING_REVIEW_REPROCESSING_WIRE_CONTRACT.md; runtime acceptance pending
+x-relay-request-body: bounded original JSON bytes; no DTO reserialization, decompression or hidden POST retry
+x-retryable-semantics: same-request automatic retry guidance; never admission/rollback proof or permission for a
+  new key

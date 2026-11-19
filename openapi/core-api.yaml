@@ -1729,8 +1729,12 @@ components:
           allOf: [ { $ref: '#/components/schemas/VersionIdentifier' } ]
           type: string
           nullable: true
-          description: 생략하면 server-selected current immutable ID를 pin한다.
-        clientRequestReference: { type: string, maxLength: 100, nullable: true }
+          description: 신규 접수에서 생략/null이면 승인된 current immutable ID를 pin한다. known replay는 최초 policy로 비교하며 새 current로 재선택하지 않는다. ADR-084 Create 정책을 따른다.
+        clientRequestReference:
+          type: string
+          maxLength: 100
+          nullable: true
+          description: 유효 Unicode scalar 최대 100개. 잘못된 UTF-8/단독 surrogate를 대체하지 않고 거절한다. 생략/null/빈 문자열은 fingerprint에서 동일하며 trim/NFC 변환하지 않는다. ADR-084를 따른다.
     UploadArtifactMetadata:
       type: object
       required: [role, filename, contentType, byteSize, sha256, dialectCandidate]

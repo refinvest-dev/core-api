@@ -1,5 +1,8 @@
 # Account·Book API 필드·중계 설계 (DRAFT)
 
+> **후속 좁은 채택(2026-11-17):** [ADR-083 Book metadata 정책](TRADING_REVIEW_BOOK_METADATA_POLICY.md)은 GetBook/ListBooks의 ARCHIVED parent/Book metadata 조회만 채택했다.
+> 아래 전체 DRAFT·미채택 표기는 인증/wire와 나머지 후보에 적용된다. 생성·생성 replay·삭제/grant는 변경하지 않으며 runtime/HTTP 수용은 별도다.
+
 상태: **검토 초안·미채택·미구현**. 현재 public/Compute OpenAPI, ADR-072와 ADR-074의 두 GET draft를
 변경하지 않는다. 이 문서는 기존 schema와 Core 구현의 대조 및 후속 내부 계약 후보이며 runtime 활성화 근거가 아니다.
 검토일 2026-11-09, context `8aaebfd638bec8c6463250436fe41dd1acb42865`, Core `38a804392af4f83f748da204f0265c4f8fc60215`, Go `4cf4eac1e067f6e0a028392a5e899b5a53032a75` 기준이다.
@@ -249,7 +252,7 @@ P01~P04는 이 초안의 로컬 검토 식별자이며 새 정본 Acceptance ID/
 **권장안은 마지막 안**이다. archive를 삭제로 응답하면 사용자가 보관된 항목을 조회/정리하기 어렵고,
 현재 Account 조회·Book 목록/단건 사이의 차이를 그대로 옮기게 된다. 실제 삭제 Guard와는 계속 분리한다.
 
-다음 표는 **채택 시 목표 의미**이며 runtime 현재값이 아니다. 검증된 owner·유효 관계·삭제 Guard가 전제다.
+다음 표의 GetBook/ListBooks metadata는 후속 ADR-083으로 채택했다. 그 밖의 새 replay/삭제 제안은 **채택 시 목표 의미**이며 현재 runtime을 뜻하지 않는다. 검증된 owner·유효 관계·삭제 Guard가 전제다.
 
 | 행동 | 대상/상위가 ACTIVE | 삭제되지 않은 ARCHIVED | 삭제 중/삭제 tombstone |
 |---|---|---|---|
@@ -267,8 +270,8 @@ foreign/absent는 항상 존재 정보를 숨긴다. owned 410은 정본 tombsto
 현재 write 권한을 부여하지 않는다. 요청 method의 caller/scope 권한은 replay에도 계속 적용한다.
 새 key·변경 payload는 replay가 아니며 archive parent 아래 새 생성으로 우회하지 못한다.
 
-영향: Core GetBook의 non-ACTIVE→410, ListBooks의 ACTIVE-only child filter, CreateBook replay의 ACTIVE 요구,
-DeleteBook의 ACTIVE parent/Book 요구와 Go의 archive 보류를 **채택 후 함께** 변경해야 한다.
+영향: ADR-083은 Core GetBook의 non-ACTIVE→410·ListBooks ACTIVE-only child filter와 Go의 metadata archive 보류를 후속 구현/검증에서 정합화한다.
+CreateBook replay·DeleteBook의 ACTIVE 요구는 이번 채택에서 유지한다. P01 전체를 후속 채택하는 경우에만 그 나머지 동작을 함께 검토한다.
 409 RESOURCE_STATE_CONFLICT는 기존 taxonomy를 사용하는 권장 mapping이며 archive에 대한 적용은 신규 정책 제안이다.
 ARCHIVE/UNARCHIVE endpoint·진행 job 취소·artifact 접근/grant·정본 계산은 이 표로 추가하거나 변경하지 않는다.
 실제 archive 이력·생성 fingerprint·화면 목록/정리 동작·정상/위반 사례를 확인하고 ADR-074 및 기존 API 의미를 함께 리뷰한다.

@@ -1,5 +1,9 @@
 # ARCHITECTURE.md — 시스템 아키텍처
 
+> **Import 생성 정책:** [ADR-084](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)는 Create 한정 pin/원 replay·scalar 100·ACTIVE parent·동일 Tx 보장을 채택했다. ADR-076 전체·Validate/Retry·HTTP/운영 구현은 별도다.
+
+> **Book metadata 정책:** [ADR-083](TRADING_REVIEW_BOOK_METADATA_POLICY.md)은 ARCHIVED parent/Book의 GetBook/ListBooks metadata 조회만 채택했다. 생성·replay·삭제·grant 및 ADR-074/075 전체로 확대하지 않는다. 실제 구현/consumer·HTTP·운영 수용은 별도다.
+
 > 이 문서는 ADR-072의 목표 서비스 구성을 정의한다. 현재 구현의 이전 완료 여부는
 > [서비스 경계의 gate](TRADING_REVIEW_SERVICE_BOUNDARY.md#이관과-완료-gate)와 실제 증적으로 확인한다.
 
@@ -258,7 +262,7 @@ ADR-080 후속 [request/receipt·No-Run 상세안](TRADING_REVIEW_REPROCESSING_A
 ## 재처리 request profile 검토 후보
 
 [ADR-082 정본](TRADING_REVIEW_REPROCESSING_REQUEST_PROFILE.md)은2026-11-16 재검토 후 명시 채택됐다. 신규 재처리 전용 versioned profile의 구조·시각·상한·압축/오류 정책을 따른다.
-기존 profile/shared/legacy·ADR-080/081·원 hash/key/receipt는 유지한다. 현재 API에 적용한 것은 아니며 정확 wire/registry·consumer·실제 수용은 구현/활성화 전에 확정한다.
+기존 profile/shared/legacy·ADR-080/081·원 hash/key/receipt는 유지한다. [wire 상세](TRADING_REVIEW_REPROCESSING_WIRE_CONTRACT.md)의 endpoint 고정 profile·오류·Core 원문 중계와 [consumer 수용 계획](TRADING_REVIEW_REPROCESSING_CONSUMER_ACCEPTANCE.md)을 따른다. DRAFT YAML/정적 검사는 실제 API/consumer·runtime 수용이 아니다.
 과거 후보/검토 문구로 채택 원칙·수치의 재승인을 요구하지 않는다.
 
 ## ADR-082 채택 전 source 리뷰

@@ -1,5 +1,8 @@
 # Trading Review Owner Query Contract (DRAFT)
 
+> **후속 좁은 채택(2026-11-17):** [ADR-083 Book metadata 정책](TRADING_REVIEW_BOOK_METADATA_POLICY.md)은 GetBook/ListBooks의 ARCHIVED parent/Book metadata 조회만 채택했다.
+> 아래 전체 DRAFT·미채택 표기는 인증/wire와 나머지 후보에 적용된다. 생성·생성 replay·삭제/grant는 변경하지 않으며 runtime/HTTP 수용은 별도다.
+
 상태: **ADR-074 검토 초안·미채택·미구현**. ADR-072, 현재 공개 Core/Compute OpenAPI와 Go의
 미연결 owner query 구현을 변경하지 않는다. 이 문서와 [OpenAPI 초안](../openapi/drafts/trading-review-owner-query.yaml)은
 채택 리뷰의 입력이며 production route 활성화나 G05/G06 완료의 근거가 아니다.

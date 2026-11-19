@@ -1,5 +1,8 @@
 # Workflow request/response·receipt DTO 권장 후보
 
+> **2026-11-16 wire 후속 설계:** [고정 profile·오류·원문 중계 계약](TRADING_REVIEW_REPROCESSING_WIRE_CONTRACT.md)이 해당 상세의 현재 기준이다.
+> 아래는 고정 source/과거 조사·미결 업무 범위를 포함한다. 신규 Request* schema/registry 설계 확정과 실제 runtime/consumer 수용은 구분한다.
+
 > **2026-11-15 수명 확정:** [ADR-081 정책](TRADING_REVIEW_REPROCESSING_RECEIPT_RETENTION.md)은 최소 원장 Book 수명·진단30일·삭제 후 최소 차단180일을 확정했다.
 > 아래 과거 선택 대기/미결 수치 표기는 현재 승인을 취소하지 않는다. 실제 자료/전환·clock/CAS·cleanup/삭제/복원·consumer 수용과 업무 구현/활성화는 별도다.
 

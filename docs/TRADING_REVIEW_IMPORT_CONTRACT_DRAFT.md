@@ -1,5 +1,7 @@
 # Import 공개 계약 정합성 리뷰 (DRAFT)
 
+**Create 한정 최신 결정:** [ADR-084](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)이 Create pin·A/replay·Unicode scalar 100·ACTIVE parent와 Tx 보장을 채택했다. 이 문서의 포괄적인 미채택 표기는 그 결정을 취소하지 않는다. Validate/Retry/Upload·내부 HTTP/profile·응답 등 나머지 후보는 DRAFT이며 실제 runtime/consumer 수용은 별도다.
+
 상태: **ADR-076 검토 초안·미채택·runtime 미구현**. 현재 public/Compute OpenAPI와 채택 ADR을 변경하지 않는다.
 Go Use Case 리뷰의 미해결 항목에 구체 권장안·대안·consumer 영향·채택 조건을 제시한다.
 문서 PR merge·CI 성공은 제품 정책 채택/업무 구현 전환이 아니다.
