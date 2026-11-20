@@ -44,6 +44,22 @@ Create 시 고정한 pin을 변경하지 않는 것과 후속 실행 지원 여�
 이 결정은 Validate의 생략 target·명시 target 비교·Retry 전체 profile을 확정하지 않는다. [IC-P02](TRADING_REVIEW_IMPORT_CONTRACT_DRAFT.md#ic-p02-versionset의-선택-시점)의
 후속 Validate/registry 차이와 현재 schema 설명을 해당 구현 전에 정합화한다. current가 바뀌었다고 Session을 암묵 upgrade하는 예외는 없다.
 
+## 신규 승인 profile의 확정 범위
+
+**ADR-085 채택(2026-11-20)**으로 [Versioning §2.2](TRADING_VERSIONING.md#22-신규-import-normalization-pin-hash-규칙)를 확정했다.
+초기 신규 승인 profile은 Normalizer + Reconstruction이며 analytics key는 생략한다. 기존 optional 모델/Analytics 포함·null legacy를 일괄 변경하지 않는다.
+신규 component는 자기 hash 하나만 제외한 전체, composite는 검증한 component hash를 포함한 nested 전체를 JCS/SHA-256으로 계산한다.
+이는 새 승인 profile의 scoped 규칙이며 기존 input/result/flat hash·정상 legacy pin을 재정의하지 않는다.
+
+지원 instrument catalog·terms version map·실제 terms snapshot은 Create 이전에 함께 승인/고정한다.
+실행은 원 snapshot을 사용하며 today current/업로드 후 subset으로 암묵 교체하지 않는다. 실제 값/실행 지원 부재와 원 SessionID receipt 복구를 구분한다.
+신규 hash 규칙·원 manifest/profile·승인 evidence·terms snapshot 연결의 최소 출처를 Session/mapping과 같은 실제 Tx로 확정한다.
+오늘 current 목록/로그만으로 출처를 대신하지 않고 legacy에 출처를 자동 backfill하지 않는다. 새 규칙의 소급 적용 없이 입증된 legacy 읽기 profile을 유지한다.
+
+승인 manifest/배포 지원 근거를 실제로 확인해야 하며 구조/hash 형태·자기 선언만으로 승인하지 않는다.
+구성·hash 불일치·승인 미입증은 provider 조립 실패, 신규 정책 미지원·저장 이상은 기존 operation의 오류 의미를 따른다.
+정확한 계산 shape·출처 최소 정보·실패/수용 범위는 위 정본 절을 따른다. 실제 profile 값·고정 vector·저장 carrier/SQL·운영 수용은 별도 증거다.
+
 ## namespace와 fingerprint 보존
 
 namespace는 기존 owner + `createTradingImportSession` + Idempotency-Key다. key는 ASCII `[A-Za-z0-9._~-]` 1~128자를 유지한다.
