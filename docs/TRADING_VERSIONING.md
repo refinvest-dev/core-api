@@ -174,6 +174,99 @@ AnalyticsVersion
 `TargetVersionSet`은 요청 시 위 applicable field를 전부 명시한다. `latest`, 빈 값, mutable image tag는 저장된
 target이 될 수 없다. admission에서 registry alias를 exact immutable ID로 resolve한 뒤 그 값을 run에 고정한다.
 
+### 2.2 신규 Import Normalization pin hash 규칙
+
+상태: **ADR-085 채택(2026-11-20)**. [Create 정책](TRADING_REVIEW_IMPORT_CREATE_POLICY.md#신규-승인-profile의-확정-범위)의 신규 승인 profile에 적용한다.
+규칙 식별자는 `TRADING_IMPORT_NORMALIZATION_PIN_HASH_V1`이다. 승인 profile/원 접수 출처에서 식별하며 기존 public/Compute wire에 새 필드나 enum을 추가하지 않는다.
+§2.1의 일반 설명·§16의 기존 result codec과 구분하는 scoped 규칙이다. 기존 input/result/flat engine hash·기존 Session/Revision/fixture의 값은 바꾸지 않는다.
+
+#### 적용 shape와 projection
+
+최초 신규 승인 profile은 **Normalizer + Reconstruction**만 포함한다. root는 정확히 `normalizer`, `reconstruction`, `versionSetHash`다.
+`analytics`는 생략하며 null/빈 object를 동등한 입력으로 치환하지 않는다. component 필드명/기존 VersionIdentifier·digest 의미는 현재 OpenAPI를 유지한다.
+
+| component | 자기 hash를 제외한 정확한 필드 |
+|---|---|
+| normalizer | sourceDialectVersionsByArtifactRole, adapterVersion, normalizerVersion, canonicalSchemaVersion, implementationDigest |
+| reconstruction | instrumentTermsVersionByInstrument, reconstructionPolicyVersion, reconciliationVersion, reviewUnitSchemaVersion, evidenceSchemaVersion, implementationDigest |
+
+role map은 정확히 TRADE_HISTORY/POSITION_HISTORY다. terms map은 승인한 지원 catalog 전체의 instrument→불변 terms version이다.
+필수 누락·unknown field·중복 key·null·지원하지 않는 값/형식을 거절한다. 이 profile의 hash 입력은 object와 유효한 Unicode scalar string만 사용하며 array/number/bool을 새로 허용하지 않는다.
+초기 신규 승인의 terms map은 nonempty여야 한다. 기존 empty map 저장값의 구조 허용을 변경하거나 그것만으로 손상이라 판정하지 않는다.
+
+```text
+HN = lowerhex(SHA-256(JCS(normalizer에서 자기 versionSetHash 하나만 제외)))
+HR = lowerhex(SHA-256(JCS(reconstruction에서 자기 versionSetHash 하나만 제외)))
+
+HC = lowerhex(SHA-256(JCS({
+  normalizer: HN을 포함한 검증된 전체 normalizer,
+  reconstruction: HR을 포함한 검증된 전체 reconstruction
+})))
+```
+
+component의 선언 hash가 HN/HR과 일치하는지 먼저 확인하고 top-level 선언 hash를 HC와 비교한다.
+composite 계산에서 child hash까지 재귀적으로 제거하거나 hash 두 개만 묶는 다른 projection을 사용하지 않는다.
+계산된 값으로 선언 hash를 먼저 덮어써 불일치를 숨기지 않는다. hash 일치와 실제 producer/consumer 지원은 별도 승인이다.
+
+#### canonical bytes와 변경 영향
+
+[RFC 8785 JCS](https://www.rfc-editor.org/rfc/rfc8785.html#section-3.2)의 UTF-16 code unit 정렬·string escape·UTF-8 출력을 사용한다.
+원 JSON bytes를 그대로 SHA-256하는 규칙이 아니다. 중복 key/잘못된 UTF-8·단독 surrogate는 손실 없이 parse하며 대체 문자로 고쳐 수용하기 전에 거절한다.
+정상 U+FFFD는 허용하며 NFC/NFD·trim·case folding·slash/문자열 값 변환을 하지 않는다. Unicode normalization을 해서는 안 된다.
+BOM·외부 whitespace 없는 canonical UTF-8 bytes에 SHA-256을 적용하고 64자리 lowercase hex를 기록한다.
+
+JSON field 순서/무의미 공백/동등 escape만 다르면 같은 hash다. version/digest/terms가 바뀌면 해당 component와 composite가 달라진다.
+다른 component의 의미가 같으면 그 component hash는 유지한다. manifest/profile ID·원문 파일 checksum·정책 ID·owner/key·DB ID·시각/current label·worker/storage 경로는 이 projection에 넣지 않는다.
+정책은 별도로 exact 승인하고 request A의 기존 dataPolicyVersion 부분은 그대로 둔다. hash 규칙 식별자 자체도 이 projection에 추가하지 않으며 출처 binding으로 구분한다.
+
+#### 초기 profile과 terms snapshot
+
+Go는 초기 신규 Import를 Normalizer/Reconstruction profile로 승인한다. Analytics 버전·실제 AnalysisConfig/hash는 후속 Analysis admission에서 대상 Revision과 함께 별도로 고정한다.
+기존 optional Analytics 모델/과거 포함·null pin을 제거하지 않는다. Normalization V2 analyticsInputSupplement와 결과 schema/hash pair도 유지한다.
+Analytics를 제외한다는 이유로 기존 composite를 임의 projection/재계산해 원 Session에 덮어쓰지 않는다. 장래 multi-stage bundle은 별도 규칙과 수용을 갖춘다.
+
+지원할 instrument catalog·terms version map·그 version에 대응하는 실제 terms snapshot을 Create 이전 승인에서 일관되게 고정한다.
+실행에는 원 승인 snapshot의 실제 descriptor 값을 전달하고 Compute의 exact 비교를 유지한다. 실행 시점 current 설정으로 같은 version의 값을 바꾸지 않는다.
+전체 지원 catalog를 고정하므로 거래에 사용하지 않은 instrument의 terms 변경도 새 profile의 Reconstruction/composite hash를 바꿀 수 있다.
+이미 생성된 Session은 원 pin을 유지한다. 업로드 뒤 실제 사용 subset으로 실행 pin을 다시 만드는 흐름은 이번 초기 profile에 도입하지 않는다.
+
+참조 중인 terms snapshot의 보존은 기존 보관/삭제·공유 자원 정책을 따른다. 실제 참조가 필요한 값을 임의 정리하지 않고 과거 binary 영구 보관도 가정하지 않는다.
+원 snapshot/실행 구현을 제공할 수 없으면 해당 실행을 지원 불가로 처리하며 가까운/current로 대체하지 않는다.
+원 receipt 복구는 신규 실행이 아니므로 과거 Compute binary/실제 terms 값의 현재 가용성을 필수 조건으로 삼지 않는다.
+
+#### 원 승인 출처와 legacy
+
+신규 적용 규칙은 원 Session과 함께 영속적으로 식별 가능해야 한다. 최소 의미 정보는 다음과 같다.
+
+| 정보 | 의미 |
+|---|---|
+| 원 Session 연결 | 원 owner/parent·pin/mapping과 같은 접수에 속한 immutable 연결 |
+| 적용 hash 규칙 ID | TRADING_IMPORT_NORMALIZATION_PIN_HASH_V1의 명시 적용 근거 |
+| manifest byte SHA-256 + profile ID | 원문 공급물과 그 안에서 선택한 불변 profile 식별. manifest ID만으로 대체하지 않음 |
+| 승인 evidence SHA-256 | 신뢰된 배포 경로에서 확인한 승인 근거의 content-addressed 참조 |
+| terms snapshot 식별/무결성 근거 | 원 version map과 실제 descriptor 값의 불변 연결을 확인할 근거 |
+
+신뢰된 manifest/승인/terms 준비·외부 I/O는 business Tx 밖이다. 원 Session·mapping·출처 연결은 같은 실제 Tx에서 모두 확정하거나 rollback한다.
+출처는 오늘 current 목록·프로세스 메모리·휘발 로그·변경 가능한 경로만으로 남기지 않는다. 필요한 과거 metadata를 읽을 근거를 보존한다.
+공유 승인 artifact를 Session마다 전체 복제하거나 별도 업무 Aggregate를 강제하지 않는다. 물리 column/관계·DTO/carrier는 Go 저장 설계에서 확정한다.
+원 mapping은 승자 pin/출처를 가리켜야 하며 후발 후보가 이를 덮어쓰지 않는다. UNKNOWN 복구도 같은 원 key·원 출처를 사용한다.
+
+신규 hash 규칙이 legacy에 소급 적용되는 것은 아니다. 과거 producer/형식과 원 binding이 입증된 읽기 profile로 원 receipt를 복구하고, 새 규칙으로 검증했다고 표시하지 않는다.
+새 규칙 출처가 없다는 이유만으로 기존의 입증된 legacy 복구를 일괄 차단하거나 새 출처를 자동 부여하지 않는다.
+실제 형식/원 관계가 불명확하면 안전하게 중단한다. 계산해 맞는 hash 규칙을 추측하거나 raw JSON/기존 hash/ID/mapping을 재작성하지 않는다.
+현재 Guard를 통과한 정상 receipt 복구는 오늘 manifest/evidence/terms provider에 새 실행 승인을 다시 요청하는 경로가 아니다.
+
+#### 승인과 실패·수용
+
+manifest 자기 선언/파일 checksum만으로 승인하지 않는다. 신뢰된 배포 경로에서 승인된 정책·exact 버전/digest·실제 producer/reader 지원과 terms를 연결한다.
+구조·hash identity·지원 조합을 각각 검증한다. 구성/참조/예산 오류·hash 불일치·승인 근거 미확인은 유효한 provider 조립 실패다.
+정상 provider에서 신규 policy 미지원은 기존 operation의 VERSION_UNAVAILABLE 의미를 유지한다. 저장 형식 미지원과 검증된 손상을 내부에서 구분하며 새 공개 오류 code/status를 임의 생성하지 않는다.
+현재 authority/ACTIVE parent/삭제 Guard·명시 차단/cutover를 우회하지 않고 지원 종료를 자동 upgrade/repin으로 처리하지 않는다.
+
+신규 고정 vector는 원 projection·canonical JSON·UTF-8 hex·예상 hash, component 독립 변경/composite 전파·escape/Unicode 순서·중복/오류 사례를 포함한다.
+별도 구현/도구에서 저장된 기대값을 검증한다. 기존 synthetic component hash vector는 input identity oracle로 보존하며 승인 vector로 재명명하지 않는다.
+정책 채택은 vector/실제 Compute·legacy DB/출처 저장·HTTP·운영 수용 성공이 아니다. 실제 provider 활성화 전에 그 증거를 갖춘다.
+
 ## 3. Version Registry와 Availability
 
 Core가 사용자·lineage 상태를 소유하고 Compute가 실행 가능 구현과 compatibility manifest를 제공한다. Core의

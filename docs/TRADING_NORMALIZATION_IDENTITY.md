@@ -49,6 +49,8 @@ schema, implementation digest와 component `versionSetHash`가 있다. 이 두 c
 `InternalNormalizerVersionSet` 대체, hash만 전달하는 표현을 허용하지 않는다. VersionSet
 내 map key도 중복 불가다. Component hash와 합성 hash는 별도의 VersionSet 규칙대로
 검증하며 `inputSetHash`만 맞는다는 이유로 우회하지 않는다.
+신규 Import 승인 profile의 계산/적용 범위는 [ADR-085·Versioning §2.2](TRADING_VERSIONING.md#22-신규-import-normalization-pin-hash-규칙)를 따른다.
+원 nested 값과 기존 wire/inputSetHash projection·기존 vector를 유지하며 legacy에 새 hash 규칙을 소급 적용하지 않는다.
 
 Artifact `sha256`은 원본 bytes의 64자리 lowercase hex다. 같은 role은 한 번만 나타나며
 알 수 없는 role은 거절한다. role은 object key이므로 grant 배열 순서는 hash와 무관하다.

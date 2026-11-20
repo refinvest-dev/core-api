@@ -1631,6 +1631,25 @@ Archive 거절은 기존 Create 오류 호환을 유지하고 실제 삭제 상�
 pin provider는 작게 시작하되 외부 I/O는 Tx 밖, Insert+Complete는 같은 실제 Tx, namespace fence/현재 Guard/UNKNOWN 복구를 보장한다.
 구체 carrier/Store/SQL·전체 writer·legacy/운영 증적은 Go 상세 구현/검증 대상이다.
 
+2026-11-19 후속 보완은 승인 근거의 구조/identity/지원 조합을 구분하고, 신규 선택 snapshot·실행 시 지원 확인·운영 차단을 분리했다.
+현재 decoder 미지원과 실제 legacy 손상을 구분하며 명시 decoder/원 identity 보존·근거 없는 자동 보정 금지를 확정했다.
+manifest 공급/조립의 물리 방법은 Go 기술 결정이며 파일 형식·실제 registry/DB/consumer 수용 완료를 뜻하지 않는다.
+
 **대체 범위:** ADR-076 IC-P02의 Create pin·IC-P03의 Create A/replay 부분과 source의 UTF-16 길이 검사에 대한 좁은 정책이다.
 Validate/Retry/Upload·내부 인증/HTTP·응답 후보·ADR-076 전체는 채택하지 않는다. 공개 필드/namespace/hash 입력을 추가하지 않는다.
 현재 schema에는 정책/reference의 설명만 보완하며 runtime·DDL·consumer/운영 인계·업무 수용은 별도다.
+
+## ADR-085 — Import Pin Hash, Terms Snapshot and Approval Provenance
+
+**상태: 채택(2026-11-20), 신규 Import 승인 profile 한정.** 사용자와 다섯 항목을 논의하고 규칙을 확정해 달라는 명시 요청에 따라
+[Versioning §2.2](TRADING_VERSIONING.md#22-신규-import-normalization-pin-hash-규칙)와 [Create 적용 범위](TRADING_REVIEW_IMPORT_CREATE_POLICY.md#신규-승인-profile의-확정-범위)를 확정했다.
+
+TRADING_IMPORT_NORMALIZATION_PIN_HASH_V1은 component의 자기 hash 하나만 제외하고, composite는 child hash를 포함한 nested Normalizer/Reconstruction 전체를 JCS/SHA-256으로 계산한다.
+초기 신규 profile은 Analytics를 생략하며 지원 catalog와 실제 terms snapshot을 Create 이전에 고정한다. 실제 실행은 원 snapshot과 exact 지원을 확인한다.
+원 Session·mapping과 같은 Tx에 hash 규칙·manifest/profile·승인 evidence·terms snapshot 출처를 식별 가능하게 확정한다.
+원 receipt 복구와 실행 가능성을 구분하며 입증된 legacy 읽기를 유지한다. 추측 규칙 선택·current 보정·자동 backfill·원 hash/JSON/ID 재작성은 금지한다.
+
+신뢰된 승인 근거의 구조/identity/지원 검증·조립 실패와 기존 operation별 오류 경계를 확정했다.
+이 결정은 ADR-084의 새 승인 profile을 구체화하며 기존 wire/input/result/flat hash·정상 legacy/기존 vector·Normalization V2/Analysis 계약을 바꾸지 않는다.
+Analytics bundle·업로드 후 terms subset·Validate/Retry의 나머지 후보·ADR-076 전체를 채택하지 않는다.
+고정 vector·실제 배포/Compute·legacy DB·출처 carrier/SQL·HTTP/운영 수용은 미실행/미구현이며 문서 채택/CI로 완료 처리하지 않는다.
