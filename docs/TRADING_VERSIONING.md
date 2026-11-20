@@ -265,7 +265,8 @@ manifest 자기 선언/파일 checksum만으로 승인하지 않는다. 신뢰�
 
 신규 고정 vector는 원 projection·canonical JSON·UTF-8 hex·예상 hash, component 독립 변경/composite 전파·escape/Unicode 순서·중복/오류 사례를 포함한다.
 별도 구현/도구에서 저장된 기대값을 검증한다. 기존 synthetic component hash vector는 input identity oracle로 보존하며 승인 vector로 재명명하지 않는다.
-정책 채택은 vector/실제 Compute·legacy DB/출처 저장·HTTP·운영 수용 성공이 아니다. 실제 provider 활성화 전에 그 증거를 갖춘다.
+신규 [고정 vector/독립 검증](../fixtures/trading-import-pins/README.md)은 component/composite projection·canonical bytes·예상 hash를 검증한다. 기존 synthetic input identity vector는 유지한다.
+정책/vector 성공은 실제 Compute·legacy DB/출처 저장·HTTP·운영 수용이 아니다. 실제 provider 활성화 전에 그 증거를 갖춘다.
 
 ## 3. Version Registry와 Availability
 
