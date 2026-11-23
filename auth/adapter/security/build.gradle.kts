@@ -2,6 +2,7 @@ plugins { id("spring-adapter-conventions") }
 
 dependencies {
     implementation(project(":auth:port"))
+    implementation(libs.jackson.core)
     implementation(project(":member:port")) { isTransitive = false }
     implementation(project(":strategy:port")) { isTransitive = false }
     implementation(project(":backtest:port")) { isTransitive = false }
