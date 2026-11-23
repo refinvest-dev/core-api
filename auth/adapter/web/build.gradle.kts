@@ -2,6 +2,7 @@ plugins { id("spring-adapter-conventions") }
 
 dependencies {
     implementation(project(":auth:port"))
+    implementation(libs.jackson.core)
     implementation(project(":subscription:port")) { isTransitive = false }
     implementation(libs.spring.boot.starter.security)
     implementation(libs.spring.boot.starter.oauth2.client)
