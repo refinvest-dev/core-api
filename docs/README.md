@@ -36,3 +36,7 @@ OpenAPI 초안은 정식 `core-api.yaml`/`compute-api.yaml`과 분리한다. syn
 바이트를 hash 기준으로 삼는 golden vector가 아니며 checkout CRLF/LF만 정규화해 비교한다.
 위임 문자열의 SHA-256·draft/runtime 비활성 상태는 integration의 필수 검사에서 Context verifier로
 검증한다. 기존 Normalization/Analytics golden vector의 바이트 비교는 유지한다.
+
+## Owner Query 위임 발급기 준비
+
+[발급기 상세 설계](../engineering/OWNER_QUERY_DELEGATION_ISSUER.md)는 ADR-086의 첫 Core 구현 범위와 명시 조립·키 snapshot·언어 간 검증 기준을 설명한다. 실제 authority·proxy/HTTP·운영 활성화는 별도다.
