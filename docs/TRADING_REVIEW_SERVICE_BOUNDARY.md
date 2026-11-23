@@ -22,7 +22,8 @@ Compute는 기존 HTTP 계약을 유지한다. gRPC 병행 구현은 현재 범�
 외부 내부용 헤더는 제거·재구성한다. Gateway는 직접 issuer가 될 필요가 없다.
 Go가 Account→Book→Import/Revision/Analysis 소속과 현재 Guard를 최종 검증한다.
 Worker는 사용자 JWT를 저장하지 않고 승인된 입력·owner와 현재 Guard로 실행/발행을 판단한다.
-정확한 token/header/TTL/key rotation/철회/Member 상태 연계는 wire 보안 설계에서 확정한다.
+두 metadata 단건 GET의 token/header·TTL/철회·Member authority·키 운영 원칙은 [ADR-086](TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md)에서 확정했다.
+목록/쓰기·Worker의 위임/권한 profile과 실제 보안 운영 수용은 별도다.
 
 ## 실행 수명
 요청 timeout, Compute 통신 timeout, attempt deadline, 전체 Run deadline, worker lease를 구분한다.

@@ -3,9 +3,11 @@ info:
   title: Trading Review Owner Query (DRAFT)
   version: 0.1.0-draft
   description: >-
-    ADR-074 검토 초안. 미채택·미구현이며 현재 Core/Compute wire를 대체하지 않는다.
-    Member authority protocol·archive 의미·TLS/key 운영 gate 충족 전 route를 활성화하지 않는다.
+    ADR-086에서 두 GET의 보안/authority 정책을 채택했다. YAML 전체와 runtime 활성화는 별도다.
+    현재 공개 Core/Compute wire를 대체하지 않으며 실제 issuer/authority·TLS/key 운영/HTTP 수용 전 활성화하지 않는다.
 x-contract-status: draft
+x-security-policy: ADR-086
+x-security-policy-document: docs/TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md
 x-runtime-enabled: false
 x-member-state-gate: required-before-resource-lookup
 externalDocs:

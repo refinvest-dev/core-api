@@ -1,5 +1,9 @@
 # ARCHITECTURE.md — 시스템 아키텍처
 
+> **Owner Query 보안 정책:** [ADR-086](TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md)은 Account·Book metadata 단건 GET 두 개의
+> 서비스 인증·RS256 위임/TTL·현재 Member authority·오류 중계·키 운영 원칙을 채택했다. ADR-074 전체·목록/쓰기·Worker 권한은
+> 별도이며 production issuer/권위 state·Go HTTP·운영 수용은 미완료다. 기존 DRAFT 표기로 이 좁은 채택을 재승인하지 않는다.
+
 > **Import 생성 정책:** [ADR-084](TRADING_REVIEW_IMPORT_CREATE_POLICY.md)는 Create 한정 pin/원 replay·scalar 100·ACTIVE parent·동일 Tx 보장을 채택했다. ADR-076 전체·Validate/Retry·HTTP/운영 구현은 별도다.
 
 > **Book metadata 정책:** [ADR-083](TRADING_REVIEW_BOOK_METADATA_POLICY.md)은 ARCHIVED parent/Book의 GetBook/ListBooks metadata 조회만 채택했다. 생성·replay·삭제·grant 및 ADR-074/075 전체로 확대하지 않는다. 실제 구현/consumer·HTTP·운영 수용은 별도다.

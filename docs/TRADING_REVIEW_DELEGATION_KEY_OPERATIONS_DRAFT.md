@@ -1,5 +1,10 @@
 # 위임 키 발급·교체·철회 (DRAFT)
 
+> **2026-11-23 후속 채택:** [ADR-086 정본](TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md)이 두 metadata 단건 GET의 보안·authority·오류/키 운영 원칙을 좁게 채택했다.
+> 아래 DRAFT·미채택/제안 표기는 원 후보 작성 시점의 기록이다. 충돌 시 ADR-086과 Book metadata의 ADR-083을 따른다.
+> TTL60초·leeway5초·JWT4096bytes는 확정됐으며 요청 timeout 수치/실제 issuer·state·운영 수용은 남아 있다.
+> 이 문서 전체·목록/쓰기·Worker profile이나 실험의 자원 제한을 일괄 채택하지 않는다.
+
 상태: ADR-074의 미채택 운영 보완안. [Member authority](TRADING_REVIEW_MEMBER_AUTHORITY_DRAFT.md)와
 함께 검토한다. secret/key·새 env·배포 설정을 만들거나 기존 브라우저/Compute 인증을 변경하지 않는다.
 

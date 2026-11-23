@@ -3,9 +3,11 @@ info:
   title: Trading Review Member Authority (DRAFT)
   version: 0.1.0-draft
   description: >-
-    Core auth 소유의 미채택 내부 protocol. 실제 Core endpoint/권위 상태/issuer는 아직 없다.
+    ADR-086에서 채택한 Core auth 소유 authority 의미/request-response binding의 미활성 상세 설계. 실제 Core endpoint/권위 상태/issuer는 아직 없다.
     Go→Core credential과 원 위임 actor를 구분하며 production 활성화를 뜻하지 않는다.
 x-contract-status: draft
+x-security-policy: ADR-086
+x-security-policy-document: docs/TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md
 x-runtime-enabled: false
 security:
   - AuthorityCallerCredential: []
