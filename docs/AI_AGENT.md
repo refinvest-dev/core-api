@@ -1,5 +1,9 @@
 # AI_AGENT.md — 에이전트 작업 워크플로우
 
+> **Owner Query 보안 정책:** [ADR-086](docs/TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md)은 Account·Book metadata 단건 GET 두 개의
+> 서비스 인증·RS256 위임/TTL·현재 Member authority·오류 중계·키 운영 원칙을 채택했다. ADR-074 전체·목록/쓰기·Worker 권한은
+> 별도이며 production issuer/권위 state·Go HTTP·운영 수용은 미완료다. 기존 DRAFT 표기로 이 좁은 채택을 재승인하지 않는다.
+
 > **Import 생성 정책:** [ADR-084](docs/TRADING_REVIEW_IMPORT_CREATE_POLICY.md)는 Create 한정 pin/원 replay·scalar 100·ACTIVE parent·동일 Tx 보장을 채택했다. 신규 승인 profile의 hash·초기 Normalization 범위·terms snapshot·원 승인 출처는 [ADR-085/Versioning §2.2](docs/TRADING_VERSIONING.md#22-신규-import-normalization-pin-hash-규칙)로 확정했다. [신규 hash 고정 vector](fixtures/trading-import-pins/README.md)와 Node/Python 독립 검증을 따르되 실제 registry/배포 지원과 구분한다. 기존 legacy/계산 hash는 유지하며 ADR-076 전체·Validate/Retry·HTTP/운영 구현은 별도다.
 
 > **Book metadata 정책:** [ADR-083](docs/TRADING_REVIEW_BOOK_METADATA_POLICY.md)은 ARCHIVED parent/Book의 GetBook/ListBooks metadata 조회만 채택했다. 생성·replay·삭제·grant 및 ADR-074/075 전체로 확대하지 않는다. 실제 구현/consumer·HTTP·운영 수용은 별도다.

@@ -1290,30 +1290,18 @@ Determinism 영향 없음. Point-in-Time 영향 없음. 초안 채택 전 기존
 
 ## ADR-074 — Trading Review Owner Query Authentication and Metadata Contract (DRAFT)
 
-**상태**: 검토 초안. 미채택·미구현. ADR-072와 현재 Core/Compute OpenAPI는 그대로 적용한다.
+**상태**: 원 검토 초안. **2026-11-23 ADR-086이 두 GET의 보안·authority 계약을 좁게 채택/대체했다.**
+아래 후보를 전체 채택하거나 구현·운영 완료한 것은 아니다. ADR-083 Book metadata Get/List 정책은 별도 유지한다.
 
-**문제**: Go의 Account/Book in-process 조회를 Core/Gateway에 연결하기 전에 서비스 인증과 사용자
-위임, Member 상태·소유권·archive·오류 중계·timeout/trace를 일관된 계약으로 정해야 한다.
+원 초안은 서비스 인증·사용자 위임·현재 Member 상태·소유권·archive·오류/timeout/trace를 함께 제안했다.
+현재 채택 범위는 [ADR-086 정본](TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md), Book archive metadata는
+[ADR-083](TRADING_REVIEW_BOOK_METADATA_POLICY.md)을 따른다. 두 정책의 재승인을 요구하지 않는다.
 
-**추천 초안**: TLS 위 caller별 opaque service credential과 별도 RS256 사용자 위임 JWT를 함께
-검증하고 권위 Member 상태 확인 뒤 Go owner/parent/삭제 Guard를 검사한다. 삭제되지 않은 archive
-metadata GET은 허용하는 안을 검토한다. 두 내부 GET path와 기존 공개 schema/오류 envelope를 유지하는
-중계안을 제시하되 현재 runtime을 바꾸지 않는다.
-
-**상세/채택 조건**: [조회·인증 계약 초안](TRADING_REVIEW_OWNER_QUERY_CONTRACT_DRAFT.md)과
-[OpenAPI 초안](../openapi/drafts/trading-review-owner-query.yaml)을 따른다. Member authority protocol,
-TLS/credential/key rotation·철회, archive/public mapping, 실제 인계 DB history/baseline 및 HTTP 검증은
-남아 있다. 60초 TTL/5초 skew 등 수치는 리뷰 제안이며 운영값이 아니다. Go의 현재 archive 거절을
-이 초안만으로 해제하지 않는다. 후속 [ADR-083의 Book metadata 정책](TRADING_REVIEW_BOOK_METADATA_POLICY.md)은 GetBook/ListBooks만 별도로 채택했으며 이 ADR의 인증/profile 전체를 채택하지 않는다. ADR-071/073의 다른 초안도 승인하지 않는다.
-
-Determinism 영향 없음. Point-in-Time 영향 없음. 초안 채택·구현·전파·검증 완료 전 route를 활성화하지 않는다.
-
-**Member authority/키 운영 보완**: [권위 확인 protocol](TRADING_REVIEW_MEMBER_AUTHORITY_DRAFT.md),
-[키 운영 절차](TRADING_REVIEW_DELEGATION_KEY_OPERATIONS_DRAFT.md),
-[authority OpenAPI](../openapi/drafts/trading-review-member-authority.yaml)를 초안에 추가했다.
-Core의 실제 Member에는 접근 차단 상태가 없고 access token에는 familyId가 없다. 별도 Core 권위 상태와
-snapshot 판정·기존 logout과의 구분을 제안하되 실제 issuer/authority/DB·운영 구현을 완료한 것은 아니다.
-ADR-074는 계속 DRAFT이며 Go의 TLS transport 실험도 채택/production 활성화를 대신하지 않는다.
+[원 조회 후보](TRADING_REVIEW_OWNER_QUERY_CONTRACT_DRAFT.md), [authority 후보](TRADING_REVIEW_MEMBER_AUTHORITY_DRAFT.md),
+[키 운영 후보](TRADING_REVIEW_DELEGATION_KEY_OPERATIONS_DRAFT.md)와 두 내부 YAML은 source/상세 설계 자료다.
+JWT 최대 TTL60초·leeway5초는 ADR-086에서 확정했지만 요청 timeout 수치·실제 TLS/key 운영/철회·Core issuer와
+권위 DB·Go production 검증·HTTP/consumer·DB history/인계 수용은 남아 있다. 문서/CI로 route를 활성화하지 않는다.
+ADR-071/073·ADR-075 이후 다른 후보는 이 결정으로 채택하지 않는다.
 
 ## ADR-075 — Trading Review Account/Book Contract Candidate (DRAFT)
 
@@ -1653,3 +1641,24 @@ TRADING_IMPORT_NORMALIZATION_PIN_HASH_V1은 component의 자기 hash 하나만 �
 이 결정은 ADR-084의 새 승인 profile을 구체화하며 기존 wire/input/result/flat hash·정상 legacy/기존 vector·Normalization V2/Analysis 계약을 바꾸지 않는다.
 Analytics bundle·업로드 후 terms subset·Validate/Retry의 나머지 후보·ADR-076 전체를 채택하지 않는다.
 고정 vector·실제 배포/Compute·legacy DB·출처 carrier/SQL·HTTP/운영 수용은 미실행/미구현이며 문서 채택/CI로 완료 처리하지 않는다.
+
+
+## ADR-086 — Trading Review Owner Query Service Authentication and Member Authority
+
+**상태: 채택(2026-11-23), Account·Book metadata 단건 GET 두 개 한정.** 사용자와 권고안을 재검토하고
+정책 확정 요청에 따라 [보안 정본](TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md)을 채택했다.
+ADR-074의 서비스 인증/위임 profile·authority·오류 중계·키 운영 원칙을 좁게 대체하며 전체 초안을 채택하지 않는다.
+
+TLS + caller별 opaque service Bearer credential과 별도 RS256 위임 JWT를 모두 요구한다. 두 방향 credential과
+브라우저/Compute/signing key를 분리하고 인증된 Member·caller로만 위임한다. issuer/audience/type/actor/read scope,
+JWT 최대 TTL60초·leeway5초·4096bytes를 고정한다. jti는 일회용 admission/업무 멱등성 key가 아니다.
+
+Go는 매 요청 Core authority의 현재 Member/caller/kid/jti 상태를 확인하고 allow를 캐시하지 않는다.
+primary의 일관된 권위 snapshot을 철회 기준으로 삼고 Go owner/parent/삭제 Guard를 별도 검사한다.
+Core 소유 POST의 request/response binding·상한·오류 registry를 고정하고 내부 인증 거절은 public502로 변환한다.
+사용자 거절403과 authority 장애503을 구분하며 기존 logout의 refresh-family 의미/브라우저 CSRF를 유지한다.
+
+목록/쓰기·Import·삭제·재처리·Worker 권한은 별도이며 read proof를 재사용하지 않는다. ADR-083·기존 공개 schema,
+legacy key/hash/ID와 재처리 원문 중계는 유지한다. 두 내부 YAML의 draft/runtime false는 활성화 미완료를 나타낸다.
+timeout 수치·library/물리 state/운영 도구는 후속 설계/측정으로 정하고 실제 issuer/authority/키 교체·부하/HTTP/DB
+검증과 기존 인계 gate를 통과하기 전 활성화하지 않는다. 문서 merge/CI는 보안 운영 수용 증거가 아니다.
