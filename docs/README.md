@@ -40,3 +40,5 @@ OpenAPI 초안은 정식 `core-api.yaml`/`compute-api.yaml`과 분리한다. syn
 ## Owner Query 위임 발급기 준비
 
 [발급기 상세 설계](../engineering/OWNER_QUERY_DELEGATION_ISSUER.md)는 ADR-086의 첫 Core 구현 범위와 명시 조립·키 snapshot·언어 간 검증 기준을 설명한다. 실제 authority·proxy/HTTP·운영 활성화는 별도다.
+
+[구현·검증 기록](../engineering/OWNER_QUERY_DELEGATION_VERIFICATION.md)은 실제 발급/키 snapshot·Kotlin→Go 선택 vector와 미구현 authority/운영 범위를 구분한다.
