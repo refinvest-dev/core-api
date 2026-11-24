@@ -6,6 +6,10 @@ import com.refinvest.core.tradingreview.port.inbound.book.delete.DeleteTradingBo
 import com.refinvest.core.tradingreview.port.inbound.book.delete.DeleteTradingBookUseCase
 import com.refinvest.core.tradingreview.port.inbound.book.get.GetTradingBookQuery
 import com.refinvest.core.tradingreview.port.inbound.book.get.GetTradingBookUseCase
+import com.refinvest.core.tradingreview.port.inbound.ownerquery.ProxyOwnerMetadataUseCase
+import com.refinvest.core.tradingreview.port.common.ownerquery.OwnerMetadataResource
+import com.refinvest.core.tradingreview.adapter.web.ownerquery.OwnerMetadataWebProxy
+import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -20,9 +24,13 @@ import org.springframework.web.bind.annotation.RestController
 class TradingBookController(
     private val getBook: GetTradingBookUseCase,
     private val deleteBook: DeleteTradingBookUseCase,
+    private val ownerQueryProxy: ProxyOwnerMetadataUseCase? = null,
 ) {
     @GetMapping("/{tradingBookId}")
-    fun get(@PathVariable tradingBookId: Long) = TradingBookResponse.from(getBook.execute(GetTradingBookQuery(TradingBookId(tradingBookId))))
+    // Transitional adapter boundary: retain the synchronous legacy DTO unless the explicit proxy is prepared.
+    fun get(@PathVariable tradingBookId: Long, request: HttpServletRequest): Any =
+        ownerQueryProxy?.let { OwnerMetadataWebProxy.respond(it, OwnerMetadataResource.BOOK, tradingBookId, request) }
+            ?: TradingBookResponse.from(getBook.execute(GetTradingBookQuery(TradingBookId(tradingBookId))))
 
     @DeleteMapping("/{tradingBookId}")
     @ResponseStatus(HttpStatus.ACCEPTED)

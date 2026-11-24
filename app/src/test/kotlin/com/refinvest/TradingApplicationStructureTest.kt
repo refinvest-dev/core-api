@@ -20,7 +20,7 @@ class TradingApplicationStructureTest {
         assertEquals(8, controllers.size)
         controllers.forEach { controller ->
             assertTrue(controller.packageName != "com.refinvest.core.tradingreview.adapter.web", controller.name)
-            assertTrue(controller.constructors.single().parameterTypes.all {
+            assertTrue(controller.constructors.filterNot { it.isSynthetic }.single().parameterTypes.all {
                 it.name.startsWith("com.refinvest.core.tradingreview.port.inbound.") ||
                     it.name == "tools.jackson.databind.ObjectMapper"
             }, controller.name)

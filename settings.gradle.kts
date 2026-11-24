@@ -52,6 +52,7 @@ include(
     ":tradingreview:adapter:security",
     ":tradingreview:adapter:storage",
     ":tradingreview:adapter:compute",
+    ":tradingreview:adapter:reviewapi",
     ":shared:kernel",
     ":shared:infrastructure",
     ":app",

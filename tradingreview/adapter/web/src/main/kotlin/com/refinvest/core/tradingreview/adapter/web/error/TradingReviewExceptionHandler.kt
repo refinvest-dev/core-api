@@ -10,6 +10,9 @@ import com.refinvest.core.tradingreview.adapter.web.importsession.TradingBookImp
 import com.refinvest.core.tradingreview.adapter.web.importsession.TradingImportSessionController
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailure
 import com.refinvest.core.tradingreview.port.common.failure.TradingFailureKind
+import com.refinvest.core.tradingreview.port.inbound.ownerquery.ProxyOwnerMetadataUseCase
+import com.refinvest.core.tradingreview.adapter.web.ownerquery.OwnerMetadataWebProxy
+import jakarta.servlet.http.HttpServletRequest
 import java.time.Instant
 import java.util.UUID
 import org.springframework.core.Ordered
@@ -26,7 +29,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = [TradingAccountController::class, TradingAccountBookController::class, TradingBookController::class,
     TradingDeletionController::class, TradingBookImportController::class, TradingImportSessionController::class, TradingSourceArtifactController::class, TradingArtifactGrantController::class])
-class TradingReviewExceptionHandler {
+class TradingReviewExceptionHandler(private val ownerQueryProxy: ProxyOwnerMetadataUseCase? = null) {
     @ExceptionHandler(TradingFailure::class)
     fun failure(error: TradingFailure): ResponseEntity<TradingErrorResponse> =
         response(when (error.kind) {
@@ -43,8 +46,9 @@ class TradingReviewExceptionHandler {
     @ExceptionHandler(IllegalArgumentException::class, HttpMessageNotReadableException::class,
         MethodArgumentNotValidException::class, MissingRequestHeaderException::class,
         MethodArgumentTypeMismatchException::class)
-    fun invalid(@Suppress("UNUSED_PARAMETER") error: Exception): ResponseEntity<TradingErrorResponse> =
-        response(HttpStatus.BAD_REQUEST, "REQUEST_INVALID", false)
+    fun invalid(@Suppress("UNUSED_PARAMETER") error: Exception, request: HttpServletRequest): ResponseEntity<*> =
+        if (ownerQueryProxy != null && OwnerMetadataWebProxy.isMetadataRead(request)) OwnerMetadataWebProxy.invalid(request)
+        else response(HttpStatus.BAD_REQUEST, "REQUEST_INVALID", false)
 
     private fun response(status: HttpStatus, code: String, retryable: Boolean, userAction: String? = null) =
         ResponseEntity.status(status).body(TradingErrorResponse(code, code, UUID.randomUUID().toString(),

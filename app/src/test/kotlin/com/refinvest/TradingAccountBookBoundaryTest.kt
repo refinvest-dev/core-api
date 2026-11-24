@@ -43,7 +43,7 @@ class TradingAccountBookBoundaryTest {
     @Test
     fun tradingReviewSourcesRespectFeatureLayers() {
         val root = workspaceRoot()
-        listOf("domain", "port", "application", "adapter/persistence", "adapter/web", "adapter/compute",
+        listOf("domain", "port", "application", "adapter/persistence", "adapter/web", "adapter/reviewapi", "adapter/compute",
             "adapter/storage", "adapter/security", "adapter/snowflake", "adapter/uuid").forEach { layer ->
             val files = Files.walk(root.resolve("tradingreview/$layer/src/main/kotlin")).use {
                 it.filter { path -> path.toString().endsWith(".kt") }.toList()
@@ -59,6 +59,7 @@ class TradingAccountBookBoundaryTest {
                     if (layer.startsWith("adapter/")) add("com.refinvest.core.tradingreview.adapter.${layer.substringAfter('/') }.")
                     if (layer == "adapter/security") add("com.refinvest.core.member.port.")
                     if (layer == "adapter/snowflake") add("com.refinvest.core.shared.infrastructure.")
+                    if (layer in setOf("adapter/web", "adapter/reviewapi")) add("com.refinvest.core.shared.infrastructure.http.")
                 }
                 assertTrue(references.all { ref -> allowed.any { ref.startsWith(it) || ref == it.removeSuffix(".") } },
                     "Forbidden reference in $file: $references")

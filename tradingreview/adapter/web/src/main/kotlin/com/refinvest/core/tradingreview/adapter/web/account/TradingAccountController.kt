@@ -12,6 +12,10 @@ import com.refinvest.core.tradingreview.port.inbound.account.get.GetTradingAccou
 import com.refinvest.core.tradingreview.port.inbound.account.list.ListTradingAccountsQuery
 import com.refinvest.core.tradingreview.port.inbound.account.list.ListTradingAccountsUseCase
 import jakarta.validation.Valid
+import com.refinvest.core.tradingreview.port.inbound.ownerquery.ProxyOwnerMetadataUseCase
+import com.refinvest.core.tradingreview.port.common.ownerquery.OwnerMetadataResource
+import com.refinvest.core.tradingreview.adapter.web.ownerquery.OwnerMetadataWebProxy
+import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -31,6 +35,7 @@ class TradingAccountController(
     private val getAccount: GetTradingAccountUseCase,
     private val listAccounts: ListTradingAccountsUseCase,
     private val deleteAccount: DeleteTradingAccountUseCase,
+    private val ownerQueryProxy: ProxyOwnerMetadataUseCase? = null,
 ) {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -39,7 +44,10 @@ class TradingAccountController(
         TradingAccountResponse.from(createAccount.execute(CreateTradingAccountCommand(request.venue, request.displayName, key)))
 
     @GetMapping("/{tradingAccountId}")
-    fun get(@PathVariable tradingAccountId: Long) = TradingAccountResponse.from(getAccount.execute(GetTradingAccountQuery(TradingAccountId(tradingAccountId))))
+    // Transitional adapter boundary: retain the synchronous legacy DTO unless the explicit proxy is prepared.
+    fun get(@PathVariable tradingAccountId: Long, request: HttpServletRequest): Any =
+        ownerQueryProxy?.let { OwnerMetadataWebProxy.respond(it, OwnerMetadataResource.ACCOUNT, tradingAccountId, request) }
+            ?: TradingAccountResponse.from(getAccount.execute(GetTradingAccountQuery(TradingAccountId(tradingAccountId))))
 
     @GetMapping
     fun list(@RequestParam(defaultValue = "0") page: Int, @RequestParam(defaultValue = "20") size: Int): TradingPageResponse<TradingAccountResponse> {

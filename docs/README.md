@@ -46,3 +46,10 @@ OpenAPI 초안은 정식 `core-api.yaml`/`compute-api.yaml`과 분리한다. syn
 ## Member Authority 판정 준비
 
 [상태·Tx·HTTP 설계](../engineering/MEMBER_AUTHORITY_IMPLEMENTATION.md)와 [실제 검증/미구현 범위](../engineering/MEMBER_AUTHORITY_VERIFICATION.md)는 ADR-086의 primary snapshot·제어 Store·service-only endpoint 준비를 설명한다. 운영 회원 초기화·DDL 인계·secret/Go production 연결은 별도다.
+
+## Owner Query Metadata 중계 준비
+
+[Core 중계 설계](../engineering/OWNER_QUERY_PROXY_IMPLEMENTATION.md)와
+[구현·검증 기록](../engineering/OWNER_QUERY_PROXY_VERIFICATION.md)은 ADR-086의 두 GET에 대한
+비동기 HTTPS client·인증 principal 위임·안전한 응답과 선택적 Controller 연결을 설명한다.
+기본 비활성화이며 실제 Go/authority E2E·key 공급·DB/TR writer 인계와 운영 활성화는 후속이다.
