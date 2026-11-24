@@ -63,6 +63,17 @@ Linux 전체 CI 결과는 정확 PR head를 기준으로 별도로 확인한다.
 chunked 초과 body는 선언된 Content-Length의 사전 거절과 구분하여 실제 subscriber의 수신 상한을 검증했다.
 생산 코드는 변경하지 않았고 관련 두 adapter 모듈을 다시 실행했다.
 
+### Linux CI의 소스 경계 검사 후속
+
+`d326c158385ca3cb53963702c3dfb53e827e5dab`의 [Linux CI](https://github.com/refinvest-dev/core-api/actions/runs/45422110739/job/138544134494)는
+628 tests 중 `TradingAccountBookBoundaryTest.tradingReviewSourcesRespectFeatureLayers` 한 건이 실패했다.
+오류/skip은 0이었지만 전체 CI는 실패이고 PostgreSQL 후속 gate도 실행되지 않았다.
+Gradle 의존 지도에는 반영한 공통 trace 기술 의존성을 해당 소스 경계 검사에 반영하지 않은 것이 원인이었다.
+
+검사 대상에 `adapter/reviewapi`를 추가하고 Web/reviewapi에만 `shared.infrastructure.http` 참조를 허용했다.
+다른 feature·shared 기술 전체나 Domain/Application 의존성을 허용하지 않는다.
+실패 class의 로컬 9개 테스트를 다시 실행하여 실패/오류/skip 0을 확인했다. 수정 후 정확 head의 전체 CI는 별도로 확인한다.
+
 ## 검증한 경로
 
 - 임시 keytool identity·실제 HTTPS server를 사용하는 client 검사는 고정 path·재구성한 credential/위임,
