@@ -49,6 +49,28 @@ class OwnerQueryProxyControllerTest {
             .andExpect(jsonPath("$.userAction").doesNotExist())
     }
 
+    @Test
+    fun `book success keeps its parent and product metadata in the public DTO`() {
+        val book = OwnerMetadataResult.Book(
+            "9007199254740993", "9223372036854775806", "BINANCE", "LINEAR_PERPETUAL", "ONE_WAY", "USDT",
+            "Asia/Seoul", "ARCHIVED", Instant.parse("2026-11-24T00:00:00Z"),
+        )
+        val mvc = mvc { query ->
+            kotlin.test.assertEquals(OwnerMetadataResource.BOOK, query.resource)
+            OwnerMetadataCall.completed(book)
+        }
+
+        val pending = mvc.perform(get("/trading-books/${book.id}"))
+            .andExpect(request().asyncStarted()).andReturn()
+        mvc.perform(asyncDispatch(pending)).andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.id").value(book.id))
+            .andExpect(jsonPath("$.tradingAccountId").value(book.tradingAccountId))
+            .andExpect(jsonPath("$.productFamily").value("LINEAR_PERPETUAL"))
+            .andExpect(jsonPath("$.reviewTimezone").value("Asia/Seoul"))
+            .andExpect(jsonPath("$.ownerId").doesNotExist())
+    }
+
     @Test fun `invalid GET and implicit HEAD never call configured proxy`() {
         val mvc=mvc { error("must not call") }
         mvc.perform(get("/trading-accounts/1?ownerId=2")).andExpect(status().isBadRequest).andExpect(jsonPath("$.code").value("INVALID_REQUEST"))

@@ -34,6 +34,7 @@ Go Main 연결, Core TR writer 중단, 데이터 인계와 운영 활성화는 �
 | 최종 기본 JVM의 shared infrastructure / reviewapi / web 검사 | 각각 6 / 8 / 18 tests 통과; 같은 묶음의 Application worker 오류로 전체 명령은 실패 |
 | 미완료된 `:tradingreview:application:test` 개별 재실행 | 55 tests, 실패/오류/skip 0 |
 | 최종 `:app:test`의 Proxy·Trading/Auth/Core 경계 관련 여섯 class 선택 실행 및 `:app:bootJar` | 23 tests, 실패/오류/skip 0; 실행 JAR 패키징 성공 |
+| 2026-11-25 Book·chunked 경계 추가 후 `reviewapi:test web:test` | 각각 10 / 19 tests, 실패/오류/skip 0; 기본 JVM에서 한 명령 성공 |
 
 모듈 검사는 해당 `cleanTest` 뒤 실행했으며 과거 XML을 합산하지 않았다. 실행은 Java25·Gradle wrapper를 사용했다.
 App 선택 pattern은 `*OwnerQueryProxy*`, `*TradingPortBoundaryTest`, `*TradingReviewModuleBoundaryTest`,
@@ -55,6 +56,12 @@ listen 오류가 발생했으나 해당 모듈 개별 재실행 55개가 통과�
 따라서 표의 최종 검사는 여러 실행의 결과이며 한 번의 전체 명령이 성공한 것으로 표현하지 않는다.
 테스트 옵션을 bootJar에 적용한 검증 helper의 명령 오류도 한 차례 있었으며 옵션 위치를 고쳐 재실행했다.
 Linux 전체 CI 결과는 정확 PR head를 기준으로 별도로 확인한다.
+
+최종 리뷰에서 Book의 성공 경로와 Content-Length가 없는 초과 응답 검증을 보강했다.
+실제 TLS에서 Book 고정 path·큰 parent ID·ARCHIVED metadata를 확인했고, decoder에서 숫자/비정규 parent와
+미지원 product profile을 거절하는지 검사했다. Web에서는 parent·product/timezone을 public Book DTO로 반환하는지 검증했다.
+chunked 초과 body는 선언된 Content-Length의 사전 거절과 구분하여 실제 subscriber의 수신 상한을 검증했다.
+생산 코드는 변경하지 않았고 관련 두 adapter 모듈을 다시 실행했다.
 
 ## 검증한 경로
 

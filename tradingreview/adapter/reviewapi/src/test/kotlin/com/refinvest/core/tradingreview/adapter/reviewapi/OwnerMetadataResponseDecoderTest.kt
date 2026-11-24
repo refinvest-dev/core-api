@@ -34,4 +34,27 @@ class OwnerMetadataResponseDecoderTest {
             assertEquals(OwnerMetadataFailure.UPSTREAM_SERVICE_ERROR,assertIs<OwnerMetadataResult.Failure>(decoder.decode(status,value.toByteArray(),query,"trace")).kind)
         }
     }
+
+    @Test
+    fun `book requires a canonical string parent and the supported product profile`() {
+        val book = query.copy(resource = OwnerMetadataResource.BOOK)
+        val parent = "9223372036854775806"
+        val raw = """{"id":"${book.resourceId}","tradingAccountId":"$parent","venue":"BINANCE","productFamily":"LINEAR_PERPETUAL","positionMode":"ONE_WAY","settlementAsset":"USDT","reviewTimezone":"Asia/Seoul","status":"ARCHIVED","createdAt":"2026-11-24T00:00:00Z"}"""
+
+        val result = assertIs<OwnerMetadataResult.Book>(decoder.decode(200, raw.toByteArray(), book, "trace"))
+        assertEquals(parent, result.tradingAccountId)
+        assertEquals("Asia/Seoul", result.reviewTimezone)
+        for (invalid in listOf(
+            raw.replace("\"$parent\"", parent),
+            raw.replace(parent, "01"),
+            raw.replace("LINEAR_PERPETUAL", "SPOT"),
+            raw.replace("ONE_WAY", "HEDGE"),
+            raw.replace("USDT", "BTC"),
+        )) {
+            assertEquals(
+                OwnerMetadataFailure.UPSTREAM_SERVICE_ERROR,
+                assertIs<OwnerMetadataResult.Failure>(decoder.decode(200, invalid.toByteArray(), book, "trace")).kind,
+            )
+        }
+    }
 }

@@ -91,6 +91,25 @@ class OwnerMetadataHttpClientTest {
         } }
     }
 
+    @Test
+    fun `book uses the fixed book path and preserves its parent ID`() {
+        val book = query.copy(resource = OwnerMetadataResource.BOOK)
+        val parent = "9223372036854775806"
+        val response = """{"id":"${book.resourceId}","tradingAccountId":"$parent","venue":"BINANCE","productFamily":"LINEAR_PERPETUAL","positionMode":"ONE_WAY","settlementAsset":"USDT","reviewTimezone":"Asia/Seoul","status":"ARCHIVED","createdAt":"2026-11-24T00:00:00Z"}"""
+        withHandler({ exchange ->
+            assertEquals("/internal/trading-review/v1/books/${book.resourceId}", exchange.requestURI.path)
+            reply(exchange, value = response)
+        }) { server ->
+            client(server).use { transport ->
+                val call = transport.read(book, token, Duration.ofSeconds(2))
+                val result = assertIs<OwnerMetadataResult.Book>(call.result.toCompletableFuture().get(5, TimeUnit.SECONDS))
+                assertEquals(book.resourceId, result.id)
+                assertEquals(parent, result.tradingAccountId)
+                assertEquals("ARCHIVED", result.status)
+            }
+        }
+    }
+
     @Test fun `redirect encoding missing cache malformed and oversized body are unavailable`() {
         val selected=AtomicReference("redirect")
         withHandler({ exchange ->
@@ -101,11 +120,17 @@ class OwnerMetadataHttpClientTest {
                     "cache"->{exchange.responseHeaders.add("Cache-Control","public");reply(exchange)}
                     "duplicate"->reply(exchange,200,body.dropLast(1)+",\"id\":\"9007199254740993\"}")
                     "oversize"->reply(exchange,200,body+" ".repeat(16384))
+                    "chunked oversize" -> {
+                        exchange.responseHeaders.add("Content-Type", "application/json")
+                        exchange.responseHeaders.add("Cache-Control", "no-store")
+                        exchange.sendResponseHeaders(200, 0)
+                        exchange.responseBody.write((body + " ".repeat(16384)).toByteArray())
+                    }
                     "wrong id"->reply(exchange,200,body.replace(query.resourceId,"2"))
                     else->{exchange.responseHeaders.add("Content-Type","application/json");exchange.responseHeaders.add("Cache-Control","no-store");exchange.sendResponseHeaders(200,1);exchange.responseBody.write(byteArrayOf(0xff.toByte()))}
                 }
             }) { server -> client(server).use { transport ->
-        for(kind in listOf("redirect","encoding","cache","duplicate","oversize","invalid utf8","wrong id")) {
+        for(kind in listOf("redirect","encoding","cache","duplicate","oversize","chunked oversize","invalid utf8","wrong id")) {
                 selected.set(kind)
                 assertEquals(OwnerMetadataFailure.UPSTREAM_SERVICE_ERROR,failure(transport.read(query,token,Duration.ofSeconds(2))),kind)
         }
