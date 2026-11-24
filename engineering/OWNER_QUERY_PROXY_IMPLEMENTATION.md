@@ -26,7 +26,7 @@ true이면 명시 issuer/reader bean과 유한 budget이 모두 필요하며 준
 
 Client는 fixed origin HTTPS만 받고 path/query/userinfo/fragment·환경 proxy·redirect·cookie/authenticator를 사용하지 않는다.
 신뢰 CA와 기본 hostname 검증·TLS1.2 이상을 유지한다. 외부 요청 header를 복사하지 않고 credential/새 위임/검증된 trace만 재구성한다.
-기존 Core의 Long path binding은 유지한다. proxy branch의 body/query/encoding/trailer를 거절하며 추가 업무/멱등성 row를 만들지 않는다.
+기존 Core의 Long path binding은 유지한다. proxy branch의 body/query/transfer·content encoding을 거절하며 추가 업무/멱등성 row를 만들지 않는다.
 
 JDK25 `BodySubscribers.limiting`으로 body를 16 KiB까지 받는다. 수신 header도 8 KiB·no-store/media/encoding/status를 검사한다.
 JDK 초기 header parser 한계는 JVM/배포 설정의 별도 책임이며 post-receive 검사와 혼동하지 않는다.

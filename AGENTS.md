@@ -124,3 +124,11 @@
   원자성을 지킨다. 외부 HTTP/object storage 작업은 DB transaction 밖에서 수행한다.
 - Port는 inbound/outbound 계약과 해당 모델을 소유한다. 파일·암호화·HTTP 구현은 technology adapter에,
   HTTP status 매핑은 web adapter에 둔다. Scheduler와 Controller는 inbound port를 호출한다.
+
+## 9. Owner Query proxy preparation
+
+ADR-086의 두 metadata GET 중계는 [설계](engineering/OWNER_QUERY_PROXY_IMPLEMENTATION.md)와
+[실행·미실행 기록](engineering/OWNER_QUERY_PROXY_VERIFICATION.md)을 먼저 확인한다.
+현재는 기본 비활성화된 명시 조립 준비이며 Go Main·key/credential·회원/DB/TR writer 인계·운영 활성화는 별도다.
+선택된 proxy의 실패를 기존 DB 조회로 fallback하지 않는다. 위임은 인증 principal에서 발급하고 외부 identity header를 신뢰하지 않는다.
+Outbound 대기 중 DB Tx/lock을 유지하지 않으며 비동기 취소·body 포함 deadline과 client 종료 수명을 보존한다.
