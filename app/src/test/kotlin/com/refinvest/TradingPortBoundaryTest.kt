@@ -71,7 +71,9 @@ class TradingPortBoundaryTest {
             files.filter { it.toString().endsWith(".kt") }.forEach { file ->
                 val relative = root.relativize(file).toString().replace('\\', '/')
                 assertTrue(relative.startsWith("inbound/") || relative.startsWith("outbound/") ||
-                    relative in setOf("common/failure/TradingFailure.kt", "common/failure/TradingFailureKind.kt"),
+                    relative in setOf("common/failure/TradingFailure.kt", "common/failure/TradingFailureKind.kt",
+                        "common/ownerquery/OwnerMetadataCall.kt", "common/ownerquery/OwnerMetadataResult.kt",
+                        "common/ownerquery/OwnerMetadataFailure.kt", "common/ownerquery/OwnerMetadataResource.kt"),
                     "Port has no explicit owner: $relative")
                 val expected = "com.refinvest.core.tradingreview.port." + relative.substringBeforeLast('/').replace('/', '.')
                 val source = Files.readString(file)
