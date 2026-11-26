@@ -59,3 +59,12 @@ dependencies {
 }
 
 tasks.named("test") { dependsOn(rootProject.tasks.named("verifyMemberSubscriptionBoundaries")) }
+
+// Explicit integration launcher; no fixture class is packaged in bootJar.
+tasks.register("prepareOwnerQueryFixture") {
+    dependsOn("testClasses")
+    doLast {
+        layout.buildDirectory.file("owner-query-fixture-classpath.txt").get().asFile
+            .writeText(sourceSets["test"].runtimeClasspath.asPath)
+    }
+}
