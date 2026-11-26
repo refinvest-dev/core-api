@@ -52,4 +52,4 @@ OpenAPI 초안은 정식 `core-api.yaml`/`compute-api.yaml`과 분리한다. syn
 [Core 중계 설계](../engineering/OWNER_QUERY_PROXY_IMPLEMENTATION.md)와
 [구현·검증 기록](../engineering/OWNER_QUERY_PROXY_VERIFICATION.md)은 ADR-086의 두 GET에 대한
 비동기 HTTPS client·인증 principal 위임·안전한 응답과 선택적 Controller 연결을 설명한다.
-기본 비활성화이며 실제 Go/authority E2E·key 공급·DB/TR writer 인계와 운영 활성화는 후속이다.
+기본 비활성화를 유지한다. [서비스 fixture](../engineering/OWNER_QUERY_SERVICE_FIXTURE.md)는 실제 Go/authority 연결의 전용 검증 조립이며 key 공급·DB/TR writer 인계·운영 활성화는 후속이다.

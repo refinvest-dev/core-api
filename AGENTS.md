@@ -129,6 +129,6 @@
 
 ADR-086의 두 metadata GET 중계는 [설계](engineering/OWNER_QUERY_PROXY_IMPLEMENTATION.md)와
 [실행·미실행 기록](engineering/OWNER_QUERY_PROXY_VERIFICATION.md)을 먼저 확인한다.
-현재는 기본 비활성화된 명시 조립 준비이며 Go Main·key/credential·회원/DB/TR writer 인계·운영 활성화는 별도다.
+기본 proxy는 비활성화한다. [전용 서비스 fixture](engineering/OWNER_QUERY_SERVICE_FIXTURE.md)는 실제 컴포넌트 검증용이며 key/회원/DB/TR writer 인계·운영 활성화와 구분한다.
 선택된 proxy의 실패를 기존 DB 조회로 fallback하지 않는다. 위임은 인증 principal에서 발급하고 외부 identity header를 신뢰하지 않는다.
 Outbound 대기 중 DB Tx/lock을 유지하지 않으며 비동기 취소·body 포함 deadline과 client 종료 수명을 보존한다.

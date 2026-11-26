@@ -16,6 +16,7 @@ import com.refinvest.core.auth.port.inbound.delegation.IssueOwnerQueryDelegation
 import com.refinvest.core.tradingreview.adapter.reviewapi.OwnerMetadataHttpClient
 import com.refinvest.core.tradingreview.adapter.reviewapi.OwnerMetadataHttpOptions
 import org.springframework.beans.factory.config.BeanDefinitionCustomizer
+import org.springframework.beans.factory.support.BeanDefinitionRegistry
 import org.springframework.boot.SpringApplication
 import org.springframework.context.ApplicationContextInitializer
 import org.springframework.context.ConfigurableApplicationContext
@@ -47,12 +48,28 @@ fun main(args: Array<String>) {
     val path = requireNotNull(System.getenv("REFINVEST_OWNER_QUERY_FIXTURE_FILE")) { "Fixture file required" }
     val application = SpringApplication(RefinvestApplication::class.java)
     application.addInitializers(OwnerQueryServiceFixture(Path.of(path)))
-    application.run(*args)
+    val context = application.run(*args)
+    val workers = listOf("compute.TradingNormalizationDispatchScheduler", "compute.NormalizationResultSpoolSweeper",
+        "storage.TradingRawOrphanWorker", "persistence.TradingDeletionWorker", "persistence.TradingImportExpiryScheduler",
+        "persistence.TradingRawRetentionWorker")
+    if (workers.any { context.getBeanNamesForType(Class.forName("com.refinvest.core.tradingreview.adapter.$it")).isNotEmpty() }) {
+        context.close()
+        error("Fixture Trading Review workers must be absent")
+    }
 }
 
 class OwnerQueryServiceFixture(private val path: Path) : ApplicationContextInitializer<ConfigurableApplicationContext> {
     override fun initialize(context: ConfigurableApplicationContext) {
         require(context is GenericApplicationContext) { "Fixture servlet context required" }
+        require(Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize() ==
+            path.parent.resolve("jvm-tmp").toAbsolutePath().normalize()) { "Isolated fixture JVM temp required" }
+        // The production spool sweeper is unconditional. Exclude it only in this test launcher.
+        context.addBeanFactoryPostProcessor { factory ->
+            val registry = factory as BeanDefinitionRegistry
+            registry.beanDefinitionNames.filter { registry.getBeanDefinition(it).beanClassName ==
+                "com.refinvest.core.tradingreview.adapter.compute.NormalizationResultSpoolSweeper" }
+                .forEach(registry::removeBeanDefinition)
+        }
         val environment = context.environment
         val target = URI(requireNotNull(environment.getProperty("spring.datasource.url")).removePrefix("jdbc:"))
         require(target.scheme == "postgresql" && target.host in setOf("127.0.0.1", "localhost", "::1") &&
