@@ -86,6 +86,11 @@ Windows JDK의 BasicFileAttributes는 정상 파일에도 fileKey=null을 반환
 
 표의 Windows App 대상은 초기 구현 commit의 실행이다. 후속 interrupt 복구는 별도 집중 test 1개와 모듈 경계 검사를 통과했다. 전체 최종 source 실행은 PR head CI로 확인한다.
 
+첫 Linux CI에서는 신규 suite46개 중45 success·Windows 전용1 skipped, Member authority PostgreSQL12개 success였지만
+전체 skipped 금지 report gate가 job을 거절했다. gate를 완화하지 않고 OS별 검사를 하나의 플랫폼 test로 합쳤다.
+이제 Windows에서는 junction, Linux에서는 directory/file symlink 검사가 실제 실행되며 CI 결과는 최종 head로 다시 확인한다.
+통합한 플랫폼 검사의 Windows 집중 test 1개와 모듈 경계 검사가 통과했다.
+
 새 실제 TLS와 Linux symlink는 PR의 **정확 head Linux CI/해당 XML**로 별도 확인한다. 기존 11개 서비스 E2E는 이전 source/test launcher의 증거이며
 이 preparation의 일반 Core Main 수용·키 교체/fleet/운영 수용으로 재사용하지 않는다. CI/PR merge도 운영 활성화 승인은 아니다.
 

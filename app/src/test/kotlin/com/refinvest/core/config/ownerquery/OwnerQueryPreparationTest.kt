@@ -19,8 +19,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
-import org.junit.jupiter.api.condition.EnabledOnOs
-import org.junit.jupiter.api.condition.OS
 import org.mockito.Mockito.*
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
@@ -350,41 +348,41 @@ class OwnerQueryPreparationTest {
     }
 
     @Test
-    @EnabledOnOs(OS.LINUX)
-    fun `Linux file and ancestor symlinks are refused`() {
-        val path = file()
-        val alias = directory.resolve("file-alias.json")
-        Files.createSymbolicLink(alias, path)
-        val parent = directory.resolve("parent-alias")
-        Files.createSymbolicLink(parent, directory)
-        for (candidate in listOf(alias, parent.resolve(path.fileName))) {
-            assertEquals(OwnerQueryPreparationException.Stage.INPUT, assertFailsWith<OwnerQueryPreparationException> {
-                OwnerQueryPreparation.prepare(candidate, primary, member, clock, Duration.ofSeconds(10))
-            }.stage)
-        }
-    }
-
-    @Test
-    @EnabledOnOs(OS.WINDOWS)
-    fun `Windows ancestor junction is refused`() {
+    fun `platform-specific filesystem aliases are refused`() {
         val target = Files.createDirectory(directory.resolve("junction-target"))
         val path = target.resolve("snapshot.json")
         Files.write(path, mapper.writeValueAsBytes(values()))
         val alias = directory.resolve("junction-alias")
-        val process = ProcessBuilder("cmd.exe", "/d", "/c", "mklink", "/J", alias.toString(), target.toString())
-            .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
-        if (!process.waitFor(10, TimeUnit.SECONDS)) {
-            process.destroyForcibly()
-            error("Synthetic junction preparation timed out")
+        val windows = System.getProperty("os.name").startsWith("Windows")
+        if (windows) {
+            val process = ProcessBuilder("cmd.exe", "/d", "/c", "mklink", "/J", alias.toString(), target.toString())
+                .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                error("Synthetic junction preparation timed out")
+            }
+            check(process.exitValue() == 0) { "Synthetic junction preparation failed" }
+        } else {
+            Files.createSymbolicLink(alias, target)
         }
-        check(process.exitValue() == 0) { "Synthetic junction preparation failed" }
         try {
             assertEquals(OwnerQueryPreparationException.Stage.INPUT, assertFailsWith<OwnerQueryPreparationException> {
-                OwnerQueryPreparation.prepare(alias.resolve("snapshot.json"), primary, member, clock, Duration.ofSeconds(10))
+                OwnerQueryPreparation.prepare(alias.resolve("snapshot.json"), primary, member, clock, Duration.ofSeconds(10)).use { }
             }.stage)
         } finally {
             Files.delete(alias)
         }
         assertTrue(Files.exists(path))
+        if (!windows) {
+            val fileAlias = directory.resolve("file-alias.json")
+            Files.createSymbolicLink(fileAlias, path)
+            try {
+                assertEquals(OwnerQueryPreparationException.Stage.INPUT, assertFailsWith<OwnerQueryPreparationException> {
+                    OwnerQueryPreparation.prepare(fileAlias, primary, member, clock, Duration.ofSeconds(10)).use { }
+                }.stage)
+            } finally {
+                Files.delete(fileAlias)
+            }
+        }
     }
 }
