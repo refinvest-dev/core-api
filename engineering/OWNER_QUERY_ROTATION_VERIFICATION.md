@@ -49,4 +49,4 @@ Core 업무/조립 코드는 변경하지 않았다. 정확 PR head의 기존 Co
 
 실제 key/credential 공급·ACL/KMS·보호 mount·폐기/복원·회원 초기화/탈퇴·DB history/legacy ID/FK·Core TR 단일 writer 중단·
 backup restore·production routing/구신 binary/부하 수용은 남아 있다. PCP-12의 한정 구성 세대 수용으로 운영 gate를 닫지 않는다.
-다음은 이 남은 조건을 실제 배포 구성·owner·증거 기준으로 정리하는 작업이다. 운영 활성화 전에 별도 판정한다.
+후속 [실제 body/취소 수용](OWNER_QUERY_TRANSPORT_VERIFICATION.md)과 [운영 인계/후속 구현 분리](OWNER_QUERY_ACTIVATION_READINESS.md)를 따른다. 운영 활성화 전에 별도 판정한다.
