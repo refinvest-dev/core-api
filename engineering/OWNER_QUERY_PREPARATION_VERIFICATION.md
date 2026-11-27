@@ -57,7 +57,7 @@ PEM 줄바꿈은 LF/CRLF와 앞뒤 빈 줄을 허용하며 base64 원문은 cano
 실제 I/O/암호 연산의 강제 선점은 보장하지 않는다. request/cleanup budget과 분리하며 단계마다 전체 preparation timeout을 다시 부여하지 않는다.
 모든 snapshot 검증 뒤 마지막에 client를 만들고 만료/실패하면 생성 client만 닫는다. DataSource는 close하지 않는다.
 `PreparedOwnerQuery.close()`는 한번만 client close를 호출하며 cleanup 실패는 안전한 CLEANUP stage로 보고한다.
-원 오류 cause/suppressed·경로·PEM·credential을 전파하지 않는다.
+원 오류 cause/suppressed·경로·PEM·credential을 전파하지 않는다. 준비/정리 중 InterruptedException은 안전한 stage로 변환하면서 thread interrupt 상태를 복구한다.
 
 이 owner는 ingress drain·authority callback 수명을 관리하지 않는다. 기존 client의 종료 budget/await 동작을 그대로 사용하며
 전체 process 종료의 단일 wall-clock budget을 구현한 것으로 해석하지 않는다. Boot root의 소유권/순서와 만료 cleanup은 다음 단계다.
@@ -83,6 +83,8 @@ Windows JDK의 BasicFileAttributes는 정상 파일에도 fileKey=null을 반환
 | 기존 auth/application·security·reviewapi 회귀 명령 | BUILD SUCCESSFUL, 세 test task 모두 UP-TO-DATE. 새 실행 test 개수로 합산하지 않음 |
 | 파일/정리/불변 snapshot | Windows junction 거절·파일 삭제 후 issuer/caller·byte mutation·만료 후 생성 client close·대여 DataSource 비접근·안전한 cleanup 오류 확인 |
 | 초기 실패 | fixture TempDir 초기화, Windows fileKey null을 무조건 거절하던 판정을 수정. 이전 실패를 pass로 합산하지 않음 |
+
+표의 Windows App 대상은 초기 구현 commit의 실행이다. 후속 interrupt 복구는 별도 집중 test 1개와 모듈 경계 검사를 통과했다. 전체 최종 source 실행은 PR head CI로 확인한다.
 
 새 실제 TLS와 Linux symlink는 PR의 **정확 head Linux CI/해당 XML**로 별도 확인한다. 기존 11개 서비스 E2E는 이전 source/test launcher의 증거이며
 이 preparation의 일반 Core Main 수용·키 교체/fleet/운영 수용으로 재사용하지 않는다. CI/PR merge도 운영 활성화 승인은 아니다.

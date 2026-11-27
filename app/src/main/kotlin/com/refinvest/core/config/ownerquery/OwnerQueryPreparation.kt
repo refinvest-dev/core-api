@@ -32,7 +32,8 @@ class PreparedOwnerQuery internal constructor(
         if (closed.compareAndSet(false, true)) {
             try {
                 closeClient()
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                if (error is InterruptedException) Thread.currentThread().interrupt()
                 throw OwnerQueryPreparationException(OwnerQueryPreparationException.Stage.CLEANUP)
             }
         }
@@ -73,9 +74,11 @@ object OwnerQueryPreparation {
             val owned = client
             return PreparedOwnerQuery(issuer, authority, caller, owned, snapshot.requestTimeout) { owned.close() }
         } catch (error: Exception) {
+            if (error is InterruptedException) Thread.currentThread().interrupt()
             try {
                 client?.close()
-            } catch (_: Exception) {
+            } catch (cleanup: Exception) {
+                if (cleanup is InterruptedException) Thread.currentThread().interrupt()
                 throw OwnerQueryPreparationException(OwnerQueryPreparationException.Stage.CLEANUP)
             }
             if (error is OwnerQueryPreparationException) throw OwnerQueryPreparationException(error.stage)

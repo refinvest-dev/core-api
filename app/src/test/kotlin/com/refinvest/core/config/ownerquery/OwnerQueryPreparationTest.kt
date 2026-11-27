@@ -281,6 +281,37 @@ class OwnerQueryPreparationTest {
     }
 
     @Test
+    fun `interrupted cleanup and preparation preserve interrupt status without raw cause`() {
+        val source = mock(DataSource::class.java)
+        val path = file()
+        val client = mock(OwnerMetadataHttpClient::class.java)
+        doAnswer { throw InterruptedException("sensitive provider interruption") }.`when`(client).close()
+        val prepared = OwnerQueryPreparation.prepare(path, source, member, clock, Duration.ofSeconds(10), System::nanoTime) { client }
+        try {
+            val error = assertFailsWith<OwnerQueryPreparationException> { prepared.close() }
+            assertEquals(OwnerQueryPreparationException.Stage.CLEANUP, error.stage)
+            assertTrue(Thread.currentThread().isInterrupted)
+            assertNull(error.cause)
+            assertTrue(error.suppressed.isEmpty())
+        } finally {
+            Thread.interrupted()
+        }
+        try {
+            val error = assertFailsWith<OwnerQueryPreparationException> {
+                OwnerQueryPreparation.prepare(path, source, member, clock, Duration.ofSeconds(10), System::nanoTime) {
+                    throw InterruptedException("sensitive preparation interruption")
+                }
+            }
+            assertEquals(OwnerQueryPreparationException.Stage.CAPABILITIES, error.stage)
+            assertTrue(Thread.currentThread().isInterrupted)
+            assertNull(error.cause)
+        } finally {
+            Thread.interrupted()
+        }
+        verifyNoInteractions(source)
+    }
+
+    @Test
     fun `prepared real TLS client works after deleting its source file`() {
         val managers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply {
             init(tlsIdentity, "fixture-only".toCharArray())
