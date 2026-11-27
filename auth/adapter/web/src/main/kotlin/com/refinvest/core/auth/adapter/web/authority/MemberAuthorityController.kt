@@ -5,7 +5,7 @@ import com.refinvest.core.auth.port.inbound.authority.CheckMemberAuthorityComman
 import com.refinvest.core.auth.port.inbound.authority.CheckMemberAuthorityUseCase
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+import org.springframework.context.annotation.Conditional
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RestController
@@ -18,7 +18,7 @@ import java.nio.ByteBuffer
 import java.util.UUID
 
 @RestController
-@ConditionalOnBean(CheckMemberAuthorityUseCase::class, AuthenticateAuthorityCallerUseCase::class)
+@Conditional(MemberAuthorityAvailableCondition::class)
 class MemberAuthorityController(private val check: CheckMemberAuthorityUseCase, private val mapper: ObjectMapper) {
     private val json = JsonFactory.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
         .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(1).maxStringLength(4096).maxNameLength(64).maxTokenCount(16).build()).build()

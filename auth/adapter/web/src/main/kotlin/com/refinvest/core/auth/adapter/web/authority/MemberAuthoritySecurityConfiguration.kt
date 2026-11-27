@@ -5,7 +5,7 @@ import com.refinvest.core.auth.port.inbound.authority.CheckMemberAuthorityUseCas
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+import org.springframework.context.annotation.Conditional
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.annotation.Order
@@ -28,7 +28,7 @@ import tools.jackson.databind.ObjectMapper
 import java.util.UUID
 
 @Configuration
-@ConditionalOnBean(CheckMemberAuthorityUseCase::class, AuthenticateAuthorityCallerUseCase::class)
+@Conditional(MemberAuthorityAvailableCondition::class)
 class MemberAuthoritySecurityConfiguration {
     @Bean
     @Order(1)

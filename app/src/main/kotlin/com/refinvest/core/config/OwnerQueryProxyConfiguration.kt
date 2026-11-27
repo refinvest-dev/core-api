@@ -8,6 +8,8 @@ import com.refinvest.core.tradingreview.port.outbound.ownerquery.OwnerMetadataRe
 import com.refinvest.core.tradingreview.port.outbound.ownerquery.OwnerQueryDelegation
 import com.refinvest.core.tradingreview.port.outbound.ownerquery.OwnerQueryDelegationIssuer
 import com.refinvest.core.tradingreview.port.outbound.ownerquery.OwnerQueryDelegationUnavailable
+import com.refinvest.core.config.ownerquery.OwnerQueryRuntime
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -25,8 +27,11 @@ class OwnerQueryProxyConfiguration {
         settings: OwnerQueryProxySettings,
         issuer: IssueOwnerQueryDelegationUseCase,
         reader: OwnerMetadataReader,
+        runtime: ObjectProvider<OwnerQueryRuntime>,
     ): ProxyOwnerMetadataUseCase {
-        val budget = requireNotNull(settings.requestTimeout) { "Owner query request budget is required" }
+        val selected = runtime.getIfAvailable()?.requestTimeout
+        require(selected == null || settings.requestTimeout == null || selected == settings.requestTimeout) { "Conflicting owner query request budget" }
+        val budget = requireNotNull(selected ?: settings.requestTimeout) { "Owner query request budget is required" }
         val delegationIssuer = OwnerQueryDelegationIssuer {
             try {
                 val issued = issuer.execute()

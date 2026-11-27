@@ -150,7 +150,12 @@ class OwnerMetadataHttpClient(options: OwnerMetadataHttpOptions) : OwnerMetadata
         return OwnerMetadataCall(result, remaining) { finish(result, pending, cancelled = true) }
     }
 
-    override fun close() {
+    override fun close() = close(shutdownBudget)
+
+    fun close(timeout: Duration) {
+        require(timeout >= Duration.ZERO && timeout <= Duration.ofSeconds(60)) { "Invalid owner metadata shutdown budget" }
+        val started = System.nanoTime()
+        fun remaining() = (timeout.toNanos() - (System.nanoTime() - started).coerceAtLeast(0)).coerceAtLeast(0)
         if (!closed.compareAndSet(false, true)) return
         active.forEach { (result, pending) ->
             finish(result, pending, OwnerMetadataResult.Failure(OwnerMetadataFailure.OWNER_QUERY_UNAVAILABLE))
@@ -158,7 +163,9 @@ class OwnerMetadataHttpClient(options: OwnerMetadataHttpOptions) : OwnerMetadata
 
         client.shutdownNow()
         timer.shutdownNow()
-        check(client.awaitTermination(shutdownBudget) && timer.awaitTermination(shutdownBudget.toNanos(), TimeUnit.NANOSECONDS)) {
+        val clientDone = client.awaitTermination(Duration.ofNanos(remaining()))
+        val timerDone = timer.awaitTermination(remaining(), TimeUnit.NANOSECONDS)
+        check(clientDone && timerDone) {
             "Owner metadata client did not terminate"
         }
     }
