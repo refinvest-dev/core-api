@@ -113,8 +113,8 @@ JDBC `setQueryTimeout(seconds)`는 connection acquisition timeout이나 HTTP 전
 단일 connector를 먼저 닫는 방식은 callback까지 거절할 수 있다. 배포/LB 분리 admission 또는 유한 실패 처리 전략을 shutdown PR에서 입증한다.
 
 현재 `OwnerMetadataHttpClient.close()`는 active 요청을 실패 완료시키고 client/timer를 shutdown/await한다. ingress graceful drain을 대신하지 않는다.
-또한 client await와 timer await에 각각 같은 shutdownBudget을 적용하므로 그것을 하나의 wall-clock cleanup 상한이라고 보고하지 않는다.
-후속 owner는 전체 잔여 예산을 제한하고 idempotent 종료·부분 준비 실패를 검증해야 한다. Spring Boot 기본값·Bean 파괴 역순에 대한 추정으로
+후속 구현은 client/timer await에 같은 남은 budget을 전달한다. [실제 Main body/취소 수용](OWNER_QUERY_TRANSPORT_VERIFICATION.md)에서 body 거절·deadline·socket/slot 반환·drain을 보완했다.
+유한 await와 실제 전체 OS/process 종료 상한을 구분하며 idempotent 종료·부분 준비 실패의 기존 검증도 따른다. Spring Boot 기본값·Bean 파괴 역순에 대한 추정으로
 순서를 보장하지 않는다. drain 미완료 시 bounded cancel/오류 보고·최종 process 종료를 구분하며 성공으로 기록하지 않는다.
 
 ## 회원·DB·단일 writer 경계
@@ -181,3 +181,5 @@ Go authority outbound 선택과 Core 수락 set을 각 방향에서 확인한다
 위 1번의 loader/명시 preparation과 PCP-01~04/09 일부를 [구현·격리 검증](OWNER_QUERY_PREPARATION_VERIFICATION.md)했다. Windows TLS listener 실패·OS별 제외와 portable 파일 접근 한계를 구분한다.
 위 2번은 [Boot 조립/security chain·lifecycle](OWNER_QUERY_BOOT_VERIFICATION.md), 3번은 [일반 Main의 실제 primary pool/SQL·callback drain](OWNER_QUERY_MAIN_VERIFICATION.md)으로 검증했다. 기존 fixture11개와 일반 Main16개는 별도 실행이다.
 현재 운영 전환 판정은 **NO_GO**다. PCP-12의 같은 build/다른 설정 세대 순차 교체는 [후속 수용](OWNER_QUERY_ROTATION_VERIFICATION.md)했다. 다음은 실제 secret 공급·routing·회원/DB/단일 writer·운영 조건을 분리해 검토하는 단계다. 제품 정책 재채택을 요구하지 않는다.
+
+실제 다음 운영 자료·TR writer 시작 목록·rollback과 후속 업무 개발의 선행조건은 [인계 준비도](OWNER_QUERY_ACTIVATION_READINESS.md)를 따른다.
