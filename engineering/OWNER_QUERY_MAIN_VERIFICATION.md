@@ -55,4 +55,4 @@ integration의4개 안전 검사와 `verify-contract-sync.ps1 -IncludeWeb`도 �
 PCP-05/07/08/11의 일반 Main·한정 primary pool/SQL·callback 종료를 이번 증적으로 보완했다.
 PCP-09의 synthetic secret·격리 DB·비밀정보 비공개는 유지했다. PCP-12의 키/자격 교체·fleet/version skew·운영 장애/route 수용은 미실행이다. DB history·회원 backfill/allow·신뢰 ACL·
 단일 TR writer 인계·backup/restore·운영 부하도 별도 gate다. Read metadata만의 수용을 쓰기/장기 작업 구현 완료로 확대하지 않는다.
-다음은 해당 rotation/fleet/운영 전환 조건을 실제 소비자·배포 단위로 분리해 검토하는 단계다.
+후속 [snapshot 교체/fleet 수용](OWNER_QUERY_ROTATION_VERIFICATION.md)에서 구성 세대의 순차 교체를 한정 검증했다. 실제 운영 전환 조건은 별도다.

@@ -129,7 +129,7 @@ JDBC `setQueryTimeout(seconds)`는 connection acquisition timeout이나 HTTP 전
 | rollback | 두 GET은 durable admission을 만들지 않음 | 읽기 중계 철회와 향후 Go write 뒤 복구 구분, 권위 차단/철회 상태 보존 |
 
 `refinvest.compute.enabled=false`만으로 Core TR 중단이 성립하지 않는다. 현재
-[spool sweeper](../tradingreview/adapter/compute/src/main/kotlin/com/refinvest/core/tradingreview/adapter/compute/NormalizationResultSpoolSweeper.kt)는 조건 없이 등록되며,
+[spool sweeper](../tradingreview/adapter/compute/src/main/kotlin/com/refinvest/core/tradingreview/adapter/compute/NormalizationResultSpoolSweeper.kt)는 `spool-sweep-enabled` 기본 true이므로 명시 false가 필요하며,
 [삭제 worker](../tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence/TradingDeletionWorker.kt)와
 [expiry](../tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence/TradingImportExpiryScheduler.kt)·
 [raw retention](../tradingreview/adapter/persistence/src/main/kotlin/com/refinvest/core/tradingreview/adapter/persistence/TradingRawRetentionWorker.kt)은 기본 활성 조건이다.
@@ -151,7 +151,7 @@ Go authority outbound 선택과 Core 수락 set을 각 방향에서 확인한다
 
 긴급 철회는 Core authority store commit·추가 발급 중단·verifier/credential 전파를 조율한다. key 파일 교체만으로 즉시 철회를 완료 처리하지 않는다.
 교체 실패는 기존 serving 프로세스의 검사된 snapshot과 신규 프로세스 시작 실패를 구분한다. 손상된 신규 입력을 이전 key/환경으로 자동 fallback하지 않는다.
-fleet 확인/retire 시각·긴급 중단·복원은 운영 리허설 증거가 필요하다.
+불변 snapshot의 순차 교체는 [격리 fleet](OWNER_QUERY_ROTATION_VERIFICATION.md)에서 검증했다. 실제 fleet 확인/retire 시각·긴급 중단·복원은 운영 리허설 증거가 필요하다.
 
 ## 다음 구현 단위와 수용
 
@@ -180,4 +180,4 @@ fleet 확인/retire 시각·긴급 중단·복원은 운영 리허설 증거가 
 
 위 1번의 loader/명시 preparation과 PCP-01~04/09 일부를 [구현·격리 검증](OWNER_QUERY_PREPARATION_VERIFICATION.md)했다. Windows TLS listener 실패·OS별 제외와 portable 파일 접근 한계를 구분한다.
 위 2번은 [Boot 조립/security chain·lifecycle](OWNER_QUERY_BOOT_VERIFICATION.md), 3번은 [일반 Main의 실제 primary pool/SQL·callback drain](OWNER_QUERY_MAIN_VERIFICATION.md)으로 검증했다. 기존 fixture11개와 일반 Main16개는 별도 실행이다.
-현재 운영 전환 판정은 **NO_GO**다. 다음은 PCP-12의 rotation/fleet·실제 운영 전환 조건을 분리해 검토하는 단계다. 제품 정책 재채택을 요구하지 않는다.
+현재 운영 전환 판정은 **NO_GO**다. PCP-12의 같은 build/다른 설정 세대 순차 교체는 [후속 수용](OWNER_QUERY_ROTATION_VERIFICATION.md)했다. 다음은 실제 secret 공급·routing·회원/DB/단일 writer·운영 조건을 분리해 검토하는 단계다. 제품 정책 재채택을 요구하지 않는다.
