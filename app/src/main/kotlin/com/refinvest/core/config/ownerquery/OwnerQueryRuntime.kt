@@ -116,7 +116,12 @@ class OwnerQueryRuntime(
         }
         shutdownComplete = proxyDrained && authorityDrained && clientClosed
         lock.withLock { state = State.CLOSED }
-        if (shutdownComplete != true) LoggerFactory.getLogger(OwnerQueryRuntime::class.java).error("Owner query shutdown incomplete")
+        val logger = LoggerFactory.getLogger(OwnerQueryRuntime::class.java)
+        if (shutdownComplete == true) {
+            logger.info("Owner query shutdown complete")
+        } else {
+            logger.error("Owner query shutdown incomplete")
+        }
     }
 
     override fun toString() = "OwnerQueryRuntime(redacted)"

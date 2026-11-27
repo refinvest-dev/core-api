@@ -1,9 +1,11 @@
 # Owner Query Boot 조립·종료 검증
 
+> 후속 [일반 Main 서비스 수용](OWNER_QUERY_MAIN_VERIFICATION.md)에서 실제 bootJar/Go Main의16개 시나리오를 검증했다. 아래 계획/격리 검증의 이력과 구분하며 운영 전환 NO_GO는 유지한다.
+
 기준일: 2026-11-27. [production 계획](OWNER_QUERY_PRODUCTION_COMPOSITION.md)의 2번 구현이다.
 Core base는 `b7e7991bd41061b07810804cb2162a7d1a1000f7`(#153 병합), 코드 commit은 `cf285f5199b12594c58609cf57c164c086bd3894`다.
 정본 ADR-086의 두 metadata GET만 대상으로 한다. 기본 비활성화·실제 운영 인계 NO_GO는 유지한다.
-일반 RefinvestApplication↔실제 Go Main의 새 E2E·fleet/rotation·운영 수용은 다음 범위다.
+일반 RefinvestApplication↔실제 Go Main의 후속 E2E는 상단 기록을 따르며 fleet/rotation·운영 수용은 미완료다.
 
 ## 조립과 현재 source
 
@@ -120,9 +122,9 @@ stop callback은 완료해 Spring의 후속 종료를 진행하며 새 read/auth
 ## 남은 수용과 다음 범위
 
 PCP-05/06은 선택·context/등록·보안 회귀, PCP-08은 정상/실패 수명 모델을 격리 검사했다.
-PCP-07의 실제 primary pool 획득/SQL/body 취소·물리 반환과 PCP-05/08의 실제 listener/connector/callback 종료는 일반 Main 서비스 재수용에서 입증한다.
+PCP-07의 실제 primary pool 획득/SQL timeout·반환과 PCP-05/08의 listener/connector/callback 종료는 후속 일반 Main 서비스 수용에서 보완했다. 전체 body 취소·운영 topology로 확대하지 않는다.
 PCP-10은 이번 조립의 DB 비접근/상태 변경 부재를 확인했으며 운영 Member/DDL 준비를 완료한 것은 아니다.
 기존 test launcher의 11개 PASS를 이번 Root/운영 수용으로 바꾸지 않는다.
 
-다음은 일반 RefinvestApplication/Main과 실제 Go Main으로 PCP-11 및 관련 deadline/drain/trace/error를 재검증하는 integration 작업이다.
+후속 [일반 Main 서비스 수용](OWNER_QUERY_MAIN_VERIFICATION.md)에서 PCP-11 및 관련 deadline/drain/trace/error를 실제 경로로 재검증했다.
 E2E 전에 contract sync가 필요하다. rotation/fleet·실제 key/회원 초기화·DB history/ID·단일 writer·backup/restore·운영 활성화는 별도이며 NO_GO를 유지한다.
