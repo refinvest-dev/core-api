@@ -104,5 +104,5 @@ Windows JDK의 BasicFileAttributes는 정상 파일에도 fileKey=null을 반환
 | PCP-09 | generated key/CA·임시 파일·mock DB/loopback TLS, 사용자/환경 파일 보존 | 운영 사용자/secret·DB를 test fixture로 사용하지 않음 |
 | PCP-05~08/10~12 | 이 변경에서 미실행 | 실제 Boot Bean/security chain·부분 구성·callback/drain·일반 Main·rotation/fleet 수용 |
 
-다음 구현 단위는 production Boot의 **opt-in 조립·authority chain 등록·자원 lifecycle**이다.
+후속 [production Boot의 opt-in 조립·authority chain·lifecycle](OWNER_QUERY_BOOT_VERIFICATION.md)을 구현·격리 검증했다. 이 문서의 initial preparation 범위/이력과 구분하며 다음은 일반 Core Main·Go 서비스 재수용이다.
 기본 proxy 비활성화를 유지하며 회원 초기화/DDL·TR 단일 writer·키 운영 gate를 별도 확인한다. 운영 전환 판정은 NO_GO를 유지한다.

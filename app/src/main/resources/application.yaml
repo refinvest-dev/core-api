@@ -56,3 +56,12 @@ refinvest:
     normalization:
       delivery:
         max-accepted-payload-bytes: ${REFINVEST_TRADING_RESULT_MAX_BYTES:52428800}
+
+trading-review:
+  owner-query-proxy:
+    enabled: ${TRADING_REVIEW_OWNER_QUERY_PROXY_ENABLED:false}
+  owner-query-runtime:
+    enabled: ${TRADING_REVIEW_OWNER_QUERY_RUNTIME_ENABLED:false}
+    snapshot-file: ${TRADING_REVIEW_OWNER_QUERY_RUNTIME_SNAPSHOT_FILE:}
+    preparation-timeout: ${TRADING_REVIEW_OWNER_QUERY_RUNTIME_PREPARATION_TIMEOUT:}
+    drain-timeout: ${TRADING_REVIEW_OWNER_QUERY_RUNTIME_DRAIN_TIMEOUT:}

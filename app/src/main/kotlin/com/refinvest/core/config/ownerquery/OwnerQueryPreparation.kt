@@ -23,15 +23,22 @@ class PreparedOwnerQuery internal constructor(
     val authorityCaller: AuthenticateAuthorityCallerUseCase,
     val reader: OwnerMetadataReader,
     val requestTimeout: Duration,
-    private val closeClient: () -> Unit,
+    private val closeClient: (Duration?) -> Unit,
 ) : AutoCloseable {
     private val closed = AtomicBoolean()
 
     /** Caller must stop admission and drain users before closing this owner. No datasource ownership. */
-    override fun close() {
+    override fun close() = closeOnce(null)
+
+    fun close(timeout: Duration) {
+        if (timeout < Duration.ZERO || timeout > Duration.ofSeconds(60)) throw OwnerQueryPreparationException(OwnerQueryPreparationException.Stage.INPUT)
+        closeOnce(timeout)
+    }
+
+    private fun closeOnce(timeout: Duration?) {
         if (closed.compareAndSet(false, true)) {
             try {
-                closeClient()
+                closeClient(timeout)
             } catch (error: Exception) {
                 if (error is InterruptedException) Thread.currentThread().interrupt()
                 throw OwnerQueryPreparationException(OwnerQueryPreparationException.Stage.CLEANUP)
@@ -72,7 +79,7 @@ object OwnerQueryPreparation {
             client = createClient(snapshot.clientOptions)
             budget.check()
             val owned = client
-            return PreparedOwnerQuery(issuer, authority, caller, owned, snapshot.requestTimeout) { owned.close() }
+            return PreparedOwnerQuery(issuer, authority, caller, owned, snapshot.requestTimeout) { remaining -> if (remaining == null) owned.close() else owned.close(remaining) }
         } catch (error: Exception) {
             if (error is InterruptedException) Thread.currentThread().interrupt()
             try {

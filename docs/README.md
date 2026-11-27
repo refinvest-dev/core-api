@@ -54,4 +54,4 @@ OpenAPI 초안은 정식 `core-api.yaml`/`compute-api.yaml`과 분리한다. syn
 비동기 HTTPS client·인증 principal 위임·안전한 응답과 선택적 Controller 연결을 설명한다.
 기본 비활성화를 유지한다. [서비스 fixture](../engineering/OWNER_QUERY_SERVICE_FIXTURE.md)는 실제 Go/authority 연결의 전용 검증 조립이며 key 공급·DB/TR writer 인계·운영 활성화는 후속이다.
 
-[production 조립 계획](../engineering/OWNER_QUERY_PRODUCTION_COMPOSITION.md)은 신뢰 snapshot·자원 소유·실제 Boot 등록/종료와 회원/DB·단일 writer 조건을 분리한다. [loader/명시 preparation 구현·검증](../engineering/OWNER_QUERY_PREPARATION_VERIFICATION.md)은 현재 코드·Windows listener 실패/OS별 검사와 파일 접근 한계를 기록한다. 다음은 production Bean/security chain·lifecycle 연결이며 일반 Main 재수용·운영 전환은 남아 있다.
+[production 조립 계획](../engineering/OWNER_QUERY_PRODUCTION_COMPOSITION.md)은 신뢰 snapshot·자원 소유·실제 Boot 등록/종료와 회원/DB·단일 writer 조건을 분리한다. [loader/명시 preparation 구현·검증](../engineering/OWNER_QUERY_PREPARATION_VERIFICATION.md)은 현재 코드·Windows listener 실패/OS별 검사와 파일 접근 한계를 기록한다. 후속 [production Bean/security chain·lifecycle 검증](../engineering/OWNER_QUERY_BOOT_VERIFICATION.md)은 opt-in 설정·정상/forced 종료의 실제 범위를 설명한다. 일반 Main 재수용·운영 전환은 남아 있다.
