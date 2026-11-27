@@ -1,6 +1,8 @@
 # Owner Query Core production 조립 계획
 
-기준일: 2026-11-27. **상태: loader/명시 preparation·opt-in Boot 조립/lifecycle 구현·격리 검증.** [preparation](OWNER_QUERY_PREPARATION_VERIFICATION.md)·[Boot 검증/제약](OWNER_QUERY_BOOT_VERIFICATION.md)을 따른다. 일반 Main 서비스 재수용/운영은 별도다.
+> 후속 [일반 Main 서비스 수용](OWNER_QUERY_MAIN_VERIFICATION.md)에서 실제 bootJar/Go Main의16개 시나리오를 검증했다. 아래 계획/격리 검증의 이력과 구분하며 운영 전환 NO_GO는 유지한다.
+
+기준일: 2026-11-27. **상태: loader/명시 preparation·opt-in Boot 조립/lifecycle·일반 Main 한정 수용 완료.** [preparation](OWNER_QUERY_PREPARATION_VERIFICATION.md)·[Boot 검증/제약](OWNER_QUERY_BOOT_VERIFICATION.md)을 따른다. 운영 수용은 별도다.
 대상은 ADR-086의 Account·Book metadata 단건 GET 두 개다. 기존 제품 정책을 적용하며 목록·쓰기·Worker 권한을 추가하지 않는다.
 [Context ADR-086](https://github.com/refinvest-dev/context/blob/8f00652381ef3c81b9fd11b7e4e452c8f98c451c/docs/TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md)이 제품 정본이다.
 이 문서는 Core의 조립 구현 순서와 검사 기준을 소유한다. DB migration·회원 허용·실제 secret 공급·route 운영 전환은 별도 판정이다.
@@ -176,5 +178,6 @@ fleet 확인/retire 시각·긴급 중단·복원은 운영 리허설 증거가 
 | PCP-11 | test initializer의 Bean 등록 없이 일반 Core Main과 Go cmd/api로 기존 11개 서비스 시나리오 재수용, schema/process 정리 |
 | PCP-12 | 새/구 kid·두 방향 credential 순차 교체·잘못된 신규 입력·권위 차단 commit 전후·미확인 node 제외를 synthetic fleet에서 검증 |
 
-위 1번의 loader/명시 preparation과 PCP-01~04/09 일부를 [구현·격리 검증](OWNER_QUERY_PREPARATION_VERIFICATION.md)했다. Windows TLS listener 실패·OS별 제외와 portable 파일 접근 한계를 구분한다. 새 production root·fleet/운영 조건은 미검증이며 기존 서비스 E2E 11개로 대체하지 않는다.
-현재 운영 전환 판정은 **NO_GO**다. 위 2번은 [Boot 조립/security chain·lifecycle](OWNER_QUERY_BOOT_VERIFICATION.md)을 구현·격리 검증했다. 다음 기본 작업 단위는 위 3번의 일반 Core Main·Go 서비스 재수용이다. 실제 driver/pool·connector·운영 수용을 별도로 확인하며 제품 정책 재채택을 요구하지 않는다.
+위 1번의 loader/명시 preparation과 PCP-01~04/09 일부를 [구현·격리 검증](OWNER_QUERY_PREPARATION_VERIFICATION.md)했다. Windows TLS listener 실패·OS별 제외와 portable 파일 접근 한계를 구분한다.
+위 2번은 [Boot 조립/security chain·lifecycle](OWNER_QUERY_BOOT_VERIFICATION.md), 3번은 [일반 Main의 실제 primary pool/SQL·callback drain](OWNER_QUERY_MAIN_VERIFICATION.md)으로 검증했다. 기존 fixture11개와 일반 Main16개는 별도 실행이다.
+현재 운영 전환 판정은 **NO_GO**다. 다음은 PCP-12의 rotation/fleet·실제 운영 전환 조건을 분리해 검토하는 단계다. 제품 정책 재채택을 요구하지 않는다.
