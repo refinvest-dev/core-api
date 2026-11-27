@@ -94,6 +94,8 @@ class OwnerQueryRuntime(
         }
         val started = nanoTime()
         val limit = drainTimeout.toNanos()
+        val logger = LoggerFactory.getLogger(OwnerQueryRuntime::class.java)
+        logger.info("Owner query draining")
         fun remaining(): Long = (limit - (nanoTime() - started).coerceAtLeast(0)).coerceAtLeast(0)
         fun await(empty: () -> Boolean): Boolean = lock.withLock {
             try {
@@ -116,7 +118,6 @@ class OwnerQueryRuntime(
         }
         shutdownComplete = proxyDrained && authorityDrained && clientClosed
         lock.withLock { state = State.CLOSED }
-        val logger = LoggerFactory.getLogger(OwnerQueryRuntime::class.java)
         if (shutdownComplete == true) {
             logger.info("Owner query shutdown complete")
         } else {
