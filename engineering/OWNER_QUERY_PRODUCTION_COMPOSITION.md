@@ -1,6 +1,6 @@
 # Owner Query Core production 조립 계획
 
-기준일: 2026-11-27. **상태: 구현 전 기술 설계·수용 계획.** 설정 loader·production Bean/lifecycle 연결은 아직 구현하지 않았다.
+기준일: 2026-11-27. **상태: loader/명시 preparation 구현, production Bean/lifecycle 연결은 미구현.** [실제 검증과 제약](OWNER_QUERY_PREPARATION_VERIFICATION.md)을 따른다.
 대상은 ADR-086의 Account·Book metadata 단건 GET 두 개다. 기존 제품 정책을 적용하며 목록·쓰기·Worker 권한을 추가하지 않는다.
 [Context ADR-086](https://github.com/refinvest-dev/context/blob/8f00652381ef3c81b9fd11b7e4e452c8f98c451c/docs/TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md)이 제품 정본이다.
 이 문서는 Core의 조립 구현 순서와 검사 기준을 소유한다. DB migration·회원 허용·실제 secret 공급·route 운영 전환은 별도 판정이다.
@@ -48,13 +48,13 @@ Kotlin `data class`의 자동 `toString`에 private key/credential을 담지 않
   → 기존 Proxy service / 두 GET Controller / authority 전용 security chain
 ```
 
-위 이름/파일은 구현 우선안이며 아직 공개 코드 API가 아니다. getter는 준비된 snapshot만 반환한다.
+loader/preparation의 실제 API·파일 형식은 [구현 기록](OWNER_QUERY_PREPARATION_VERIFICATION.md)을 따른다. 나머지 Boot root/lifecycle 이름은 구현 우선안이다. getter는 준비된 snapshot만 반환한다.
 역직렬화가 완료되기 전에 Bean·client를 부분 등록하지 않는다. 별도 trust format의 Go/Core runtime 공용 library는 만들지 않는다.
 
 ## 설정과 신뢰 입력 우선안
 
-기존 `trading-review.owner-query-proxy.enabled=false`와 명시 `request-timeout`을 유지한다. 다음 구현은 먼저 **호출자가 명시 호출하는
-preparation**까지 제공하고 production Bean 자동 등록은 후속으로 나눈다. 파일의 존재가 기능 선택을 대신하지 않는다.
+기존 `trading-review.owner-query-proxy.enabled=false`와 명시 `request-timeout`을 유지한다. 첫 구현은 **호출자가 명시 호출하는
+preparation**까지 제공하며 production Bean 자동 등록은 후속으로 나눈다. 파일의 존재가 기능 선택을 대신하지 않는다.
 자동 연결 때 사용할 신뢰 파일 property 이름/설정 binding은 그 PR에서 정하며, 여기의 필드를 이미 지원하는 env/CLI로 안내하지 않는다.
 
 초기 공급은 보호된 절대 local 경로의 단일 UTF-8 JSON object를 기술 우선안으로 삼는다. 최대 64 KiB, unknown/duplicate/case 차이·
@@ -176,6 +176,5 @@ fleet 확인/retire 시각·긴급 중단·복원은 운영 리허설 증거가 
 | PCP-11 | test initializer의 Bean 등록 없이 일반 Core Main과 Go cmd/api로 기존 11개 서비스 시나리오 재수용, schema/process 정리 |
 | PCP-12 | 새/구 kid·두 방향 credential 순차 교체·잘못된 신규 입력·권위 차단 commit 전후·미확인 node 제외를 synthetic fleet에서 검증 |
 
-현재 PCP-01~12는 **계획·미실행**이다. 기존 issuer/authority/client 단위·PostgreSQL 검사와 서비스 E2E 11개가 각 일부 경로를 검증했어도
-새 loader/production root·fleet/운영 조건을 통과한 것으로 처리하지 않는다. 문서 링크/source·계획 대조 검사는 업무 수용과 구분한다.
-현재 운영 전환 판정은 **NO_GO**다. 다음 기본 작업 단위는 위 1번이며 별도 제품 정책 재채택을 요구하지 않는다.
+위 1번의 loader/명시 preparation과 PCP-01~04/09 일부를 [구현·격리 검증](OWNER_QUERY_PREPARATION_VERIFICATION.md)했다. Windows TLS listener 실패·OS별 제외와 portable 파일 접근 한계를 구분한다. 새 production root·fleet/운영 조건은 미검증이며 기존 서비스 E2E 11개로 대체하지 않는다.
+현재 운영 전환 판정은 **NO_GO**다. 다음 기본 작업 단위는 위 2번의 실제 Boot 조립/security chain·lifecycle이며 별도 제품 정책 재채택을 요구하지 않는다.
