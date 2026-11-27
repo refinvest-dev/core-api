@@ -16,9 +16,12 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.net.http.HttpTimeoutException
+import java.nio.ByteBuffer
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
+import java.util.concurrent.CompletionStage
+import java.util.concurrent.Flow
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ScheduledThreadPoolExecutor
@@ -121,8 +124,12 @@ class OwnerMetadataHttpClient(options: OwnerMetadataHttpOptions) : OwnerMetadata
 
                 if (!pending.finished.get()) {
                     val network = client.sendAsync(request.first) { info ->
-                        decoder.checkHeaders(info)
-                        HttpResponse.BodySubscribers.limiting(HttpResponse.BodySubscribers.ofByteArray(), 16L shl 10)
+                        try {
+                            decoder.checkHeaders(info)
+                            HttpResponse.BodySubscribers.limiting(HttpResponse.BodySubscribers.ofByteArray(), 16L shl 10)
+                        } catch (_: Exception) {
+                            RejectedBody()
+                        }
                     }
                     pending.network.set(network)
                     if (pending.finished.get()) network.cancel(true)
@@ -187,6 +194,29 @@ class OwnerMetadataHttpClient(options: OwnerMetadataHttpOptions) : OwnerMetadata
         slots.release()
 
         if (cancelled) result.cancel(true) else result.complete(requireNotNull(outcome))
+    }
+
+    // Throwing in BodyHandler can leave an HTTP/1 body exchange open. Cancel its subscription explicitly.
+    private class RejectedBody : HttpResponse.BodySubscriber<ByteArray> {
+        private val result = CompletableFuture<ByteArray>()
+
+        override fun getBody(): CompletionStage<ByteArray> = result
+
+        override fun onSubscribe(subscription: Flow.Subscription) {
+            try {
+                subscription.cancel()
+            } finally {
+                reject()
+            }
+        }
+
+        override fun onNext(item: List<ByteBuffer>) = Unit
+        override fun onError(error: Throwable) = reject()
+        override fun onComplete() = reject()
+
+        private fun reject() {
+            result.completeExceptionally(IllegalArgumentException("Invalid owner metadata response"))
+        }
     }
 
     private class Pending {
