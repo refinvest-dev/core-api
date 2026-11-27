@@ -53,3 +53,5 @@ OpenAPI 초안은 정식 `core-api.yaml`/`compute-api.yaml`과 분리한다. syn
 [구현·검증 기록](../engineering/OWNER_QUERY_PROXY_VERIFICATION.md)은 ADR-086의 두 GET에 대한
 비동기 HTTPS client·인증 principal 위임·안전한 응답과 선택적 Controller 연결을 설명한다.
 기본 비활성화를 유지한다. [서비스 fixture](../engineering/OWNER_QUERY_SERVICE_FIXTURE.md)는 실제 Go/authority 연결의 전용 검증 조립이며 key 공급·DB/TR writer 인계·운영 활성화는 후속이다.
+
+[production 조립 계획](../engineering/OWNER_QUERY_PRODUCTION_COMPOSITION.md)은 신뢰 snapshot·자원 소유·실제 Boot 등록/종료와 회원/DB·단일 writer 조건을 분리한다. 다음 구현은 loader/명시 preparation이며 production Bean 연결·일반 Main 재수용은 뒤 단계다.
