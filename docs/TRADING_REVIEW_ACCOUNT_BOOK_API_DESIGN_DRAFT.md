@@ -625,3 +625,8 @@ Worker workset, Session 0개/Root purge 뒤 관계·권한, parent/child/remedia
 정밀도·Unicode strict ingress·timezone catalog와 legacy projection/Restore 경계를 구체화했다.
 로컬 비교 증거와 8개 미실행 제품 계획을 구분하며 기존 public/Compute/OpenAPI·ID/hash·DB 값을 변경하지 않는다.
 발급/seed·driver/codec·운영 인계는 Go 기술 문서와 E01/E02 증거로 이어진다. 이번 리뷰는 정책 채택·업무 구현 전환이 아니다.
+
+
+Account 목록 하나는 [ADR-087 채택 정책](TRADING_REVIEW_ACCOUNT_LIST_POLICY.md)의 기존 audience·목록 전용 scope/operation,
+query·삭제 가시성·응답/오류·상한을 따른다. ADR-086의 단건 scope와 기타 미채택 CRUD/Book 목록은 유지한다.
+AL-A01~12·public/internal schema/consumer 반영과 runtime/운영 수용은 후속이다.

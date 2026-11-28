@@ -221,3 +221,8 @@ Core→Go→Core callback 부하/취소/trace/error→실제 Go DB owner/parent/
 E2E 전 integration 계약 sync가 선행한다. 실제 DB history/ID·Core TR 단일 writer 인계·backup restore와
 서비스 활성화 gate는 유지한다. 기존 synthetic fixture·Go RSA/TLS 실험·문서 CI로 이를 완료 처리하지 않는다.
 후속 구현은 이 채택을 재승인받지 않되 수용 실패·미지원 범위는 숨기지 않는다.
+
+
+Account 목록 하나는 [ADR-087 채택 정책](TRADING_REVIEW_ACCOUNT_LIST_POLICY.md)의 기존 audience·목록 전용 scope/operation,
+query·삭제 가시성·응답/오류·상한을 따른다. ADR-086의 단건 scope와 기타 미채택 CRUD/Book 목록은 유지한다.
+AL-A01~12·public/internal schema/consumer 반영과 runtime/운영 수용은 후속이다.

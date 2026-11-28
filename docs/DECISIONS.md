@@ -1662,3 +1662,26 @@ Core 소유 POST의 request/response binding·상한·오류 registry를 고정�
 legacy key/hash/ID와 재처리 원문 중계는 유지한다. 두 내부 YAML의 draft/runtime false는 활성화 미완료를 나타낸다.
 timeout 수치·library/물리 state/운영 도구는 후속 설계/측정으로 정하고 실제 issuer/authority/키 교체·부하/HTTP/DB
 검증과 기존 인계 gate를 통과하기 전 활성화하지 않는다. 문서 merge/CI는 보안 운영 수용 증거가 아니다.
+
+
+## ADR-087 — Account List HTTP and Delegation Contract
+
+**상태: 채택(2026-11-28), Account 목록 GET 하나 한정.** 사용자가 권고안을 논의한 뒤 다시 검토하고 정책을 확정해 달라고 요청해
+[AL-P01~04 정본](TRADING_REVIEW_ACCOUNT_LIST_POLICY.md)을 채택했다. 문서 merge/CI는 채택 근거가 아니다.
+
+기존 `refinvest:trading-review:owner-query:v1` audience와 key/credential 공급을 유지하고,
+목록 scope `trading-review:owner:accounts:list`·별도 caller operation 허용으로 격리한다.
+단건 scope/readAllowed를 상속하지 않으며 초안의 별도 account-list audience는 alias로도 허용하지 않는다.
+
+page0~2,147,483,647·size1~100·미지정0/20과 엄격한 query 문법을 확정한다. 빈/중복/unknown·비정규 숫자는400이며
+기존 framework 수용 입력을 좁힐 수 있는 명시 호환성 변경이다. 같은 owner의 ACTIVE/ARCHIVED·Account tombstone 제외를
+items/total의 같은 READ COMMITTED statement snapshot에 적용한다. Raw-only/Book 삭제와 Account 삭제를 구분한다.
+
+기존 page envelope·ID string/total int64·선택 오류 mapping/no-store/trace와 단건16 KiB·목록2 MiB 상한을 확정한다.
+선택된 proxy 실패는 legacy fallback하지 않는다. 새 code·Book 목록/쓰기/Import/Worker·ADR-074/075 전체는 채택하지 않는다.
+public/internal OpenAPI·authority scope·consumer 계약은 정적으로 반영했다. consumer/Go/Core 구현·AL-A01~12 실제 수용/운영 인계는 후속이다.
+과거 DRAFT나 runtime 미지원으로 이 좁은 정책 채택을 재승인하지 않는다.
+
+### ADR-087 wire·consumer 상세 후속(2026-11-28)
+
+[목록 상세](TRADING_REVIEW_ACCOUNT_LIST_WIRE_CONTRACT.md)에 public operation 전용 query/page·오류와 internal 목록 GET, authority의 두 scope를 반영했다. 단건/공유 pagination·기존 fixture를 유지하고 정적 참조 검사를 추가했다. 정책 재채택이나 runtime/AL-A01~12 수용 완료가 아니다.
