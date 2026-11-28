@@ -627,5 +627,6 @@ Worker workset, Session 0개/Root purge 뒤 관계·권한, parent/child/remedia
 발급/seed·driver/codec·운영 인계는 Go 기술 문서와 E01/E02 증거로 이어진다. 이번 리뷰는 정책 채택·업무 구현 전환이 아니다.
 
 
-Account 목록의 후속 [ADR-087 HTTP/위임 후보](TRADING_REVIEW_ACCOUNT_LIST_HTTP_DRAFT.md)는 AL-P01~04·기존 source 차이·AL-A01~12를 별도로 검토한다.
-미채택이며 이 문서의 단건 채택 범위/기존 초안·현재 OpenAPI/runtime을 수정하거나 확대하지 않는다.
+Account 목록 하나는 [ADR-087 채택 정책](TRADING_REVIEW_ACCOUNT_LIST_POLICY.md)의 기존 audience·목록 전용 scope/operation,
+query·삭제 가시성·응답/오류·상한을 따른다. ADR-086의 단건 scope와 기타 미채택 CRUD/Book 목록은 유지한다.
+AL-A01~12·public/internal schema/consumer 반영과 runtime/운영 수용은 후속이다.
