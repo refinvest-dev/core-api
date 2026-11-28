@@ -625,3 +625,7 @@ Worker workset, Session 0개/Root purge 뒤 관계·권한, parent/child/remedia
 정밀도·Unicode strict ingress·timezone catalog와 legacy projection/Restore 경계를 구체화했다.
 로컬 비교 증거와 8개 미실행 제품 계획을 구분하며 기존 public/Compute/OpenAPI·ID/hash·DB 값을 변경하지 않는다.
 발급/seed·driver/codec·운영 인계는 Go 기술 문서와 E01/E02 증거로 이어진다. 이번 리뷰는 정책 채택·업무 구현 전환이 아니다.
+
+
+Account 목록의 후속 [ADR-087 HTTP/위임 후보](TRADING_REVIEW_ACCOUNT_LIST_HTTP_DRAFT.md)는 AL-P01~04·기존 source 차이·AL-A01~12를 별도로 검토한다.
+미채택이며 이 문서의 단건 채택 범위/기존 초안·현재 OpenAPI/runtime을 수정하거나 확대하지 않는다.

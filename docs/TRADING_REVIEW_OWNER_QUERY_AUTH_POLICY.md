@@ -221,3 +221,7 @@ Core→Go→Core callback 부하/취소/trace/error→실제 Go DB owner/parent/
 E2E 전 integration 계약 sync가 선행한다. 실제 DB history/ID·Core TR 단일 writer 인계·backup restore와
 서비스 활성화 gate는 유지한다. 기존 synthetic fixture·Go RSA/TLS 실험·문서 CI로 이를 완료 처리하지 않는다.
 후속 구현은 이 채택을 재승인받지 않되 수용 실패·미지원 범위는 숨기지 않는다.
+
+
+Account 목록의 후속 [ADR-087 HTTP/위임 후보](TRADING_REVIEW_ACCOUNT_LIST_HTTP_DRAFT.md)는 AL-P01~04·기존 source 차이·AL-A01~12를 별도로 검토한다.
+미채택이며 이 문서의 단건 채택 범위/기존 초안·현재 OpenAPI/runtime을 수정하거나 확대하지 않는다.

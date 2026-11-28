@@ -1662,3 +1662,15 @@ Core 소유 POST의 request/response binding·상한·오류 registry를 고정�
 legacy key/hash/ID와 재처리 원문 중계는 유지한다. 두 내부 YAML의 draft/runtime false는 활성화 미완료를 나타낸다.
 timeout 수치·library/물리 state/운영 도구는 후속 설계/측정으로 정하고 실제 issuer/authority/키 교체·부하/HTTP/DB
 검증과 기존 인계 gate를 통과하기 전 활성화하지 않는다. 문서 merge/CI는 보안 운영 수용 증거가 아니다.
+
+
+## ADR-087 — Account List HTTP and Delegation Contract
+
+**상태: DRAFT·미채택(2026-11-28), Account 목록 GET 하나의 연결 후보.**
+[상세 후보](TRADING_REVIEW_ACCOUNT_LIST_HTTP_DRAFT.md)의 AL-P01~04는 기존 단건 token과 분리한 audience/scope·caller operation 허용,
+Core Int 호환 page·엄격한 query, 동일 owner/status/tombstone snapshot의 items/total, 기존 page envelope·선택 오류 중계·목록 전용 본문 cap을 권고한다.
+
+단건 read scope나 기존 readAllowed를 목록에 상속하지 않는다. 기존 Core의 tombstone 미참여·query binding·16KiB 단건 decoder와의 차이를
+명시하고 AL-A01~12의 미실행 수용 계획을 연결했다. page 최대2,147,483,647·목록2MiB 등 후보 수치는 현재 계약에 적용하지 않는다.
+ADR-086·현재 public/internal OpenAPI·runtime·Book 목록/쓰기/Worker는 유지한다. 계약 검토 진행·문서 merge/CI는 정책 채택이 아니다.
+명시 채택 후 schema/consumer 반영·Go/Core 구현·실제 수용과 운영 인계를 구분해 진행한다.
