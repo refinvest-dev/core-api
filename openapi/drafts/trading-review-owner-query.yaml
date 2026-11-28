@@ -3,10 +3,11 @@ info:
   title: Trading Review Owner Query (DRAFT)
   version: 0.1.0-draft
   description: >-
-    ADR-086에서 두 GET의 보안/authority 정책을 채택했다. YAML 전체와 runtime 활성화는 별도다.
+    ADR-086의 단건 두 GET과 ADR-087의 Account 목록 GET 계약을 구분한다. YAML 전체와 runtime 활성화는 별도다.
     현재 공개 Core/Compute wire를 대체하지 않으며 실제 issuer/authority·TLS/key 운영/HTTP 수용 전 활성화하지 않는다.
 x-contract-status: draft
 x-security-policy: ADR-086
+x-additional-security-policies: [ADR-087]
 x-security-policy-document: docs/TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md
 x-runtime-enabled: false
 x-member-state-gate: required-before-resource-lookup
@@ -17,9 +18,297 @@ security:
   - ServiceCredential: []
     UserDelegation: []
 paths:
+  /internal/trading-review/v1/accounts:
+    get:
+      operationId: listOwnerTradingAccounts
+      summary: TradingAccount 목록 (`ListTradingAccounts`)
+      description: ADR-087의 Core→Go 연결 계약. 현재 legacy 구현/운영 전환은 별도이며 이 schema 변경이 route를 활성화하지 않는다. Account 삭제 차단 항목은
+        items/total에서 함께 제외.
+      x-security-policy: ADR-087
+      x-query-profile:
+        unknownParameters: reject
+        duplicateParameters: reject
+        missingOnlyDefaults: true
+        decode: strict-utf8-once
+        allowedKeys:
+        - page
+        - size
+      x-response-max-bytes: 2097152
+      x-item-max-bytes: 16384
+      parameters:
+      - $ref: ../core-api.yaml#/components/parameters/TradingAccountListPageParam
+      - $ref: ../core-api.yaml#/components/parameters/TradingAccountListSizeParam
+      - $ref: '#/components/parameters/Traceparent'
+      - $ref: '#/components/parameters/Tracestate'
+      responses:
+        '200':
+          description: 동일 snapshot의 목록. 비어 있거나 범위 밖이면200·items=[]·실제 total.
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                enum:
+                - no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../core-api.yaml#/components/schemas/TradingAccountPage
+              examples:
+                empty:
+                  x-request-query:
+                    page: 0
+                    size: 20
+                  value:
+                    items: []
+                    page: 0
+                    size: 20
+                    total: 0
+                metadata:
+                  x-request-query:
+                    page: 0
+                    size: 20
+                  value:
+                    items:
+                    - &id001
+                      id: '9223372036854775807'
+                      venue: BINANCE
+                      displayName: 보존된 계정
+                      status: ARCHIVED
+                      createdAt: '2026-11-28T00:00:00Z'
+                    - id: '9007199254740993'
+                      venue: BINANCE
+                      displayName: 두 번째 계정
+                      status: ACTIVE
+                      createdAt: '2026-11-28T00:00:00Z'
+                    page: 0
+                    size: 20
+                    total: 2
+                outOfRange:
+                  x-request-query:
+                    page: 2147483647
+                    size: 100
+                  value:
+                    items: []
+                    page: 2147483647
+                    size: 100
+                    total: 2
+                largeCount:
+                  x-request-query:
+                    page: 0
+                    size: 1
+                  value:
+                    items:
+                    - *id001
+                    page: 0
+                    size: 1
+                    total: 9223372036854775807
+        '400':
+          description: 400 INVALID_REQUEST
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                enum:
+                - no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/TradingAccountListError
+                - type: object
+                  properties:
+                    code:
+                      type: string
+                      enum:
+                      - INVALID_REQUEST
+                    message:
+                      type: string
+                      enum:
+                      - Invalid request
+                    retryable:
+                      type: boolean
+                      enum:
+                      - false
+              examples:
+                invalid_request:
+                  value:
+                    code: INVALID_REQUEST
+                    message: Invalid request
+                    traceId: '12345678901234567890123456789012'
+                    retryable: false
+        '403':
+          description: 403 MEMBER_ACCESS_DENIED / CALLER_NOT_ALLOWED
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                enum:
+                - no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/TradingAccountListError
+                - type: object
+                  properties:
+                    code:
+                      type: string
+                      enum:
+                      - MEMBER_ACCESS_DENIED
+                      - CALLER_NOT_ALLOWED
+                    message:
+                      type: string
+                      enum:
+                      - Access denied
+                    retryable:
+                      type: boolean
+                      enum:
+                      - false
+              examples:
+                member_access_denied:
+                  value:
+                    code: MEMBER_ACCESS_DENIED
+                    message: Access denied
+                    traceId: '12345678901234567890123456789012'
+                    retryable: false
+                caller_not_allowed:
+                  value:
+                    code: CALLER_NOT_ALLOWED
+                    message: Access denied
+                    traceId: '12345678901234567890123456789012'
+                    retryable: false
+        '503':
+          description: 503 AUTHORITY_UNAVAILABLE / OWNER_QUERY_UNAVAILABLE
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                enum:
+                - no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/TradingAccountListError
+                - type: object
+                  properties:
+                    code:
+                      type: string
+                      enum:
+                      - AUTHORITY_UNAVAILABLE
+                      - OWNER_QUERY_UNAVAILABLE
+                    message:
+                      type: string
+                      enum:
+                      - Service unavailable
+                    retryable:
+                      type: boolean
+                      enum:
+                      - true
+              examples:
+                authority_unavailable:
+                  value:
+                    code: AUTHORITY_UNAVAILABLE
+                    message: Service unavailable
+                    traceId: '12345678901234567890123456789012'
+                    retryable: true
+                owner_query_unavailable:
+                  value:
+                    code: OWNER_QUERY_UNAVAILABLE
+                    message: Service unavailable
+                    traceId: '12345678901234567890123456789012'
+                    retryable: true
+        '504':
+          description: 504 REQUEST_DEADLINE_EXCEEDED
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                enum:
+                - no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/TradingAccountListError
+                - type: object
+                  properties:
+                    code:
+                      type: string
+                      enum:
+                      - REQUEST_DEADLINE_EXCEEDED
+                    message:
+                      type: string
+                      enum:
+                      - Request deadline exceeded
+                    retryable:
+                      type: boolean
+                      enum:
+                      - true
+              examples:
+                request_deadline_exceeded:
+                  value:
+                    code: REQUEST_DEADLINE_EXCEEDED
+                    message: Request deadline exceeded
+                    traceId: '12345678901234567890123456789012'
+                    retryable: true
+        '401':
+          description: 401 SERVICE_AUTHENTICATION_FAILED / USER_DELEGATION_INVALID
+          headers:
+            Cache-Control:
+              required: true
+              schema:
+                type: string
+                enum:
+                - no-store
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: ../core-api.yaml#/components/schemas/TradingAccountListError
+                - type: object
+                  properties:
+                    code:
+                      type: string
+                      enum:
+                      - SERVICE_AUTHENTICATION_FAILED
+                      - USER_DELEGATION_INVALID
+                    message:
+                      type: string
+                      enum:
+                      - Internal authentication failed
+                    retryable:
+                      type: boolean
+                      enum:
+                      - false
+              examples:
+                service_authentication_failed:
+                  value:
+                    code: SERVICE_AUTHENTICATION_FAILED
+                    message: Internal authentication failed
+                    traceId: '12345678901234567890123456789012'
+                    retryable: false
+                user_delegation_invalid:
+                  value:
+                    code: USER_DELEGATION_INVALID
+                    message: Internal authentication failed
+                    traceId: '12345678901234567890123456789012'
+                    retryable: false
+      x-runtime-enabled: false
+      x-required-user-scope: trading-review:owner:accounts:list
+      x-required-caller-operation: listOwnerTradingAccounts
+      x-delegation-audience: refinvest:trading-review:owner-query:v1
   /internal/trading-review/v1/accounts/{accountId}:
     get:
       operationId: getOwnerTradingAccount
+      x-security-policy: ADR-086
+      x-required-user-scope: trading-review:owner:read
+      x-response-max-bytes: 16384
       summary: 검증된 owner의 Account metadata 단건 조회 초안
       parameters:
         - name: accountId
@@ -47,6 +336,9 @@ paths:
   /internal/trading-review/v1/books/{bookId}:
     get:
       operationId: getOwnerTradingBook
+      x-security-policy: ADR-086
+      x-required-user-scope: trading-review:owner:read
+      x-response-max-bytes: 16384
       summary: owner와 상위 Account Guard를 함께 확인한 Book metadata 단건 조회 초안
       parameters:
         - name: bookId

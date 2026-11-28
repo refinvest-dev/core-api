@@ -1679,5 +1679,9 @@ items/total의 같은 READ COMMITTED statement snapshot에 적용한다. Raw-onl
 
 기존 page envelope·ID string/total int64·선택 오류 mapping/no-store/trace와 단건16 KiB·목록2 MiB 상한을 확정한다.
 선택된 proxy 실패는 legacy fallback하지 않는다. 새 code·Book 목록/쓰기/Import/Worker·ADR-074/075 전체는 채택하지 않는다.
-public/internal OpenAPI·authority scope 상세/consumer 반영과 Go/Core 구현·AL-A01~12 실제 수용/운영 인계는 후속이다.
+public/internal OpenAPI·authority scope·consumer 계약은 정적으로 반영했다. consumer/Go/Core 구현·AL-A01~12 실제 수용/운영 인계는 후속이다.
 과거 DRAFT나 runtime 미지원으로 이 좁은 정책 채택을 재승인하지 않는다.
+
+### ADR-087 wire·consumer 상세 후속(2026-11-28)
+
+[목록 상세](TRADING_REVIEW_ACCOUNT_LIST_WIRE_CONTRACT.md)에 public operation 전용 query/page·오류와 internal 목록 GET, authority의 두 scope를 반영했다. 단건/공유 pagination·기존 fixture를 유지하고 정적 참조 검사를 추가했다. 정책 재채택이나 runtime/AL-A01~12 수용 완료가 아니다.

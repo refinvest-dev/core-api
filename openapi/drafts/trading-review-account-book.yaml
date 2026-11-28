@@ -91,6 +91,8 @@ paths:
               displayName: 검토용 계정
     get:
       operationId: listOwnerTradingAccounts
+      x-authoritative-contract: trading-review-owner-query.yaml#/paths/~1internal~1trading-review~1v1~1accounts/get
+      x-authoritative-policy: ADR-087
       x-required-user-scope: trading-review:owner:read
       x-idempotency-namespace: null
       x-access-mode: owner-current-guard

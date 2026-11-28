@@ -3,10 +3,11 @@ info:
   title: Trading Review Member Authority (DRAFT)
   version: 0.1.0-draft
   description: >-
-    ADR-086에서 채택한 Core auth 소유 authority 의미/request-response binding의 미활성 상세 설계. 실제 Core endpoint/권위 상태/issuer는 아직 없다.
+    ADR-086에서 채택한 Core auth 소유 authority 의미/request-response binding의 미활성 상세 설계. 현재 실제 구현의 단건 지원과 목록 scope의 미구현을 구분한다.
     Go→Core credential과 원 위임 actor를 구분하며 production 활성화를 뜻하지 않는다.
 x-contract-status: draft
 x-security-policy: ADR-086
+x-additional-security-policies: [ADR-087]
 x-security-policy-document: docs/TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md
 x-runtime-enabled: false
 security:
@@ -78,7 +79,7 @@ components:
         actor: { type: string, pattern: '^[a-z][a-z0-9-]{0,63}$' }
         iss: { type: string, minLength: 1 }
         aud: { type: string, enum: ['refinvest:trading-review:owner-query:v1'] }
-        scope: { type: string, enum: ['trading-review:owner:read'] }
+        scope: { type: string, enum: ['trading-review:owner:read', 'trading-review:owner:accounts:list'], description: 검증된 단일 scope를 그대로 반환. Go는 원 token/route의 scope와 정확히 비교한다. }
         jti: { type: string, minLength: 1 }
         exp: { type: integer, format: int64, minimum: 1, maximum: 9223372036854775807 }
         policyRevision: { type: string, pattern: '^[1-9][0-9]{0,18}$', description: Core Member access policy positive revision. 상한을 추가 검사하며 token으로 재사용하지 않는다. }

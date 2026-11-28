@@ -4,7 +4,7 @@
 사용자의 재논의 후 정책 확정 요청에 따라 AL-P01~04를 채택했다. 문서 merge/CI는 채택 근거가 아니다.
 초안의 별도 audience 안을 조정해 기존 owner-query audience를 유지하고 목록 전용 scope·caller operation 허용으로 격리한다.
 현재 [ADR-086](TRADING_REVIEW_OWNER_QUERY_AUTH_POLICY.md)의 단건 두 GET은 기존 scope 그대로 유지한다.
-public/internal OpenAPI의 상세 반영·consumer/Go/Core 구현·실제 수용과 운영 활성화는 별도다.
+public/internal OpenAPI와 [wire/consumer 상세](TRADING_REVIEW_ACCOUNT_LIST_WIRE_CONTRACT.md)를 정적으로 반영했다. consumer/Go/Core 구현·실제 수용과 운영 활성화는 별도다.
 이 문서의 확정 정책을 과거 DRAFT 표기나 기존 runtime의 미지원만으로 재승인하지 않는다.
 
 ## 범위와 결정표
@@ -196,3 +196,5 @@ JSON decoder의 depth/token 제한·함수/파일/typed profile·준비 설정�
 timeout/pool/동시성/SLO는 별도 측정·운영값이다. 정책 채택을 해당 수치나 운영 key/Member/DB 인계의 승인으로 바꾸지 않는다.
 `total`은 기존 JSON integer int64를 유지한다. Go/Core 무손실 전달과 browser precision 보장은 별개이며,
 향후 Web consumer는 큰 값을 조용히 반올림하지 않는 lossless decode 또는 명시적 미지원 처리를 검증해야 한다.
+
+후속 [wire/consumer 계약](TRADING_REVIEW_ACCOUNT_LIST_WIRE_CONTRACT.md)에 목록 전용 public/internal schema·정확 scope/authority·정적 검사와 구현 책임을 연결했다. 정적 검사를 AL-A01~12 실제 수용으로 해석하지 않는다.
